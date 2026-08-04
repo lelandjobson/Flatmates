@@ -1,0 +1,135 @@
+[
+  {
+    "name": "fm-tech-tree",
+    "category": "technology",
+    "version": "1.0.0",
+    "source": "techs/flatmates-tech-tree/flatmates-tech-tree.json",
+    "techTree": {
+      "type": "tech-tree",
+      "nodes": [
+        {
+          "id": "tech-primitive-tools",
+          "title": "Primitive Tools",
+          "position": {
+            "x": 400,
+            "y": 0
+          },
+          "thumbnailUrl": "img/primitive-tools_1.png"
+        },
+        {
+          "id": "tech-forestry",
+          "title": "Forestry",
+          "position": {
+            "x": 200,
+            "y": 200
+          },
+          "thumbnailUrl": "img/forestry_1.png"
+        },
+        {
+          "id": "tech-iron-mining",
+          "title": "Iron Mining",
+          "position": {
+            "x": 600,
+            "y": 200
+          },
+          "thumbnailUrl": "img/iron-mining_1.png"
+        },
+        {
+          "id": "tech-basic-carpentry",
+          "title": "Basic Carpentry",
+          "position": {
+            "x": 100,
+            "y": 400
+          },
+          "thumbnailUrl": "img/basic-carpentry_1.png"
+        },
+        {
+          "id": "tech-smelting",
+          "title": "Smelting",
+          "position": {
+            "x": 500,
+            "y": 400
+          },
+          "thumbnailUrl": "img/smelting_1.png"
+        },
+        {
+          "id": "tech-glass-making",
+          "title": "Glass Making",
+          "position": {
+            "x": 700,
+            "y": 400
+          },
+          "thumbnailUrl": "img/glass-making_1.png"
+        },
+        {
+          "id": "tech-upholstery",
+          "title": "Upholstery",
+          "position": {
+            "x": 300,
+            "y": 600
+          },
+          "thumbnailUrl": "img/upholstery_1.png"
+        },
+        {
+          "id": "tech-ceramics",
+          "title": "Ceramics",
+          "position": {
+            "x": 700,
+            "y": 600
+          },
+          "thumbnailUrl": "img/ceramics_1.png"
+        }
+      ],
+      "edges": [
+        {
+          "id": "e-prim-forestry",
+          "source": "tech-primitive-tools",
+          "target": "tech-forestry",
+          "costs": []
+        },
+        {
+          "id": "e-prim-iron",
+          "source": "tech-primitive-tools",
+          "target": "tech-iron-mining",
+          "costs": []
+        },
+        {
+          "id": "e-forestry-carp",
+          "source": "tech-forestry",
+          "target": "tech-basic-carpentry",
+          "costs": []
+        },
+        {
+          "id": "e-iron-smelt",
+          "source": "tech-iron-mining",
+          "target": "tech-smelting",
+          "costs": []
+        },
+        {
+          "id": "e-iron-glass",
+          "source": "tech-iron-mining",
+          "target": "tech-glass-making",
+          "costs": []
+        },
+        {
+          "id": "e-carp-uphol",
+          "source": "tech-basic-carpentry",
+          "target": "tech-upholstery",
+          "costs": []
+        },
+        {
+          "id": "e-smelt-uphol",
+          "source": "tech-smelting",
+          "target": "tech-upholstery",
+          "costs": []
+        },
+        {
+          "id": "e-glass-ceramic",
+          "source": "tech-glass-making",
+          "target": "tech-ceramics",
+          "costs": []
+        }
+      ]
+    }
+  }
+]

@@ -1,0 +1,50 @@
+name: flatmates
+description: "A flatmates game built with Flutter."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: any
+  provider: ^6.1.5+1
+  go_router: ^17.3.0
+  vector_math: ^2.1.5
+  flutter_svg: ^2.0.15+2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  generate: true
+  uses-material-design: true
+
+  assets:
+    - lib/geometry/prefabs/Cableclamp.obj
+    - assets/crafts/
+    - assets/crafts/img/
+    - assets/crafting_blueprints/group01/blueprint/
+    - assets/crafting_blueprints/group02/blueprint/
+    - assets/crafting_blueprints/group03/blueprint/
+    - assets/crafting_blueprints/group04/blueprint/
+    - assets/crafting_blueprints/group05/blueprint/
+    - assets/crafting_blueprints/group06/blueprint/
+    - assets/crafting_blueprints/group08/blueprint/
+    - assets/crafting_blueprints/group09/blueprint/
+    - assets/models/group01/model/geo/
+    - assets/models/group02/model/geo/
+    - assets/models/group03/model/geo/
+    - assets/models/group04/model/geo/
+    - assets/models/group05/model/geo/
+    - assets/models/group06/model/geo/
+    - assets/models/group08/model/geo/
+    - assets/models/group09/model/a/
+    - assets/models/group09/model/b/
+    - assets/models/group09/model/metal/

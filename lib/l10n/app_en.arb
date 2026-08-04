@@ -1,0 +1,23 @@
+{
+  "@@locale": "en",
+  "appTitle": "flatmates",
+  "@appTitle": {
+    "description": "The application title"
+  },
+  "copyright": "© 2026",
+  "@copyright": {
+    "description": "Copyright notice shown on loading screen"
+  },
+  "newGame": "New Game",
+  "@newGame": {
+    "description": "Main menu button to start a new game"
+  },
+  "loadGame": "Load Game",
+  "@loadGame": {
+    "description": "Main menu button to load a saved game"
+  },
+  "crafting": "Crafting",
+  "@crafting": {
+    "description": "Title for the crafting view"
+  }
+}

@@ -1,0 +1,1178 @@
+[
+  {
+    "name": "fm-apartment",
+    "category": "buildings",
+    "version": "1.0.0",
+    "source": "crafts/apartment/apartment-recipe.json",
+    "crafting": {
+      "type": "crafting",
+      "nodes": [
+        {
+          "kind": "composite",
+          "id": "inter-bookshelf",
+          "title": "Bookshelf",
+          "recipeName": "fm-bookshelf",
+          "position": {
+            "x": 100,
+            "y": 400
+          },
+          "thumbnailUrl": "img/bookshelf_1.png",
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-basic-carpentry"
+            }
+          ]
+        },
+        {
+          "kind": "composite",
+          "id": "inter-desk",
+          "title": "Desk",
+          "recipeName": "fm-desk",
+          "position": {
+            "x": 300,
+            "y": 400
+          },
+          "thumbnailUrl": "img/desk_1.png",
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-basic-carpentry"
+            }
+          ]
+        },
+        {
+          "kind": "composite",
+          "id": "inter-couch",
+          "title": "Couch",
+          "recipeName": "fm-couch",
+          "position": {
+            "x": 500,
+            "y": 400
+          },
+          "thumbnailUrl": "img/couch_1.png",
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-upholstery"
+            }
+          ]
+        },
+        {
+          "kind": "composite",
+          "id": "inter-dining-table",
+          "title": "Dining Table",
+          "recipeName": "fm-dining-table",
+          "position": {
+            "x": 700,
+            "y": 400
+          },
+          "thumbnailUrl": "img/dining-table_1.png",
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-basic-carpentry"
+            },
+            {
+              "type": "tech",
+              "id": "tech-glass-making"
+            }
+          ]
+        },
+        {
+          "kind": "composite",
+          "id": "basic-ceramic-tile",
+          "title": "Ceramic Tile",
+          "recipeName": "fm-ceramic-tile",
+          "position": {
+            "x": 900,
+            "y": 400
+          },
+          "thumbnailUrl": "img/ceramic-tile_1.png",
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-ceramics"
+            }
+          ]
+        },
+        {
+          "kind": "composite",
+          "id": "basic-glass",
+          "title": "Glass",
+          "recipeName": "fm-glass",
+          "position": {
+            "x": 1100,
+            "y": 400
+          },
+          "thumbnailUrl": "img/glass_1.png",
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-glass-making"
+            }
+          ]
+        },
+        {
+          "id": "final-apartment",
+          "title": "Apartment",
+          "position": {
+            "x": 550,
+            "y": 700
+          },
+          "thumbnailUrl": "img/apartment_1.png"
+        }
+      ],
+      "edges": [
+        {
+          "id": "edge-bookshelf-apt",
+          "source": "inter-bookshelf",
+          "target": "final-apartment",
+          "costs": [
+            {
+              "type": "element",
+              "elementId": "bookshelf",
+              "elementName": "Bookshelf",
+              "amount": 2
+            }
+          ]
+        },
+        {
+          "id": "edge-desk-apt",
+          "source": "inter-desk",
+          "target": "final-apartment",
+          "costs": [
+            {
+              "type": "element",
+              "elementId": "desk",
+              "elementName": "Desk",
+              "amount": 1
+            }
+          ]
+        },
+        {
+          "id": "edge-couch-apt",
+          "source": "inter-couch",
+          "target": "final-apartment",
+          "costs": [
+            {
+              "type": "element",
+              "elementId": "couch",
+              "elementName": "Couch",
+              "amount": 1
+            }
+          ]
+        },
+        {
+          "id": "edge-table-apt",
+          "source": "inter-dining-table",
+          "target": "final-apartment",
+          "costs": [
+            {
+              "type": "element",
+              "elementId": "dining-table",
+              "elementName": "Dining Table",
+              "amount": 1
+            }
+          ]
+        },
+        {
+          "id": "edge-tile-apt",
+          "source": "basic-ceramic-tile",
+          "target": "final-apartment",
+          "costs": [
+            {
+              "type": "element",
+              "elementId": "ceramic-tile",
+              "elementName": "Ceramic Tiles",
+              "amount": 50
+            }
+          ]
+        },
+        {
+          "id": "edge-glass-apt",
+          "source": "basic-glass",
+          "target": "final-apartment",
+          "costs": [
+            {
+              "type": "element",
+              "elementId": "glass",
+              "elementName": "Window Panes",
+              "amount": 8
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "fm-bookshelf",
+    "category": "furniture",
+    "version": "1.0.0",
+    "source": "crafts/composites/bookshelf/bookshelf.json",
+    "crafting": {
+      "type": "crafting",
+      "nodes": [
+        {
+          "kind": "composite",
+          "id": "basic-lumber",
+          "title": "Lumber",
+          "recipeName": "fm-lumber",
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "thumbnailUrl": "img/lumber_1.png",
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-forestry"
+            }
+          ]
+        },
+        {
+          "kind": "composite",
+          "id": "basic-steel",
+          "title": "Steel",
+          "recipeName": "fm-steel",
+          "position": {
+            "x": 200,
+            "y": 0
+          },
+          "thumbnailUrl": "img/steel_1.png",
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-smelting"
+            }
+          ]
+        },
+        {
+          "id": "inter-bookshelf",
+          "title": "Bookshelf",
+          "position": {
+            "x": 100,
+            "y": 250
+          },
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-basic-carpentry"
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "edge-lumber-bookshelf",
+          "source": "basic-lumber",
+          "target": "inter-bookshelf",
+          "costs": [
+            {
+              "type": "element",
+              "elementId": "lumber",
+              "elementName": "Lumber",
+              "amount": 10
+            }
+          ]
+        },
+        {
+          "id": "edge-steel-bookshelf",
+          "source": "basic-steel",
+          "target": "inter-bookshelf",
+          "costs": [
+            {
+              "type": "element",
+              "elementId": "steel",
+              "elementName": "Steel Brackets",
+              "amount": 4
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "fm-ceramic-tile",
+    "category": "basic-materials",
+    "version": "1.0.0",
+    "source": "crafts/composites/ceramic-tile/ceramic-tile.json",
+    "crafting": {
+      "type": "crafting",
+      "nodes": [
+        {
+          "kind": "raw",
+          "id": "raw-clay",
+          "catalogId": "clay",
+          "title": "Clay",
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "thumbnailUrl": "img/clay_1.png"
+        },
+        {
+          "id": "basic-ceramic-tile",
+          "title": "Ceramic Tile",
+          "position": {
+            "x": 0,
+            "y": 250
+          },
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-ceramics"
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "edge-clay-tile",
+          "source": "raw-clay",
+          "target": "basic-ceramic-tile",
+          "costs": [
+            {
+              "type": "element",
+              "elementId": "clay",
+              "elementName": "Clay",
+              "amount": 3
+            },
+            {
+              "type": "conditional",
+              "conditionType": "facility",
+              "condition": "Kiln required"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "fm-couch",
+    "category": "furniture",
+    "version": "1.0.0",
+    "source": "crafts/composites/couch/couch.json",
+    "crafting": {
+      "type": "crafting",
+      "nodes": [
+        {
+          "kind": "composite",
+          "id": "basic-lumber",
+          "title": "Lumber",
+          "recipeName": "fm-lumber",
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-forestry"
+            }
+          ]
+        },
+        {
+          "kind": "composite",
+          "id": "inter-cushion",
+          "title": "Cushion",
+          "recipeName": "fm-cushion",
+          "position": {
+            "x": 200,
+            "y": 0
+          },
+          "thumbnailUrl": "img/cushion_1.png",
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-upholstery"
+            }
+          ]
+        },
+        {
+          "kind": "composite",
+          "id": "basic-steel",
+          "title": "Steel",
+          "recipeName": "fm-steel",
+          "position": {
+            "x": 400,
+            "y": 0
+          },
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-smelting"
+            }
+          ]
+        },
+        {
+          "id": "inter-couch",
+          "title": "Couch",
+          "position": {
+            "x": 200,
+            "y": 250
+          },
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-upholstery"
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "edge-lumber-couch",
+          "source": "basic-lumber",
+          "target": "inter-couch",
+          "costs": [
+            {
+              "type": "element",
+              "elementId": "lumber",
+              "elementName": "Lumber Frame",
+              "amount": 8
+            }
+          ]
+        },
+        {
+          "id": "edge-cushion-couch",
+          "source": "inter-cushion",
+          "target": "inter-couch",
+          "costs": [
+            {
+              "type": "element",
+              "elementId": "cushion",
+              "elementName": "Cushions",
+              "amount": 6
+            }
+          ]
+        },
+        {
+          "id": "edge-steel-couch",
+          "source": "basic-steel",
+          "target": "inter-couch",
+          "costs": [
+            {
+              "type": "element",
+              "elementId": "steel",
+              "elementName": "Steel Springs",
+              "amount": 12
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "fm-cushion",
+    "category": "components",
+    "version": "1.0.0",
+    "source": "crafts/composites/cushion/cushion.json",
+    "crafting": {
+      "type": "crafting",
+      "nodes": [
+        {
+          "kind": "raw",
+          "id": "raw-cotton",
+          "catalogId": "cotton",
+          "title": "Cotton",
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "thumbnailUrl": "img/cotton_1.png"
+        },
+        {
+          "kind": "raw",
+          "id": "raw-foam-rubber",
+          "catalogId": "foam-rubber",
+          "title": "Foam Rubber",
+          "position": {
+            "x": 200,
+            "y": 0
+          },
+          "thumbnailUrl": "img/foam-rubber_1.png"
+        },
+        {
+          "kind": "raw",
+          "id": "raw-fabric-dye",
+          "catalogId": "fabric-dye",
+          "title": "Fabric Dye",
+          "position": {
+            "x": 400,
+            "y": 0
+          },
+          "thumbnailUrl": "img/fabric-dye_1.png"
+        },
+        {
+          "id": "inter-cushion",
+          "title": "Cushion",
+          "position": {
+            "x": 200,
+            "y": 250
+          },
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-upholstery"
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "edge-cotton-cushion",
+          "source": "raw-cotton",
+          "target": "inter-cushion",
+          "costs": [
+            {
+              "type": "element",
+              "elementId": "cotton",
+              "elementName": "Cotton Fabric",
+              "amount": 3
+            }
+          ]
+        },
+        {
+          "id": "edge-foam-cushion",
+          "source": "raw-foam-rubber",
+          "target": "inter-cushion",
+          "costs": [
+            {
+              "type": "element",
+              "elementId": "foam-rubber",
+              "elementName": "Foam Padding",
+              "amount": 2
+            }
+          ]
+        },
+        {
+          "id": "edge-dye-cushion",
+          "source": "raw-fabric-dye",
+          "target": "inter-cushion",
+          "costs": [
+            {
+              "type": "element",
+              "elementId": "fabric-dye",
+              "elementName": "Fabric Dye",
+              "amount": 1
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "fm-desk",
+    "category": "furniture",
+    "version": "1.0.0",
+    "source": "crafts/composites/desk/desk.json",
+    "crafting": {
+      "type": "crafting",
+      "nodes": [
+        {
+          "kind": "composite",
+          "id": "basic-plywood",
+          "title": "Plywood",
+          "recipeName": "fm-plywood",
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "thumbnailUrl": "img/plywood_1.png",
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-basic-carpentry"
+            }
+          ]
+        },
+        {
+          "kind": "composite",
+          "id": "basic-steel",
+          "title": "Steel",
+          "recipeName": "fm-steel",
+          "position": {
+            "x": 200,
+            "y": 0
+          },
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-smelting"
+            }
+          ]
+        },
+        {
+          "id": "inter-desk",
+          "title": "Desk",
+          "position": {
+            "x": 100,
+            "y": 250
+          },
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-basic-carpentry"
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "edge-plywood-desk",
+          "source": "basic-plywood",
+          "target": "inter-desk",
+          "costs": [
+            {
+              "type": "element",
+              "elementId": "plywood",
+              "elementName": "Plywood Panels",
+              "amount": 3
+            }
+          ]
+        },
+        {
+          "id": "edge-steel-desk",
+          "source": "basic-steel",
+          "target": "inter-desk",
+          "costs": [
+            {
+              "type": "element",
+              "elementId": "steel",
+              "elementName": "Steel Legs",
+              "amount": 4
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "fm-dining-table",
+    "category": "furniture",
+    "version": "1.0.0",
+    "source": "crafts/composites/dining-table/dining-table.json",
+    "crafting": {
+      "type": "crafting",
+      "nodes": [
+        {
+          "kind": "composite",
+          "id": "basic-lumber",
+          "title": "Lumber",
+          "recipeName": "fm-lumber",
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-forestry"
+            }
+          ]
+        },
+        {
+          "kind": "composite",
+          "id": "basic-glass",
+          "title": "Glass",
+          "recipeName": "fm-glass",
+          "position": {
+            "x": 200,
+            "y": 0
+          },
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-glass-making"
+            }
+          ]
+        },
+        {
+          "kind": "composite",
+          "id": "basic-steel",
+          "title": "Steel",
+          "recipeName": "fm-steel",
+          "position": {
+            "x": 400,
+            "y": 0
+          },
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-smelting"
+            }
+          ]
+        },
+        {
+          "id": "inter-dining-table",
+          "title": "Dining Table",
+          "position": {
+            "x": 200,
+            "y": 250
+          },
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-basic-carpentry"
+            },
+            {
+              "type": "tech",
+              "id": "tech-glass-making"
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "edge-lumber-table",
+          "source": "basic-lumber",
+          "target": "inter-dining-table",
+          "costs": [
+            {
+              "type": "element",
+              "elementId": "lumber",
+              "elementName": "Lumber",
+              "amount": 12
+            }
+          ]
+        },
+        {
+          "id": "edge-glass-table",
+          "source": "basic-glass",
+          "target": "inter-dining-table",
+          "costs": [
+            {
+              "type": "element",
+              "elementId": "glass",
+              "elementName": "Glass Top",
+              "amount": 1
+            }
+          ]
+        },
+        {
+          "id": "edge-steel-table",
+          "source": "basic-steel",
+          "target": "inter-dining-table",
+          "costs": [
+            {
+              "type": "element",
+              "elementId": "steel",
+              "elementName": "Steel Fittings",
+              "amount": 4
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "fm-glass",
+    "category": "basic-materials",
+    "version": "1.0.0",
+    "source": "crafts/composites/fm-glass/fm-glass.json",
+    "crafting": {
+      "type": "crafting",
+      "nodes": [
+        {
+          "kind": "raw",
+          "id": "raw-sand",
+          "catalogId": "sand",
+          "title": "Sand",
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "thumbnailUrl": "img/sand_1.png"
+        },
+        {
+          "id": "basic-glass",
+          "title": "Glass",
+          "position": {
+            "x": 0,
+            "y": 250
+          },
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-glass-making"
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "edge-sand-glass",
+          "source": "raw-sand",
+          "target": "basic-glass",
+          "costs": [
+            {
+              "type": "element",
+              "elementId": "sand",
+              "elementName": "Sand",
+              "amount": 4
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "fm-lumber",
+    "category": "basic-materials",
+    "version": "1.0.0",
+    "source": "crafts/composites/fm-lumber/fm-lumber.json",
+    "crafting": {
+      "type": "crafting",
+      "nodes": [
+        {
+          "kind": "raw",
+          "id": "raw-logs",
+          "catalogId": "logs",
+          "title": "Logs",
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "thumbnailUrl": "img/logs_1.png"
+        },
+        {
+          "id": "basic-lumber",
+          "title": "Lumber",
+          "position": {
+            "x": 0,
+            "y": 250
+          },
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-forestry"
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "edge-logs-lumber",
+          "source": "raw-logs",
+          "target": "basic-lumber",
+          "costs": [
+            {
+              "type": "element",
+              "elementId": "logs",
+              "elementName": "Logs",
+              "amount": 2
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "fm-steel",
+    "category": "basic-materials",
+    "version": "1.0.0",
+    "source": "crafts/composites/fm-steel/fm-steel.json",
+    "crafting": {
+      "type": "crafting",
+      "nodes": [
+        {
+          "kind": "raw",
+          "id": "raw-iron-ore",
+          "catalogId": "iron-ore",
+          "title": "Iron Ore",
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "thumbnailUrl": "img/iron-ore_1.png"
+        },
+        {
+          "kind": "raw",
+          "id": "raw-coal",
+          "catalogId": "coal",
+          "title": "Coal",
+          "position": {
+            "x": 200,
+            "y": 0
+          },
+          "thumbnailUrl": "img/coal_1.png"
+        },
+        {
+          "id": "basic-steel",
+          "title": "Steel",
+          "position": {
+            "x": 100,
+            "y": 250
+          },
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-smelting"
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "edge-iron-steel",
+          "source": "raw-iron-ore",
+          "target": "basic-steel",
+          "costs": [
+            {
+              "type": "element",
+              "elementId": "iron-ore",
+              "elementName": "Iron Ore",
+              "amount": 5
+            }
+          ]
+        },
+        {
+          "id": "edge-coal-steel",
+          "source": "raw-coal",
+          "target": "basic-steel",
+          "costs": [
+            {
+              "type": "element",
+              "elementId": "coal",
+              "elementName": "Coal",
+              "amount": 2
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "fm-plywood",
+    "category": "basic-materials",
+    "version": "1.0.0",
+    "source": "crafts/composites/plywood/plywood.json",
+    "crafting": {
+      "type": "crafting",
+      "nodes": [
+        {
+          "kind": "composite",
+          "id": "basic-lumber",
+          "title": "Lumber",
+          "recipeName": "fm-lumber",
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-forestry"
+            }
+          ]
+        },
+        {
+          "id": "basic-plywood",
+          "title": "Plywood",
+          "position": {
+            "x": 0,
+            "y": 250
+          },
+          "prereqs": [
+            {
+              "type": "tech",
+              "id": "tech-basic-carpentry"
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "edge-lumber-plywood",
+          "source": "basic-lumber",
+          "target": "basic-plywood",
+          "costs": [
+            {
+              "type": "element",
+              "elementId": "lumber",
+              "elementName": "Lumber Sheets",
+              "amount": 4
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "fm-clay",
+    "category": "raw-mineral",
+    "version": "1.0.0",
+    "source": "crafts/raws/clay/clay.json",
+    "crafting": {
+      "type": "crafting",
+      "nodes": [
+        {
+          "kind": "raw",
+          "id": "raw-clay",
+          "catalogId": "clay",
+          "title": "Clay",
+          "position": {
+            "x": 0,
+            "y": 0
+          }
+        }
+      ],
+      "edges": []
+    }
+  },
+  {
+    "name": "fm-coal",
+    "category": "raw-mineral",
+    "version": "1.0.0",
+    "source": "crafts/raws/coal/coal.json",
+    "crafting": {
+      "type": "crafting",
+      "nodes": [
+        {
+          "kind": "raw",
+          "id": "raw-coal",
+          "catalogId": "coal",
+          "title": "Coal",
+          "position": {
+            "x": 0,
+            "y": 0
+          }
+        }
+      ],
+      "edges": []
+    }
+  },
+  {
+    "name": "fm-cotton",
+    "category": "raw-organic",
+    "version": "1.0.0",
+    "source": "crafts/raws/cotton/cotton.json",
+    "crafting": {
+      "type": "crafting",
+      "nodes": [
+        {
+          "kind": "raw",
+          "id": "raw-cotton",
+          "catalogId": "cotton",
+          "title": "Cotton",
+          "position": {
+            "x": 0,
+            "y": 0
+          }
+        }
+      ],
+      "edges": []
+    }
+  },
+  {
+    "name": "fm-fabric-dye",
+    "category": "raw-organic",
+    "version": "1.0.0",
+    "source": "crafts/raws/fabric-dye/fabric-dye.json",
+    "crafting": {
+      "type": "crafting",
+      "nodes": [
+        {
+          "kind": "raw",
+          "id": "raw-fabric-dye",
+          "catalogId": "fabric-dye",
+          "title": "Fabric Dye",
+          "position": {
+            "x": 0,
+            "y": 0
+          }
+        }
+      ],
+      "edges": []
+    }
+  },
+  {
+    "name": "fm-foam-rubber",
+    "category": "raw-organic",
+    "version": "1.0.0",
+    "source": "crafts/raws/foam-rubber/foam-rubber.json",
+    "crafting": {
+      "type": "crafting",
+      "nodes": [
+        {
+          "kind": "raw",
+          "id": "raw-foam-rubber",
+          "catalogId": "foam-rubber",
+          "title": "Foam Rubber",
+          "position": {
+            "x": 0,
+            "y": 0
+          }
+        }
+      ],
+      "edges": []
+    }
+  },
+  {
+    "name": "fm-iron-ore",
+    "category": "raw-mineral",
+    "version": "1.0.0",
+    "source": "crafts/raws/iron-ore/iron-ore.json",
+    "crafting": {
+      "type": "crafting",
+      "nodes": [
+        {
+          "kind": "raw",
+          "id": "raw-iron-ore",
+          "catalogId": "iron-ore",
+          "title": "Iron Ore",
+          "position": {
+            "x": 0,
+            "y": 0
+          }
+        }
+      ],
+      "edges": []
+    }
+  },
+  {
+    "name": "fm-logs",
+    "category": "raw-organic",
+    "version": "1.0.0",
+    "source": "crafts/raws/logs/logs.json",
+    "crafting": {
+      "type": "crafting",
+      "nodes": [
+        {
+          "kind": "raw",
+          "id": "raw-logs",
+          "catalogId": "logs",
+          "title": "Logs",
+          "position": {
+            "x": 0,
+            "y": 0
+          }
+        }
+      ],
+      "edges": []
+    }
+  },
+  {
+    "name": "fm-sand",
+    "category": "raw-mineral",
+    "version": "1.0.0",
+    "source": "crafts/raws/sand/sand.json",
+    "crafting": {
+      "type": "crafting",
+      "nodes": [
+        {
+          "kind": "raw",
+          "id": "raw-sand",
+          "catalogId": "sand",
+          "title": "Sand",
+          "position": {
+            "x": 0,
+            "y": 0
+          }
+        }
+      ],
+      "edges": []
+    }
+  }
+]
