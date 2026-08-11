@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 const double kDragSlopThreshold = 10.0;
@@ -67,6 +68,8 @@ class GestureState {
     required this.pointers,
     required this.focalPoint,
     this.focalDelta = Offset.zero,
+    this.span = 0,
+    this.spanScale = 1,
   });
 
   static const idle = GestureState(
@@ -79,6 +82,13 @@ class GestureState {
   final List<PointerSnapshot> pointers;
   final Offset focalPoint;
   final Offset focalDelta;
+
+  /// Distance between the first two pointers (0 if fewer than two).
+  final double span;
+
+  /// [span] / span at the start of the current multi-touch episode (1 if N/A).
+  /// Prefer this over frame-to-frame scale ratios to avoid jitter accumulation.
+  final double spanScale;
 
   int get pointerCount => pointers.length;
   List<Offset> get positions => pointers.map((p) => p.position).toList();
@@ -117,6 +127,13 @@ class _GestureClassifierState extends State<GestureClassifier> {
   final Map<int, _PointerTracker> _pointers = {};
   Offset _lastFocalPoint = Offset.zero;
   Timer? _holdTimer;
+  int _lastPointerCount = 0;
+  double _gestureStartSpan = 0;
+
+  // Trackpad / Magic Mouse pan-zoom (synthetic two-finger gesture).
+  bool _panZoomActive = false;
+  Offset _panZoomFocal = Offset.zero;
+  double _panZoomScale = 1;
 
   @override
   void dispose() {
@@ -125,6 +142,7 @@ class _GestureClassifierState extends State<GestureClassifier> {
   }
 
   void _onPointerDown(PointerDownEvent event) {
+    if (_panZoomActive) return;
     _pointers[event.pointer] = _PointerTracker(
       pointerId: event.pointer,
       position: event.localPosition,
@@ -135,6 +153,7 @@ class _GestureClassifierState extends State<GestureClassifier> {
   }
 
   void _onPointerMove(PointerMoveEvent event) {
+    if (_panZoomActive) return;
     final tracker = _pointers[event.pointer];
     if (tracker == null) return;
     tracker.update(event.localPosition);
@@ -142,6 +161,7 @@ class _GestureClassifierState extends State<GestureClassifier> {
   }
 
   void _onPointerUp(PointerUpEvent event) {
+    if (_panZoomActive) return;
     _pointers.remove(event.pointer);
     _resetAllMovement();
     _restartHoldTimer();
@@ -149,10 +169,57 @@ class _GestureClassifierState extends State<GestureClassifier> {
   }
 
   void _onPointerCancel(PointerCancelEvent event) {
+    if (_panZoomActive) return;
     _pointers.remove(event.pointer);
     _resetAllMovement();
     _restartHoldTimer();
     _classify();
+  }
+
+  void _onPanZoomStart(PointerPanZoomStartEvent event) {
+    _pointers.clear();
+    _holdTimer?.cancel();
+    _holdTimer = null;
+    _panZoomActive = true;
+    _panZoomFocal = event.localPosition;
+    _panZoomScale = 1;
+    _lastFocalPoint = _panZoomFocal;
+    _lastPointerCount = 2;
+    _gestureStartSpan = 1;
+    _emitPanZoom();
+  }
+
+  void _onPanZoomUpdate(PointerPanZoomUpdateEvent event) {
+    if (!_panZoomActive) return;
+    _panZoomFocal = event.localPosition;
+    // `scale` is cumulative from pan-zoom start; treat it as spanScale directly.
+    _panZoomScale = event.scale <= 0 ? 1.0 : event.scale;
+    _emitPanZoom();
+  }
+
+  void _onPanZoomEnd(PointerPanZoomEndEvent event) {
+    if (!_panZoomActive) return;
+    _panZoomActive = false;
+    _panZoomScale = 1;
+    _lastPointerCount = 0;
+    _gestureStartSpan = 0;
+    _lastFocalPoint = Offset.zero;
+    widget.onGestureUpdate?.call(GestureState.idle);
+  }
+
+  void _emitPanZoom() {
+    final focalDelta = _panZoomFocal - _lastFocalPoint;
+    _lastFocalPoint = _panZoomFocal;
+    widget.onGestureUpdate?.call(
+      GestureState(
+        type: GestureType.twoFingerDrag,
+        pointers: const [],
+        focalPoint: _panZoomFocal,
+        focalDelta: focalDelta,
+        span: _panZoomScale,
+        spanScale: _panZoomScale,
+      ),
+    );
   }
 
   void _resetAllMovement() {
@@ -167,6 +234,13 @@ class _GestureClassifierState extends State<GestureClassifier> {
     if (_pointers.length == 1) {
       _holdTimer = Timer(widget.clickTimeout, _classify);
     }
+  }
+
+  double _computeSpan() {
+    if (_pointers.length < 2) return 0;
+    final pts = _pointers.values.map((p) => p.position).toList(growable: false);
+    // Primary pinch metric: distance between the first two contacts.
+    return (pts[0] - pts[1]).distance;
   }
 
   void _classify() {
@@ -185,8 +259,20 @@ class _GestureClassifierState extends State<GestureClassifier> {
           count.toDouble();
     }
 
+    final span = _computeSpan();
+    if (count != _lastPointerCount) {
+      _lastPointerCount = count;
+      _gestureStartSpan = span;
+      // Re-baseline focal so the first frame after a count change has 0 delta.
+      _lastFocalPoint = focalPoint;
+    }
+
     final focalDelta = focalPoint - _lastFocalPoint;
     _lastFocalPoint = focalPoint;
+
+    final spanScale = (count >= 2 && _gestureStartSpan > 1e-3)
+        ? span / _gestureStartSpan
+        : 1.0;
 
     final GestureType type;
     switch (count) {
@@ -226,6 +312,8 @@ class _GestureClassifierState extends State<GestureClassifier> {
       pointers: snapshots,
       focalPoint: focalPoint,
       focalDelta: focalDelta,
+      span: span,
+      spanScale: spanScale,
     ));
   }
 
@@ -236,6 +324,9 @@ class _GestureClassifierState extends State<GestureClassifier> {
       onPointerMove: _onPointerMove,
       onPointerUp: _onPointerUp,
       onPointerCancel: _onPointerCancel,
+      onPointerPanZoomStart: _onPanZoomStart,
+      onPointerPanZoomUpdate: _onPanZoomUpdate,
+      onPointerPanZoomEnd: _onPanZoomEnd,
       behavior: HitTestBehavior.opaque,
       child: widget.child,
     );
