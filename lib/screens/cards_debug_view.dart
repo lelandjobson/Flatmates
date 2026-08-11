@@ -15,9 +15,15 @@ class CardsDebugView extends StatefulWidget {
 class _CardsDebugViewState extends State<CardsDebugView> {
   int _stepCount = 3;
   int _currentStepIndex = 0;
-  bool _stepTransitioning = false;
+
+  /// Card growing into the center (animates 25% faster).
+  int? _promotingIndex;
 
   final _focusNode = FocusNode();
+
+  static const Duration _baseDuration = Duration(milliseconds: 400);
+  // 25% faster than base.
+  static const Duration _promoteDuration = Duration(milliseconds: 320);
 
   List<BlueprintStep> get _steps => List.generate(
     _stepCount,
@@ -30,33 +36,31 @@ class _CardsDebugViewState extends State<CardsDebugView> {
   );
 
   void _goLeft() {
-    if (_currentStepIndex > 0) {
-      setState(() {
-        _stepTransitioning = true;
-      });
-      Future.delayed(const Duration(milliseconds: 50), () {
-        if (!mounted) return;
-        setState(() {
-          _currentStepIndex--;
-          _stepTransitioning = false;
-        });
-      });
-    }
+    if (_currentStepIndex <= 0) return;
+    setState(() {
+      _promotingIndex = _currentStepIndex - 1;
+      _currentStepIndex--;
+    });
+    _clearPromoteAfterAnimation();
   }
 
   void _goRight() {
-    if (_currentStepIndex < _stepCount - 1) {
-      setState(() {
-        _stepTransitioning = true;
-      });
-      Future.delayed(const Duration(milliseconds: 50), () {
-        if (!mounted) return;
-        setState(() {
-          _currentStepIndex++;
-          _stepTransitioning = false;
-        });
-      });
-    }
+    if (_currentStepIndex >= _stepCount - 1) return;
+    setState(() {
+      _promotingIndex = _currentStepIndex + 1;
+      _currentStepIndex++;
+    });
+    _clearPromoteAfterAnimation();
+  }
+
+  void _clearPromoteAfterAnimation() {
+    final promoted = _promotingIndex;
+    Future.delayed(_promoteDuration, () {
+      if (!mounted) return;
+      if (_promotingIndex == promoted) {
+        setState(() => _promotingIndex = null);
+      }
+    });
   }
 
   void _addCard() {
@@ -106,47 +110,47 @@ class _CardsDebugViewState extends State<CardsDebugView> {
         content: Column(
           children: [
             const SizedBox(height: 24),
-            // Step cards centered at top
-            Center(child: _buildStepCards()),
+            _buildStepCards(),
             const Spacer(),
-            // Controls at bottom
             Padding(
               padding: const EdgeInsets.only(bottom: 40),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 4,
+                runSpacing: 8,
                 children: [
                   IconButton(
                     onPressed: _removeCard,
                     icon: const Icon(Icons.remove_circle_outline),
                     color: _stepCount > 1 ? Colors.white : Colors.white24,
-                    iconSize: 32,
+                    iconSize: 28,
+                    visualDensity: VisualDensity.compact,
                   ),
-                  const SizedBox(width: 12),
                   Text(
                     '$_stepCount cards',
                     style: const TextStyle(color: Colors.white70, fontSize: 14),
                   ),
-                  const SizedBox(width: 12),
                   IconButton(
                     onPressed: _addCard,
                     icon: const Icon(Icons.add_circle_outline),
                     color: Colors.white,
-                    iconSize: 32,
+                    iconSize: 28,
+                    visualDensity: VisualDensity.compact,
                   ),
-                  const SizedBox(width: 32),
+                  const SizedBox(width: 16),
                   IconButton(
                     onPressed: _currentStepIndex > 0 ? _goLeft : null,
                     icon: const Icon(Icons.arrow_back),
                     color: Colors.white,
                     disabledColor: Colors.white24,
-                    iconSize: 32,
+                    iconSize: 28,
+                    visualDensity: VisualDensity.compact,
                   ),
-                  const SizedBox(width: 8),
                   Text(
                     '${_currentStepIndex + 1} / $_stepCount',
                     style: const TextStyle(color: Colors.white, fontSize: 16),
                   ),
-                  const SizedBox(width: 8),
                   IconButton(
                     onPressed: _currentStepIndex < _stepCount - 1
                         ? _goRight
@@ -154,7 +158,8 @@ class _CardsDebugViewState extends State<CardsDebugView> {
                     icon: const Icon(Icons.arrow_forward),
                     color: Colors.white,
                     disabledColor: Colors.white24,
-                    iconSize: 32,
+                    iconSize: 28,
+                    visualDensity: VisualDensity.compact,
                   ),
                 ],
               ),
@@ -166,116 +171,203 @@ class _CardsDebugViewState extends State<CardsDebugView> {
   }
 
   // -------------------------------------------------------------------------
-  // Step cards (same logic as crafting workstation)
+  // Three zones: left (done) | center 1/4 (active) | right (upcoming).
+  // Side cards sit on a fixed 5-slot rail (quadratic). Slot 5 is the hard max
+  // sideways position — further cards stack fully behind it in a straight row.
   // -------------------------------------------------------------------------
+
+  static const double _goldenRatio = 1.6180339887;
+  static const int _maxVisibleSide = 5;
+
+  static double _sideProgress(int slot) {
+    // Always measure against the 5-slot rail so positions stay fixed as cards
+    // advance; slot 4 (0-based) is the outer limit.
+    if (_maxVisibleSide <= 1) return 0;
+    final t = slot / (_maxVisibleSide - 1);
+    return 1 - (1 - t) * (1 - t);
+  }
+
+  static double _sideCardLeft({
+    required int slot,
+    required double zoneStart,
+    required double zoneEnd,
+    required double cardWidth,
+    required bool outerIsLeft,
+  }) {
+    final zoneCenter = (zoneStart + zoneEnd) / 2;
+    final nearestLeft = zoneCenter - cardWidth / 2;
+    final outerLeft = outerIsLeft ? zoneStart : zoneEnd - cardWidth;
+    final p = _sideProgress(slot);
+    return nearestLeft + (outerLeft - nearestLeft) * p;
+  }
+
+  Duration _durationFor(int index) =>
+      index == _promotingIndex ? _promoteDuration : _baseDuration;
 
   Widget _buildStepCards() {
     final viewportHeight = MediaQuery.of(context).size.height;
     final baseCardHeight = viewportHeight / 10;
     final activeCardHeight = baseCardHeight * 1.15;
-    final baseCardWidth = baseCardHeight * 1.4;
-    final activeCardWidth = activeCardHeight * 1.4;
-    final overlapOffset = baseCardWidth * 0.35;
-
+    final baseCardWidth = baseCardHeight / _goldenRatio;
+    final activeCardWidth = activeCardHeight / _goldenRatio;
+    final sideTop = (activeCardHeight - baseCardHeight) / 2 + 4;
     final steps = _steps;
-    final completedCount = _currentStepIndex;
-    final futureCount = steps.length - _currentStepIndex - 1;
 
-    final completedWidth = completedCount > 0
-        ? completedCount * baseCardWidth + (completedCount - 1) * 6
-        : 0.0;
-    final futureWidth = futureCount > 0
-        ? baseCardWidth + (futureCount - 1) * overlapOffset
-        : 0.0;
-    const gap = 12.0;
-    final totalWidth =
-        completedWidth +
-        (completedCount > 0 ? gap : 0) +
-        activeCardWidth +
-        (futureCount > 0 ? gap : 0) +
-        futureWidth;
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 400),
-      curve: Curves.easeOutCubic,
+    return SizedBox(
       height: activeCardHeight + 8,
-      width: totalWidth,
-      child: Stack(
-        clipBehavior: Clip.none,
-        alignment: Alignment.centerLeft,
-        children: [
-          // Completed cards (left, spaced out)
-          for (int i = 0; i < completedCount; i++)
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 400),
-              curve: Curves.easeOutCubic,
-              left: i * (baseCardWidth + 6),
-              top: (activeCardHeight - baseCardHeight) / 2 + 4,
-              child: _buildStepCardWidget(
-                index: i,
-                steps: steps,
-                width: baseCardWidth,
-                height: baseCardHeight,
-              ),
-            ),
+      width: double.infinity,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final w = constraints.maxWidth;
+          final centerZoneW = w / 4;
+          final sideZoneW = (w - centerZoneW) / 2;
+          final leftZoneStart = 0.0;
+          final leftZoneEnd = sideZoneW;
+          final rightZoneStart = sideZoneW + centerZoneW;
+          final rightZoneEnd = w;
+          final centerX = w / 2;
 
-          // Current (active) card
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 400),
-            curve: Curves.easeOutCubic,
-            left: completedWidth + (completedCount > 0 ? gap : 0),
-            top: 4,
-            child: _buildStepCardWidget(
+          final layouts = <_CardLayout>[];
+
+          void addSideCards({
+            required int totalOnSide,
+            required int Function(int slot) stepIndexForSlot,
+            required Iterable<int> extraIndices,
+            required double zoneStart,
+            required double zoneEnd,
+            required bool outerIsLeft,
+          }) {
+            final visible = totalOnSide.clamp(0, _maxVisibleSide);
+            if (visible == 0) return;
+
+            for (int slot = 0; slot < visible; slot++) {
+              final left = _sideCardLeft(
+                slot: slot,
+                zoneStart: zoneStart,
+                zoneEnd: zoneEnd,
+                cardWidth: baseCardWidth,
+                outerIsLeft: outerIsLeft,
+              );
+
+              // Overflow past the 5th rail slot stacks fully behind it —
+              // same x/y, straight row, no further sideways travel.
+              if (slot == visible - 1 && totalOnSide > _maxVisibleSide) {
+                var depth = extraIndices.length;
+                for (final extraIndex in extraIndices) {
+                  layouts.add(
+                    _CardLayout(
+                      index: extraIndex,
+                      left: left,
+                      top: sideTop,
+                      width: baseCardWidth,
+                      height: baseCardHeight,
+                      z: -100 - depth,
+                      isActive: false,
+                    ),
+                  );
+                  depth--;
+                }
+              }
+
+              layouts.add(
+                _CardLayout(
+                  index: stepIndexForSlot(slot),
+                  left: left,
+                  top: sideTop,
+                  width: baseCardWidth,
+                  height: baseCardHeight,
+                  z: 50 - slot,
+                  isActive: false,
+                ),
+              );
+            }
+          }
+
+          final completedCount = _currentStepIndex;
+          addSideCards(
+            totalOnSide: completedCount,
+            stepIndexForSlot: (s) => completedCount - 1 - s,
+            extraIndices: [
+              for (int i = 0; i < completedCount - _maxVisibleSide; i++) i,
+            ],
+            zoneStart: leftZoneStart,
+            zoneEnd: leftZoneEnd,
+            outerIsLeft: true,
+          );
+
+          final futureCount = steps.length - _currentStepIndex - 1;
+          addSideCards(
+            totalOnSide: futureCount,
+            stepIndexForSlot: (s) => _currentStepIndex + 1 + s,
+            extraIndices: [
+              for (
+                int i = steps.length - 1;
+                i >= _currentStepIndex + 1 + _maxVisibleSide;
+                i--
+              )
+                i,
+            ],
+            zoneStart: rightZoneStart,
+            zoneEnd: rightZoneEnd,
+            outerIsLeft: false,
+          );
+
+          layouts.add(
+            _CardLayout(
               index: _currentStepIndex,
-              steps: steps,
+              left: centerX - activeCardWidth / 2,
+              top: 4,
               width: activeCardWidth,
               height: activeCardHeight,
+              z: 1000,
+              isActive: true,
             ),
-          ),
+          );
 
-          // Future cards (right, stacked/overlapping)
-          for (int i = 0; i < futureCount; i++)
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 400),
-              curve: Curves.easeOutCubic,
-              left:
-                  completedWidth +
-                  (completedCount > 0 ? gap : 0) +
-                  activeCardWidth +
-                  gap +
-                  i * overlapOffset,
-              top: (activeCardHeight - baseCardHeight) / 2 + 4,
-              child: _buildStepCardWidget(
-                index: _currentStepIndex + 1 + i,
-                steps: steps,
-                width: baseCardWidth,
-                height: baseCardHeight,
-              ),
-            ),
-        ],
+          layouts.sort((a, b) => a.z.compareTo(b.z));
+
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              for (final layout in layouts)
+                AnimatedPositioned(
+                  key: ValueKey<int>(layout.index),
+                  duration: _durationFor(layout.index),
+                  curve: Curves.easeOutCubic,
+                  left: layout.left,
+                  top: layout.top,
+                  width: layout.width,
+                  height: layout.height,
+                  child: _buildStepCardFace(
+                    index: layout.index,
+                    steps: steps,
+                    duration: _durationFor(layout.index),
+                    opacity: layout.isActive ? 0.75 : 0.5,
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }
 
-  Widget _buildStepCardWidget({
+  Widget _buildStepCardFace({
     required int index,
     required List<BlueprintStep> steps,
-    required double width,
-    required double height,
+    required Duration duration,
+    required double opacity,
   }) {
     final step = steps[index];
     final isCurrent = index == _currentStepIndex;
     final isCompleted = index < _currentStepIndex;
-    final iconSize = height * 0.4;
 
     return AnimatedOpacity(
-      duration: const Duration(milliseconds: 300),
-      opacity: _stepTransitioning && isCurrent ? 0.5 : 1.0,
+      duration: duration,
+      opacity: opacity,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
+        duration: duration,
         curve: Curves.easeOutCubic,
-        width: width,
-        height: height,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
@@ -292,20 +384,47 @@ class _CardsDebugViewState extends State<CardsDebugView> {
               ? const Color(0xFFAA66FF).withValues(alpha: 0.05)
               : const Color(0xFF1A1A2E).withValues(alpha: 0.8),
         ),
-        child: Center(
-          child: isCompleted
-              ? Icon(
-                  Icons.check,
-                  color: const Color(0xFF66FF66),
-                  size: iconSize,
-                )
-              : Icon(
-                  IconData(step.iconCodePoint, fontFamily: 'MaterialIcons'),
-                  color: isCurrent ? const Color(0xFFAA66FF) : Colors.white38,
-                  size: iconSize,
-                ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final iconSize = constraints.maxHeight * 0.4;
+            return Center(
+              child: isCompleted
+                  ? Icon(
+                      Icons.check,
+                      color: const Color(0xFF66FF66),
+                      size: iconSize,
+                    )
+                  : Icon(
+                      IconData(step.iconCodePoint, fontFamily: 'MaterialIcons'),
+                      color: isCurrent
+                          ? const Color(0xFFAA66FF)
+                          : Colors.white38,
+                      size: iconSize,
+                    ),
+            );
+          },
         ),
       ),
     );
   }
+}
+
+class _CardLayout {
+  const _CardLayout({
+    required this.index,
+    required this.left,
+    required this.top,
+    required this.width,
+    required this.height,
+    required this.z,
+    required this.isActive,
+  });
+
+  final int index;
+  final double left;
+  final double top;
+  final double width;
+  final double height;
+  final int z;
+  final bool isActive;
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/crafting_state.dart';
 import '../ui/crafting_workstation.dart';
+import '../ui/fm_dev_back_button.dart';
 import '../ui/fm_screen.dart';
 
 class LegacyCraftingScreen extends StatefulWidget {
@@ -18,14 +19,14 @@ class _LegacyCraftingScreenState extends State<LegacyCraftingScreen> {
   Widget build(BuildContext context) {
     return FmScreen(
       backgroundColor: const Color(0xFF1A1A2E),
-      // The workstation is full-bleed; its HUD applies safe insets per element.
+      // Full-bleed canvas; HUD elements inset themselves via FmSafePositioned.
+      overlays: const [FmDevBackButton()],
       background: CraftingTestView(
         structureId: 'legacy-test-structure',
         stateStore: _stateStore,
         canvasSize: 400.0,
         hideDrawingPlane: false,
         showDotWipe: false,
-        onDismiss: () => Navigator.of(context).maybePop(),
       ),
     );
   }

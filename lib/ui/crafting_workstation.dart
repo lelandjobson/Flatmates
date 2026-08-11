@@ -181,8 +181,10 @@ double _distToEdge(Offset p, Offset a, Offset b) {
     final dx = p.dx - a.dx, dy = p.dy - a.dy;
     return math.sqrt(dx * dx + dy * dy);
   }
-  final t =
-      (((p.dx - a.dx) * abx + (p.dy - a.dy) * aby) / lenSq).clamp(0.0, 1.0);
+  final t = (((p.dx - a.dx) * abx + (p.dy - a.dy) * aby) / lenSq).clamp(
+    0.0,
+    1.0,
+  );
   final dx = p.dx - (a.dx + t * abx), dy = p.dy - (a.dy + t * aby);
   return math.sqrt(dx * dx + dy * dy);
 }
@@ -245,25 +247,25 @@ Set<int> _checkCoverage(_CheckCoverageParams params) {
   for (final bp in bpClean) {
     final b = _aabb(bp);
     bpBoxes.add(b);
-    maxDim = math.max(
-        maxDim, math.max(b.maxX - b.minX, b.maxY - b.minY));
+    maxDim = math.max(maxDim, math.max(b.maxX - b.minX, b.maxY - b.minY));
   }
   final cellSize = math.max(maxDim * 0.5, tol * 10);
   final hash = _SpatialHash(cellSize);
   for (var i = 0; i < bpBoxes.length; i++) {
     final b = bpBoxes[i];
     hash.insert(
-        i, _AABB(b.minX - tol, b.minY - tol, b.maxX + tol, b.maxY + tol));
+      i,
+      _AABB(b.minX - tol, b.minY - tol, b.maxX + tol, b.maxY + tol),
+    );
   }
 
   for (final paper in params.paperPolygons) {
     if (paper.length < 3) continue;
     final cleaned = _removeCollinears(_dedup(paper, dedupTol), angularTolRad);
     final pBox = _aabb(cleaned);
-    final candidates = hash.query(_AABB(
-      pBox.minX - tol, pBox.minY - tol,
-      pBox.maxX + tol, pBox.maxY + tol,
-    ));
+    final candidates = hash.query(
+      _AABB(pBox.minX - tol, pBox.minY - tol, pBox.maxX + tol, pBox.maxY + tol),
+    );
     if (candidates.isEmpty) continue;
 
     for (final bpIdx in candidates) {
@@ -455,14 +457,20 @@ class CraftingTestView extends StatefulWidget {
 
   /// Called when a blueprint craft is fully completed with locked papers.
   final void Function(
-      List<CraftingPaperState> papers, String blueprintName, CraftingBlueprint blueprint)?
-      onCraftCompleted;
+    List<CraftingPaperState> papers,
+    String blueprintName,
+    CraftingBlueprint blueprint,
+  )?
+  onCraftCompleted;
 
   /// Called when the completion fold animation finishes. Used by the host to
   /// auto-enter placement mode for the freshly crafted object.
   final void Function(
-      List<CraftingPaperState> papers, String blueprintName, CraftingBlueprint blueprint)?
-      onCraftFoldComplete;
+    List<CraftingPaperState> papers,
+    String blueprintName,
+    CraftingBlueprint blueprint,
+  )?
+  onCraftFoldComplete;
 
   @override
   State<CraftingTestView> createState() => _CraftingTestViewState();
@@ -624,7 +632,8 @@ class _CraftingTestViewState extends State<CraftingTestView>
   double _stretchScaleX = 1.0;
   double _stretchScaleY = 1.0;
   Rect? _stretchOriginalBounds; // local-space AABB before drag began
-  Offset _stretchAnchorLocal = Offset.zero; // opposite edge/corner in local space
+  Offset _stretchAnchorLocal =
+      Offset.zero; // opposite edge/corner in local space
 
   // Blueprint progress tracking
   double _blueprintTotalArea = 0;
@@ -649,10 +658,13 @@ class _CraftingTestViewState extends State<CraftingTestView>
   double _foldRawOrthoScale = 100;
   Map<int, String> _polyIndexToRegion = {};
   double _foldColorProgress = 0;
+
   /// Progress (0..1) of the random dot-dissolve during dissolveReveal.
   double _dotDissolveProgress = 0;
+
   /// Opacity (0..1) of the folding geometry as it fades in during reveal.
   double _foldOpacity = 0;
+
   /// Papers matched to blueprint regions at craft time, forwarded to the host
   /// once the fold animation completes.
   List<CraftingPaperState> _completedPapers = [];
@@ -734,6 +746,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
     _gridLodTo = target;
     _gridLodAnimController.forward(from: 0);
   }
+
   double get _friendScale => _minorGridSpacing / 120.0;
   static const double _paperZ = 1.0;
   WipeAnimation? _dotWipeAnimation;
@@ -913,8 +926,11 @@ class _CraftingTestViewState extends State<CraftingTestView>
     final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
     final paths = manifest
         .listAssets()
-        .where((p) =>
-            p.startsWith('assets/crafting_blueprints/') && p.endsWith('.json'))
+        .where(
+          (p) =>
+              p.startsWith('assets/crafting_blueprints/') &&
+              p.endsWith('.json'),
+        )
         .toList();
 
     final loaded = <CraftingBlueprint>[];
@@ -947,14 +963,31 @@ class _CraftingTestViewState extends State<CraftingTestView>
     final sets = <BlueprintSet>[];
 
     // The "example" multi-step set comes first.
-    sets.add(const BlueprintSet(
-      name: 'Example',
-      steps: [
-        BlueprintStep(craft: 'Group05', island: 0, label: 'Step 1', iconCodePoint: 0xe3c9),
-        BlueprintStep(craft: 'Group06', island: 0, label: 'Step 2', iconCodePoint: 0xe87e),
-        BlueprintStep(craft: 'Group05', island: 2, label: 'Step 3', iconCodePoint: 0xe8b8),
-      ],
-    ));
+    sets.add(
+      const BlueprintSet(
+        name: 'Example',
+        steps: [
+          BlueprintStep(
+            craft: 'Group05',
+            island: 0,
+            label: 'Step 1',
+            iconCodePoint: 0xe3c9,
+          ),
+          BlueprintStep(
+            craft: 'Group06',
+            island: 0,
+            label: 'Step 2',
+            iconCodePoint: 0xe87e,
+          ),
+          BlueprintStep(
+            craft: 'Group05',
+            island: 2,
+            label: 'Step 3',
+            iconCodePoint: 0xe8b8,
+          ),
+        ],
+      ),
+    );
 
     // Each existing blueprint becomes its own single-step set.
     for (final bp in blueprints) {
@@ -1031,17 +1064,19 @@ class _CraftingTestViewState extends State<CraftingTestView>
             .toList();
         if (locked.isNotEmpty) {
           _blueprintProgress[outName] = locked
-              .map((p) => _LockedPaperSnapshot(
-                    id: p.id,
-                    paperColor: p.paperColor,
-                    position: p.position.clone(),
-                    rotationDeg: p.rotationDeg,
-                    sizeLevel: p.sizeLevel,
-                    localVertices: p.localVertices,
-                    localHoles: p.localHoles,
-                    lockedBlueprintIndex: p.lockedBlueprintIndex!,
-                    materialId: p.materialId,
-                  ))
+              .map(
+                (p) => _LockedPaperSnapshot(
+                  id: p.id,
+                  paperColor: p.paperColor,
+                  position: p.position.clone(),
+                  rotationDeg: p.rotationDeg,
+                  sizeLevel: p.sizeLevel,
+                  localVertices: p.localVertices,
+                  localHoles: p.localHoles,
+                  lockedBlueprintIndex: p.lockedBlueprintIndex!,
+                  materialId: p.materialId,
+                ),
+              )
               .toList();
         } else {
           _blueprintProgress.remove(outName);
@@ -1085,12 +1120,16 @@ class _CraftingTestViewState extends State<CraftingTestView>
         final verts = node.unfoldedPolygon2D;
         if (verts.length >= 3) {
           _polyIndexToRegion[allScaled.length] = node.layer;
-          allScaled.add(verts
-              .map((v) => Offset(
+          allScaled.add(
+            verts
+                .map(
+                  (v) => Offset(
                     v.dx * _minorGridSpacing - cx + nudgeX,
                     v.dy * _minorGridSpacing - cy + nudgeY,
-                  ))
-              .toList());
+                  ),
+                )
+                .toList(),
+          );
         }
       }
       _blueprintWorldPolygons = allScaled;
@@ -1102,8 +1141,13 @@ class _CraftingTestViewState extends State<CraftingTestView>
       }
 
       // Build union polygons (per layer, then combine results).
-      _blueprintUnionPolygons =
-          _computeUnionPolygons(blueprint, cx, cy, nudgeX, nudgeY);
+      _blueprintUnionPolygons = _computeUnionPolygons(
+        blueprint,
+        cx,
+        cy,
+        nudgeX,
+        nudgeY,
+      );
       _filledBlueprintIndices = {};
 
       // Restore locked papers saved for this blueprint.
@@ -1113,8 +1157,9 @@ class _CraftingTestViewState extends State<CraftingTestView>
           _placedPapers.add(snap.toPaper());
           _filledBlueprintIndices.add(snap.lockedBlueprintIndex);
           if (snap.lockedBlueprintIndex < allScaled.length) {
-            _blueprintLockedArea +=
-                _polyArea(allScaled[snap.lockedBlueprintIndex]).abs();
+            _blueprintLockedArea += _polyArea(
+              allScaled[snap.lockedBlueprintIndex],
+            ).abs();
           }
         }
       }
@@ -1122,7 +1167,8 @@ class _CraftingTestViewState extends State<CraftingTestView>
       // Zoom-to-fit: center and scale to show all blueprint polygons.
       if (allScaled.isNotEmpty) {
         double bpMinX = double.infinity, bpMinY = double.infinity;
-        double bpMaxX = double.negativeInfinity, bpMaxY = double.negativeInfinity;
+        double bpMaxX = double.negativeInfinity,
+            bpMaxY = double.negativeInfinity;
         for (final poly in allScaled) {
           for (final v in poly) {
             bpMinX = math.min(bpMinX, v.dx);
@@ -1148,15 +1194,20 @@ class _CraftingTestViewState extends State<CraftingTestView>
   /// Computes the centering/snap offset from the unfolded polygon bounding box.
   /// Returns (nudgeX, nudgeY, cx, cy) or null if there's no geometry.
   (double, double, double, double)? _computeBlueprintOffset(
-      CraftingBlueprint blueprint) {
+    CraftingBlueprint blueprint,
+  ) {
     final allScaled = <List<Offset>>[];
     for (final node in blueprint.transformTree.nodes) {
       final verts = node.unfoldedPolygon2D;
       if (verts.length >= 3) {
-        allScaled.add(verts
-            .map((v) =>
-                Offset(v.dx * _minorGridSpacing, v.dy * _minorGridSpacing))
-            .toList());
+        allScaled.add(
+          verts
+              .map(
+                (v) =>
+                    Offset(v.dx * _minorGridSpacing, v.dy * _minorGridSpacing),
+              )
+              .toList(),
+        );
       }
     }
     if (allScaled.isEmpty) return null;
@@ -1165,10 +1216,16 @@ class _CraftingTestViewState extends State<CraftingTestView>
     final root = blueprint.transformTree.root;
     final rootVerts = root.unfoldedPolygon2D;
     final anchorPolygons = rootVerts.length >= 3
-        ? [rootVerts
-            .map((v) =>
-                Offset(v.dx * _minorGridSpacing, v.dy * _minorGridSpacing))
-            .toList()]
+        ? [
+            rootVerts
+                .map(
+                  (v) => Offset(
+                    v.dx * _minorGridSpacing,
+                    v.dy * _minorGridSpacing,
+                  ),
+                )
+                .toList(),
+          ]
         : allScaled;
 
     var minX = double.infinity, minY = double.infinity;
@@ -1186,10 +1243,8 @@ class _CraftingTestViewState extends State<CraftingTestView>
     final cy = (minY + maxY) / 2;
     final newMinX = minX - cx;
     final newMinY = minY - cy;
-    final snappedX =
-        (newMinX / _minorGridSpacing).round() * _minorGridSpacing;
-    final snappedY =
-        (newMinY / _minorGridSpacing).round() * _minorGridSpacing;
+    final snappedX = (newMinX / _minorGridSpacing).round() * _minorGridSpacing;
+    final snappedY = (newMinY / _minorGridSpacing).round() * _minorGridSpacing;
 
     return (snappedX - newMinX, snappedY - newMinY, cx, cy);
   }
@@ -1209,18 +1264,25 @@ class _CraftingTestViewState extends State<CraftingTestView>
   /// Builds per-layer union polygons keyed by layer name.
   Map<String, List<List<Offset>>> _computePerLayerUnions(
     CraftingBlueprint blueprint,
-    double cx, double cy, double nudgeX, double nudgeY,
+    double cx,
+    double cy,
+    double nudgeX,
+    double nudgeY,
   ) {
     final byLayer = <String, List<List<Offset>>>{};
     for (final node in blueprint.transformTree.nodes) {
       final verts = node.unfoldedPolygon2D;
       if (verts.length < 3) continue;
-      (byLayer[node.layer] ??= []).add(verts
-          .map((v) => Offset(
+      (byLayer[node.layer] ??= []).add(
+        verts
+            .map(
+              (v) => Offset(
                 v.dx * _minorGridSpacing - cx + nudgeX,
                 v.dy * _minorGridSpacing - cy + nudgeY,
-              ))
-          .toList());
+              ),
+            )
+            .toList(),
+      );
     }
     final result = <String, List<List<Offset>>>{};
     for (final entry in byLayer.entries) {
@@ -1302,14 +1364,18 @@ class _CraftingTestViewState extends State<CraftingTestView>
 
     for (final bpIdx in newlyFilled) {
       if (bpIdx >= bpPolygons.length) continue;
-      final bpClean =
-          _removeCollinears(_dedup(bpPolygons[bpIdx], dedupTol), angularTolRad);
+      final bpClean = _removeCollinears(
+        _dedup(bpPolygons[bpIdx], dedupTol),
+        angularTolRad,
+      );
 
       for (var pi = 0; pi < paperPolys.length; pi++) {
         final pid = paperIds[pi];
         if (animating.contains(pid)) continue;
         final cleaned = _removeCollinears(
-            _dedup(paperPolys[pi], dedupTol), angularTolRad);
+          _dedup(paperPolys[pi], dedupTol),
+          angularTolRad,
+        );
         if (_shapesMatch(cleaned, bpClean, tolerance)) {
           animating.add(pid);
           paperToBpIndex[pid] = bpIdx;
@@ -1324,9 +1390,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
       _lockAnimatingPaperIds = animating;
       _lockAnimProgress = 0;
       for (final entry in paperToBpIndex.entries) {
-        final paper = _placedPapers
-            .where((p) => p.id == entry.key)
-            .firstOrNull;
+        final paper = _placedPapers.where((p) => p.id == entry.key).firstOrNull;
         if (paper != null) {
           paper.lockedBlueprintIndex = entry.value;
         }
@@ -1389,8 +1453,10 @@ class _CraftingTestViewState extends State<CraftingTestView>
       }
     }
     _blueprintLockedArea = area;
-    final newProgress =
-        (_blueprintLockedArea / _blueprintTotalArea).clamp(0.0, 1.0);
+    final newProgress = (_blueprintLockedArea / _blueprintTotalArea).clamp(
+      0.0,
+      1.0,
+    );
     if ((newProgress - oldProgress).abs() > 1e-6) {
       _progressAnimFrom = oldProgress;
       _progressAnimTo = newProgress;
@@ -1408,7 +1474,10 @@ class _CraftingTestViewState extends State<CraftingTestView>
     if (matchedPapers.isEmpty) return;
     _completedPapers = matchedPapers;
     widget.onCraftCompleted?.call(
-        matchedPapers, _selectedBlueprint!.craft, _selectedBlueprint!);
+      matchedPapers,
+      _selectedBlueprint!.craft,
+      _selectedBlueprint!,
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -1416,7 +1485,8 @@ class _CraftingTestViewState extends State<CraftingTestView>
   // ---------------------------------------------------------------------------
 
   void _startCompletionSequence() {
-    if (_selectedBlueprint == null || _completionPhase != CompletionPhase.none) {
+    if (_selectedBlueprint == null ||
+        _completionPhase != CompletionPhase.none) {
       return;
     }
 
@@ -1487,7 +1557,10 @@ class _CraftingTestViewState extends State<CraftingTestView>
     setState(() => _completionPhase = CompletionPhase.done);
     if (_selectedBlueprint != null && _completedPapers.isNotEmpty) {
       widget.onCraftFoldComplete?.call(
-          _completedPapers, _selectedBlueprint!.craft, _selectedBlueprint!);
+        _completedPapers,
+        _selectedBlueprint!.craft,
+        _selectedBlueprint!,
+      );
     }
 
     // If there's a next step in the set, advance to it instead of dismissing.
@@ -1515,8 +1588,9 @@ class _CraftingTestViewState extends State<CraftingTestView>
       _foldNodeStates[node.id] = _FoldNodeState(
         nodeId: node.id,
         node: node,
-        unfoldedVertices3D:
-            node.unfoldedVertices.map((v) => v.clone()).toList(),
+        unfoldedVertices3D: node.unfoldedVertices
+            .map((v) => v.clone())
+            .toList(),
       );
     }
 
@@ -1613,10 +1687,9 @@ class _CraftingTestViewState extends State<CraftingTestView>
     }
 
     // Compute island displacement: lerp from unfolded origin to folded offset.
-    final dispPos = _foldOriginOffset +
-        (_foldFoldedOffset - _foldOriginOffset) * globalT;
-    _foldDisplacementMatrix = Matrix4.identity()
-      ..setTranslation(dispPos);
+    final dispPos =
+        _foldOriginOffset + (_foldFoldedOffset - _foldOriginOffset) * globalT;
+    _foldDisplacementMatrix = Matrix4.identity()..setTranslation(dispPos);
   }
 
   /// View-projection for the fold. The camera does NOT orbit: it stays at a
@@ -1635,8 +1708,8 @@ class _CraftingTestViewState extends State<CraftingTestView>
         : (_completionPhase == CompletionPhase.done ? 1.0 : 0.0);
 
     // Track the fold geometry centroid as it displaces from unfolded to folded.
-    final dispPos = _foldOriginOffset +
-        (_foldFoldedOffset - _foldOriginOffset) * foldT;
+    final dispPos =
+        _foldOriginOffset + (_foldFoldedOffset - _foldOriginOffset) * foldT;
     final centroid = Offset(
       _foldRawCentroid.dx - _foldOriginOffset.x + dispPos.x,
       _foldRawCentroid.dy - _foldOriginOffset.y + dispPos.y,
@@ -1683,7 +1756,11 @@ class _CraftingTestViewState extends State<CraftingTestView>
 
   /// Intersects the infinite line through [la]-[lb] with segment [sa]-[sb].
   static Offset? _lineCrossesSegment(
-      Offset la, Offset lb, Offset sa, Offset sb) {
+    Offset la,
+    Offset lb,
+    Offset sa,
+    Offset sb,
+  ) {
     final dxa = lb.dx - la.dx;
     final dya = lb.dy - la.dy;
     final dxb = sb.dx - sa.dx;
@@ -1716,7 +1793,11 @@ class _CraftingTestViewState extends State<CraftingTestView>
         final poly = worldCorners.map((v) => Offset(v.x, v.y)).toList();
         for (var i = 0; i < poly.length; i++) {
           final pt = _lineCrossesSegment(
-              line.$1, line.$2, poly[i], poly[(i + 1) % poly.length]);
+            line.$1,
+            line.$2,
+            poly[i],
+            poly[(i + 1) % poly.length],
+          );
           if (pt != null) allIntersections.add(pt);
         }
       }
@@ -1733,8 +1814,8 @@ class _CraftingTestViewState extends State<CraftingTestView>
     Offset nearStart = allIntersections.first;
     Offset nearEnd = allIntersections.first;
     for (final pt in allIntersections) {
-      final proj = (pt - drawStart).dx * unitDir.dx +
-          (pt - drawStart).dy * unitDir.dy;
+      final proj =
+          (pt - drawStart).dx * unitDir.dx + (pt - drawStart).dy * unitDir.dy;
       if (proj < minProj) {
         minProj = proj;
         nearStart = pt;
@@ -1994,10 +2075,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
     Offset toWorld(double lx, double ly) {
       final slx = _stretchLocal(lx, ax, sx);
       final sly = _stretchLocal(ly, ay, sy);
-      return Offset(
-        cx + slx * cosA - sly * sinA,
-        cy + slx * sinA + sly * cosA,
-      );
+      return Offset(cx + slx * cosA - sly * sinA, cy + slx * sinA + sly * cosA);
     }
 
     final l = bounds.left, r = bounds.right;
@@ -2005,20 +2083,23 @@ class _CraftingTestViewState extends State<CraftingTestView>
     final mx = (l + r) / 2, my = (t + b) / 2;
 
     return [
-      toWorld(mx, b),  // 0: top (max Y in world)
-      toWorld(r, my),  // 1: right
-      toWorld(mx, t),  // 2: bottom
-      toWorld(l, my),  // 3: left
-      toWorld(l, b),   // 4: topLeft
-      toWorld(r, b),   // 5: topRight
-      toWorld(r, t),   // 6: bottomRight
-      toWorld(l, t),   // 7: bottomLeft
+      toWorld(mx, b), // 0: top (max Y in world)
+      toWorld(r, my), // 1: right
+      toWorld(mx, t), // 2: bottom
+      toWorld(l, my), // 3: left
+      toWorld(l, b), // 4: topLeft
+      toWorld(r, b), // 5: topRight
+      toWorld(r, t), // 6: bottomRight
+      toWorld(l, t), // 7: bottomLeft
     ];
   }
 
   /// Hit-test stretch handles — returns handle index 0-7 or null.
   int? _hitTestStretchHandle(
-      Offset screenPos, Size viewportSize, PlacedPaper paper) {
+    Offset screenPos,
+    Size viewportSize,
+    PlacedPaper paper,
+  ) {
     final bounds = _stretchOriginalBounds ?? _paperLocalBounds(paper);
     final handles = _stretchHandleWorldPositions(paper, bounds);
     final shorter = math.min(viewportSize.width, viewportSize.height);
@@ -2040,7 +2121,10 @@ class _CraftingTestViewState extends State<CraftingTestView>
   /// top/bottom edges (snapping Y).
   /// Returns the snapped value, or null if no snap found.
   double? _snapStretchToBlueprintEdge(
-      double axisValue, bool isHorizontal, PlacedPaper paper) {
+    double axisValue,
+    bool isHorizontal,
+    PlacedPaper paper,
+  ) {
     if (!_snapBlueprint || _blueprintWorldPolygons.isEmpty) return null;
     final radius = _snapWorldRadius;
     double bestDist = double.infinity;
@@ -2083,15 +2167,24 @@ class _CraftingTestViewState extends State<CraftingTestView>
   /// For edge handles the non-stretched axis anchors at 0 (center).
   Offset _stretchAnchorForHandle(int handleIndex, Rect bounds) {
     switch (handleIndex) {
-      case 0: return Offset(0, bounds.top);           // top edge → anchor bottom
-      case 1: return Offset(bounds.left, 0);           // right edge → anchor left
-      case 2: return Offset(0, bounds.bottom);         // bottom edge → anchor top
-      case 3: return Offset(bounds.right, 0);          // left edge → anchor right
-      case 4: return Offset(bounds.right, bounds.top); // TL → anchor BR
-      case 5: return Offset(bounds.left, bounds.top);  // TR → anchor BL
-      case 6: return Offset(bounds.left, bounds.bottom); // BR → anchor TL
-      case 7: return Offset(bounds.right, bounds.bottom); // BL → anchor TR
-      default: return Offset.zero;
+      case 0:
+        return Offset(0, bounds.top); // top edge → anchor bottom
+      case 1:
+        return Offset(bounds.left, 0); // right edge → anchor left
+      case 2:
+        return Offset(0, bounds.bottom); // bottom edge → anchor top
+      case 3:
+        return Offset(bounds.right, 0); // left edge → anchor right
+      case 4:
+        return Offset(bounds.right, bounds.top); // TL → anchor BR
+      case 5:
+        return Offset(bounds.left, bounds.top); // TR → anchor BL
+      case 6:
+        return Offset(bounds.left, bounds.bottom); // BR → anchor TL
+      case 7:
+        return Offset(bounds.right, bounds.bottom); // BL → anchor TR
+      default:
+        return Offset.zero;
     }
   }
 
@@ -2102,7 +2195,8 @@ class _CraftingTestViewState extends State<CraftingTestView>
         .firstOrNull;
     if (paper == null) return;
     if ((_stretchScaleX - 1.0).abs() < 1e-4 &&
-        (_stretchScaleY - 1.0).abs() < 1e-4) return;
+        (_stretchScaleY - 1.0).abs() < 1e-4)
+      return;
 
     final sx = _stretchScaleX;
     final sy = _stretchScaleY;
@@ -2110,10 +2204,8 @@ class _CraftingTestViewState extends State<CraftingTestView>
     final ay = _stretchAnchorLocal.dy;
 
     // Scale each vertex relative to the anchor point
-    Offset xformOff(Offset v) => Offset(
-          v.dx * sx + ax * (1 - sx),
-          v.dy * sy + ay * (1 - sy),
-        );
+    Offset xformOff(Offset v) =>
+        Offset(v.dx * sx + ax * (1 - sx), v.dy * sy + ay * (1 - sy));
 
     final verts = _paperLocalVertices(paper);
     final scaled = verts.map(xformOff).toList();
@@ -2141,20 +2233,28 @@ class _CraftingTestViewState extends State<CraftingTestView>
     }
     cxLocal /= scaled.length;
     cyLocal /= scaled.length;
-    final recentered = scaled.map((v) => Offset(v.dx - cxLocal, v.dy - cyLocal)).toList();
+    final recentered = scaled
+        .map((v) => Offset(v.dx - cxLocal, v.dy - cyLocal))
+        .toList();
     final recenteredHoles = scaledHoles
-        .map((h) => h.map((v) => Offset(v.dx - cxLocal, v.dy - cyLocal)).toList())
+        .map(
+          (h) => h.map((v) => Offset(v.dx - cxLocal, v.dy - cyLocal)).toList(),
+        )
         .toList();
     final recenteredCuts = scaledCuts
-        .map((s) => (
-              Offset(s.$1.dx - cxLocal, s.$1.dy - cyLocal),
-              Offset(s.$2.dx - cxLocal, s.$2.dy - cyLocal),
-            ))
+        .map(
+          (s) => (
+            Offset(s.$1.dx - cxLocal, s.$1.dy - cyLocal),
+            Offset(s.$2.dx - cxLocal, s.$2.dy - cyLocal),
+          ),
+        )
         .toList();
 
     // World position of the new centroid
-    final newPosX = paper.position.x + worldDx + cxLocal * cosA - cyLocal * sinA;
-    final newPosY = paper.position.y + worldDy + cxLocal * sinA + cyLocal * cosA;
+    final newPosX =
+        paper.position.x + worldDx + cxLocal * cosA - cyLocal * sinA;
+    final newPosY =
+        paper.position.y + worldDy + cxLocal * sinA + cyLocal * cosA;
 
     final idx = _placedPapers.indexOf(paper);
     setState(() {
@@ -2242,8 +2342,10 @@ class _CraftingTestViewState extends State<CraftingTestView>
   /// For each unfilled blueprint polygon within [_magnetDistance] of
   /// [worldCursor], compute the rotation that aligns the piece's longest edge
   /// to the slot's longest edge, then try that base angle + {0, 90, 180, 270}.
-  ({int bpIndex, Offset targetPos, double targetRotDeg})?
-      _findMagnetMatch(PlacedPaper paper, Offset worldCursor) {
+  ({int bpIndex, Offset targetPos, double targetRotDeg})? _findMagnetMatch(
+    PlacedPaper paper,
+    Offset worldCursor,
+  ) {
     if (_blueprintWorldPolygons.isEmpty) return null;
 
     final localVerts = _paperLocalVertices(paper);
@@ -2251,7 +2353,8 @@ class _CraftingTestViewState extends State<CraftingTestView>
 
     final localCentroid = _polyCentroid(localVerts);
     final centroidNorm = [
-      for (final v in localVerts) Offset(v.dx - localCentroid.dx, v.dy - localCentroid.dy),
+      for (final v in localVerts)
+        Offset(v.dx - localCentroid.dx, v.dy - localCentroid.dy),
     ];
     final pieceArea = _polyArea(centroidNorm).abs();
     if (pieceArea < 1e-10) return null;
@@ -2318,15 +2421,16 @@ class _CraftingTestViewState extends State<CraftingTestView>
 
   void _onMagnetAnimTick() {
     if (_dragPaperId == null) return;
-    final paper =
-        _placedPapers.where((p) => p.id == _dragPaperId).firstOrNull;
+    final paper = _placedPapers.where((p) => p.id == _dragPaperId).firstOrNull;
     if (paper == null) return;
     final freePos = _magnetFreePosition;
     final targetPos = _magnetTargetPosition;
     final freeRot = _magnetFreeRotation;
     final targetRot = _magnetTargetRotation;
-    if (freePos == null || targetPos == null ||
-        freeRot == null || targetRot == null) {
+    if (freePos == null ||
+        targetPos == null ||
+        freeRot == null ||
+        targetRot == null) {
       return;
     }
 
@@ -2480,18 +2584,12 @@ class _CraftingTestViewState extends State<CraftingTestView>
     return result;
   }
 
-  double _paperHalfSizeForLevel(int level) =>
-      level * _majorGridSpacing;
+  double _paperHalfSizeForLevel(int level) => level * _majorGridSpacing;
 
   List<Offset> _paperLocalVertices(PlacedPaper paper) {
     if (paper.localVertices != null) return paper.localVertices!;
     final hs = _paperHalfSizeForLevel(paper.sizeLevel);
-    return [
-      Offset(-hs, -hs),
-      Offset(hs, -hs),
-      Offset(hs, hs),
-      Offset(-hs, hs),
-    ];
+    return [Offset(-hs, -hs), Offset(hs, -hs), Offset(hs, hs), Offset(-hs, hs)];
   }
 
   List<Vector3> _paperWorldCorners(PlacedPaper paper) {
@@ -2509,9 +2607,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
   }
 
   List<Offset> _paperWorldPolygon2D(PlacedPaper paper) {
-    return _paperWorldCorners(paper)
-        .map((v) => Offset(v.x, v.y))
-        .toList();
+    return _paperWorldCorners(paper).map((v) => Offset(v.x, v.y)).toList();
   }
 
   List<List<Offset>> _paperWorldHoles2D(PlacedPaper paper) {
@@ -2521,10 +2617,12 @@ class _CraftingTestViewState extends State<CraftingTestView>
     final sinA = math.sin(rad);
     return paper.localHoles.map((hole) {
       return hole
-          .map((o) => Offset(
-                paper.position.x + o.dx * cosA - o.dy * sinA,
-                paper.position.y + o.dx * sinA + o.dy * cosA,
-              ))
+          .map(
+            (o) => Offset(
+              paper.position.x + o.dx * cosA - o.dy * sinA,
+              paper.position.y + o.dx * sinA + o.dy * cosA,
+            ),
+          )
           .toList();
     }).toList();
   }
@@ -2596,8 +2694,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
       final pi = polygon[i];
       final pj = polygon[j];
       if (((pi.dy > p.dy) != (pj.dy > p.dy)) &&
-          (p.dx <
-              (pj.dx - pi.dx) * (p.dy - pi.dy) / (pj.dy - pi.dy) + pi.dx)) {
+          (p.dx < (pj.dx - pi.dx) * (p.dy - pi.dy) / (pj.dy - pi.dy) + pi.dx)) {
         inside = !inside;
       }
     }
@@ -2610,14 +2707,16 @@ class _CraftingTestViewState extends State<CraftingTestView>
 
   void _pushUndo(String label, {bool? noOp}) {
     final isNoOp = noOp ?? _noOpUndoLabels.contains(label);
-    _history.pushSnapshot(CraftingSnapshot.capture(
-      papers: _placedPapers,
-      nextPaperId: _nextPaperId,
-      inventory: _inventory,
-      selectedPaperIds: _selectedPaperIds,
-      label: label,
-      noOp: isNoOp,
-    ));
+    _history.pushSnapshot(
+      CraftingSnapshot.capture(
+        papers: _placedPapers,
+        nextPaperId: _nextPaperId,
+        inventory: _inventory,
+        selectedPaperIds: _selectedPaperIds,
+        label: label,
+        noOp: isNoOp,
+      ),
+    );
   }
 
   CraftingSnapshot _currentSnapshot(String label) {
@@ -2762,8 +2861,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
           _structureInventory!.add(paper.materialId!, recouped);
         }
       } else if (paper.localVertices == null) {
-        _inventory[paper.paperColor] =
-            (_inventory[paper.paperColor] ?? 0) + 1;
+        _inventory[paper.paperColor] = (_inventory[paper.paperColor] ?? 0) + 1;
       }
       _selectedPaperIds.remove(paperId);
       if (_selectedPaperIds.isEmpty) {
@@ -3015,8 +3113,11 @@ class _CraftingTestViewState extends State<CraftingTestView>
             .where((p) => p.id == _stretchPaperId)
             .firstOrNull;
         if (paper != null) {
-          final handleIdx =
-              _hitTestStretchHandle(localPos, viewportSize, paper);
+          final handleIdx = _hitTestStretchHandle(
+            localPos,
+            viewportSize,
+            paper,
+          );
           if (handleIdx != null) {
             _pushUndo('Stretch');
             final bounds = _paperLocalBounds(paper);
@@ -3113,12 +3214,13 @@ class _CraftingTestViewState extends State<CraftingTestView>
           // Blueprint edge snap
           final stretchedEdge = _stretchLocal(handleX, ax, sx);
           final worldEdgeX = paper.position.x + stretchedEdge * cosA;
-          final snapped =
-              _snapStretchToBlueprintEdge(worldEdgeX, true, paper);
+          final snapped = _snapStretchToBlueprintEdge(worldEdgeX, true, paper);
           if (snapped != null) {
             final localSnapped = (snapped - paper.position.x) / cosA;
-            final snapSx =
-                ((localSnapped - ax) / span).clamp(minScale, maxScale);
+            final snapSx = ((localSnapped - ax) / span).clamp(
+              minScale,
+              maxScale,
+            );
             sx = snapSx;
           }
         }
@@ -3136,12 +3238,13 @@ class _CraftingTestViewState extends State<CraftingTestView>
           // Blueprint edge snap
           final stretchedEdge = _stretchLocal(handleY, ay, sy);
           final worldEdgeY = paper.position.y + stretchedEdge * cosA;
-          final snapped =
-              _snapStretchToBlueprintEdge(worldEdgeY, false, paper);
+          final snapped = _snapStretchToBlueprintEdge(worldEdgeY, false, paper);
           if (snapped != null) {
             final localSnapped = (snapped - paper.position.y) / cosA;
-            final snapSy =
-                ((localSnapped - ay) / span).clamp(minScale, maxScale);
+            final snapSy = ((localSnapped - ay) / span).clamp(
+              minScale,
+              maxScale,
+            );
             sy = snapSy;
           }
         }
@@ -3308,8 +3411,9 @@ class _CraftingTestViewState extends State<CraftingTestView>
       if (distance < _dragThreshold) return;
 
       if (_pointerDownPaperId != null) {
-        final downPaper =
-            _placedPapers.where((p) => p.id == _pointerDownPaperId).firstOrNull;
+        final downPaper = _placedPapers
+            .where((p) => p.id == _pointerDownPaperId)
+            .firstOrNull;
         if (downPaper != null && downPaper.locked) {
           return;
         }
@@ -3337,8 +3441,9 @@ class _CraftingTestViewState extends State<CraftingTestView>
     }
 
     if (_isDragging && _dragPaperId != null) {
-      final paper =
-          _placedPapers.where((p) => p.id == _dragPaperId).firstOrNull;
+      final paper = _placedPapers
+          .where((p) => p.id == _dragPaperId)
+          .firstOrNull;
       if (paper == null) return;
 
       final shorter = math.min(viewportSize.width, viewportSize.height);
@@ -3377,8 +3482,11 @@ class _CraftingTestViewState extends State<CraftingTestView>
                 newFree.dx + (match.targetPos.dx - newFree.dx) * t;
             paper.position.y =
                 newFree.dy + (match.targetPos.dy - newFree.dy) * t;
-            paper.rotationDeg =
-                _lerpAngle(_magnetFreeRotation!, match.targetRotDeg, t);
+            paper.rotationDeg = _lerpAngle(
+              _magnetFreeRotation!,
+              match.targetRotDeg,
+              t,
+            );
           });
         } else {
           if (_magnetPrevBpIndex != null) {
@@ -3443,8 +3551,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
             .firstOrNull;
         if (paper != null) {
           final corners = _paperWorldCorners(paper);
-          final snap =
-              _computeSnap(corners, excludePaperIds: {paper.id});
+          final snap = _computeSnap(corners, excludePaperIds: {paper.id});
           setState(() {
             paper.position.x += snap.dx;
             paper.position.y += snap.dy;
@@ -3462,7 +3569,8 @@ class _CraftingTestViewState extends State<CraftingTestView>
 
       final hitId = _hitTestPaper(localPos, viewportSize);
       final now = DateTime.now();
-      final isDoubleTap = _lastPanTapTime != null &&
+      final isDoubleTap =
+          _lastPanTapTime != null &&
           _lastPanTapPos != null &&
           now.difference(_lastPanTapTime!).inMilliseconds < 300 &&
           (localPos - _lastPanTapPos!).distance < 20;
@@ -3478,7 +3586,9 @@ class _CraftingTestViewState extends State<CraftingTestView>
         return;
       }
 
-      if (!wasDragOnSelected && hitId == null && _panModeSelectedPaperId != null) {
+      if (!wasDragOnSelected &&
+          hitId == null &&
+          _panModeSelectedPaperId != null) {
         setState(() {
           _panModeSelectedPaperId = null;
           _selectedPaperIds = {};
@@ -3567,8 +3677,11 @@ class _CraftingTestViewState extends State<CraftingTestView>
       }
       if (_paintDeferredCell != null) {
         final dc = _paintDeferredCell!;
-        if (_isCellAdjacentToPaper(dc.$1, dc.$2,
-            onlyPaperIds: _paintSelectionIds)) {
+        if (_isCellAdjacentToPaper(
+          dc.$1,
+          dc.$2,
+          onlyPaperIds: _paintSelectionIds,
+        )) {
           _paintedCells.add(dc);
         }
         _paintDeferredCell = null;
@@ -3627,8 +3740,12 @@ class _CraftingTestViewState extends State<CraftingTestView>
       final start = _marqueeStartScreen!;
       final end = localPos;
       final leftToRight = end.dx >= start.dx;
-      final selection =
-          _computeMarqueeSelection(start, end, viewportSize, leftToRight);
+      final selection = _computeMarqueeSelection(
+        start,
+        end,
+        viewportSize,
+        leftToRight,
+      );
       _pushUndo('Select');
       setState(() {
         _selectedPaperIds = selection;
@@ -3642,10 +3759,12 @@ class _CraftingTestViewState extends State<CraftingTestView>
       if (localPos.dy > viewportSize.height * _inventoryReturnZoneFraction) {
         _returnPaperToInventory(_dragPaperId!);
       } else {
-        final paper =
-            _placedPapers.where((p) => p.id == _dragPaperId).firstOrNull;
+        final paper = _placedPapers
+            .where((p) => p.id == _dragPaperId)
+            .firstOrNull;
         if (paper != null) {
-          if (isMagnet && _magnetTargetBpIndex != null &&
+          if (isMagnet &&
+              _magnetTargetBpIndex != null &&
               _magnetAnimController.value > 0.5) {
             setState(() {
               paper.position.x = _magnetTargetPosition!.dx;
@@ -3659,8 +3778,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
               paper.rotationDeg = _magnetFreeRotation ?? paper.rotationDeg;
             });
             final corners = _paperWorldCorners(paper);
-            final snap = _computeSnap(corners,
-                excludePaperIds: {paper.id});
+            final snap = _computeSnap(corners, excludePaperIds: {paper.id});
             setState(() {
               paper.position.x += snap.dx;
               paper.position.y += snap.dy;
@@ -3670,10 +3788,10 @@ class _CraftingTestViewState extends State<CraftingTestView>
                 .where((p) => p.groupId == paper.groupId)
                 .toList();
             final excludeIds = groupMembers.map((p) => p.id).toSet();
-            final allCorners =
-                groupMembers.expand((p) => _paperWorldCorners(p)).toList();
-            final snap = _computeSnap(allCorners,
-                excludePaperIds: excludeIds);
+            final allCorners = groupMembers
+                .expand((p) => _paperWorldCorners(p))
+                .toList();
+            final snap = _computeSnap(allCorners, excludePaperIds: excludeIds);
             setState(() {
               for (final p in groupMembers) {
                 p.position.x += snap.dx;
@@ -3685,10 +3803,13 @@ class _CraftingTestViewState extends State<CraftingTestView>
             final selected = _placedPapers
                 .where((p) => _selectedPaperIds.contains(p.id))
                 .toList();
-            final allCorners =
-                selected.expand((p) => _paperWorldCorners(p)).toList();
-            final snap = _computeSnap(allCorners,
-                excludePaperIds: _selectedPaperIds);
+            final allCorners = selected
+                .expand((p) => _paperWorldCorners(p))
+                .toList();
+            final snap = _computeSnap(
+              allCorners,
+              excludePaperIds: _selectedPaperIds,
+            );
             setState(() {
               for (final p in selected) {
                 p.position.x += snap.dx;
@@ -3697,8 +3818,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
             });
           } else {
             final corners = _paperWorldCorners(paper);
-            final snap = _computeSnap(corners,
-                excludePaperIds: {paper.id});
+            final snap = _computeSnap(corners, excludePaperIds: {paper.id});
             setState(() {
               paper.position.x += snap.dx;
               paper.position.y += snap.dy;
@@ -3768,13 +3888,17 @@ class _CraftingTestViewState extends State<CraftingTestView>
     bool fullyInside,
   ) {
     final worldTL = _screenToWorld(
-      Offset(math.min(startScreen.dx, endScreen.dx),
-          math.min(startScreen.dy, endScreen.dy)),
+      Offset(
+        math.min(startScreen.dx, endScreen.dx),
+        math.min(startScreen.dy, endScreen.dy),
+      ),
       viewportSize,
     );
     final worldBR = _screenToWorld(
-      Offset(math.max(startScreen.dx, endScreen.dx),
-          math.max(startScreen.dy, endScreen.dy)),
+      Offset(
+        math.max(startScreen.dx, endScreen.dx),
+        math.max(startScreen.dy, endScreen.dy),
+      ),
       viewportSize,
     );
 
@@ -3861,8 +3985,9 @@ class _CraftingTestViewState extends State<CraftingTestView>
     if (_selectedPaperIds.length < 2) return;
     _pushUndo('Join');
 
-    final selected =
-        _placedPapers.where((p) => _selectedPaperIds.contains(p.id)).toList();
+    final selected = _placedPapers
+        .where((p) => _selectedPaperIds.contains(p.id))
+        .toList();
     if (selected.length < 2) return;
 
     // Use the most common color among selected papers.
@@ -3921,17 +4046,20 @@ class _CraftingTestViewState extends State<CraftingTestView>
       }
       final centroid = _polygonCentroid(exterior);
       final shifted = exterior.map((v) => v - centroid).toList();
-      final shiftedHoles =
-          mergedHoles.map((h) => h.map((v) => v - centroid).toList()).toList();
-      newPapers.add(PlacedPaper(
-        id: 'paper_${_nextPaperId++}',
-        paperColor: dominantColor,
-        position: Vector3(centroid.dx, centroid.dy, _paperZ),
-        rotationDeg: 0,
-        sizeLevel: 1,
-        localVertices: shifted,
-        localHoles: shiftedHoles,
-      ));
+      final shiftedHoles = mergedHoles
+          .map((h) => h.map((v) => v - centroid).toList())
+          .toList();
+      newPapers.add(
+        PlacedPaper(
+          id: 'paper_${_nextPaperId++}',
+          paperColor: dominantColor,
+          position: Vector3(centroid.dx, centroid.dy, _paperZ),
+          rotationDeg: 0,
+          sizeLevel: 1,
+          localVertices: shifted,
+          localHoles: shiftedHoles,
+        ),
+      );
     }
 
     if (newPapers.isEmpty) return;
@@ -3947,8 +4075,9 @@ class _CraftingTestViewState extends State<CraftingTestView>
 
   /// Centroid of the currently selected papers in world space.
   Vector3 _collectiveCentroid() {
-    final selected =
-        _placedPapers.where((p) => _selectedPaperIds.contains(p.id)).toList();
+    final selected = _placedPapers
+        .where((p) => _selectedPaperIds.contains(p.id))
+        .toList();
     if (selected.isEmpty) return Vector3.zero();
     var sx = 0.0, sy = 0.0, sz = 0.0;
     for (final p in selected) {
@@ -3978,51 +4107,60 @@ class _CraftingTestViewState extends State<CraftingTestView>
             ..._buildPaperOverlays(viewportSize),
             if (_rotCopyGizmoActive && _rotCopyCenterWorld != null)
               _buildRotCopyGizmo(viewportSize),
-            // Step cards - top, centered
+            // Step cards — top center, clear of the ← Dev back button.
             if (_selectedSet != null && _selectedSet!.steps.length > 1)
               FmSafePositioned(
-                top: 12,
-                left: 0,
-                right: 0,
+                top: 48,
+                left: 72,
+                right: 72,
                 child: Center(child: _buildStepCards()),
               ),
-            // Main toolbar - BOTTOM
+            // Main toolbar — bottom-left, above inventory + undo/redo.
             FmSafePositioned(
               bottom: 86,
               left: 12,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  GestureDetector(
-                    onTap: widget.onDismiss,
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.6),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.3),
+                  if (widget.onDismiss != null) ...[
+                    GestureDetector(
+                      onTap: widget.onDismiss,
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.6),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.close,
+                          color: Colors.white,
+                          size: 20,
                         ),
                       ),
-                      child: const Icon(
-                        Icons.close,
-                        color: Colors.white,
-                        size: 20,
-                      ),
                     ),
-                  ),
+                  ],
                   if (_craftingMode == CraftingMode.drawLine &&
                       _drawnCutLines.isNotEmpty) ...[
-                    const SizedBox(width: 8),
+                    if (widget.onDismiss != null) const SizedBox(width: 8),
                     _buildCutButton(),
                   ],
                   if (_blueprintSets.isNotEmpty) ...[
-                    const SizedBox(width: 8),
+                    if (widget.onDismiss != null ||
+                        (_craftingMode == CraftingMode.drawLine &&
+                            _drawnCutLines.isNotEmpty))
+                      const SizedBox(width: 8),
                     _buildBlueprintDropdown(),
                   ],
                   if (_selectedBlueprint != null) ...[
-                    const SizedBox(width: 8),
+                    if (widget.onDismiss != null ||
+                        _blueprintSets.isNotEmpty ||
+                        (_craftingMode == CraftingMode.drawLine &&
+                            _drawnCutLines.isNotEmpty))
+                      const SizedBox(width: 8),
                     _buildUnionToggle(),
                     const SizedBox(width: 8),
                     _buildCheckModeToggle(),
@@ -4034,15 +4172,12 @@ class _CraftingTestViewState extends State<CraftingTestView>
                 ],
               ),
             ),
-            FmSafePositioned(
-              left: 12,
-              top: 80,
-              child: _buildToolModeBar(),
-            ),
+            // Tool modes — left side, below ← Dev / step-card row.
+            FmSafePositioned(left: 12, top: 48, child: _buildToolModeBar()),
             FmSafePositioned(
               right: 12,
-              top: 0,
-              bottom: 0,
+              top: 48,
+              bottom: 100,
               child: Align(
                 alignment: Alignment.centerRight,
                 child: Column(
@@ -4098,9 +4233,9 @@ class _CraftingTestViewState extends State<CraftingTestView>
     if (_blueprintTotalArea <= 0) {
       progress = 0;
     } else if (_progressAnimController.isAnimating) {
-      progress = _progressAnimFrom +
-          (_progressAnimTo - _progressAnimFrom) *
-              _progressAnimController.value;
+      progress =
+          _progressAnimFrom +
+          (_progressAnimTo - _progressAnimFrom) * _progressAnimController.value;
     } else {
       progress = (_blueprintLockedArea / _blueprintTotalArea).clamp(0, 1);
     }
@@ -4126,8 +4261,9 @@ class _CraftingTestViewState extends State<CraftingTestView>
                     style: TextStyle(
                       color: isCrafted ? Colors.amber : Colors.white70,
                       fontSize: 11,
-                      fontWeight:
-                          isCrafted ? FontWeight.bold : FontWeight.normal,
+                      fontWeight: isCrafted
+                          ? FontWeight.bold
+                          : FontWeight.normal,
                     ),
                   ),
                   Text(
@@ -4180,16 +4316,16 @@ class _CraftingTestViewState extends State<CraftingTestView>
             onTap: isCutting
                 ? null
                 : () => setState(() {
-                      _craftingMode = CraftingMode.pan;
-                      _drawnCutLines.clear();
-                      _lineDrawStart = null;
-                      _lineDrawPreview = null;
-                      _panModeSelectedPaperId = null;
-                      _paintedCells = {};
-                      _lastPaintCell = null;
-                      _erasedCells = {};
-                      _lastEraseCell = null;
-                    }),
+                    _craftingMode = CraftingMode.pan;
+                    _drawnCutLines.clear();
+                    _lineDrawStart = null;
+                    _lineDrawPreview = null;
+                    _panModeSelectedPaperId = null;
+                    _paintedCells = {};
+                    _lastPaintCell = null;
+                    _erasedCells = {};
+                    _lastEraseCell = null;
+                  }),
           ),
           const SizedBox(height: 2),
           _ToolModeButton(
@@ -4199,16 +4335,16 @@ class _CraftingTestViewState extends State<CraftingTestView>
             onTap: isCutting
                 ? null
                 : () => setState(() {
-                      _craftingMode = CraftingMode.select;
-                      _drawnCutLines.clear();
-                      _lineDrawStart = null;
-                      _lineDrawPreview = null;
-                      _panModeSelectedPaperId = null;
-                      _paintedCells = {};
-                      _lastPaintCell = null;
-                      _erasedCells = {};
-                      _lastEraseCell = null;
-                    }),
+                    _craftingMode = CraftingMode.select;
+                    _drawnCutLines.clear();
+                    _lineDrawStart = null;
+                    _lineDrawPreview = null;
+                    _panModeSelectedPaperId = null;
+                    _paintedCells = {};
+                    _lastPaintCell = null;
+                    _erasedCells = {};
+                    _lastEraseCell = null;
+                  }),
           ),
           const SizedBox(height: 2),
           _ToolModeButton(
@@ -4218,20 +4354,20 @@ class _CraftingTestViewState extends State<CraftingTestView>
             onTap: isCutting
                 ? null
                 : () => setState(() {
-                      if (_craftingMode == CraftingMode.drawLine) {
-                        _craftingMode = CraftingMode.pan;
-                        _drawnCutLines.clear();
-                        _lineDrawStart = null;
-                        _lineDrawPreview = null;
-                      } else {
-                        _craftingMode = CraftingMode.drawLine;
-                        _selectedPaperIds = {};
-                        _isRotationGizmoActive = false;
-                        _panModeSelectedPaperId = null;
-                        _paintedCells = {};
-                        _lastPaintCell = null;
-                      }
-                    }),
+                    if (_craftingMode == CraftingMode.drawLine) {
+                      _craftingMode = CraftingMode.pan;
+                      _drawnCutLines.clear();
+                      _lineDrawStart = null;
+                      _lineDrawPreview = null;
+                    } else {
+                      _craftingMode = CraftingMode.drawLine;
+                      _selectedPaperIds = {};
+                      _isRotationGizmoActive = false;
+                      _panModeSelectedPaperId = null;
+                      _paintedCells = {};
+                      _lastPaintCell = null;
+                    }
+                  }),
           ),
           const SizedBox(height: 2),
           _ToolModeButton(
@@ -4241,20 +4377,20 @@ class _CraftingTestViewState extends State<CraftingTestView>
             onTap: isCutting
                 ? null
                 : () => setState(() {
-                      if (_craftingMode == CraftingMode.paint) {
-                        _craftingMode = CraftingMode.pan;
-                        _paintedCells = {};
-                        _lastPaintCell = null;
-                      } else {
-                        _craftingMode = CraftingMode.paint;
-                        _selectedPaperIds = {};
-                        _isRotationGizmoActive = false;
-                        _panModeSelectedPaperId = null;
-                        _drawnCutLines.clear();
-                        _lineDrawStart = null;
-                        _lineDrawPreview = null;
-                      }
-                    }),
+                    if (_craftingMode == CraftingMode.paint) {
+                      _craftingMode = CraftingMode.pan;
+                      _paintedCells = {};
+                      _lastPaintCell = null;
+                    } else {
+                      _craftingMode = CraftingMode.paint;
+                      _selectedPaperIds = {};
+                      _isRotationGizmoActive = false;
+                      _panModeSelectedPaperId = null;
+                      _drawnCutLines.clear();
+                      _lineDrawStart = null;
+                      _lineDrawPreview = null;
+                    }
+                  }),
           ),
           const SizedBox(height: 2),
           _ToolModeButton(
@@ -4264,22 +4400,22 @@ class _CraftingTestViewState extends State<CraftingTestView>
             onTap: isCutting
                 ? null
                 : () => setState(() {
-                      if (_craftingMode == CraftingMode.erase) {
-                        _craftingMode = CraftingMode.pan;
-                        _erasedCells = {};
-                        _lastEraseCell = null;
-                      } else {
-                        _craftingMode = CraftingMode.erase;
-                        _selectedPaperIds = {};
-                        _isRotationGizmoActive = false;
-                        _panModeSelectedPaperId = null;
-                        _drawnCutLines.clear();
-                        _lineDrawStart = null;
-                        _lineDrawPreview = null;
-                        _paintedCells = {};
-                        _lastPaintCell = null;
-                      }
-                    }),
+                    if (_craftingMode == CraftingMode.erase) {
+                      _craftingMode = CraftingMode.pan;
+                      _erasedCells = {};
+                      _lastEraseCell = null;
+                    } else {
+                      _craftingMode = CraftingMode.erase;
+                      _selectedPaperIds = {};
+                      _isRotationGizmoActive = false;
+                      _panModeSelectedPaperId = null;
+                      _drawnCutLines.clear();
+                      _lineDrawStart = null;
+                      _lineDrawPreview = null;
+                      _paintedCells = {};
+                      _lastPaintCell = null;
+                    }
+                  }),
           ),
           const SizedBox(height: 2),
           _ToolModeButton(
@@ -4289,26 +4425,26 @@ class _CraftingTestViewState extends State<CraftingTestView>
             onTap: isCutting
                 ? null
                 : () => setState(() {
-                      if (_craftingMode == CraftingMode.alignGrid) {
-                        _craftingMode = CraftingMode.pan;
-                        _alignGridPreviewVertex = null;
-                        _alignGridHoveredPolyIndex = null;
-                        _alignGridDragging = false;
-                        _alignGridDragStart = null;
-                      } else {
-                        _craftingMode = CraftingMode.alignGrid;
-                        _selectedPaperIds = {};
-                        _isRotationGizmoActive = false;
-                        _panModeSelectedPaperId = null;
-                        _drawnCutLines.clear();
-                        _lineDrawStart = null;
-                        _lineDrawPreview = null;
-                        _paintedCells = {};
-                        _lastPaintCell = null;
-                        _erasedCells = {};
-                        _lastEraseCell = null;
-                      }
-                    }),
+                    if (_craftingMode == CraftingMode.alignGrid) {
+                      _craftingMode = CraftingMode.pan;
+                      _alignGridPreviewVertex = null;
+                      _alignGridHoveredPolyIndex = null;
+                      _alignGridDragging = false;
+                      _alignGridDragStart = null;
+                    } else {
+                      _craftingMode = CraftingMode.alignGrid;
+                      _selectedPaperIds = {};
+                      _isRotationGizmoActive = false;
+                      _panModeSelectedPaperId = null;
+                      _drawnCutLines.clear();
+                      _lineDrawStart = null;
+                      _lineDrawPreview = null;
+                      _paintedCells = {};
+                      _lastPaintCell = null;
+                      _erasedCells = {};
+                      _lastEraseCell = null;
+                    }
+                  }),
           ),
           const SizedBox(height: 2),
           _ToolModeButton(
@@ -4318,21 +4454,21 @@ class _CraftingTestViewState extends State<CraftingTestView>
             onTap: isCutting
                 ? null
                 : () => setState(() {
-                      if (_craftingMode == CraftingMode.magnet) {
-                        _craftingMode = CraftingMode.pan;
-                      } else {
-                        _craftingMode = CraftingMode.magnet;
-                        _selectedPaperIds = {};
-                        _isRotationGizmoActive = false;
-                        _panModeSelectedPaperId = null;
-                        _drawnCutLines.clear();
-                        _lineDrawStart = null;
-                        _lineDrawPreview = null;
-                        _paintedCells = {};
-                        _lastPaintCell = null;
-                        _clearMagnetState();
-                      }
-                    }),
+                    if (_craftingMode == CraftingMode.magnet) {
+                      _craftingMode = CraftingMode.pan;
+                    } else {
+                      _craftingMode = CraftingMode.magnet;
+                      _selectedPaperIds = {};
+                      _isRotationGizmoActive = false;
+                      _panModeSelectedPaperId = null;
+                      _drawnCutLines.clear();
+                      _lineDrawStart = null;
+                      _lineDrawPreview = null;
+                      _paintedCells = {};
+                      _lastPaintCell = null;
+                      _clearMagnetState();
+                    }
+                  }),
           ),
           const SizedBox(height: 2),
           _ToolModeButton(
@@ -4342,28 +4478,28 @@ class _CraftingTestViewState extends State<CraftingTestView>
             onTap: isCutting
                 ? null
                 : () => setState(() {
-                      if (_craftingMode == CraftingMode.stretch) {
-                        _craftingMode = CraftingMode.pan;
-                        _stretchPaperId = null;
-                        _stretchHandleIndex = null;
-                        _stretchScaleX = 1.0;
-                        _stretchScaleY = 1.0;
-                      } else {
-                        _craftingMode = CraftingMode.stretch;
-                        _selectedPaperIds = {};
-                        _isRotationGizmoActive = false;
-                        _panModeSelectedPaperId = null;
-                        _drawnCutLines.clear();
-                        _lineDrawStart = null;
-                        _lineDrawPreview = null;
-                        _paintedCells = {};
-                        _lastPaintCell = null;
-                        _stretchPaperId = null;
-                        _stretchHandleIndex = null;
-                        _stretchScaleX = 1.0;
-                        _stretchScaleY = 1.0;
-                      }
-                    }),
+                    if (_craftingMode == CraftingMode.stretch) {
+                      _craftingMode = CraftingMode.pan;
+                      _stretchPaperId = null;
+                      _stretchHandleIndex = null;
+                      _stretchScaleX = 1.0;
+                      _stretchScaleY = 1.0;
+                    } else {
+                      _craftingMode = CraftingMode.stretch;
+                      _selectedPaperIds = {};
+                      _isRotationGizmoActive = false;
+                      _panModeSelectedPaperId = null;
+                      _drawnCutLines.clear();
+                      _lineDrawStart = null;
+                      _lineDrawPreview = null;
+                      _paintedCells = {};
+                      _lastPaintCell = null;
+                      _stretchPaperId = null;
+                      _stretchHandleIndex = null;
+                      _stretchScaleX = 1.0;
+                      _stretchScaleY = 1.0;
+                    }
+                  }),
           ),
           const SizedBox(height: 6),
           Container(height: 1, width: 24, color: Colors.white24),
@@ -4375,22 +4511,22 @@ class _CraftingTestViewState extends State<CraftingTestView>
             onTap: isCutting
                 ? null
                 : () => setState(() {
-                      if (_craftingMode == CraftingMode.mirror) {
-                        _craftingMode = CraftingMode.select;
-                        _mirrorLineStart = null;
-                        _mirrorLinePreview = null;
-                      } else {
-                        _craftingMode = CraftingMode.mirror;
-                        _mirrorLineStart = null;
-                        _mirrorLinePreview = null;
-                        _drawnCutLines.clear();
-                        _lineDrawStart = null;
-                        _lineDrawPreview = null;
-                        _panModeSelectedPaperId = null;
-                        _paintedCells = {};
-                        _lastPaintCell = null;
-                      }
-                    }),
+                    if (_craftingMode == CraftingMode.mirror) {
+                      _craftingMode = CraftingMode.select;
+                      _mirrorLineStart = null;
+                      _mirrorLinePreview = null;
+                    } else {
+                      _craftingMode = CraftingMode.mirror;
+                      _mirrorLineStart = null;
+                      _mirrorLinePreview = null;
+                      _drawnCutLines.clear();
+                      _lineDrawStart = null;
+                      _lineDrawPreview = null;
+                      _panModeSelectedPaperId = null;
+                      _paintedCells = {};
+                      _lastPaintCell = null;
+                    }
+                  }),
           ),
           const SizedBox(height: 2),
           _ToolModeButton(
@@ -4400,23 +4536,23 @@ class _CraftingTestViewState extends State<CraftingTestView>
             onTap: isCutting
                 ? null
                 : () => setState(() {
-                      if (_craftingMode == CraftingMode.rotationCopy) {
-                        _craftingMode = CraftingMode.select;
-                        _rotCopyCenterWorld = null;
-                        _rotCopyGizmoActive = false;
-                      } else {
-                        _craftingMode = CraftingMode.rotationCopy;
-                        _rotCopyCenterWorld = null;
-                        _rotCopyGizmoActive = false;
-                        _rotCopyAngleDeg = 0;
-                        _drawnCutLines.clear();
-                        _lineDrawStart = null;
-                        _lineDrawPreview = null;
-                        _panModeSelectedPaperId = null;
-                        _paintedCells = {};
-                        _lastPaintCell = null;
-                      }
-                    }),
+                    if (_craftingMode == CraftingMode.rotationCopy) {
+                      _craftingMode = CraftingMode.select;
+                      _rotCopyCenterWorld = null;
+                      _rotCopyGizmoActive = false;
+                    } else {
+                      _craftingMode = CraftingMode.rotationCopy;
+                      _rotCopyCenterWorld = null;
+                      _rotCopyGizmoActive = false;
+                      _rotCopyAngleDeg = 0;
+                      _drawnCutLines.clear();
+                      _lineDrawStart = null;
+                      _lineDrawPreview = null;
+                      _panModeSelectedPaperId = null;
+                      _paintedCells = {};
+                      _lastPaintCell = null;
+                    }
+                  }),
           ),
           const SizedBox(height: 2),
           _ToolModeButton(
@@ -4426,22 +4562,22 @@ class _CraftingTestViewState extends State<CraftingTestView>
             onTap: isCutting
                 ? null
                 : () => setState(() {
-                      if (_craftingMode == CraftingMode.translationCopy) {
-                        _craftingMode = CraftingMode.select;
-                        _transCopyStartWorld = null;
-                        _transCopyCurrentWorld = null;
-                      } else {
-                        _craftingMode = CraftingMode.translationCopy;
-                        _transCopyStartWorld = null;
-                        _transCopyCurrentWorld = null;
-                        _drawnCutLines.clear();
-                        _lineDrawStart = null;
-                        _lineDrawPreview = null;
-                        _panModeSelectedPaperId = null;
-                        _paintedCells = {};
-                        _lastPaintCell = null;
-                      }
-                    }),
+                    if (_craftingMode == CraftingMode.translationCopy) {
+                      _craftingMode = CraftingMode.select;
+                      _transCopyStartWorld = null;
+                      _transCopyCurrentWorld = null;
+                    } else {
+                      _craftingMode = CraftingMode.translationCopy;
+                      _transCopyStartWorld = null;
+                      _transCopyCurrentWorld = null;
+                      _drawnCutLines.clear();
+                      _lineDrawStart = null;
+                      _lineDrawPreview = null;
+                      _panModeSelectedPaperId = null;
+                      _paintedCells = {};
+                      _lastPaintCell = null;
+                    }
+                  }),
           ),
           if (_craftingMode == CraftingMode.paint) ...[
             const SizedBox(height: 4),
@@ -4455,7 +4591,8 @@ class _CraftingTestViewState extends State<CraftingTestView>
                 mainAxisSize: MainAxisSize.min,
                 children: _useStructureInventory
                     ? [
-                        for (final entry in _structureInventory!.contents.entries)
+                        for (final entry
+                            in _structureInventory!.contents.entries)
                           Padding(
                             padding: const EdgeInsets.symmetric(vertical: 1),
                             child: GestureDetector(
@@ -4528,9 +4665,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
                   child: Icon(
                     Icons.merge_type,
                     size: 14,
-                    color: _paintFusionEnabled
-                        ? Colors.white
-                        : Colors.white38,
+                    color: _paintFusionEnabled ? Colors.white : Colors.white38,
                   ),
                 ),
               ),
@@ -4542,8 +4677,12 @@ class _CraftingTestViewState extends State<CraftingTestView>
   }
 
   Widget _buildSnapToolbar() {
-    Widget snapToggle(IconData icon, String tooltip, bool active,
-        ValueChanged<bool> onChanged) {
+    Widget snapToggle(
+      IconData icon,
+      String tooltip,
+      bool active,
+      ValueChanged<bool> onChanged,
+    ) {
       return Tooltip(
         message: tooltip,
         child: Material(
@@ -4581,14 +4720,26 @@ class _CraftingTestViewState extends State<CraftingTestView>
             padding: EdgeInsets.only(bottom: 4),
             child: Icon(Icons.adjust, color: Colors.white54, size: 14),
           ),
-          snapToggle(Icons.grid_3x3, 'Snap to grid', _snapGrid,
-              (v) => setState(() => _snapGrid = v)),
+          snapToggle(
+            Icons.grid_3x3,
+            'Snap to grid',
+            _snapGrid,
+            (v) => setState(() => _snapGrid = v),
+          ),
           const SizedBox(height: 2),
-          snapToggle(Icons.architecture, 'Snap to blueprint', _snapBlueprint,
-              (v) => setState(() => _snapBlueprint = v)),
+          snapToggle(
+            Icons.architecture,
+            'Snap to blueprint',
+            _snapBlueprint,
+            (v) => setState(() => _snapBlueprint = v),
+          ),
           const SizedBox(height: 2),
-          snapToggle(Icons.note_outlined, 'Snap to paper', _snapPaper,
-              (v) => setState(() => _snapPaper = v)),
+          snapToggle(
+            Icons.note_outlined,
+            'Snap to paper',
+            _snapPaper,
+            (v) => setState(() => _snapPaper = v),
+          ),
         ],
       ),
     );
@@ -4648,7 +4799,9 @@ class _CraftingTestViewState extends State<CraftingTestView>
                 child: LinearProgressIndicator(
                   value: progress,
                   backgroundColor: Colors.white12,
-                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.redAccent),
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                    Colors.redAccent,
+                  ),
                   minHeight: 6,
                 ),
               ),
@@ -4724,7 +4877,10 @@ class _CraftingTestViewState extends State<CraftingTestView>
         itemBuilder: (context) => [
           const PopupMenuItem(
             value: '',
-            child: Text('None', style: TextStyle(color: Colors.white54, fontSize: 13)),
+            child: Text(
+              'None',
+              style: TextStyle(color: Colors.white54, fontSize: 13),
+            ),
           ),
           for (final set in _blueprintSets)
             PopupMenuItem(
@@ -4732,9 +4888,13 @@ class _CraftingTestViewState extends State<CraftingTestView>
               child: Text(
                 set.name,
                 style: TextStyle(
-                  color: set.name == _selectedSet?.name ? Colors.white : Colors.white70,
+                  color: set.name == _selectedSet?.name
+                      ? Colors.white
+                      : Colors.white70,
                   fontSize: 13,
-                  fontWeight: set.name == _selectedSet?.name ? FontWeight.bold : FontWeight.normal,
+                  fontWeight: set.name == _selectedSet?.name
+                      ? FontWeight.bold
+                      : FontWeight.normal,
                 ),
               ),
             ),
@@ -4787,7 +4947,8 @@ class _CraftingTestViewState extends State<CraftingTestView>
             ? baseCardWidth + (futureCount - 1) * overlapOffset
             : 0.0;
         final gap = 12.0;
-        final totalWidth = completedWidth +
+        final totalWidth =
+            completedWidth +
             (completedCount > 0 ? gap : 0) +
             activeCardWidth +
             (futureCount > 0 ? gap : 0) +
@@ -4834,7 +4995,8 @@ class _CraftingTestViewState extends State<CraftingTestView>
                 AnimatedPositioned(
                   duration: const Duration(milliseconds: 400),
                   curve: Curves.easeOutCubic,
-                  left: completedWidth +
+                  left:
+                      completedWidth +
                       (completedCount > 0 ? gap : 0) +
                       activeCardWidth +
                       gap +
@@ -4877,24 +5039,26 @@ class _CraftingTestViewState extends State<CraftingTestView>
             color: isCurrent
                 ? const Color(0xFFAA66FF)
                 : isCompleted
-                    ? const Color(0xFF66FF66)
-                    : const Color(0xFF7733CC).withValues(alpha: 0.4),
+                ? const Color(0xFF66FF66)
+                : const Color(0xFF7733CC).withValues(alpha: 0.4),
             width: isCurrent ? 2.0 : 1.5,
           ),
           color: isCompleted
               ? const Color(0xFF66FF66).withValues(alpha: 0.1)
               : isCurrent
-                  ? const Color(0xFFAA66FF).withValues(alpha: 0.05)
-                  : const Color(0xFF1A1A2E).withValues(alpha: 0.8),
+              ? const Color(0xFFAA66FF).withValues(alpha: 0.05)
+              : const Color(0xFF1A1A2E).withValues(alpha: 0.8),
         ),
         child: Center(
           child: isCompleted
-              ? Icon(Icons.check, color: const Color(0xFF66FF66), size: iconSize)
+              ? Icon(
+                  Icons.check,
+                  color: const Color(0xFF66FF66),
+                  size: iconSize,
+                )
               : Icon(
                   IconData(step.iconCodePoint, fontFamily: 'MaterialIcons'),
-                  color: isCurrent
-                      ? const Color(0xFFAA66FF)
-                      : Colors.white38,
+                  color: isCurrent ? const Color(0xFFAA66FF) : Colors.white38,
                   size: iconSize,
                 ),
         ),
@@ -4926,7 +5090,9 @@ class _CraftingTestViewState extends State<CraftingTestView>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: active ? Colors.white.withValues(alpha: 0.15) : Colors.transparent,
+          color: active
+              ? Colors.white.withValues(alpha: 0.15)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
         ),
         child: Text(
@@ -4994,19 +5160,23 @@ class _CraftingTestViewState extends State<CraftingTestView>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.auto_fix_high,
-                  color: _completionPhase == CompletionPhase.none
-                      ? Colors.amberAccent
-                      : Colors.white24,
-                  size: 18),
+              Icon(
+                Icons.auto_fix_high,
+                color: _completionPhase == CompletionPhase.none
+                    ? Colors.amberAccent
+                    : Colors.white24,
+                size: 18,
+              ),
               const SizedBox(width: 4),
-              Text('Fill All',
-                  style: TextStyle(
-                    color: _completionPhase == CompletionPhase.none
-                        ? Colors.white
-                        : Colors.white38,
-                    fontSize: 12,
-                  )),
+              Text(
+                'Fill All',
+                style: TextStyle(
+                  color: _completionPhase == CompletionPhase.none
+                      ? Colors.white
+                      : Colors.white38,
+                  fontSize: 12,
+                ),
+              ),
             ],
           ),
         ),
@@ -5025,7 +5195,8 @@ class _CraftingTestViewState extends State<CraftingTestView>
     final unfilledIndices = <int>[];
     for (var i = 0; i < _blueprintWorldPolygons.length; i++) {
       final alreadyLocked = _placedPapers.any(
-          (p) => p.locked && p.lockedBlueprintIndex == i);
+        (p) => p.locked && p.lockedBlueprintIndex == i,
+      );
       if (!alreadyLocked) {
         unfilledIndices.add(i);
       }
@@ -5043,8 +5214,9 @@ class _CraftingTestViewState extends State<CraftingTestView>
         if (poly.length < 3) continue;
 
         final centroid = _polyCentroid(poly);
-        final localVerts =
-            poly.map((v) => Offset(v.dx - centroid.dx, v.dy - centroid.dy)).toList();
+        final localVerts = poly
+            .map((v) => Offset(v.dx - centroid.dx, v.dy - centroid.dy))
+            .toList();
 
         final paper = PlacedPaper(
           id: 'paper_${_nextPaperId++}',
@@ -5067,9 +5239,10 @@ class _CraftingTestViewState extends State<CraftingTestView>
           id: 'paper_${_nextPaperId++}',
           paperColor: colors[leaveOutIdx % colors.length],
           position: Vector3(
-              centroid.dx + _majorGridSpacing * 3,
-              centroid.dy + _majorGridSpacing * 2,
-              _paperZ),
+            centroid.dx + _majorGridSpacing * 3,
+            centroid.dy + _majorGridSpacing * 2,
+            _paperZ,
+          ),
           localVertices: localVerts,
         );
         _placedPapers.add(paper);
@@ -5091,19 +5264,23 @@ class _CraftingTestViewState extends State<CraftingTestView>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.bolt,
-                  color: _completionPhase == CompletionPhase.none
-                      ? Colors.orangeAccent
-                      : Colors.white24,
-                  size: 18),
+              Icon(
+                Icons.bolt,
+                color: _completionPhase == CompletionPhase.none
+                    ? Colors.orangeAccent
+                    : Colors.white24,
+                size: 18,
+              ),
               const SizedBox(width: 4),
-              Text('Craft Now',
-                  style: TextStyle(
-                    color: _completionPhase == CompletionPhase.none
-                        ? Colors.white
-                        : Colors.white38,
-                    fontSize: 12,
-                  )),
+              Text(
+                'Craft Now',
+                style: TextStyle(
+                  color: _completionPhase == CompletionPhase.none
+                      ? Colors.white
+                      : Colors.white38,
+                  fontSize: 12,
+                ),
+              ),
             ],
           ),
         ),
@@ -5122,8 +5299,9 @@ class _CraftingTestViewState extends State<CraftingTestView>
 
     setState(() {
       for (var i = 0; i < _blueprintWorldPolygons.length; i++) {
-        final alreadyLocked =
-            _placedPapers.any((p) => p.locked && p.lockedBlueprintIndex == i);
+        final alreadyLocked = _placedPapers.any(
+          (p) => p.locked && p.lockedBlueprintIndex == i,
+        );
         if (alreadyLocked) continue;
 
         final poly = _blueprintWorldPolygons[i];
@@ -5193,8 +5371,10 @@ class _CraftingTestViewState extends State<CraftingTestView>
               final focal = details.localFocalPoint;
               if (_gestureLastFocalPoint != null) {
                 final delta = focal - _gestureLastFocalPoint!;
-                final shorter =
-                    math.min(viewportSize.width, viewportSize.height);
+                final shorter = math.min(
+                  viewportSize.width,
+                  viewportSize.height,
+                );
                 final worldPerPixel = 2 * _orthoScale / shorter;
                 setState(() {
                   _panOffset = Offset(
@@ -5207,8 +5387,10 @@ class _CraftingTestViewState extends State<CraftingTestView>
               final scaleChange = details.scale / _gestureLastScale;
               if (scaleChange > 0 && scaleChange != 1.0) {
                 setState(() {
-                  _orthoScale =
-                      (_orthoScale / scaleChange).clamp(_minOrthoScale, _maxOrthoScale);
+                  _orthoScale = (_orthoScale / scaleChange).clamp(
+                    _minOrthoScale,
+                    _maxOrthoScale,
+                  );
                 });
                 _scheduleGridLodSync();
               }
@@ -5229,8 +5411,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
                 _handlePointerDown(e.localPosition, viewportSize),
             onPointerMove: (e) =>
                 _handlePointerMove(e.localPosition, viewportSize),
-            onPointerUp: (e) =>
-                _handlePointerUp(e.localPosition, viewportSize),
+            onPointerUp: (e) => _handlePointerUp(e.localPosition, viewportSize),
             onPointerSignal: (event) {
               if (event is PointerScrollEvent) {
                 setState(() {
@@ -5268,114 +5449,120 @@ class _CraftingTestViewState extends State<CraftingTestView>
               _lastEraseCell = null;
             },
             child: Stack(
-            fit: StackFit.expand,
-            children: [
-              CustomPaint(
-                painter: CraftingTestPainter(
-                  geometry: _geometry,
-                  objectRotation: _objectRotation,
-                  objectPosition: _objectPosition,
-                  objectColor: _objectColor,
-                  friendVisible: _friendVisible,
-                  drawingPlaneSize: _drawingPlaneSize,
-                  orthoScale: _orthoScale,
-                  panOffset: _panOffset,
-                  canvasDisplayMode: _canvasDisplayMode,
-                  showMinorLines: _showMinorLines,
-                  papers: _placedPapers,
-                  selectedPaperIds: _selectedPaperIds,
-                  friendExpression: FriendExpressionConfig.cube,
-                  eyeGeometry3d: FriendEyeGeometry3d.sphere,
-                  blueprintPolygons: _blueprintUnionMode
-                      ? _blueprintUnionPolygons
-                      : _blueprintWorldPolygons,
-                  filledBlueprintIndices: _checkMode && !_blueprintUnionMode
-                      ? _filledBlueprintIndices
-                      : const {},
-                  marqueeRect: _isMarquee &&
-                          _marqueeStartScreen != null &&
-                          _marqueeCurrentScreen != null
-                      ? Rect.fromPoints(
-                          _marqueeStartScreen!, _marqueeCurrentScreen!)
-                      : null,
-                  marqueeIsIntersect: _isMarquee &&
-                      _marqueeStartScreen != null &&
-                      _marqueeCurrentScreen != null &&
-                      _marqueeCurrentScreen!.dx < _marqueeStartScreen!.dx,
-                  marqueeDashOffset:
-                      _marqueeDashController.value * 16.0,
-                  lockAnimatingPaperIds: _lockAnimatingPaperIds,
-                  lockAnimProgress: _lockAnimProgress,
-                  completionPhase: _completionPhase,
-                  foldNodeStates: _foldNodeStates,
-                  foldDisplacementMatrix: _foldDisplacementMatrix,
-                  foldColorProgress: _foldColorProgress,
-                  foldOpacity: _foldOpacity,
-                  dotDissolveProgress:
-                      _completionPhase == CompletionPhase.dissolveReveal
-                          ? _dotDissolveProgress
-                          : (_completionPhase == CompletionPhase.none ? null : 1.0),
-                  foldViewProjection: _computeFoldVP(viewportSize),
-                  dotWipeOpacityAt: _dotWipeAnimation != null &&
-                          _dotWipeAnimation!.isAnimating
-                      ? _dotWipeAnimation!.opacityAt
-                      : null,
-                  structureFootprint: widget.structureFootprint,
-                  drawnCutLines: _drawnCutLines,
-                  lineDrawStart: _lineDrawStart,
-                  lineDrawPreview: _lineDrawPreview,
-                  craftingMode: _craftingMode,
-                  activeToolpath: _activeToolpath,
-                  cutAnimProgress: _craftingMode == CraftingMode.cutting
-                      ? _cutAnimController.value
-                      : 0,
-                  hideDrawingPlane: widget.hideDrawingPlane,
-                  paintedCells: _paintedCells,
-                  paintColor: _paintColor,
-                  erasedCells: _erasedCells,
-                  mirrorLineStart: _mirrorLineStart,
-                  mirrorLinePreview: _mirrorLinePreview,
-                  ghostPapers: _computeGhostPapers(),
-                  rotCopyCenterWorld: _rotCopyCenterWorld,
-                  transCopyArrow:
-                      _transCopyStartWorld != null &&
-                              _transCopyCurrentWorld != null
-                          ? (_transCopyStartWorld!, _transCopyCurrentWorld!)
-                          : null,
-                  gridDivisions: _gridDivisions,
-                  gridLodFrom: _gridLodFrom,
-                  gridLodTo: _gridLodTo,
-                  gridLodFadeT: _gridLodAnimController.value,
-                  activeGridSpacing: _activeGridSpacing,
-                  paperColorResolver: displayColorForPaper,
-                  gridOriginOffset: _gridOriginOffset,
-                  alignGridIndicator: _alignGridPreviewVertex,
-                  alignGridHighlightPolyIndex: _alignGridHoveredPolyIndex,
-                  stretchPaperId: _stretchPaperId,
-                  stretchScaleX: _stretchScaleX,
-                  stretchScaleY: _stretchScaleY,
-                  stretchHandleIndex: _stretchHandleIndex,
-                  stretchOriginalBounds: _stretchOriginalBounds,
-                  stretchAnchorLocal: _stretchAnchorLocal,
-                  gridRegionAssist: _gridRegionAssist,
+              fit: StackFit.expand,
+              children: [
+                CustomPaint(
+                  painter: CraftingTestPainter(
+                    geometry: _geometry,
+                    objectRotation: _objectRotation,
+                    objectPosition: _objectPosition,
+                    objectColor: _objectColor,
+                    friendVisible: _friendVisible,
+                    drawingPlaneSize: _drawingPlaneSize,
+                    orthoScale: _orthoScale,
+                    panOffset: _panOffset,
+                    canvasDisplayMode: _canvasDisplayMode,
+                    showMinorLines: _showMinorLines,
+                    papers: _placedPapers,
+                    selectedPaperIds: _selectedPaperIds,
+                    friendExpression: FriendExpressionConfig.cube,
+                    eyeGeometry3d: FriendEyeGeometry3d.sphere,
+                    blueprintPolygons: _blueprintUnionMode
+                        ? _blueprintUnionPolygons
+                        : _blueprintWorldPolygons,
+                    filledBlueprintIndices: _checkMode && !_blueprintUnionMode
+                        ? _filledBlueprintIndices
+                        : const {},
+                    marqueeRect:
+                        _isMarquee &&
+                            _marqueeStartScreen != null &&
+                            _marqueeCurrentScreen != null
+                        ? Rect.fromPoints(
+                            _marqueeStartScreen!,
+                            _marqueeCurrentScreen!,
+                          )
+                        : null,
+                    marqueeIsIntersect:
+                        _isMarquee &&
+                        _marqueeStartScreen != null &&
+                        _marqueeCurrentScreen != null &&
+                        _marqueeCurrentScreen!.dx < _marqueeStartScreen!.dx,
+                    marqueeDashOffset: _marqueeDashController.value * 16.0,
+                    lockAnimatingPaperIds: _lockAnimatingPaperIds,
+                    lockAnimProgress: _lockAnimProgress,
+                    completionPhase: _completionPhase,
+                    foldNodeStates: _foldNodeStates,
+                    foldDisplacementMatrix: _foldDisplacementMatrix,
+                    foldColorProgress: _foldColorProgress,
+                    foldOpacity: _foldOpacity,
+                    dotDissolveProgress:
+                        _completionPhase == CompletionPhase.dissolveReveal
+                        ? _dotDissolveProgress
+                        : (_completionPhase == CompletionPhase.none
+                              ? null
+                              : 1.0),
+                    foldViewProjection: _computeFoldVP(viewportSize),
+                    dotWipeOpacityAt:
+                        _dotWipeAnimation != null &&
+                            _dotWipeAnimation!.isAnimating
+                        ? _dotWipeAnimation!.opacityAt
+                        : null,
+                    structureFootprint: widget.structureFootprint,
+                    drawnCutLines: _drawnCutLines,
+                    lineDrawStart: _lineDrawStart,
+                    lineDrawPreview: _lineDrawPreview,
+                    craftingMode: _craftingMode,
+                    activeToolpath: _activeToolpath,
+                    cutAnimProgress: _craftingMode == CraftingMode.cutting
+                        ? _cutAnimController.value
+                        : 0,
+                    hideDrawingPlane: widget.hideDrawingPlane,
+                    paintedCells: _paintedCells,
+                    paintColor: _paintColor,
+                    erasedCells: _erasedCells,
+                    mirrorLineStart: _mirrorLineStart,
+                    mirrorLinePreview: _mirrorLinePreview,
+                    ghostPapers: _computeGhostPapers(),
+                    rotCopyCenterWorld: _rotCopyCenterWorld,
+                    transCopyArrow:
+                        _transCopyStartWorld != null &&
+                            _transCopyCurrentWorld != null
+                        ? (_transCopyStartWorld!, _transCopyCurrentWorld!)
+                        : null,
+                    gridDivisions: _gridDivisions,
+                    gridLodFrom: _gridLodFrom,
+                    gridLodTo: _gridLodTo,
+                    gridLodFadeT: _gridLodAnimController.value,
+                    activeGridSpacing: _activeGridSpacing,
+                    paperColorResolver: displayColorForPaper,
+                    gridOriginOffset: _gridOriginOffset,
+                    alignGridIndicator: _alignGridPreviewVertex,
+                    alignGridHighlightPolyIndex: _alignGridHoveredPolyIndex,
+                    stretchPaperId: _stretchPaperId,
+                    stretchScaleX: _stretchScaleX,
+                    stretchScaleY: _stretchScaleY,
+                    stretchHandleIndex: _stretchHandleIndex,
+                    stretchOriginalBounds: _stretchOriginalBounds,
+                    stretchAnchorLocal: _stretchAnchorLocal,
+                    gridRegionAssist: _gridRegionAssist,
+                  ),
+                  isComplex: true,
+                  willChange: true,
                 ),
-                isComplex: true,
-                willChange: true,
-              ),
-              if (isReceivingDrag)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.white24, width: 2),
-                        borderRadius: BorderRadius.circular(12),
+                if (isReceivingDrag)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.white24, width: 2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
-        ),
         );
       },
     );
@@ -5396,8 +5583,9 @@ class _CraftingTestViewState extends State<CraftingTestView>
       return const [];
     }
 
-    final selectedPapers =
-        _placedPapers.where((p) => _selectedPaperIds.contains(p.id)).toList();
+    final selectedPapers = _placedPapers
+        .where((p) => _selectedPaperIds.contains(p.id))
+        .toList();
     if (selectedPapers.isEmpty) return const [];
 
     // In copy-tool modes, rely on the cyan edge highlight from the painter;
@@ -5435,48 +5623,50 @@ class _CraftingTestViewState extends State<CraftingTestView>
           math.atan2(lineB.dy - lineA.dy, lineB.dx - lineA.dx) * 180 / math.pi;
 
       return _placedPapers
-          .where(
-              (p) => _selectedPaperIds.contains(p.id) && !p.locked)
+          .where((p) => _selectedPaperIds.contains(p.id) && !p.locked)
           .map((paper) {
-        final origPos = Offset(paper.position.x, paper.position.y);
-        final reflected = _reflectPoint(origPos, lineA, lineB);
-        final newRot = (2 * lineAngle - paper.rotationDeg) % 360;
+            final origPos = Offset(paper.position.x, paper.position.y);
+            final reflected = _reflectPoint(origPos, lineA, lineB);
+            final newRot = (2 * lineAngle - paper.rotationDeg) % 360;
 
-        List<Offset>? newVerts;
-        if (paper.localVertices != null) {
-          final rad = paper.rotationDeg * math.pi / 180;
-          final cosA = math.cos(rad);
-          final sinA = math.sin(rad);
-          final worldVerts = paper.localVertices!.map((o) {
-            return Offset(
-              origPos.dx + o.dx * cosA - o.dy * sinA,
-              origPos.dy + o.dx * sinA + o.dy * cosA,
+            List<Offset>? newVerts;
+            if (paper.localVertices != null) {
+              final rad = paper.rotationDeg * math.pi / 180;
+              final cosA = math.cos(rad);
+              final sinA = math.sin(rad);
+              final worldVerts = paper.localVertices!.map((o) {
+                return Offset(
+                  origPos.dx + o.dx * cosA - o.dy * sinA,
+                  origPos.dy + o.dx * sinA + o.dy * cosA,
+                );
+              }).toList();
+              final reflectedWorld = worldVerts
+                  .map((v) => _reflectPoint(v, lineA, lineB))
+                  .toList();
+              final newRad = newRot * math.pi / 180;
+              final cosB = math.cos(newRad);
+              final sinB = math.sin(newRad);
+              newVerts = reflectedWorld.reversed.map((w) {
+                final dx0 = w.dx - reflected.dx;
+                final dy0 = w.dy - reflected.dy;
+                return Offset(
+                  dx0 * cosB + dy0 * sinB,
+                  -dx0 * sinB + dy0 * cosB,
+                );
+              }).toList();
+            }
+
+            return PlacedPaper(
+              id: 'ghost_${paper.id}',
+              paperColor: paper.paperColor,
+              position: Vector3(reflected.dx, reflected.dy, paper.position.z),
+              rotationDeg: newRot,
+              sizeLevel: paper.sizeLevel,
+              localVertices: newVerts,
+              localHoles: const [],
             );
-          }).toList();
-          final reflectedWorld =
-              worldVerts.map((v) => _reflectPoint(v, lineA, lineB)).toList();
-          final newRad = newRot * math.pi / 180;
-          final cosB = math.cos(newRad);
-          final sinB = math.sin(newRad);
-          newVerts = reflectedWorld.reversed.map((w) {
-            final dx0 = w.dx - reflected.dx;
-            final dy0 = w.dy - reflected.dy;
-            return Offset(
-                dx0 * cosB + dy0 * sinB, -dx0 * sinB + dy0 * cosB);
-          }).toList();
-        }
-
-        return PlacedPaper(
-          id: 'ghost_${paper.id}',
-          paperColor: paper.paperColor,
-          position:
-              Vector3(reflected.dx, reflected.dy, paper.position.z),
-          rotationDeg: newRot,
-          sizeLevel: paper.sizeLevel,
-          localVertices: newVerts,
-          localHoles: const [],
-        );
-      }).toList();
+          })
+          .toList();
     }
 
     // Rotation copy preview
@@ -5492,28 +5682,29 @@ class _CraftingTestViewState extends State<CraftingTestView>
       final sinA = math.sin(rad);
 
       return _placedPapers
-          .where(
-              (p) => _selectedPaperIds.contains(p.id) && !p.locked)
+          .where((p) => _selectedPaperIds.contains(p.id) && !p.locked)
           .map((paper) {
-        final dx = paper.position.x - cx;
-        final dy = paper.position.y - cy;
-        return PlacedPaper(
-          id: 'ghost_${paper.id}',
-          paperColor: paper.paperColor,
-          position: Vector3(
-            cx + dx * cosA - dy * sinA,
-            cy + dx * sinA + dy * cosA,
-            paper.position.z,
-          ),
-          rotationDeg: (paper.rotationDeg + _rotCopyAngleDeg) % 360,
-          sizeLevel: paper.sizeLevel,
-          localVertices: paper.localVertices != null
-              ? List<Offset>.from(paper.localVertices!)
-              : null,
-          localHoles:
-              paper.localHoles.map((h) => List<Offset>.from(h)).toList(),
-        );
-      }).toList();
+            final dx = paper.position.x - cx;
+            final dy = paper.position.y - cy;
+            return PlacedPaper(
+              id: 'ghost_${paper.id}',
+              paperColor: paper.paperColor,
+              position: Vector3(
+                cx + dx * cosA - dy * sinA,
+                cy + dx * sinA + dy * cosA,
+                paper.position.z,
+              ),
+              rotationDeg: (paper.rotationDeg + _rotCopyAngleDeg) % 360,
+              sizeLevel: paper.sizeLevel,
+              localVertices: paper.localVertices != null
+                  ? List<Offset>.from(paper.localVertices!)
+                  : null,
+              localHoles: paper.localHoles
+                  .map((h) => List<Offset>.from(h))
+                  .toList(),
+            );
+          })
+          .toList();
     }
 
     // Translation copy preview
@@ -5525,26 +5716,27 @@ class _CraftingTestViewState extends State<CraftingTestView>
       if (delta.distance < 1e-4) return const [];
 
       return _placedPapers
-          .where(
-              (p) => _selectedPaperIds.contains(p.id) && !p.locked)
+          .where((p) => _selectedPaperIds.contains(p.id) && !p.locked)
           .map((paper) {
-        return PlacedPaper(
-          id: 'ghost_${paper.id}',
-          paperColor: paper.paperColor,
-          position: Vector3(
-            paper.position.x + delta.dx,
-            paper.position.y + delta.dy,
-            paper.position.z,
-          ),
-          rotationDeg: paper.rotationDeg,
-          sizeLevel: paper.sizeLevel,
-          localVertices: paper.localVertices != null
-              ? List<Offset>.from(paper.localVertices!)
-              : null,
-          localHoles:
-              paper.localHoles.map((h) => List<Offset>.from(h)).toList(),
-        );
-      }).toList();
+            return PlacedPaper(
+              id: 'ghost_${paper.id}',
+              paperColor: paper.paperColor,
+              position: Vector3(
+                paper.position.x + delta.dx,
+                paper.position.y + delta.dy,
+                paper.position.z,
+              ),
+              rotationDeg: paper.rotationDeg,
+              sizeLevel: paper.sizeLevel,
+              localVertices: paper.localVertices != null
+                  ? List<Offset>.from(paper.localVertices!)
+                  : null,
+              localHoles: paper.localHoles
+                  .map((h) => List<Offset>.from(h))
+                  .toList(),
+            );
+          })
+          .toList();
     }
 
     return const [];
@@ -5600,7 +5792,9 @@ class _CraftingTestViewState extends State<CraftingTestView>
               child: Center(
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 2),
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.6),
                     borderRadius: BorderRadius.circular(6),
@@ -5720,34 +5914,40 @@ class _CraftingTestViewState extends State<CraftingTestView>
     ];
 
     if (_kPaperSizeControlsEnabled && !isCutPiece && paper.sizeLevel < 3) {
-      actions.add(RadialAction(
-        icon: Icons.add,
-        label: 'Size +',
-        tint: const Color(0xFF81C784),
-        onTap: () {
-          _pushUndo('Resize');
-          setState(() => paper.sizeLevel++);
-        },
-      ));
+      actions.add(
+        RadialAction(
+          icon: Icons.add,
+          label: 'Size +',
+          tint: const Color(0xFF81C784),
+          onTap: () {
+            _pushUndo('Resize');
+            setState(() => paper.sizeLevel++);
+          },
+        ),
+      );
     }
     if (_kPaperSizeControlsEnabled && !isCutPiece && paper.sizeLevel > 1) {
-      actions.add(RadialAction(
-        icon: Icons.remove,
-        label: 'Size -',
-        tint: const Color(0xFF81C784),
-        onTap: () {
-          _pushUndo('Resize');
-          setState(() => paper.sizeLevel--);
-        },
-      ));
+      actions.add(
+        RadialAction(
+          icon: Icons.remove,
+          label: 'Size -',
+          tint: const Color(0xFF81C784),
+          onTap: () {
+            _pushUndo('Resize');
+            setState(() => paper.sizeLevel--);
+          },
+        ),
+      );
     }
 
-    actions.add(RadialAction(
-      icon: isCutPiece ? Icons.delete_outline : Icons.inventory_2,
-      label: isCutPiece ? 'Discard' : 'Return',
-      tint: const Color(0xFF90A4AE),
-      onTap: () => _returnPaperToInventory(paper.id),
-    ));
+    actions.add(
+      RadialAction(
+        icon: isCutPiece ? Icons.delete_outline : Icons.inventory_2,
+        label: isCutPiece ? 'Discard' : 'Return',
+        tint: const Color(0xFF90A4AE),
+        onTap: () => _returnPaperToInventory(paper.id),
+      ),
+    );
 
     return ObjectRadialMenu(
       center: screenCenter,
@@ -5798,8 +5998,10 @@ class _CraftingTestViewState extends State<CraftingTestView>
     }
 
     // Determine if all selected share the same groupId
-    final groupIds =
-        selectedPapers.map((p) => p.groupId).where((g) => g != null).toSet();
+    final groupIds = selectedPapers
+        .map((p) => p.groupId)
+        .where((g) => g != null)
+        .toSet();
     final allSameGroup =
         groupIds.length == 1 && selectedPapers.every((p) => p.groupId != null);
 
@@ -5825,34 +6027,42 @@ class _CraftingTestViewState extends State<CraftingTestView>
     ];
 
     if (allSameGroup) {
-      actions.add(RadialAction(
-        icon: Icons.link_off,
-        label: 'Ungroup',
-        tint: const Color(0xFF42A5F5),
-        onTap: _ungroupSelectedPapers,
-      ));
+      actions.add(
+        RadialAction(
+          icon: Icons.link_off,
+          label: 'Ungroup',
+          tint: const Color(0xFF42A5F5),
+          onTap: _ungroupSelectedPapers,
+        ),
+      );
     } else {
-      actions.add(RadialAction(
-        icon: Icons.link,
-        label: 'Group',
-        tint: const Color(0xFF42A5F5),
-        onTap: _groupSelectedPapers,
-      ));
+      actions.add(
+        RadialAction(
+          icon: Icons.link,
+          label: 'Group',
+          tint: const Color(0xFF42A5F5),
+          onTap: _groupSelectedPapers,
+        ),
+      );
     }
 
-    actions.add(RadialAction(
-      icon: Icons.merge,
-      label: 'Join',
-      tint: const Color(0xFF66BB6A),
-      onTap: _joinSelectedPapers,
-    ));
+    actions.add(
+      RadialAction(
+        icon: Icons.merge,
+        label: 'Join',
+        tint: const Color(0xFF66BB6A),
+        onTap: _joinSelectedPapers,
+      ),
+    );
 
-    actions.add(RadialAction(
-      icon: Icons.delete_outline,
-      label: 'Discard',
-      tint: const Color(0xFF90A4AE),
-      onTap: _discardSelectedPapers,
-    ));
+    actions.add(
+      RadialAction(
+        icon: Icons.delete_outline,
+        label: 'Discard',
+        tint: const Color(0xFF90A4AE),
+        onTap: _discardSelectedPapers,
+      ),
+    );
 
     return ObjectRadialMenu(
       center: screenCenter,
@@ -5860,7 +6070,6 @@ class _CraftingTestViewState extends State<CraftingTestView>
       actions: actions,
     );
   }
-
 
   /// Groups simple face polygons into compound shapes: each exterior paired
   /// with any holes it contains. Faces whose signed area has opposite winding
@@ -5912,10 +6121,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
       // from the reverse walk).
     }
 
-    return [
-      for (final ei in exteriors)
-        (faces[ei], holeAssignment[ei]!),
-    ];
+    return [for (final ei in exteriors) (faces[ei], holeAssignment[ei]!)];
   }
 
   static double _signedAreaOf(List<Offset> polygon) {
@@ -5961,8 +6167,12 @@ class _CraftingTestViewState extends State<CraftingTestView>
       while (queue.isNotEmpty) {
         final c = queue.removeLast();
         component.add(c);
-        for (final n in [(c.$1 + 1, c.$2), (c.$1 - 1, c.$2),
-                          (c.$1, c.$2 + 1), (c.$1, c.$2 - 1)]) {
+        for (final n in [
+          (c.$1 + 1, c.$2),
+          (c.$1 - 1, c.$2),
+          (c.$1, c.$2 + 1),
+          (c.$1, c.$2 - 1),
+        ]) {
           if (remaining.remove(n)) queue.add(n);
         }
       }
@@ -5979,8 +6189,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
     final ox = _gridOriginOffset.dx;
     final oy = _gridOriginOffset.dy;
 
-    Offset gridToWorld(int gx, int gy) =>
-        Offset(ox + gx * s, oy + gy * s);
+    Offset gridToWorld(int gx, int gy) => Offset(ox + gx * s, oy + gy * s);
 
     // Collect directed boundary edges. For a cell (c,r), its boundary edges
     // (with exterior to the left of the direction) are:
@@ -6100,15 +6309,17 @@ class _CraftingTestViewState extends State<CraftingTestView>
             .map((h) => h.map((v) => v - centroid).toList())
             .toList();
 
-        papersToAdd.add(PlacedPaper(
-          id: 'paper_${_nextPaperId++}',
-          paperColor: paper.paperColor,
-          position: Vector3(centroid.dx, centroid.dy, paper.position.z),
-          rotationDeg: 0,
-          sizeLevel: paper.sizeLevel,
-          localVertices: shifted,
-          localHoles: shiftedHoles,
-        ));
+        papersToAdd.add(
+          PlacedPaper(
+            id: 'paper_${_nextPaperId++}',
+            paperColor: paper.paperColor,
+            position: Vector3(centroid.dx, centroid.dy, paper.position.z),
+            rotationDeg: 0,
+            sizeLevel: paper.sizeLevel,
+            localVertices: shifted,
+            localHoles: shiftedHoles,
+          ),
+        );
       }
     }
 
@@ -6138,7 +6349,8 @@ class _CraftingTestViewState extends State<CraftingTestView>
     // Consume material from structure inventory (1 unit per cell painted)
     String? materialId;
     if (_useStructureInventory) {
-      materialId = _paintMaterialId ?? _structureInventory!.contents.keys.firstOrNull;
+      materialId =
+          _paintMaterialId ?? _structureInventory!.contents.keys.firstOrNull;
       if (materialId == null) return;
       final available = _structureInventory!.get(materialId);
       final toConsume = cells.length.clamp(0, available);
@@ -6202,16 +6414,18 @@ class _CraftingTestViewState extends State<CraftingTestView>
             .where((h) => _pointInPolygon(_polygonCentroid(h), ext))
             .map((h) => h.map((v) => v - centroid).toList())
             .toList();
-        newPapers.add(PlacedPaper(
-          id: 'paper_${_nextPaperId++}',
-          paperColor: _paintColor,
-          position: Vector3(centroid.dx, centroid.dy, _paperZ),
-          rotationDeg: 0,
-          sizeLevel: 1,
-          localVertices: shifted,
-          localHoles: holeShifted,
-          materialId: materialId,
-        ));
+        newPapers.add(
+          PlacedPaper(
+            id: 'paper_${_nextPaperId++}',
+            paperColor: _paintColor,
+            position: Vector3(centroid.dx, centroid.dy, _paperZ),
+            rotationDeg: 0,
+            sizeLevel: 1,
+            localVertices: shifted,
+            localHoles: holeShifted,
+            materialId: materialId,
+          ),
+        );
       }
       if (newPapers.isNotEmpty) {
         setState(() {
@@ -6281,16 +6495,18 @@ class _CraftingTestViewState extends State<CraftingTestView>
           .map((h) => h.map((v) => v - centroid).toList())
           .toList();
 
-      newPapers.add(PlacedPaper(
-        id: 'paper_${_nextPaperId++}',
-        paperColor: _paintColor,
-        position: Vector3(centroid.dx, centroid.dy, _paperZ),
-        rotationDeg: 0,
-        sizeLevel: 1,
-        localVertices: shifted,
-        localHoles: shiftedHoles,
-        materialId: materialId,
-      ));
+      newPapers.add(
+        PlacedPaper(
+          id: 'paper_${_nextPaperId++}',
+          paperColor: _paintColor,
+          position: Vector3(centroid.dx, centroid.dy, _paperZ),
+          rotationDeg: 0,
+          sizeLevel: 1,
+          localVertices: shifted,
+          localHoles: shiftedHoles,
+          materialId: materialId,
+        ),
+      );
     }
 
     if (newPapers.isNotEmpty || papersToRemove.isNotEmpty) {
@@ -6371,16 +6587,18 @@ class _CraftingTestViewState extends State<CraftingTestView>
                 .toList();
             final wcx = cx + centroid.dx * cosA - centroid.dy * sinA;
             final wcy = cy + centroid.dx * sinA + centroid.dy * cosA;
-            papersToAdd.add(PlacedPaper(
-              id: 'paper_${_nextPaperId++}',
-              paperColor: paper.paperColor,
-              position: Vector3(wcx, wcy, paper.position.z),
-              rotationDeg: paper.rotationDeg,
-              sizeLevel: paper.sizeLevel,
-              localVertices: shifted,
-              localHoles: shiftedHoles,
-              groupId: paper.groupId,
-            ));
+            papersToAdd.add(
+              PlacedPaper(
+                id: 'paper_${_nextPaperId++}',
+                paperColor: paper.paperColor,
+                position: Vector3(wcx, wcy, paper.position.z),
+                rotationDeg: paper.rotationDeg,
+                sizeLevel: paper.sizeLevel,
+                localVertices: shifted,
+                localHoles: shiftedHoles,
+                groupId: paper.groupId,
+              ),
+            );
           }
         } else {
           paper.cutSegments
@@ -6445,8 +6663,9 @@ class _CraftingTestViewState extends State<CraftingTestView>
           );
         }).toList();
 
-        final reflectedWorld =
-            worldVerts.map((v) => _reflectPoint(v, lineA, lineB)).toList();
+        final reflectedWorld = worldVerts
+            .map((v) => _reflectPoint(v, lineA, lineB))
+            .toList();
 
         final newRad = newRot * math.pi / 180;
         final cosB = math.cos(newRad);
@@ -6475,26 +6694,28 @@ class _CraftingTestViewState extends State<CraftingTestView>
               origPos.dy + o.dx * sinA + o.dy * cosA,
             );
           }).toList();
-          final reflectedHole =
-              worldHole.map((v) => _reflectPoint(v, lineA, lineB)).toList();
+          final reflectedHole = worldHole
+              .map((v) => _reflectPoint(v, lineA, lineB))
+              .toList();
           return reflectedHole.reversed.map((w) {
             final dx0 = w.dx - reflected.dx;
             final dy0 = w.dy - reflected.dy;
-            return Offset(
-                dx0 * cosB + dy0 * sinB, -dx0 * sinB + dy0 * cosB);
+            return Offset(dx0 * cosB + dy0 * sinB, -dx0 * sinB + dy0 * cosB);
           }).toList();
         }).toList();
       }
 
-      newPapers.add(PlacedPaper(
-        id: 'paper_${_nextPaperId++}',
-        paperColor: paper.paperColor,
-        position: Vector3(reflected.dx, reflected.dy, paper.position.z),
-        rotationDeg: newRot,
-        sizeLevel: paper.sizeLevel,
-        localVertices: newVerts,
-        localHoles: newHoles,
-      ));
+      newPapers.add(
+        PlacedPaper(
+          id: 'paper_${_nextPaperId++}',
+          paperColor: paper.paperColor,
+          position: Vector3(reflected.dx, reflected.dy, paper.position.z),
+          rotationDeg: newRot,
+          sizeLevel: paper.sizeLevel,
+          localVertices: newVerts,
+          localHoles: newHoles,
+        ),
+      );
     }
 
     if (newPapers.isNotEmpty) {
@@ -6530,18 +6751,21 @@ class _CraftingTestViewState extends State<CraftingTestView>
       final newY = cy + dx * sinA + dy * cosA;
       final newRot = (paper.rotationDeg + angleDeg) % 360;
 
-      newPapers.add(PlacedPaper(
-        id: 'paper_${_nextPaperId++}',
-        paperColor: paper.paperColor,
-        position: Vector3(newX, newY, paper.position.z),
-        rotationDeg: newRot,
-        sizeLevel: paper.sizeLevel,
-        localVertices: paper.localVertices != null
-            ? List<Offset>.from(paper.localVertices!)
-            : null,
-        localHoles:
-            paper.localHoles.map((h) => List<Offset>.from(h)).toList(),
-      ));
+      newPapers.add(
+        PlacedPaper(
+          id: 'paper_${_nextPaperId++}',
+          paperColor: paper.paperColor,
+          position: Vector3(newX, newY, paper.position.z),
+          rotationDeg: newRot,
+          sizeLevel: paper.sizeLevel,
+          localVertices: paper.localVertices != null
+              ? List<Offset>.from(paper.localVertices!)
+              : null,
+          localHoles: paper.localHoles
+              .map((h) => List<Offset>.from(h))
+              .toList(),
+        ),
+      );
     }
 
     if (newPapers.isNotEmpty) {
@@ -6567,22 +6791,25 @@ class _CraftingTestViewState extends State<CraftingTestView>
       if (!_selectedPaperIds.contains(paper.id)) continue;
       if (paper.locked) continue;
 
-      newPapers.add(PlacedPaper(
-        id: 'paper_${_nextPaperId++}',
-        paperColor: paper.paperColor,
-        position: Vector3(
-          paper.position.x + delta.dx,
-          paper.position.y + delta.dy,
-          paper.position.z,
+      newPapers.add(
+        PlacedPaper(
+          id: 'paper_${_nextPaperId++}',
+          paperColor: paper.paperColor,
+          position: Vector3(
+            paper.position.x + delta.dx,
+            paper.position.y + delta.dy,
+            paper.position.z,
+          ),
+          rotationDeg: paper.rotationDeg,
+          sizeLevel: paper.sizeLevel,
+          localVertices: paper.localVertices != null
+              ? List<Offset>.from(paper.localVertices!)
+              : null,
+          localHoles: paper.localHoles
+              .map((h) => List<Offset>.from(h))
+              .toList(),
         ),
-        rotationDeg: paper.rotationDeg,
-        sizeLevel: paper.sizeLevel,
-        localVertices: paper.localVertices != null
-            ? List<Offset>.from(paper.localVertices!)
-            : null,
-        localHoles:
-            paper.localHoles.map((h) => List<Offset>.from(h)).toList(),
-      ));
+      );
     }
 
     if (newPapers.isNotEmpty) {
@@ -6618,13 +6845,14 @@ class _CraftingTestViewState extends State<CraftingTestView>
               children: [
                 IconButton(
                   icon: const Icon(Icons.undo, size: 22),
-                  color:
-                      _history.canUndo ? Colors.white : Colors.white24,
+                  color: _history.canUndo ? Colors.white : Colors.white24,
                   tooltip: 'Undo',
                   onPressed: _history.canUndo ? _undo : null,
                   padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 40, minHeight: 40),
+                  constraints: const BoxConstraints(
+                    minWidth: 40,
+                    minHeight: 40,
+                  ),
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -6640,13 +6868,14 @@ class _CraftingTestViewState extends State<CraftingTestView>
                 ),
                 IconButton(
                   icon: const Icon(Icons.redo, size: 22),
-                  color:
-                      _history.canRedo ? Colors.white : Colors.white24,
+                  color: _history.canRedo ? Colors.white : Colors.white24,
                   tooltip: 'Redo',
                   onPressed: _history.canRedo ? _redo : null,
                   padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 40, minHeight: 40),
+                  constraints: const BoxConstraints(
+                    minWidth: 40,
+                    minHeight: 40,
+                  ),
                 ),
               ],
             ),
@@ -6657,30 +6886,30 @@ class _CraftingTestViewState extends State<CraftingTestView>
   }
 
   Widget _buildCraftExecuteButton() {
-    if (!_craftExecuteButtonVisible &&
-        _craftButtonAnimController.isDismissed) {
+    if (!_craftExecuteButtonVisible && _craftButtonAnimController.isDismissed) {
       return const SizedBox.shrink();
     }
 
     return SlideTransition(
-      position: Tween<Offset>(
-        begin: const Offset(0, 1),
-        end: Offset.zero,
-      ).animate(CurvedAnimation(
-        parent: _craftButtonAnimController,
-        curve: Curves.easeOutCubic,
-      )),
+      position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+          .animate(
+            CurvedAnimation(
+              parent: _craftButtonAnimController,
+              curve: Curves.easeOutCubic,
+            ),
+          ),
       child: FadeTransition(
         opacity: _craftButtonAnimController,
         child: ElevatedButton(
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.red,
             foregroundColor: Colors.white,
-            padding:
-                const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
             elevation: 8,
-            textStyle:
-                const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            textStyle: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           onPressed: _isCraftComplete() ? _onCraftExecutePressed : null,
           child: const Text('Craft!'),
@@ -6842,10 +7071,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
               color: color,
               borderRadius: BorderRadius.circular(10),
               boxShadow: [
-                BoxShadow(
-                  color: color.withOpacity(0.4),
-                  blurRadius: 12,
-                ),
+                BoxShadow(color: color.withOpacity(0.4), blurRadius: 12),
               ],
             ),
           ),
@@ -6857,10 +7083,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
         decoration: BoxDecoration(
           color: color.withOpacity(0.1),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: Colors.white.withOpacity(0.1),
-            width: 1.5,
-          ),
+          border: Border.all(color: Colors.white.withOpacity(0.1), width: 1.5),
         ),
       ),
       child: child,
@@ -6880,9 +7103,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
             : paperColor.color.withOpacity(0.6),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: isEmpty
-              ? Colors.white.withOpacity(0.1)
-              : paperColor.color,
+          color: isEmpty ? Colors.white.withOpacity(0.1) : paperColor.color,
           width: 1.5,
         ),
       ),
@@ -6945,10 +7166,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
         decoration: BoxDecoration(
           color: paperColor.color.withOpacity(0.1),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: Colors.white.withOpacity(0.1),
-            width: 1.5,
-          ),
+          border: Border.all(color: Colors.white.withOpacity(0.1), width: 1.5),
         ),
       ),
       child: child,
@@ -7093,8 +7311,10 @@ class CraftingTestPainter extends CustomPainter {
   final Map<int, _FoldNodeState> foldNodeStates;
   final Matrix4? foldDisplacementMatrix;
   final double foldColorProgress;
+
   /// Opacity of the folding geometry (used while it fades in during reveal).
   final double foldOpacity;
+
   /// Random dot-dissolve progress (0..1); null disables the dissolve effect.
   final double? dotDissolveProgress;
   final Matrix4? foldViewProjection;
@@ -7158,8 +7378,11 @@ class CraftingTestPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     canvas.clipRect(Offset.zero & size);
 
-    final viewProjection =
-        craftingTestViewProjection(size, orthoScale, panOffset: panOffset);
+    final viewProjection = craftingTestViewProjection(
+      size,
+      orthoScale,
+      panOffset: panOffset,
+    );
     final camera = scene_camera.Camera(
       name: 'shadow-cam',
       position: Vector3(panOffset.dx, panOffset.dy, 500),
@@ -7177,7 +7400,8 @@ class CraftingTestPainter extends CustomPainter {
       ..translate(objectPosition.x, objectPosition.y, objectPosition.z)
       ..setRotation(rotMatrix3);
 
-    final isFolding = completionPhase == CompletionPhase.fold ||
+    final isFolding =
+        completionPhase == CompletionPhase.fold ||
         completionPhase == CompletionPhase.done;
     final isRevealing = completionPhase == CompletionPhase.dissolveReveal;
     final foldVP = foldViewProjection ?? viewProjection;
@@ -7332,13 +7556,7 @@ class CraftingTestPainter extends CustomPainter {
         gridLodFrom,
         layerOpacity: 1.0 - t,
       );
-      _drawGridAtLod(
-        canvas,
-        size,
-        viewProjection,
-        gridLodTo,
-        layerOpacity: t,
-      );
+      _drawGridAtLod(canvas, size, viewProjection, gridLodTo, layerOpacity: t);
     } else {
       _drawGridAtLod(
         canvas,
@@ -7383,13 +7601,11 @@ class CraftingTestPainter extends CustomPainter {
       final minorPaint = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 0.75
-        ..color = Colors.grey.shade400
-            .withValues(alpha: 0.375 * layerOpacity);
+        ..color = Colors.grey.shade400.withValues(alpha: 0.375 * layerOpacity);
       final majorPaint = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5
-        ..color =
-            Colors.grey.shade500.withValues(alpha: 0.75 * layerOpacity);
+        ..color = Colors.grey.shade500.withValues(alpha: 0.75 * layerOpacity);
 
       // Vertical lines
       for (var i = iMin; i <= iMax; i++) {
@@ -7399,9 +7615,15 @@ class CraftingTestPainter extends CustomPainter {
         final paint = isMajor ? majorPaint : minorPaint;
 
         final a = _projectToScreen(
-            Vector3(pos, worldMinY - spacing, 0.1), viewProjection, size);
+          Vector3(pos, worldMinY - spacing, 0.1),
+          viewProjection,
+          size,
+        );
         final b = _projectToScreen(
-            Vector3(pos, worldMaxY + spacing, 0.1), viewProjection, size);
+          Vector3(pos, worldMaxY + spacing, 0.1),
+          viewProjection,
+          size,
+        );
         if (a != null && b != null) canvas.drawLine(a, b, paint);
       }
 
@@ -7413,9 +7635,15 @@ class CraftingTestPainter extends CustomPainter {
         final paint = isMajor ? majorPaint : minorPaint;
 
         final c = _projectToScreen(
-            Vector3(worldMinX - spacing, pos, 0.1), viewProjection, size);
+          Vector3(worldMinX - spacing, pos, 0.1),
+          viewProjection,
+          size,
+        );
         final d = _projectToScreen(
-            Vector3(worldMaxX + spacing, pos, 0.1), viewProjection, size);
+          Vector3(worldMaxX + spacing, pos, 0.1),
+          viewProjection,
+          size,
+        );
         if (c != null && d != null) canvas.drawLine(c, d, paint);
       }
     } else {
@@ -7431,8 +7659,7 @@ class CraftingTestPainter extends CustomPainter {
         if (!showMinorLines && !iMajor) continue;
         final px = ox + i * spacing;
         final wipeAlpha = hasWipe
-            ? dotWipeOpacityAt!(
-                ((px - worldMinX) / visibleW).clamp(0.0, 1.0))
+            ? dotWipeOpacityAt!(((px - worldMinX) / visibleW).clamp(0.0, 1.0))
             : 1.0;
         if (wipeAlpha <= 0) continue;
 
@@ -7455,17 +7682,19 @@ class CraftingTestPainter extends CustomPainter {
 
           final py = oy + j * spacing;
           final pt = _projectToScreen(
-              Vector3(px, py, 0.1), viewProjection, size);
+            Vector3(px, py, 0.1),
+            viewProjection,
+            size,
+          );
           if (pt == null) continue;
           final isMajorDot = iMajor && jMajor;
           final baseAlpha = isMajorDot ? majorBaseAlpha : minorBaseAlpha;
           final paint = Paint()
             ..style = PaintingStyle.fill
-            ..color = (isMajorDot
-                    ? Colors.grey.shade500
-                    : Colors.grey.shade400)
+            ..color = (isMajorDot ? Colors.grey.shade500 : Colors.grey.shade400)
                 .withValues(
-                    alpha: baseAlpha * wipeAlpha * dissolveAlpha * layerOpacity);
+                  alpha: baseAlpha * wipeAlpha * dissolveAlpha * layerOpacity,
+                );
           canvas.drawCircle(pt, isMajorDot ? 2.5 : 1.0, paint);
         }
       }
@@ -7494,13 +7723,17 @@ class CraftingTestPainter extends CustomPainter {
     for (var i = 0; i < poly.length; i++) {
       final a = poly[i];
       final b = poly[(i + 1) % poly.length];
-      final axOnGrid = ((a.dx - origin.dx) % spacing).abs() < eps ||
+      final axOnGrid =
+          ((a.dx - origin.dx) % spacing).abs() < eps ||
           (spacing - ((a.dx - origin.dx) % spacing).abs()) < eps;
-      final bxOnGrid = ((b.dx - origin.dx) % spacing).abs() < eps ||
+      final bxOnGrid =
+          ((b.dx - origin.dx) % spacing).abs() < eps ||
           (spacing - ((b.dx - origin.dx) % spacing).abs()) < eps;
-      final ayOnGrid = ((a.dy - origin.dy) % spacing).abs() < eps ||
+      final ayOnGrid =
+          ((a.dy - origin.dy) % spacing).abs() < eps ||
           (spacing - ((a.dy - origin.dy) % spacing).abs()) < eps;
-      final byOnGrid = ((b.dy - origin.dy) % spacing).abs() < eps ||
+      final byOnGrid =
+          ((b.dy - origin.dy) % spacing).abs() < eps ||
           (spacing - ((b.dy - origin.dy) % spacing).abs()) < eps;
       final isVertical = (a.dx - b.dx).abs() < eps && axOnGrid && bxOnGrid;
       final isHorizontal = (a.dy - b.dy).abs() < eps && ayOnGrid && byOnGrid;
@@ -7509,8 +7742,7 @@ class CraftingTestPainter extends CustomPainter {
     return true;
   }
 
-  void _drawGridRegionAssist(
-      Canvas canvas, Size size, Matrix4 viewProjection) {
+  void _drawGridRegionAssist(Canvas canvas, Size size, Matrix4 viewProjection) {
     if (!gridRegionAssist) return;
     if (canvasDisplayMode != CanvasDisplayMode.dot) return;
 
@@ -7572,8 +7804,7 @@ class CraftingTestPainter extends CustomPainter {
         }
         if (!inside) continue;
 
-        final pt = _projectToScreen(
-            Vector3(px, py, 0.1), viewProjection, size);
+        final pt = _projectToScreen(Vector3(px, py, 0.1), viewProjection, size);
         if (pt == null) continue;
         final isMajorDot = iMajor && jMajor;
         canvas.drawCircle(pt, isMajorDot ? 2.5 : 1.0, goldPaint);
@@ -7620,7 +7851,10 @@ class CraftingTestPainter extends CustomPainter {
             }
             if (!inside) continue;
             final pt = _projectToScreen(
-                Vector3(px, py, 0.1), viewProjection, size);
+              Vector3(px, py, 0.1),
+              viewProjection,
+              size,
+            );
             if (pt == null) continue;
             final isMajorDot = iMajor && jMajor;
             canvas.drawCircle(pt, isMajorDot ? 2.5 : 1.0, fromGoldPaint);
@@ -7631,7 +7865,10 @@ class CraftingTestPainter extends CustomPainter {
   }
 
   void _drawStructureFootprint(
-      Canvas canvas, Size size, Matrix4 viewProjection) {
+    Canvas canvas,
+    Size size,
+    Matrix4 viewProjection,
+  ) {
     if (structureFootprint == null) return;
     final r = structureFootprint!;
     final corners = [
@@ -7666,8 +7903,14 @@ class CraftingTestPainter extends CustomPainter {
     }
   }
 
-  static void _drawDashedLine(Canvas canvas, Offset a, Offset b,
-      double dashLen, double gapLen, Paint paint) {
+  static void _drawDashedLine(
+    Canvas canvas,
+    Offset a,
+    Offset b,
+    double dashLen,
+    double gapLen,
+    Paint paint,
+  ) {
     final delta = b - a;
     final totalLen = delta.distance;
     if (totalLen < 1) return;
@@ -7682,7 +7925,10 @@ class CraftingTestPainter extends CustomPainter {
   }
 
   void _drawBlueprintPolygons(
-      Canvas canvas, Size size, Matrix4 viewProjection) {
+    Canvas canvas,
+    Size size,
+    Matrix4 viewProjection,
+  ) {
     if (blueprintPolygons.isEmpty) return;
 
     final defaultPaint = Paint()
@@ -7790,7 +8036,8 @@ class CraftingTestPainter extends CustomPainter {
     for (var i = 0; i < poly.length; i++) {
       final a = poly[i];
       final b = poly[(i + 1) % poly.length];
-      final lenSq = (b.dx - a.dx) * (b.dx - a.dx) + (b.dy - a.dy) * (b.dy - a.dy);
+      final lenSq =
+          (b.dx - a.dx) * (b.dx - a.dx) + (b.dy - a.dy) * (b.dy - a.dy);
       if (lenSq > bestLenSq) {
         bestLenSq = lenSq;
         bestEdge = i;
@@ -7832,8 +8079,7 @@ class CraftingTestPainter extends CustomPainter {
     const outlineAlpha = 0.7;
     const gridAlpha = outlineAlpha / 3;
     final baseColor = isFilled ? Colors.greenAccent : Colors.yellow;
-    final gridColor =
-        baseColor.withValues(alpha: gridAlpha * layerOpacity);
+    final gridColor = baseColor.withValues(alpha: gridAlpha * layerOpacity);
 
     for (var pass = 0; pass < 2; pass++) {
       final alongU = pass == 0;
@@ -7962,7 +8208,8 @@ class CraftingTestPainter extends CustomPainter {
 
     for (final paper in papers) {
       final hs = _paperHalfSizeForLevel(paper.sizeLevel);
-      final localVerts = paper.localVertices ??
+      final localVerts =
+          paper.localVertices ??
           [Offset(-hs, -hs), Offset(hs, -hs), Offset(hs, hs), Offset(-hs, hs)];
 
       final rad = paper.rotationDeg * math.pi / 180;
@@ -8018,7 +8265,8 @@ class CraftingTestPainter extends CustomPainter {
           ..color = Colors.black.withOpacity(0.08),
       );
 
-      final baseColor = paperColorResolver?.call(paper) ?? paper.paperColor.color;
+      final baseColor =
+          paperColorResolver?.call(paper) ?? paper.paperColor.color;
       final Color fillColor = baseColor.withValues(alpha: 0.85);
 
       canvas.drawPath(
@@ -8035,8 +8283,7 @@ class CraftingTestPainter extends CustomPainter {
           ..strokeWidth = 1.0
           ..color = Colors.white.withOpacity(0.5);
         for (final seg in paper.cutSegments) {
-          final clipped =
-              _clipSegmentToPolygon(seg.$1, seg.$2, localVerts);
+          final clipped = _clipSegmentToPolygon(seg.$1, seg.$2, localVerts);
           for (final (ca, cb) in clipped) {
             final wxa = cx + ca.dx * cosA - ca.dy * sinA;
             final wya = cy + ca.dx * sinA + ca.dy * cosA;
@@ -8071,8 +8318,7 @@ class CraftingTestPainter extends CustomPainter {
       Color borderColor;
       double borderWidth;
       if (isAnimating) {
-        borderColor =
-            Color.lerp(Colors.white, Colors.green, lockAnimProgress)!;
+        borderColor = Color.lerp(Colors.white, Colors.green, lockAnimProgress)!;
         borderWidth = 1.0 + lockAnimProgress * 1.0;
       } else if (isMatched) {
         borderColor = Colors.green;
@@ -8096,9 +8342,15 @@ class CraftingTestPainter extends CustomPainter {
   }
 
   void _drawLockedPaperOverlays(
-      Canvas canvas, Size size, Matrix4 viewProjection) {
-    final matchedPapers =
-        papers.where((p) => p.isBlueprintMatched && !lockAnimatingPaperIds.contains(p.id)).toList();
+    Canvas canvas,
+    Size size,
+    Matrix4 viewProjection,
+  ) {
+    final matchedPapers = papers
+        .where(
+          (p) => p.isBlueprintMatched && !lockAnimatingPaperIds.contains(p.id),
+        )
+        .toList();
     if (matchedPapers.isEmpty) return;
 
     final overlayPaint = Paint()
@@ -8108,7 +8360,8 @@ class CraftingTestPainter extends CustomPainter {
 
     for (final paper in matchedPapers) {
       final hs = _paperHalfSizeForLevel(paper.sizeLevel);
-      final localVerts = paper.localVertices ??
+      final localVerts =
+          paper.localVertices ??
           [Offset(-hs, -hs), Offset(hs, -hs), Offset(hs, hs), Offset(-hs, hs)];
 
       final rad = paper.rotationDeg * math.pi / 180;
@@ -8153,8 +8406,12 @@ class CraftingTestPainter extends CustomPainter {
     }
   }
 
-  void _drawFoldFaces(Canvas canvas, Size size, Matrix4 vp,
-      {double opacity = 1.0}) {
+  void _drawFoldFaces(
+    Canvas canvas,
+    Size size,
+    Matrix4 vp, {
+    double opacity = 1.0,
+  }) {
     final o = opacity.clamp(0.0, 1.0);
     if (o <= 0) return;
     final faceColor = Color.lerp(
@@ -8214,9 +8471,15 @@ class CraftingTestPainter extends CustomPainter {
     for (final line in drawnCutLines) {
       final (extA, extB) = extendLineSegment(line.$1, line.$2, extension);
       final a = _projectToScreen(
-          Vector3(extA.dx, extA.dy, 2), viewProjection, size);
+        Vector3(extA.dx, extA.dy, 2),
+        viewProjection,
+        size,
+      );
       final b = _projectToScreen(
-          Vector3(extB.dx, extB.dy, 2), viewProjection, size);
+        Vector3(extB.dx, extB.dy, 2),
+        viewProjection,
+        size,
+      );
       if (a != null && b != null) {
         canvas.drawLine(a, b, rayPaint);
       }
@@ -8269,9 +8532,15 @@ class CraftingTestPainter extends CustomPainter {
     final extension = drawingPlaneSize;
     final (extA, extB) = extendLineSegment(start, end, extension);
     final extScreenA = _projectToScreen(
-        Vector3(extA.dx, extA.dy, 2), viewProjection, size);
+      Vector3(extA.dx, extA.dy, 2),
+      viewProjection,
+      size,
+    );
     final extScreenB = _projectToScreen(
-        Vector3(extB.dx, extB.dy, 2), viewProjection, size);
+      Vector3(extB.dx, extB.dy, 2),
+      viewProjection,
+      size,
+    );
     if (extScreenA != null && extScreenB != null) {
       final rayPaint = Paint()
         ..style = PaintingStyle.stroke
@@ -8337,8 +8606,7 @@ class CraftingTestPainter extends CustomPainter {
     }
   }
 
-  void _drawCentroidCrosses(
-      Canvas canvas, Size size, Matrix4 viewProjection) {
+  void _drawCentroidCrosses(Canvas canvas, Size size, Matrix4 viewProjection) {
     if (selectedPaperIds.isEmpty) return;
     final crossPaint = Paint()
       ..style = PaintingStyle.stroke
@@ -8363,8 +8631,7 @@ class CraftingTestPainter extends CustomPainter {
     }
   }
 
-  void _drawGroupCropFeet(
-      Canvas canvas, Size size, Matrix4 viewProjection) {
+  void _drawGroupCropFeet(Canvas canvas, Size size, Matrix4 viewProjection) {
     final groupMap = <String, List<PlacedPaper>>{};
     for (final paper in papers) {
       if (paper.groupId == null) continue;
@@ -8387,8 +8654,14 @@ class CraftingTestPainter extends CustomPainter {
       double maxSx = -double.infinity, maxSy = -double.infinity;
       for (final paper in members) {
         final hs = _paperHalfSizeForLevel(paper.sizeLevel);
-        final localVerts = paper.localVertices ??
-            [Offset(-hs, -hs), Offset(hs, -hs), Offset(hs, hs), Offset(-hs, hs)];
+        final localVerts =
+            paper.localVertices ??
+            [
+              Offset(-hs, -hs),
+              Offset(hs, -hs),
+              Offset(hs, hs),
+              Offset(-hs, hs),
+            ];
         final rad = paper.rotationDeg * math.pi / 180;
         final cosA = math.cos(rad);
         final sinA = math.sin(rad);
@@ -8396,8 +8669,11 @@ class CraftingTestPainter extends CustomPainter {
           final rx = o.dx * cosA - o.dy * sinA;
           final ry = o.dx * sinA + o.dy * cosA;
           final sp = _projectToScreen(
-            Vector3(paper.position.x + rx, paper.position.y + ry,
-                paper.position.z),
+            Vector3(
+              paper.position.x + rx,
+              paper.position.y + ry,
+              paper.position.z,
+            ),
             viewProjection,
             size,
           );
@@ -8431,9 +8707,16 @@ class CraftingTestPainter extends CustomPainter {
   }
 
   void _drawAlignGridIndicator(
-      Canvas canvas, Size size, Matrix4 viewProjection) {
+    Canvas canvas,
+    Size size,
+    Matrix4 viewProjection,
+  ) {
     final pt = alignGridIndicator!;
-    final sp = _projectToScreen(Vector3(pt.dx, pt.dy, 0.2), viewProjection, size);
+    final sp = _projectToScreen(
+      Vector3(pt.dx, pt.dy, 0.2),
+      viewProjection,
+      size,
+    );
     if (sp == null) return;
 
     final outerPaint = Paint()
@@ -8452,8 +8735,16 @@ class CraftingTestPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0
       ..color = Colors.cyanAccent.withValues(alpha: 0.8);
-    canvas.drawLine(Offset(sp.dx - arm, sp.dy), Offset(sp.dx + arm, sp.dy), crossPaint);
-    canvas.drawLine(Offset(sp.dx, sp.dy - arm), Offset(sp.dx, sp.dy + arm), crossPaint);
+    canvas.drawLine(
+      Offset(sp.dx - arm, sp.dy),
+      Offset(sp.dx + arm, sp.dy),
+      crossPaint,
+    );
+    canvas.drawLine(
+      Offset(sp.dx, sp.dy - arm),
+      Offset(sp.dx, sp.dy + arm),
+      crossPaint,
+    );
   }
 
   void _drawMarqueeRect(Canvas canvas, Rect rect, double dashOffset) {
@@ -8555,8 +8846,8 @@ class CraftingTestPainter extends CustomPainter {
 
       final baseColor =
           geometry.faceColors != null && fi < geometry.faceColors!.length
-              ? geometry.faceColors![fi]
-              : objectColor;
+          ? geometry.faceColors![fi]
+          : objectColor;
       final litColor = _applyLighting(baseColor, shade);
 
       facesToDraw.add(_Face(points: points, color: litColor, depth: depth));
@@ -8626,8 +8917,10 @@ class CraftingTestPainter extends CustomPainter {
     if (style == FriendEyeGeometry3d.sphere) {
       final c = _craftingLocalToWorld(world, centerLocal);
       final up = _craftingLocalToWorld(world, centerLocal + Vector3(0, ry, 0));
-      final rightPt =
-          _craftingLocalToWorld(world, centerLocal + Vector3(rx, 0, 0));
+      final rightPt = _craftingLocalToWorld(
+        world,
+        centerLocal + Vector3(rx, 0, 0),
+      );
       final ps = _projectToScreen(c, viewProjection, size);
       final pu = _projectToScreen(up, viewProjection, size);
       final pr = _projectToScreen(rightPt, viewProjection, size);
@@ -8648,8 +8941,8 @@ class CraftingTestPainter extends CustomPainter {
       final zOff = k == 0 ? -ry : ry;
       for (var i = 0; i < segments; i++) {
         final t = 2.0 * math.pi * i / segments;
-        final lp = centerLocal +
-            Vector3(rx * math.cos(t), rx * math.sin(t), zOff);
+        final lp =
+            centerLocal + Vector3(rx * math.cos(t), rx * math.sin(t), zOff);
         final wp = _craftingLocalToWorld(world, lp);
         final p = _projectToScreen(wp, viewProjection, size);
         if (p != null) rim.add(p);
@@ -8667,8 +8960,7 @@ class CraftingTestPainter extends CustomPainter {
       final pi = polygon[i];
       final pj = polygon[j];
       if (((pi.dy > p.dy) != (pj.dy > p.dy)) &&
-          (p.dx <
-              (pj.dx - pi.dx) * (p.dy - pi.dy) / (pj.dy - pi.dy) + pi.dx)) {
+          (p.dx < (pj.dx - pi.dx) * (p.dy - pi.dy) / (pj.dy - pi.dy) + pi.dx)) {
         inside = !inside;
       }
     }
@@ -8735,7 +9027,6 @@ class CraftingTestPainter extends CustomPainter {
     return Offset(a.dx + abx * t, a.dy + aby * t);
   }
 
-
   // ---------------------------------------------------------------------------
   // Copy-tool overlay drawing
   // ---------------------------------------------------------------------------
@@ -8743,13 +9034,9 @@ class CraftingTestPainter extends CustomPainter {
   void _drawGhostPapers(Canvas canvas, Size size, Matrix4 viewProjection) {
     for (final paper in ghostPapers) {
       final hs = _paperHalfSizeForLevel(paper.sizeLevel);
-      final localVerts = paper.localVertices ??
-          [
-            Offset(-hs, -hs),
-            Offset(hs, -hs),
-            Offset(hs, hs),
-            Offset(-hs, hs),
-          ];
+      final localVerts =
+          paper.localVertices ??
+          [Offset(-hs, -hs), Offset(hs, -hs), Offset(hs, hs), Offset(-hs, hs)];
 
       final rad = paper.rotationDeg * math.pi / 180;
       final cosA = math.cos(rad);
@@ -8788,7 +9075,8 @@ class CraftingTestPainter extends CustomPainter {
       }
       paperPath.fillType = PathFillType.evenOdd;
 
-      final ghostColor = paperColorResolver?.call(paper) ?? paper.paperColor.color;
+      final ghostColor =
+          paperColorResolver?.call(paper) ?? paper.paperColor.color;
       canvas.drawPath(
         paperPath,
         Paint()
@@ -8836,9 +9124,13 @@ class CraftingTestPainter extends CustomPainter {
     while (dist < total) {
       final segEnd = (dist + dashLen).clamp(0.0, total);
       path.moveTo(
-          extended.$1.dx + unit.dx * dist, extended.$1.dy + unit.dy * dist);
-      path.lineTo(extended.$1.dx + unit.dx * segEnd,
-          extended.$1.dy + unit.dy * segEnd);
+        extended.$1.dx + unit.dx * dist,
+        extended.$1.dy + unit.dy * dist,
+      );
+      path.lineTo(
+        extended.$1.dx + unit.dx * segEnd,
+        extended.$1.dy + unit.dy * segEnd,
+      );
       dist = segEnd + gapLen;
     }
     canvas.drawPath(path, paint);
@@ -8859,9 +9151,15 @@ class CraftingTestPainter extends CustomPainter {
       ..color = const Color(0xFFFF8800);
 
     canvas.drawLine(
-        p - const Offset(crossSize, 0), p + const Offset(crossSize, 0), paint);
+      p - const Offset(crossSize, 0),
+      p + const Offset(crossSize, 0),
+      paint,
+    );
     canvas.drawLine(
-        p - const Offset(0, crossSize), p + const Offset(0, crossSize), paint);
+      p - const Offset(0, crossSize),
+      p + const Offset(0, crossSize),
+      paint,
+    );
     canvas.drawCircle(p, 4, paint);
   }
 
@@ -8906,8 +9204,7 @@ class CraftingTestPainter extends CustomPainter {
   }
 
   void _drawStretchGizmo(Canvas canvas, Size size, Matrix4 viewProjection) {
-    final paper =
-        papers.where((p) => p.id == stretchPaperId).firstOrNull;
+    final paper = papers.where((p) => p.id == stretchPaperId).firstOrNull;
     if (paper == null) return;
 
     final bounds = stretchOriginalBounds ?? _paperLocalBoundsForPainter(paper);
@@ -8956,14 +9253,14 @@ class CraftingTestPainter extends CustomPainter {
     // Handle positions: 0=top, 1=right, 2=bottom, 3=left, 4-7=corners
     final mx = (l + r) / 2, my = (t + b) / 2;
     final handles = [
-      toScreen(mx, b),  // 0: top
-      toScreen(r, my),  // 1: right
-      toScreen(mx, t),  // 2: bottom
-      toScreen(l, my),  // 3: left
-      tl,               // 4: TL
-      tr,               // 5: TR
-      br,               // 6: BR
-      bl,               // 7: BL
+      toScreen(mx, b), // 0: top
+      toScreen(r, my), // 1: right
+      toScreen(mx, t), // 2: bottom
+      toScreen(l, my), // 3: left
+      tl, // 4: TL
+      tr, // 5: TR
+      br, // 6: BR
+      bl, // 7: BL
     ];
 
     const handleSize = 6.0;
@@ -9002,6 +9299,7 @@ class CraftingTestPainter extends CustomPainter {
         final pct = ((s - 1) * 100).round();
         return pct >= 0 ? '+$pct%' : '$pct%';
       }
+
       if (stretchesX) parts.add('W:${fmtPct(sx)}');
       if (stretchesY) parts.add('H:${fmtPct(sy)}');
       final label = parts.join(' ');
@@ -9029,8 +9327,13 @@ class CraftingTestPainter extends CustomPainter {
         const Radius.circular(4),
       );
       canvas.drawRRect(
-          bgRect, Paint()..color = Colors.black.withValues(alpha: 0.7));
-      tp.paint(canvas, Offset(hPos.dx - tp.width / 2, hPos.dy - tp.height - 11));
+        bgRect,
+        Paint()..color = Colors.black.withValues(alpha: 0.7),
+      );
+      tp.paint(
+        canvas,
+        Offset(hPos.dx - tp.width / 2, hPos.dy - tp.height - 11),
+      );
     }
   }
 
@@ -9079,7 +9382,8 @@ class _ConfigPopover extends StatelessWidget {
     bool minor,
     bool regionAssist,
     double speed,
-  ) onChanged;
+  )
+  onChanged;
   final VoidCallback onDismiss;
 
   void _fire({
@@ -9106,120 +9410,124 @@ class _ConfigPopover extends StatelessWidget {
           child: const SizedBox.expand(),
         ),
         FmSafePositioned(
-          top: 70,
-          right: 16,
+          top: 48,
+          right: 64,
           child: Material(
-              color: const Color(0xEE1A1A2E),
-              borderRadius: BorderRadius.circular(12),
-              elevation: 12,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'Canvas',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.5,
-                      ),
+            color: const Color(0xEE1A1A2E),
+            borderRadius: BorderRadius.circular(12),
+            elevation: 12,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Canvas',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
                     ),
-                    const SizedBox(height: 6),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        for (final mode in CanvasDisplayMode.values)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 4),
-                            child: ChoiceChip(
-                              label: Text(
-                                mode == CanvasDisplayMode.none
-                                    ? 'None'
-                                    : mode == CanvasDisplayMode.dot
-                                        ? 'Dot'
-                                        : 'Grid',
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                              selected: canvasDisplayMode == mode,
-                              selectedColor:
-                                  Colors.white.withValues(alpha: 0.2),
-                              backgroundColor: Colors.transparent,
-                              side: BorderSide(
-                                color: canvasDisplayMode == mode
-                                    ? Colors.white38
-                                    : Colors.white12,
-                              ),
-                              labelStyle: TextStyle(
-                                color: canvasDisplayMode == mode
-                                    ? Colors.white
-                                    : Colors.white54,
-                              ),
-                              onSelected: (_) => _fire(mode: mode),
-                              visualDensity: VisualDensity.compact,
-                              materialTapTargetSize:
-                                  MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final mode in CanvasDisplayMode.values)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: ChoiceChip(
+                            label: Text(
+                              mode == CanvasDisplayMode.none
+                                  ? 'None'
+                                  : mode == CanvasDisplayMode.dot
+                                  ? 'Dot'
+                                  : 'Grid',
+                              style: const TextStyle(fontSize: 12),
                             ),
+                            selected: canvasDisplayMode == mode,
+                            selectedColor: Colors.white.withValues(alpha: 0.2),
+                            backgroundColor: Colors.transparent,
+                            side: BorderSide(
+                              color: canvasDisplayMode == mode
+                                  ? Colors.white38
+                                  : Colors.white12,
+                            ),
+                            labelStyle: TextStyle(
+                              color: canvasDisplayMode == mode
+                                  ? Colors.white
+                                  : Colors.white54,
+                            ),
+                            onSelected: (_) => _fire(mode: mode),
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
                           ),
-                      ],
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  _checkRow(
+                    'Minor lines',
+                    showMinorLines,
+                    (v) => _fire(minor: v),
+                  ),
+                  _checkRow(
+                    'Grid region assist',
+                    gridRegionAssist,
+                    (v) => _fire(regionAssist: v),
+                  ),
+                  const Divider(color: Colors.white12, height: 16),
+                  const Text(
+                    'Debug',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
                     ),
-                    const SizedBox(height: 8),
-                    _checkRow('Minor lines', showMinorLines,
-                        (v) => _fire(minor: v)),
-                    _checkRow('Grid region assist', gridRegionAssist,
-                        (v) => _fire(regionAssist: v)),
-                    const Divider(color: Colors.white12, height: 16),
-                    const Text(
-                      'Debug',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.5,
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Cut speed: ${cutSpeed.toStringAsFixed(0)} cells/s',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(
+                    width: 200,
+                    child: SliderTheme(
+                      data: SliderThemeData(
+                        activeTrackColor: Colors.redAccent,
+                        inactiveTrackColor: Colors.white12,
+                        thumbColor: Colors.redAccent,
+                        overlayColor: Colors.redAccent.withOpacity(0.2),
+                        trackHeight: 3,
+                        thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 6,
+                        ),
+                      ),
+                      child: Slider(
+                        value: cutSpeed,
+                        min: 1,
+                        max: 50,
+                        onChanged: (v) => _fire(speed: v),
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Cut speed: ${cutSpeed.toStringAsFixed(0)} cells/s',
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                    SizedBox(
-                      width: 200,
-                      child: SliderTheme(
-                        data: SliderThemeData(
-                          activeTrackColor: Colors.redAccent,
-                          inactiveTrackColor: Colors.white12,
-                          thumbColor: Colors.redAccent,
-                          overlayColor: Colors.redAccent.withOpacity(0.2),
-                          trackHeight: 3,
-                          thumbShape: const RoundSliderThumbShape(
-                            enabledThumbRadius: 6,
-                          ),
-                        ),
-                        child: Slider(
-                          value: cutSpeed,
-                          min: 1,
-                          max: 50,
-                          onChanged: (v) => _fire(speed: v),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
+        ),
       ],
     );
   }
@@ -9294,13 +9602,16 @@ Vector3 craftingScreenToWorldOnPlane(
   if (size.width <= 0 || size.height <= 0) {
     return Vector3(0, 0, planeZ);
   }
-  final mvp = craftingTestViewProjection(size, orthoScale, panOffset: panOffset);
+  final mvp = craftingTestViewProjection(
+    size,
+    orthoScale,
+    panOffset: panOffset,
+  );
   final inv = Matrix4.copy(mvp);
   final determinant = inv.invert();
   if (determinant == 0 || determinant.isNaN) {
     final worldX = (screen.dx / size.width - 0.5) * 2 * orthoScale;
-    final worldY =
-        -(screen.dy / size.height - 0.5) * 2 * orthoScale;
+    final worldY = -(screen.dy / size.height - 0.5) * 2 * orthoScale;
     return Vector3(worldX, worldY, planeZ);
   }
   final ndcX = 2.0 * screen.dx / size.width - 1.0;
@@ -9316,15 +9627,13 @@ Vector3 craftingScreenToWorldOnPlane(
   final b = homog(inv.transform(Vector4(ndcX, ndcY, 1.0, 1.0)));
   if (a == null || b == null) {
     final worldX = (screen.dx / size.width - 0.5) * 2 * orthoScale;
-    final worldY =
-        -(screen.dy / size.height - 0.5) * 2 * orthoScale;
+    final worldY = -(screen.dy / size.height - 0.5) * 2 * orthoScale;
     return Vector3(worldX, worldY, planeZ);
   }
   final dir = b - a;
   if (dir.z.abs() < 1e-8) {
     final worldX = (screen.dx / size.width - 0.5) * 2 * orthoScale;
-    final worldY =
-        -(screen.dy / size.height - 0.5) * 2 * orthoScale;
+    final worldY = -(screen.dy / size.height - 0.5) * 2 * orthoScale;
     return Vector3(worldX, worldY, planeZ);
   }
   final t = (planeZ - a.z) / dir.z;
@@ -9337,7 +9646,11 @@ Offset craftingWorldToScreen(
   double orthoScale, {
   Offset panOffset = Offset.zero,
 }) {
-  final mvp = craftingTestViewProjection(size, orthoScale, panOffset: panOffset);
+  final mvp = craftingTestViewProjection(
+    size,
+    orthoScale,
+    panOffset: panOffset,
+  );
   return _projectToScreen(worldPos, mvp, size) ?? Offset.zero;
 }
 
@@ -9453,4 +9766,3 @@ class _ToolModeButton extends StatelessWidget {
     );
   }
 }
-
