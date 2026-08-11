@@ -36,6 +36,7 @@ flutter:
     - assets/crafting_blueprints/group03/blueprint/
     - assets/crafting_blueprints/group04/blueprint/
     - assets/crafting_blueprints/group05/blueprint/
+    - assets/crafting_blueprints/group05/group.json
     - assets/crafting_blueprints/group06/blueprint/
     - assets/crafting_blueprints/group08/blueprint/
     - assets/crafting_blueprints/group09/blueprint/

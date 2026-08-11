@@ -24,7 +24,9 @@ import '../rendering/iso/friend_expression.dart';
 import '../rendering/lights.dart';
 import '../rendering/scene/camera.dart' as scene_camera;
 import '../tiles/tiles.dart';
+import 'fm_haptics.dart';
 import 'fm_safe_area.dart';
+import 'fm_step_cards.dart';
 import 'object_radial_menu.dart';
 import 'rotation_gizmo.dart';
 import 'wipe_animation.dart';
@@ -600,7 +602,32 @@ class _CraftingTestViewState extends State<CraftingTestView>
   List<BlueprintSet> _blueprintSets = [];
   BlueprintSet? _selectedSet;
   int _currentStepIndex = 0;
-  bool _stepTransitioning = false;
+  int? _promotingIndex;
+  final Set<int> _completedStepIndices = {};
+
+  /// Guards against double-advance while a step completion is in flight.
+  bool _stepAdvanceInProgress = false;
+
+  /// Non-active group step polygons drawn grey/green behind the editable step.
+  List<List<Offset>> _groupOverlayPolygons = [];
+  List<Color> _groupOverlayColors = [];
+
+  /// Active-step outline highlight (0 = grey → 1 = yellow) and early glow.
+  double _activeHighlightT = 1.0;
+  double _activeGlow = 0.0;
+
+  // Camera ease-in-out transitions (group overview → step, step → step).
+  late final AnimationController _cameraAnimController;
+  Offset _camPanFrom = Offset.zero;
+  Offset _camPanTo = Offset.zero;
+  double _camOrthoFrom = 300;
+  double _camOrthoTo = 300;
+  double _camRotFrom = 0;
+  double _camRotTo = 0;
+  bool _cameraIntroHighlight = false;
+
+  /// Group intro requested before the first layout pass had a real viewport.
+  bool _pendingGroupIntro = false;
 
   // Check mode & locking
   bool _checkMode = true;
@@ -671,6 +698,9 @@ class _CraftingTestViewState extends State<CraftingTestView>
 
   double _orthoScale = 300.0;
   Offset _panOffset = Offset.zero;
+
+  /// In-plane camera roll (radians). 0 = world +Y is screen up.
+  double _viewRotation = 0.0;
   Size _viewportSize = Size.zero;
   late double _drawingPlaneSize;
   double get _majorGridSpacing => _drawingPlaneSize / 4;
@@ -678,14 +708,19 @@ class _CraftingTestViewState extends State<CraftingTestView>
   static const int _gridDivisions = 32;
 
   /// Offset applied to the grid origin. Grid intersections are at
-  /// `_gridOriginOffset + i * spacing` instead of just `i * spacing`.
+  /// `origin + i * spacing * xDir + j * spacing * yDir`.
   Offset _gridOriginOffset = Offset.zero;
 
-  // Align-grid tool transient state
+  /// World angle (radians) of the grid's +Y axis. Default π/2 = world +Y.
+  /// The two-click Align Grid tool sets this from the vector between picks.
+  double _gridRotation = math.pi / 2;
+
+  // Align-grid tool: phase 0 = pick origin, phase 1 = pick +Y direction point.
+  int _alignGridPhase = 0;
   int? _alignGridHoveredPolyIndex;
   Offset? _alignGridPreviewVertex;
-  bool _alignGridDragging = false;
-  Offset? _alignGridDragStart;
+  Offset? _alignGridSecondPreview;
+  Offset? _alignGridPointerDown;
 
   /// Progressive grid LOD: 0 = base (32 divisions), -1 = subdivided (64), +N coarsens.
   int _gridLodLevel(Size viewport) {
@@ -856,6 +891,26 @@ class _CraftingTestViewState extends State<CraftingTestView>
       }
     });
 
+    _cameraAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..addListener(_onCameraAnimTick);
+    _cameraAnimController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        setState(() {
+          _panOffset = _camPanTo;
+          _orthoScale = _camOrthoTo;
+          _viewRotation = _camRotTo;
+          if (_cameraIntroHighlight) {
+            _activeHighlightT = 1.0;
+            _activeGlow = 0.0;
+            _cameraIntroHighlight = false;
+          }
+        });
+        _scheduleGridLodSync();
+      }
+    });
+
     _loadBlueprints();
     _loadCraftingState();
 
@@ -903,6 +958,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
     _magnetAnimController.dispose();
     _craftButtonAnimController.dispose();
     _gridLodAnimController.dispose();
+    _cameraAnimController.dispose();
     super.dispose();
   }
 
@@ -929,7 +985,8 @@ class _CraftingTestViewState extends State<CraftingTestView>
         .where(
           (p) =>
               p.startsWith('assets/crafting_blueprints/') &&
-              p.endsWith('.json'),
+              p.endsWith('.json') &&
+              !p.endsWith('/group.json'),
         )
         .toList();
 
@@ -943,10 +1000,11 @@ class _CraftingTestViewState extends State<CraftingTestView>
         // Skip malformed files.
       }
     }
+    final groupDefs = await BlueprintGroupDef.loadAll();
     if (mounted) {
       setState(() {
         _blueprints = loaded;
-        _blueprintSets = _buildBlueprintSets(loaded);
+        _blueprintSets = _buildBlueprintSets(loaded, groupDefs);
       });
       if (widget.defaultBlueprintName != null && _selectedBlueprint == null) {
         final match = loaded
@@ -959,38 +1017,26 @@ class _CraftingTestViewState extends State<CraftingTestView>
     }
   }
 
-  List<BlueprintSet> _buildBlueprintSets(List<CraftingBlueprint> blueprints) {
+  List<BlueprintSet> _buildBlueprintSets(
+    List<CraftingBlueprint> blueprints,
+    List<BlueprintGroupDef> groupDefs,
+  ) {
     final sets = <BlueprintSet>[];
+    final groupedCrafts = <String>{};
 
-    // The "example" multi-step set comes first.
-    sets.add(
-      const BlueprintSet(
-        name: 'Example',
-        steps: [
-          BlueprintStep(
-            craft: 'Group05',
-            island: 0,
-            label: 'Step 1',
-            iconCodePoint: 0xe3c9,
-          ),
-          BlueprintStep(
-            craft: 'Group06',
-            island: 0,
-            label: 'Step 2',
-            iconCodePoint: 0xe87e,
-          ),
-          BlueprintStep(
-            craft: 'Group05',
-            island: 2,
-            label: 'Step 3',
-            iconCodePoint: 0xe8b8,
-          ),
-        ],
-      ),
-    );
+    for (final def in groupDefs) {
+      final set = def.toBlueprintSet(
+        blueprints,
+        minorGridSpacing: _minorGridSpacing,
+      );
+      if (set == null) continue;
+      sets.add(set);
+      groupedCrafts.add(def.craftFolder.toLowerCase());
+    }
 
-    // Each existing blueprint becomes its own single-step set.
+    // Islands not covered by a group.json remain selectable as single-step sets.
     for (final bp in blueprints) {
+      if (groupedCrafts.contains(bp.craft.toLowerCase())) continue;
       sets.add(BlueprintSet.single(bp));
     }
 
@@ -1007,6 +1053,11 @@ class _CraftingTestViewState extends State<CraftingTestView>
     if (set == null) {
       _selectedSet = null;
       _currentStepIndex = 0;
+      _completedStepIndices.clear();
+      _groupOverlayPolygons = [];
+      _groupOverlayColors = [];
+      _activeHighlightT = 1.0;
+      _activeGlow = 0.0;
       _selectBlueprint(null);
       return;
     }
@@ -1014,27 +1065,62 @@ class _CraftingTestViewState extends State<CraftingTestView>
     setState(() {
       _selectedSet = set;
       _currentStepIndex = 0;
+      _completedStepIndices.clear();
+      _promotingIndex = null;
+      _stepAdvanceInProgress = false;
+      // Fresh group/set session — drop prior locked papers from the canvas.
+      _placedPapers.removeWhere((p) => p.locked);
     });
 
     final bp = _findBlueprintForStep(set.steps[0]);
-    _selectBlueprint(bp);
+    if (set.isGroup) {
+      _selectBlueprint(bp, playGroupIntro: true);
+    } else {
+      _selectBlueprint(bp);
+    }
   }
 
   void _advanceToNextStep() {
     if (_selectedSet == null) return;
+    if (_stepAdvanceInProgress) {
+      debugPrint(
+        '[craft-group] advance ignored (already in progress) '
+        'step=$_currentStepIndex completed=$_completedStepIndices',
+      );
+      return;
+    }
     final nextIndex = _currentStepIndex + 1;
     if (nextIndex >= _selectedSet!.steps.length) return;
+    final isGroup = _selectedSet!.isGroup;
+    final fromStep = _currentStepIndex;
 
+    debugPrint(
+      '[craft-group] advance $fromStep → $nextIndex '
+      '(group=$isGroup, filled=${_filledBlueprintIndices.length}, '
+      'lockedArea=$_blueprintLockedArea/$_blueprintTotalArea)',
+    );
+
+    _stepAdvanceInProgress = true;
     setState(() {
-      _stepTransitioning = true;
-      // Clear all state from the completed blueprint so nothing overlaps.
-      _placedPapers.clear();
+      _completedStepIndices.add(fromStep);
+      // Commit matched papers so later steps can't rematch or clear them.
+      for (final paper in _placedPapers) {
+        if (paper.lockedBlueprintIndex != null) {
+          paper.locked = true;
+        }
+      }
+      // Invalidate completion immediately so visibility/check can't re-fire
+      // advance while we wait for the card transition.
       _filledBlueprintIndices = {};
-      _blueprintWorldPolygons = [];
-      _blueprintUnionPolygons = [];
-      _blueprintTotalArea = 0;
       _blueprintLockedArea = 0;
+      _blueprintTotalArea = 0;
+      if (!isGroup) {
+        _placedPapers.clear();
+        _blueprintWorldPolygons = [];
+        _blueprintUnionPolygons = [];
+      }
       _completionPhase = CompletionPhase.none;
+      _craftExecuteButtonVisible = false;
       _foldNodeStates = {};
       _foldSchedule = [];
       _dotDissolveProgress = 0;
@@ -1042,28 +1128,60 @@ class _CraftingTestViewState extends State<CraftingTestView>
       _foldColorProgress = 0;
     });
 
-    // Brief delay for the card transition, then load next blueprint.
-    Future.delayed(const Duration(milliseconds: 400), () {
-      if (!mounted) return;
+    Future.delayed(FmStepCards.baseDuration, () {
+      if (!mounted) {
+        _stepAdvanceInProgress = false;
+        return;
+      }
+      if (_selectedSet == null) {
+        _stepAdvanceInProgress = false;
+        return;
+      }
+      debugPrint(
+        '[craft-group] loading step $nextIndex '
+        '(papers=${_placedPapers.length}, '
+        'locked=${_placedPapers.where((p) => p.locked).length})',
+      );
       setState(() {
+        _promotingIndex = nextIndex;
         _currentStepIndex = nextIndex;
-        _stepTransitioning = false;
+      });
+      Future.delayed(FmStepCards.promoteDuration, () {
+        if (!mounted) return;
+        if (_promotingIndex == nextIndex) {
+          setState(() => _promotingIndex = null);
+        }
       });
       final bp = _findBlueprintForStep(_selectedSet!.steps[nextIndex]);
-      _selectBlueprint(bp);
+      _selectBlueprint(bp, animateCameraToStep: isGroup);
+      _stepAdvanceInProgress = false;
+      debugPrint(
+        '[craft-group] now on step $_currentStepIndex '
+        'completed=$_completedStepIndices '
+        'activePolys=${_blueprintWorldPolygons.length} '
+        'totalArea=$_blueprintTotalArea',
+      );
     });
   }
 
-  void _selectBlueprint(CraftingBlueprint? blueprint) {
+  void _selectBlueprint(
+    CraftingBlueprint? blueprint, {
+    bool playGroupIntro = false,
+    bool animateCameraToStep = false,
+  }) {
+    final stayingInGroup =
+        (_selectedSet?.isGroup ?? false) &&
+        (playGroupIntro || animateCameraToStep);
+
     setState(() {
-      // Save locked papers for the outgoing blueprint.
-      if (_selectedBlueprint != null) {
-        final outName = _selectedBlueprint!.craft;
+      // Save locked papers for the outgoing blueprint (non-group switches).
+      if (_selectedBlueprint != null && !stayingInGroup) {
+        final outKey = _progressKey(_selectedBlueprint!);
         final locked = _placedPapers
             .where((p) => p.locked && p.lockedBlueprintIndex != null)
             .toList();
         if (locked.isNotEmpty) {
-          _blueprintProgress[outName] = locked
+          _blueprintProgress[outKey] = locked
               .map(
                 (p) => _LockedPaperSnapshot(
                   id: p.id,
@@ -1079,7 +1197,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
               )
               .toList();
         } else {
-          _blueprintProgress.remove(outName);
+          _blueprintProgress.remove(outKey);
         }
         _placedPapers.removeWhere((p) => p.locked);
       }
@@ -1091,17 +1209,51 @@ class _CraftingTestViewState extends State<CraftingTestView>
       _blueprintUnionPolygons = [];
       _blueprintTotalArea = 0;
       _blueprintLockedArea = 0;
-      _gridOriginOffset = Offset.zero;
       _alignGridPreviewVertex = null;
+      _alignGridSecondPreview = null;
       _alignGridHoveredPolyIndex = null;
-      if (blueprint == null) return;
+      _alignGridPhase = 0;
+      if (blueprint == null) {
+        _gridOriginOffset = Offset.zero;
+        _gridRotation = math.pi / 2;
+        _groupOverlayPolygons = [];
+        _groupOverlayColors = [];
+        return;
+      }
 
-      // Compute the centering/snap offset from all unfolded polygons.
-      final offset = _computeBlueprintOffset(blueprint);
-      if (offset == null) return;
-      final (nudgeX, nudgeY, cx, cy) = offset;
+      final useGroupLayout = _selectedSet?.isGroup == true;
+      final activeStep =
+          useGroupLayout &&
+              _currentStepIndex < (_selectedSet?.steps.length ?? 0)
+          ? _selectedSet!.steps[_currentStepIndex]
+          : null;
+      final layoutOffset = activeStep?.layoutOffset ?? Offset.zero;
+      final layoutRotationDeg = activeStep?.layoutRotationDeg ?? 0.0;
 
-      // Reset completion state.
+      late final double nudgeX, nudgeY, cx, cy;
+      final List<List<Offset>> allScaled;
+      if (useGroupLayout) {
+        // Group layout offsets already place islands; no extra centering.
+        nudgeX = layoutOffset.dx;
+        nudgeY = layoutOffset.dy;
+        cx = 0;
+        cy = 0;
+        allScaled = _scaleBlueprintPolygons(
+          blueprint,
+          nudgeX,
+          nudgeY,
+          cx,
+          cy,
+          rotationDeg: layoutRotationDeg,
+        );
+      } else {
+        final offset = _computeBlueprintOffset(blueprint);
+        if (offset == null) return;
+        (nudgeX, nudgeY, cx, cy) = offset;
+        allScaled = _scaleBlueprintPolygons(blueprint, nudgeX, nudgeY, cx, cy);
+      }
+
+      // Reset completion state (animations disabled).
       _completionPhase = CompletionPhase.none;
       _craftExecuteButtonVisible = false;
       _craftButtonAnimController.reset();
@@ -1113,81 +1265,356 @@ class _CraftingTestViewState extends State<CraftingTestView>
       _foldNodeStates = {};
       _foldSchedule = [];
 
-      // Build disjoint polygons from transform tree nodes.
-      final allScaled = <List<Offset>>[];
       _polyIndexToRegion = {};
+      var polyI = 0;
       for (final node in blueprint.transformTree.nodes) {
-        final verts = node.unfoldedPolygon2D;
-        if (verts.length >= 3) {
-          _polyIndexToRegion[allScaled.length] = node.layer;
-          allScaled.add(
-            verts
-                .map(
-                  (v) => Offset(
-                    v.dx * _minorGridSpacing - cx + nudgeX,
-                    v.dy * _minorGridSpacing - cy + nudgeY,
-                  ),
-                )
-                .toList(),
-          );
+        if (node.unfoldedPolygon2D.length >= 3) {
+          _polyIndexToRegion[polyI] = node.layer;
+          polyI++;
         }
       }
       _blueprintWorldPolygons = allScaled;
+      _applyAutoGridAlignment(allScaled);
 
-      // Pre-calculate total blueprint area.
       _blueprintTotalArea = 0;
       for (final poly in allScaled) {
         _blueprintTotalArea += _polyArea(poly).abs();
       }
 
-      // Build union polygons (per layer, then combine results).
-      _blueprintUnionPolygons = _computeUnionPolygons(
-        blueprint,
-        cx,
-        cy,
-        nudgeX,
-        nudgeY,
-      );
+      _blueprintUnionPolygons = useGroupLayout
+          ? allScaled
+          : _computeUnionPolygons(blueprint, cx, cy, nudgeX, nudgeY);
       _filledBlueprintIndices = {};
 
-      // Restore locked papers saved for this blueprint.
-      final saved = _blueprintProgress[blueprint.craft];
-      if (saved != null) {
-        for (final snap in saved) {
-          _placedPapers.add(snap.toPaper());
-          _filledBlueprintIndices.add(snap.lockedBlueprintIndex);
-          if (snap.lockedBlueprintIndex < allScaled.length) {
-            _blueprintLockedArea += _polyArea(
-              allScaled[snap.lockedBlueprintIndex],
-            ).abs();
+      // Restore locked papers only when not staying in a live group session.
+      if (!stayingInGroup) {
+        final saved = _blueprintProgress[_progressKey(blueprint)];
+        if (saved != null) {
+          for (final snap in saved) {
+            _placedPapers.add(snap.toPaper());
+            _filledBlueprintIndices.add(snap.lockedBlueprintIndex);
+            if (snap.lockedBlueprintIndex < allScaled.length) {
+              _blueprintLockedArea += _polyArea(
+                allScaled[snap.lockedBlueprintIndex],
+              ).abs();
+            }
           }
         }
+      } else if (animateCameraToStep) {
+        // Re-derive filled indices from papers already locked to this step's polys.
+        // Papers keep global positions; fill state starts fresh for the new active step.
+        _filledBlueprintIndices = {};
+        _blueprintLockedArea = 0;
       }
 
-      // Zoom-to-fit: center and scale to show all blueprint polygons.
-      if (allScaled.isNotEmpty) {
-        double bpMinX = double.infinity, bpMinY = double.infinity;
-        double bpMaxX = double.negativeInfinity,
-            bpMaxY = double.negativeInfinity;
-        for (final poly in allScaled) {
-          for (final v in poly) {
-            bpMinX = math.min(bpMinX, v.dx);
-            bpMinY = math.min(bpMinY, v.dy);
-            bpMaxX = math.max(bpMaxX, v.dx);
-            bpMaxY = math.max(bpMaxY, v.dy);
-          }
-        }
-        final bpCenterX = (bpMinX + bpMaxX) / 2;
-        final bpCenterY = (bpMinY + bpMaxY) / 2;
-        final bpW = bpMaxX - bpMinX;
-        final bpH = bpMaxY - bpMinY;
-        // Fit with some padding (20% margin).
-        final fitScale = math.max(bpW, bpH) * 0.7;
-        _orthoScale = fitScale.clamp(_minOrthoScale, _maxOrthoScale);
-        _panOffset = Offset(bpCenterX, bpCenterY);
+      if (useGroupLayout) {
+        _rebuildGroupOverlays();
+      } else {
+        _groupOverlayPolygons = [];
+        _groupOverlayColors = [];
+        _activeHighlightT = 1.0;
+        _activeGlow = 0.0;
+      }
+
+      if (!playGroupIntro && !animateCameraToStep && allScaled.isNotEmpty) {
+        final cam = _cameraForPolygons(allScaled);
+        _orthoScale = cam.ortho;
+        _panOffset = cam.pan;
+        _viewRotation = cam.rotation;
       }
     });
+
+    if (playGroupIntro && _selectedSet?.isGroup == true) {
+      _startGroupIntroCamera();
+    } else if (animateCameraToStep && _selectedSet?.isGroup == true) {
+      if (_blueprintWorldPolygons.isNotEmpty) {
+        final cam = _cameraForPolygons(_blueprintWorldPolygons);
+        _animateCameraTo(cam.pan, cam.ortho, rotation: cam.rotation);
+      }
+    }
+
     _scheduleCheck();
+    _scheduleGridLodSync();
+  }
+
+  String _progressKey(CraftingBlueprint bp) => '${bp.craft}#${bp.island}';
+
+  List<List<Offset>> _scaleBlueprintPolygons(
+    CraftingBlueprint blueprint,
+    double nudgeX,
+    double nudgeY,
+    double cx,
+    double cy, {
+    double rotationDeg = 0,
+  }) {
+    final scaled = <List<Offset>>[];
+    for (final node in blueprint.transformTree.nodes) {
+      final verts = node.unfoldedPolygon2D;
+      if (verts.length < 3) continue;
+      scaled.add(
+        verts
+            .map(
+              (v) => Offset(
+                v.dx * _minorGridSpacing - cx,
+                v.dy * _minorGridSpacing - cy,
+              ),
+            )
+            .toList(),
+      );
+    }
+    if (scaled.isEmpty) return scaled;
+
+    List<List<Offset>> oriented = scaled;
+    if (rotationDeg != 0) {
+      var sx = 0.0, sy = 0.0, n = 0;
+      for (final poly in scaled) {
+        for (final p in poly) {
+          sx += p.dx;
+          sy += p.dy;
+          n++;
+        }
+      }
+      final ox = sx / n;
+      final oy = sy / n;
+      final rad = rotationDeg * math.pi / 180;
+      final c = math.cos(rad);
+      final s = math.sin(rad);
+      oriented = [
+        for (final poly in scaled)
+          [
+            for (final p in poly)
+              Offset(
+                ox + (p.dx - ox) * c - (p.dy - oy) * s,
+                oy + (p.dx - ox) * s + (p.dy - oy) * c,
+              ),
+          ],
+      ];
+    }
+
+    return [
+      for (final poly in oriented)
+        [for (final p in poly) Offset(p.dx + nudgeX, p.dy + nudgeY)],
+    ];
+  }
+
+  Rect? _boundsOfPolygons(List<List<Offset>> polygons) {
+    if (polygons.isEmpty) return null;
+    double minX = double.infinity, minY = double.infinity;
+    double maxX = double.negativeInfinity, maxY = double.negativeInfinity;
+    for (final poly in polygons) {
+      for (final v in poly) {
+        minX = math.min(minX, v.dx);
+        minY = math.min(minY, v.dy);
+        maxX = math.max(maxX, v.dx);
+        maxY = math.max(maxY, v.dy);
+      }
+    }
+    if (!minX.isFinite) return null;
+    return Rect.fromLTRB(minX, minY, maxX, maxY);
+  }
+
+  /// Fits [polygons] in the current viewport, optionally rolling the camera so a
+  /// wide island sits better in portrait. Candidate rolls come from undirected
+  /// edge directions (180° flips count as the same axis).
+  ({Offset pan, double ortho, double rotation}) _cameraForPolygons(
+    List<List<Offset>> polygons, {
+    double padding = 0.7,
+  }) {
+    final points = <Offset>[
+      for (final poly in polygons)
+        for (final v in poly) v,
+    ];
+    if (points.isEmpty) {
+      return (pan: _panOffset, ortho: _orthoScale, rotation: _viewRotation);
+    }
+
+    final vp = _viewportSize;
+    final aspect = (vp.width > 1 && vp.height > 1) ? vp.width / vp.height : 1.0;
+    final cover = 2 * padding;
+
+    double orthoForSize(double width, double height) {
+      final halfW = math.max(width / 2, 1e-6);
+      final halfH = math.max(height / 2, 1e-6);
+      return math.max(halfH * cover, halfW * cover / aspect);
+    }
+
+    final candidates = _viewOrientationCandidates(polygons);
+    var bestOrtho = double.infinity;
+    var bestRot = 0.0;
+    var bestPan = points.first;
+    var bestUpDot = -double.infinity;
+
+    for (final rot in candidates) {
+      final obb = _orientedBounds(points, rot);
+      final ortho = orthoForSize(obb.width, obb.height);
+      // Prefer upright-ish rolls when fits are nearly equal.
+      final upDot = math.cos(rot);
+      final betterFit = ortho < bestOrtho * 0.98;
+      final similarFit = ortho <= bestOrtho * 1.02;
+      final betterUp = upDot > bestUpDot;
+      final smallerRoll =
+          rot.abs() < bestRot.abs() - 1e-6 ||
+          (rot.abs() - bestRot.abs()).abs() < 1e-6 && upDot > bestUpDot;
+      if (betterFit ||
+          (similarFit && betterUp) ||
+          (similarFit && !betterUp && smallerRoll && ortho <= bestOrtho)) {
+        bestOrtho = ortho;
+        bestRot = rot;
+        bestPan = obb.center;
+        bestUpDot = upDot;
+      }
+    }
+
+    return (
+      pan: bestPan,
+      ortho: bestOrtho.clamp(_minOrthoScale, _maxOrthoScale),
+      rotation: bestRot,
+    );
+  }
+
+  /// Axis-aligned fallback used only when no polygon list is available.
+  ({Offset pan, double ortho, double rotation}) _cameraForBounds(
+    Rect bounds, {
+    double padding = 0.7,
+  }) {
+    return _cameraForPolygons([
+      [bounds.topLeft, bounds.topRight, bounds.bottomRight, bounds.bottomLeft],
+    ], padding: padding);
+  }
+
+  void _rebuildGroupOverlays() {
+    final set = _selectedSet;
+    _groupOverlayPolygons = [];
+    _groupOverlayColors = [];
+    if (set == null || !set.isGroup) return;
+
+    for (var step = 0; step < set.steps.length; step++) {
+      if (step == _currentStepIndex) continue;
+      final bp = _findBlueprintForStep(set.steps[step]);
+      if (bp == null) continue;
+      final offset = set.steps[step].layoutOffset;
+      final polys = _scaleBlueprintPolygons(
+        bp,
+        offset.dx,
+        offset.dy,
+        0,
+        0,
+        rotationDeg: set.steps[step].layoutRotationDeg,
+      );
+      final color = _completedStepIndices.contains(step)
+          ? Colors.greenAccent.withValues(alpha: 0.7)
+          : Colors.white.withValues(alpha: 0.22);
+      for (final poly in polys) {
+        _groupOverlayPolygons.add(poly);
+        _groupOverlayColors.add(color);
+      }
+    }
+  }
+
+  void _startGroupIntroCamera() {
+    final set = _selectedSet;
+    if (set == null || !set.isGroup) return;
+
+    // Need a real viewport to fit portrait/landscape correctly.
+    if (_viewportSize.width < 1 || _viewportSize.height < 1) {
+      _pendingGroupIntro = true;
+      return;
+    }
+    _pendingGroupIntro = false;
+
+    // Overview bounds across every component.
+    final allPolys = <List<Offset>>[];
+    for (var step = 0; step < set.steps.length; step++) {
+      final bp = _findBlueprintForStep(set.steps[step]);
+      if (bp == null) continue;
+      final offset = set.steps[step].layoutOffset;
+      allPolys.addAll(
+        _scaleBlueprintPolygons(
+          bp,
+          offset.dx,
+          offset.dy,
+          0,
+          0,
+          rotationDeg: set.steps[step].layoutRotationDeg,
+        ),
+      );
+    }
+    final overview = _boundsOfPolygons(allPolys);
+    final first = _boundsOfPolygons(_blueprintWorldPolygons);
+    if (overview == null || first == null) return;
+
+    final overviewCam = _cameraForPolygons(allPolys, padding: 0.85);
+    final firstCam = _cameraForPolygons(_blueprintWorldPolygons, padding: 0.7);
+
+    // Hold the full-group overview briefly before zooming in.
+    setState(() {
+      _panOffset = overviewCam.pan;
+      _orthoScale = overviewCam.ortho;
+      _viewRotation = overviewCam.rotation;
+      _activeHighlightT = 0;
+      _activeGlow = 0;
+    });
+
+    Future.delayed(const Duration(seconds: 2), () {
+      if (!mounted) return;
+      if (_selectedSet != set) return;
+      _animateCameraTo(
+        firstCam.pan,
+        firstCam.ortho,
+        rotation: firstCam.rotation,
+        introHighlight: true,
+        duration: const Duration(milliseconds: 1400),
+      );
+    });
+  }
+
+  void _animateCameraTo(
+    Offset pan,
+    double ortho, {
+    double? rotation,
+    bool introHighlight = false,
+    Duration duration = const Duration(milliseconds: 900),
+  }) {
+    _camPanFrom = _panOffset;
+    _camOrthoFrom = _orthoScale;
+    _camRotFrom = _viewRotation;
+    _camPanTo = pan;
+    _camOrthoTo = ortho;
+    _camRotTo = rotation ?? _viewRotation;
+    // Pick the equivalent roll (±π) closest to the current view.
+    final alt = _camRotTo + (_camRotTo >= 0 ? -math.pi : math.pi);
+    if ((alt - _camRotFrom).abs() < (_camRotTo - _camRotFrom).abs()) {
+      _camRotTo = alt;
+    }
+    _cameraIntroHighlight = introHighlight;
+    if (introHighlight) {
+      _activeHighlightT = 0;
+      _activeGlow = 0;
+    }
+    _cameraAnimController.duration = duration;
+    _cameraAnimController.forward(from: 0);
+  }
+
+  void _onCameraAnimTick() {
+    final raw = _cameraAnimController.value;
+    final t = Curves.easeInOut.transform(raw);
+    setState(() {
+      _panOffset = Offset.lerp(_camPanFrom, _camPanTo, t)!;
+      _orthoScale = _camOrthoFrom + (_camOrthoTo - _camOrthoFrom) * t;
+      _viewRotation = _camRotFrom + (_camRotTo - _camRotFrom) * t;
+      if (_cameraIntroHighlight) {
+        _activeHighlightT = t;
+        // Quick yellow glow early while easing into the zoom.
+        const glowPeak = 0.18;
+        if (raw <= glowPeak) {
+          _activeGlow = (raw / glowPeak).clamp(0.0, 1.0);
+        } else {
+          _activeGlow =
+              (1.0 - (raw - glowPeak) / (1.0 - glowPeak)).clamp(0.0, 1.0) *
+              0.45;
+        }
+      }
+    });
     _scheduleGridLodSync();
   }
 
@@ -1308,6 +1735,8 @@ class _CraftingTestViewState extends State<CraftingTestView>
     final paperPolys = <List<Offset>>[];
     final paperIds = <String>[];
     for (final paper in _placedPapers) {
+      // Papers committed to a finished step stay out of the active match.
+      if (paper.locked) continue;
       final corners = _paperWorldCorners(paper);
       paperPolys.add(corners.map((v) => Offset(v.x, v.y)).toList());
       paperIds.add(paper.id);
@@ -1324,16 +1753,27 @@ class _CraftingTestViewState extends State<CraftingTestView>
     try {
       final result = await compute(_checkCoverage, params);
       if (!mounted || generation != _checkGeneration) return;
+      if (_stepAdvanceInProgress) {
+        debugPrint('[craft-group] check result ignored (advance in progress)');
+        return;
+      }
 
       final previouslyFilled = _filledBlueprintIndices;
       final newlyFilled = result.difference(previouslyFilled);
+
+      debugPrint(
+        '[craft-group] check step=$_currentStepIndex '
+        'filled=${result.length}/${bpPolygons.length} '
+        'new=${newlyFilled.length} papers=${paperIds.length}',
+      );
 
       if (newlyFilled.isNotEmpty && _lockAnimatingPaperIds.isEmpty) {
         _startLockAnimation(newlyFilled, bpPolygons, paperPolys, paperIds);
       }
 
-      // Clear lockedBlueprintIndex on papers whose slot is no longer filled.
+      // Only clear match indices on unlocked papers for the active step.
       for (final paper in _placedPapers) {
+        if (paper.locked) continue;
         if (paper.lockedBlueprintIndex != null &&
             !result.contains(paper.lockedBlueprintIndex!)) {
           paper.lockedBlueprintIndex = null;
@@ -1404,12 +1844,13 @@ class _CraftingTestViewState extends State<CraftingTestView>
       _lockAnimatingPaperIds = {};
       _lockAnimProgress = 0;
     });
+    // _recomputeLockedArea already calls _updateCraftExecuteButtonVisibility.
     _recomputeLockedArea();
     _scheduleCheck();
-    _updateCraftExecuteButtonVisibility();
   }
 
   bool _isCraftComplete() {
+    if (_stepAdvanceInProgress) return false;
     return _blueprintTotalArea > 0 &&
         _blueprintLockedArea >= _blueprintTotalArea * 0.999 &&
         _completionPhase == CompletionPhase.none;
@@ -1421,6 +1862,12 @@ class _CraftingTestViewState extends State<CraftingTestView>
 
     // When in a multi-step set, auto-trigger the completion sequence.
     if (shouldShow && _selectedSet != null && _selectedSet!.steps.length > 1) {
+      if (_stepAdvanceInProgress) return;
+      debugPrint(
+        '[craft-group] step $_currentStepIndex complete → auto-advance '
+        '(locked=$_blueprintLockedArea / total=$_blueprintTotalArea, '
+        'filled=${_filledBlueprintIndices.length})',
+      );
       setState(() => _craftExecuteButtonVisible = false);
       _notifyCraftCompleted();
       _startCompletionSequence();
@@ -1481,7 +1928,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
   }
 
   // ---------------------------------------------------------------------------
-  // Completion animation sequence
+  // Completion (fold/dissolve animations currently disabled)
   // ---------------------------------------------------------------------------
 
   void _startCompletionSequence() {
@@ -1489,45 +1936,40 @@ class _CraftingTestViewState extends State<CraftingTestView>
         _completionPhase != CompletionPhase.none) {
       return;
     }
-
-    // Build the folded geometry up-front so it can fade in over the regions
-    // while the dots dissolve, then prime it in its unfolded pose.
-    _buildFoldGeometry();
-    _updateFoldAnimation(0);
-
-    final inSet = _selectedSet != null && _selectedSet!.steps.length > 1;
-
-    if (inSet) {
-      // Skip dissolve, jump straight to fold with a fast 1s duration.
-      setState(() {
-        _completionPhase = CompletionPhase.fold;
-        _dotDissolveProgress = 1;
-        _foldOpacity = 1;
-        _foldColorProgress = 0;
-        _selectedPaperIds = {};
-        _isRotationGizmoActive = false;
-      });
-      _foldController.duration = const Duration(milliseconds: 1000);
-      _foldController.forward(from: 0);
-    } else {
-      setState(() {
-        _completionPhase = CompletionPhase.dissolveReveal;
-        _dotDissolveProgress = 0;
-        _foldOpacity = 0;
-        _foldColorProgress = 0;
-        _selectedPaperIds = {};
-        _isRotationGizmoActive = false;
-      });
-      _foldController.duration = const Duration(seconds: 4);
-      _dissolveController.forward(from: 0);
+    if (_stepAdvanceInProgress) {
+      debugPrint('[craft-group] completion ignored (advance in progress)');
+      return;
     }
+
+    debugPrint(
+      '[craft-group] completion sequence at step $_currentStepIndex '
+      '(set=${_selectedSet?.name}, steps=${_selectedSet?.steps.length})',
+    );
+
+    fmHapticBigClick();
+
+    // Skip dissolve/fold for now — finish immediately.
+    if (_completedPapers.isNotEmpty) {
+      widget.onCraftFoldComplete?.call(
+        _completedPapers,
+        _selectedBlueprint!.craft,
+        _selectedBlueprint!,
+      );
+    }
+
+    if (_selectedSet != null &&
+        _currentStepIndex < _selectedSet!.steps.length - 1) {
+      _advanceToNextStep();
+      return;
+    }
+
+    // Entire set (or single blueprint) finished.
+    widget.onDismiss?.call();
   }
 
   void _onDissolveTick() {
     setState(() {
       final t = _dissolveController.value;
-      // Dots dissolve linearly (each dot has its own random threshold), while
-      // the 3D geometry eases in over the same 0.5s window.
       _dotDissolveProgress = t;
       _foldOpacity = Curves.easeIn.transform(t);
     });
@@ -1543,9 +1985,6 @@ class _CraftingTestViewState extends State<CraftingTestView>
   }
 
   void _onFoldTick() {
-    // Accelerating fold: an ease-in curve on global time, layered on top of the
-    // per-hinge smoothstep + leaf-to-root cascade, mirrors the Rhino viewer's
-    // "picks up speed toward the end" feel.
     final eased = Curves.easeInCubic.transform(_foldController.value);
     _updateFoldAnimation(eased);
     setState(() {
@@ -1563,7 +2002,6 @@ class _CraftingTestViewState extends State<CraftingTestView>
       );
     }
 
-    // If there's a next step in the set, advance to it instead of dismissing.
     if (_selectedSet != null &&
         _currentStepIndex < _selectedSet!.steps.length - 1) {
       Future.delayed(const Duration(milliseconds: 600), () {
@@ -1911,13 +2349,11 @@ class _CraftingTestViewState extends State<CraftingTestView>
     Offset bestOffset = Offset.zero;
 
     final spacing = _activeGridSpacing;
-    final ox = _gridOriginOffset.dx;
-    final oy = _gridOriginOffset.dy;
     for (final v in worldVertices) {
-      final snappedX = ((v.x - ox) / spacing).round() * spacing + ox;
-      final snappedY = ((v.y - oy) / spacing).round() * spacing + oy;
-      final dx = snappedX - v.x;
-      final dy = snappedY - v.y;
+      final world = Offset(v.x, v.y);
+      final snapped = _snapPointToGrid(world, spacing);
+      final dx = snapped.dx - v.x;
+      final dy = snapped.dy - v.y;
       final dist = dx * dx + dy * dy;
       if (dist < bestDist) {
         bestDist = dist;
@@ -2008,12 +2444,10 @@ class _CraftingTestViewState extends State<CraftingTestView>
 
       if (_snapGrid) {
         final spacing = _activeGridSpacing;
-        final ox = _gridOriginOffset.dx;
-        final oy = _gridOriginOffset.dy;
-        final snappedX = ((vx - ox) / spacing).round() * spacing + ox;
-        final snappedY = ((vy - oy) / spacing).round() * spacing + oy;
-        final dx = snappedX - vx;
-        final dy = snappedY - vy;
+        final world = Offset(vx, vy);
+        final snapped = _snapPointToGrid(world, spacing);
+        final dx = snapped.dx - vx;
+        final dy = snapped.dy - vy;
         final dist = math.sqrt(dx * dx + dy * dy);
         if (dist <= radius) {
           consider(dx, dy, dist, 0);
@@ -2286,28 +2720,67 @@ class _CraftingTestViewState extends State<CraftingTestView>
   // Align-grid helpers
   // ---------------------------------------------------------------------------
 
-  /// Returns the bottom-left cornermost vertex of [polygon].
-  /// "Bottom-left" means smallest X first, then smallest Y (world Y-up).
-  static Offset _bottomLeftVertex(List<Offset> polygon) {
-    return polygon.reduce((best, v) {
-      if (v.dx < best.dx || (v.dx == best.dx && v.dy < best.dy)) return v;
-      return best;
-    });
+  Offset _worldToGrid(Offset world) =>
+      _worldToGridCoords(world, _gridOriginOffset, _gridRotation);
+
+  Offset _gridToWorld(double gx, double gy) =>
+      _gridCoordsToWorld(Offset(gx, gy), _gridOriginOffset, _gridRotation);
+
+  Offset _gridCellCenter(int col, int row, [double? spacing]) {
+    final s = spacing ?? _activeGridSpacing;
+    return _gridToWorld((col + 0.5) * s, (row + 0.5) * s);
   }
 
-  /// Returns the vertex in [polygon] closest to [target].
-  static Offset _closestVertex(List<Offset> polygon, Offset target) {
+  /// Snap a world point to the nearest grid intersection.
+  Offset _snapPointToGrid(Offset world, [double? spacing]) {
+    final s = spacing ?? _activeGridSpacing;
+    final g = _worldToGrid(world);
+    return _gridToWorld((g.dx / s).round() * s, (g.dy / s).round() * s);
+  }
+
+  void _applyAutoGridAlignment(List<List<Offset>> polygons) {
+    final frame = _computeDominantGridFrame(polygons);
+    if (frame == null) {
+      _gridOriginOffset = Offset.zero;
+      _gridRotation = math.pi / 2;
+      return;
+    }
+    _gridOriginOffset = frame.anchor;
+    _gridRotation = frame.yAngle;
+  }
+
+  void _clearAlignGridTransient() {
+    _alignGridPhase = 0;
+    _alignGridPreviewVertex = null;
+    _alignGridSecondPreview = null;
+    _alignGridHoveredPolyIndex = null;
+    _alignGridPointerDown = null;
+  }
+
+  /// Nearest blueprint vertex to [target], optionally constrained to one poly.
+  Offset? _closestBlueprintVertex(
+    Offset target, {
+    int? polyIndex,
+    double? maxDist,
+  }) {
+    final polys = polyIndex != null
+        ? [_blueprintWorldPolygons[polyIndex]]
+        : _blueprintWorldPolygons;
+    if (polys.isEmpty) return null;
     double bestDistSq = double.infinity;
-    Offset best = polygon.first;
-    for (final v in polygon) {
-      final dx = v.dx - target.dx;
-      final dy = v.dy - target.dy;
-      final distSq = dx * dx + dy * dy;
-      if (distSq < bestDistSq) {
-        bestDistSq = distSq;
-        best = v;
+    Offset? best;
+    for (final poly in polys) {
+      if (poly.isEmpty) continue;
+      for (final v in poly) {
+        final d = (v - target).distanceSquared;
+        if (d < bestDistSq) {
+          bestDistSq = d;
+          best = v;
+        }
       }
     }
+    if (best == null) return null;
+    if (maxDist != null && bestDistSq > maxDist * maxDist) return null;
     return best;
   }
 
@@ -2459,8 +2932,9 @@ class _CraftingTestViewState extends State<CraftingTestView>
   /// The grid is infinite so all positions are valid.
   (int, int)? _worldToGridCell(Offset worldPt) {
     final s = _activeGridSpacing;
-    final col = ((worldPt.dx - _gridOriginOffset.dx) / s).floor();
-    final row = ((worldPt.dy - _gridOriginOffset.dy) / s).floor();
+    final g = _worldToGrid(worldPt);
+    final col = (g.dx / s).floor();
+    final row = (g.dy / s).floor();
     return (col, row);
   }
 
@@ -2496,19 +2970,17 @@ class _CraftingTestViewState extends State<CraftingTestView>
   /// avoiding ray-casting ambiguity for grid-aligned boundaries.
   bool _isCellOccupiedByPaper(int col, int row) {
     final s = _activeGridSpacing;
-    final x0 = _gridOriginOffset.dx + col * s;
-    final y0 = _gridOriginOffset.dy + row * s;
     final inset = s * 0.01;
     final corners = [
-      Vector3(x0 + inset, y0 + inset, _paperZ),
-      Vector3(x0 + s - inset, y0 + inset, _paperZ),
-      Vector3(x0 + s - inset, y0 + s - inset, _paperZ),
-      Vector3(x0 + inset, y0 + s - inset, _paperZ),
+      _gridToWorld(col * s + inset, row * s + inset),
+      _gridToWorld((col + 1) * s - inset, row * s + inset),
+      _gridToWorld((col + 1) * s - inset, (row + 1) * s - inset),
+      _gridToWorld(col * s + inset, (row + 1) * s - inset),
     ];
     for (final paper in _placedPapers) {
       bool allInside = true;
       for (final c in corners) {
-        final local = _worldToPaperLocal(c, paper);
+        final local = _worldToPaperLocal(Vector3(c.dx, c.dy, _paperZ), paper);
         if (!_isPointInLocalPaper(local, paper)) {
           allInside = false;
           break;
@@ -2525,8 +2997,6 @@ class _CraftingTestViewState extends State<CraftingTestView>
   /// only those papers are considered.
   bool _isCellAdjacentToPaper(int col, int row, {Set<String>? onlyPaperIds}) {
     final s = _activeGridSpacing;
-    final ox = _gridOriginOffset.dx;
-    final oy = _gridOriginOffset.dy;
     const neighbours = [(-1, 0), (1, 0), (0, -1), (0, 1)];
     final papers = onlyPaperIds != null
         ? _placedPapers.where((p) => onlyPaperIds.contains(p.id))
@@ -2534,9 +3004,8 @@ class _CraftingTestViewState extends State<CraftingTestView>
     for (final (dc, dr) in neighbours) {
       final nc = col + dc;
       final nr = row + dr;
-      final cx = ox + nc * s + s / 2;
-      final cy = oy + nr * s + s / 2;
-      final pt = Vector3(cx, cy, _paperZ);
+      final center = _gridCellCenter(nc, nr, s);
+      final pt = Vector3(center.dx, center.dy, _paperZ);
       for (final paper in papers) {
         final local = _worldToPaperLocal(pt, paper);
         if (_isPointInLocalPaper(local, paper)) return true;
@@ -2552,29 +3021,27 @@ class _CraftingTestViewState extends State<CraftingTestView>
     if (worldCorners.isEmpty) return const {};
 
     final s = _activeGridSpacing;
-    final ox = _gridOriginOffset.dx;
-    final oy = _gridOriginOffset.dy;
 
-    double minX = double.infinity, maxX = -double.infinity;
-    double minY = double.infinity, maxY = -double.infinity;
+    double minGx = double.infinity, maxGx = -double.infinity;
+    double minGy = double.infinity, maxGy = -double.infinity;
     for (final c in worldCorners) {
-      if (c.x < minX) minX = c.x;
-      if (c.x > maxX) maxX = c.x;
-      if (c.y < minY) minY = c.y;
-      if (c.y > maxY) maxY = c.y;
+      final g = _worldToGrid(Offset(c.x, c.y));
+      if (g.dx < minGx) minGx = g.dx;
+      if (g.dx > maxGx) maxGx = g.dx;
+      if (g.dy < minGy) minGy = g.dy;
+      if (g.dy > maxGy) maxGy = g.dy;
     }
 
-    final colMin = ((minX - ox) / s).floor();
-    final colMax = ((maxX - ox) / s).floor();
-    final rowMin = ((minY - oy) / s).floor();
-    final rowMax = ((maxY - oy) / s).floor();
+    final colMin = (minGx / s).floor();
+    final colMax = (maxGx / s).floor();
+    final rowMin = (minGy / s).floor();
+    final rowMax = (maxGy / s).floor();
 
     final result = <(int, int)>{};
     for (var c = colMin; c <= colMax; c++) {
       for (var r = rowMin; r <= rowMax; r++) {
-        final cx = ox + (c + 0.5) * s;
-        final cy = oy + (r + 0.5) * s;
-        final world = Vector3(cx, cy, _paperZ);
+        final center = _gridCellCenter(c, r, s);
+        final world = Vector3(center.dx, center.dy, _paperZ);
         final local = _worldToPaperLocal(world, paper);
         if (_isPointInLocalPaper(local, paper)) {
           result.add((c, r));
@@ -2638,6 +3105,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
       _orthoScale,
       _paperZ,
       panOffset: _panOffset,
+      viewRotation: _viewRotation,
     );
   }
 
@@ -2647,7 +3115,28 @@ class _CraftingTestViewState extends State<CraftingTestView>
       viewportSize,
       _orthoScale,
       panOffset: _panOffset,
+      viewRotation: _viewRotation,
     );
+  }
+
+  /// Maps a screen-space drag delta into world delta (y-up), honoring view roll.
+  Offset _screenDeltaToWorldDelta(Offset screenDelta, double worldPerPixel) {
+    final dx = screenDelta.dx * worldPerPixel;
+    final dy = screenDelta.dy * worldPerPixel;
+    final c = math.cos(_viewRotation);
+    final s = math.sin(_viewRotation);
+    // Finger right → +viewX; finger down → -viewY (world y-up).
+    return Offset(dx * c + dy * s, dx * s - dy * c);
+  }
+
+  /// Camera pan change for a screen drag (content follows the finger).
+  Offset _panDeltaFromScreen(Offset screenDelta, double worldPerPixel) {
+    final dx = screenDelta.dx * worldPerPixel;
+    final dy = screenDelta.dy * worldPerPixel;
+    final c = math.cos(_viewRotation);
+    final s = math.sin(_viewRotation);
+    // Finger right → camera -viewX; finger down → camera +viewY.
+    return Offset(-dx * c - dy * s, -dx * s + dy * c);
   }
 
   // ---------------------------------------------------------------------------
@@ -2707,6 +3196,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
 
   void _pushUndo(String label, {bool? noOp}) {
     final isNoOp = noOp ?? _noOpUndoLabels.contains(label);
+    if (!isNoOp) fmHapticSmallClick();
     _history.pushSnapshot(
       CraftingSnapshot.capture(
         papers: _placedPapers,
@@ -2717,6 +3207,28 @@ class _CraftingTestViewState extends State<CraftingTestView>
         noOp: isNoOp,
       ),
     );
+  }
+
+  /// Adds [cell] to the paint preview if free; fires a small click when new.
+  bool _tryPaintCell((int, int) cell) {
+    if (_paintedCells.contains(cell) ||
+        _isCellOccupiedByPaper(cell.$1, cell.$2)) {
+      return false;
+    }
+    _paintedCells.add(cell);
+    fmHapticSmallClick();
+    return true;
+  }
+
+  /// Adds [cell] to the erase preview if occupied; fires a small click when new.
+  bool _tryEraseCell((int, int) cell) {
+    if (_erasedCells.contains(cell) ||
+        !_isCellOccupiedByPaper(cell.$1, cell.$2)) {
+      return false;
+    }
+    _erasedCells.add(cell);
+    fmHapticSmallClick();
+    return true;
   }
 
   CraftingSnapshot _currentSnapshot(String label) {
@@ -3054,7 +3566,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
           if (_paintHadSelection) {
             _paintDeferredCell = cell;
           } else {
-            _paintedCells.add(cell);
+            _tryPaintCell(cell);
           }
         }
         _lastPaintCell = cell;
@@ -3070,7 +3582,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
         _selectedPaperIds = {};
         _isRotationGizmoActive = false;
         if (cell != null && _isCellOccupiedByPaper(cell.$1, cell.$2)) {
-          _erasedCells.add(cell);
+          _tryEraseCell(cell);
         }
         _lastEraseCell = cell;
       });
@@ -3087,20 +3599,23 @@ class _CraftingTestViewState extends State<CraftingTestView>
           break;
         }
       }
+      final vertex = hitIdx != null
+          ? _closestBlueprintVertex(wp, polyIndex: hitIdx)
+          : _closestBlueprintVertex(wp, maxDist: _snapWorldRadius * 3);
       setState(() {
-        if (hitIdx == null) {
-          _gridOriginOffset = Offset.zero;
-          _alignGridPreviewVertex = null;
-          _alignGridHoveredPolyIndex = null;
-          _alignGridDragging = false;
-          _alignGridDragStart = null;
-        } else {
-          _alignGridHoveredPolyIndex = hitIdx;
-          _alignGridDragging = false;
-          _alignGridDragStart = localPos;
-          final vertex = _bottomLeftVertex(_blueprintWorldPolygons[hitIdx]);
+        _alignGridPointerDown = localPos;
+        _alignGridHoveredPolyIndex = hitIdx;
+        if (_alignGridPhase == 0) {
           _alignGridPreviewVertex = vertex;
-          _gridOriginOffset = vertex;
+          _alignGridSecondPreview = null;
+        } else {
+          _alignGridSecondPreview = vertex ?? wp;
+          final anchor = _gridOriginOffset;
+          final end = _alignGridSecondPreview!;
+          final d = end - anchor;
+          if (d.distanceSquared > 1e-12) {
+            _gridRotation = math.atan2(d.dy, d.dx);
+          }
         }
       });
       _scheduleGridLodSync();
@@ -3271,9 +3786,10 @@ class _CraftingTestViewState extends State<CraftingTestView>
           final worldPerPixel = 2 * _orthoScale / shorter;
           final delta = localPos - _panModeDragLastScreen!;
           _panModeDragLastScreen = localPos;
+          final worldDelta = _screenDeltaToWorldDelta(delta, worldPerPixel);
           setState(() {
-            paper.position.x += delta.dx * worldPerPixel;
-            paper.position.y += -delta.dy * worldPerPixel;
+            paper.position.x += worldDelta.dx;
+            paper.position.y += worldDelta.dy;
           });
         }
         return;
@@ -3282,10 +3798,11 @@ class _CraftingTestViewState extends State<CraftingTestView>
         final delta = localPos - _panDragLastScreen!;
         final shorter = math.min(viewportSize.width, viewportSize.height);
         final worldPerPixel = 2 * _orthoScale / shorter;
+        final panDelta = _panDeltaFromScreen(delta, worldPerPixel);
         setState(() {
           _panOffset = Offset(
-            _panOffset.dx - delta.dx * worldPerPixel,
-            _panOffset.dy + delta.dy * worldPerPixel,
+            _panOffset.dx + panDelta.dx,
+            _panOffset.dy + panDelta.dy,
           );
           _clampPanOffset();
         });
@@ -3327,9 +3844,10 @@ class _CraftingTestViewState extends State<CraftingTestView>
           final worldPerPixel = 2 * _orthoScale / shorter;
           final delta = localPos - _paintDragLastScreen!;
           _paintDragLastScreen = localPos;
+          final worldDelta = _screenDeltaToWorldDelta(delta, worldPerPixel);
           setState(() {
-            paper.position.x += delta.dx * worldPerPixel;
-            paper.position.y += -delta.dy * worldPerPixel;
+            paper.position.x += worldDelta.dx;
+            paper.position.y += worldDelta.dy;
           });
         }
         return;
@@ -3340,7 +3858,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
       if (cell != null) {
         if (_paintDeferredCell != null) {
           if (cell == _paintDeferredCell) return;
-          _paintedCells.add(_paintDeferredCell!);
+          _tryPaintCell(_paintDeferredCell!);
           _paintDeferredCell = null;
           _paintHadSelection = false;
         }
@@ -3352,10 +3870,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
             toAdd = [cell];
           }
           for (final c in toAdd) {
-            if (!_paintedCells.contains(c) &&
-                !_isCellOccupiedByPaper(c.$1, c.$2)) {
-              _paintedCells.add(c);
-            }
+            _tryPaintCell(c);
           }
           _lastPaintCell = cell;
         });
@@ -3375,10 +3890,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
             toAdd = [cell];
           }
           for (final c in toAdd) {
-            if (!_erasedCells.contains(c) &&
-                _isCellOccupiedByPaper(c.$1, c.$2)) {
-              _erasedCells.add(c);
-            }
+            _tryEraseCell(c);
           }
           _lastEraseCell = cell;
         });
@@ -3387,18 +3899,31 @@ class _CraftingTestViewState extends State<CraftingTestView>
     }
 
     if (_craftingMode == CraftingMode.alignGrid &&
-        _alignGridHoveredPolyIndex != null &&
-        _alignGridDragStart != null) {
-      final distance = (localPos - _alignGridDragStart!).distance;
-      if (!_alignGridDragging && distance < _dragThreshold) return;
-      _alignGridDragging = true;
+        _alignGridPointerDown != null) {
       final worldPos = _screenToWorld(localPos, viewportSize);
       final wp = Offset(worldPos.x, worldPos.y);
-      final poly = _blueprintWorldPolygons[_alignGridHoveredPolyIndex!];
-      final closest = _closestVertex(poly, wp);
+      int? hitIdx;
+      for (var i = 0; i < _blueprintWorldPolygons.length; i++) {
+        if (_pointInPolygon(wp, _blueprintWorldPolygons[i])) {
+          hitIdx = i;
+          break;
+        }
+      }
+      final vertex = hitIdx != null
+          ? _closestBlueprintVertex(wp, polyIndex: hitIdx)
+          : _closestBlueprintVertex(wp, maxDist: _snapWorldRadius * 3);
       setState(() {
-        _alignGridPreviewVertex = closest;
-        _gridOriginOffset = closest;
+        _alignGridHoveredPolyIndex = hitIdx;
+        if (_alignGridPhase == 0) {
+          _alignGridPreviewVertex = vertex;
+        } else {
+          final end = vertex ?? wp;
+          _alignGridSecondPreview = end;
+          final d = end - _gridOriginOffset;
+          if (d.distanceSquared > 1e-12) {
+            _gridRotation = math.atan2(d.dy, d.dx);
+          }
+        }
       });
       _scheduleGridLodSync();
       return;
@@ -3450,8 +3975,9 @@ class _CraftingTestViewState extends State<CraftingTestView>
       final worldPerPixel = 2 * _orthoScale / shorter;
       final delta = localPos - _pointerDownPos!;
       _pointerDownPos = localPos;
-      final dx = delta.dx * worldPerPixel;
-      final dy = -delta.dy * worldPerPixel;
+      final worldDelta = _screenDeltaToWorldDelta(delta, worldPerPixel);
+      final dx = worldDelta.dx;
+      final dy = worldDelta.dy;
 
       if (_craftingMode == CraftingMode.magnet &&
           paper.groupId == null &&
@@ -3682,7 +4208,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
           dc.$2,
           onlyPaperIds: _paintSelectionIds,
         )) {
-          _paintedCells.add(dc);
+          _tryPaintCell(dc);
         }
         _paintDeferredCell = null;
       }
@@ -3706,21 +4232,66 @@ class _CraftingTestViewState extends State<CraftingTestView>
     }
 
     if (_craftingMode == CraftingMode.alignGrid) {
-      if (_alignGridHoveredPolyIndex != null) {
-        if (!_alignGridDragging) {
-          final poly = _blueprintWorldPolygons[_alignGridHoveredPolyIndex!];
-          final vertex = _bottomLeftVertex(poly);
-          setState(() {
-            _alignGridPreviewVertex = vertex;
-            _gridOriginOffset = vertex;
-          });
-        }
-        // If dragging, _gridOriginOffset was already set live during move.
+      final down = _alignGridPointerDown;
+      _alignGridPointerDown = null;
+      if (down != null && (localPos - down).distance > _dragThreshold) {
+        // Treated as a pan/drag — don't commit a click.
+        setState(() {
+          _alignGridHoveredPolyIndex = null;
+          if (_alignGridPhase == 0) {
+            _alignGridPreviewVertex = null;
+          }
+        });
+        return;
       }
+
+      final worldPos = _screenToWorld(localPos, viewportSize);
+      final wp = Offset(worldPos.x, worldPos.y);
+      int? hitIdx;
+      for (var i = 0; i < _blueprintWorldPolygons.length; i++) {
+        if (_pointInPolygon(wp, _blueprintWorldPolygons[i])) {
+          hitIdx = i;
+          break;
+        }
+      }
+      final vertex = hitIdx != null
+          ? _closestBlueprintVertex(wp, polyIndex: hitIdx)
+          : _closestBlueprintVertex(wp, maxDist: _snapWorldRadius * 3);
+
       setState(() {
-        _alignGridHoveredPolyIndex = null;
-        _alignGridDragging = false;
-        _alignGridDragStart = null;
+        if (_alignGridPhase == 0) {
+          if (vertex == null) {
+            // Empty click: restore auto-alignment for the active blueprint.
+            _applyAutoGridAlignment(_blueprintWorldPolygons);
+            _clearAlignGridTransient();
+            fmHapticSmallClick();
+          } else {
+            _gridOriginOffset = vertex;
+            _alignGridPreviewVertex = vertex;
+            _alignGridSecondPreview = null;
+            _alignGridPhase = 1;
+            _alignGridHoveredPolyIndex = hitIdx;
+            fmHapticSmallClick();
+          }
+        } else {
+          final end = vertex ?? wp;
+          if ((end - _gridOriginOffset).distanceSquared < 1e-12) {
+            // Cancel direction pick; keep origin.
+            _alignGridPhase = 0;
+            _alignGridSecondPreview = null;
+            _alignGridHoveredPolyIndex = null;
+          } else {
+            _gridRotation = math.atan2(
+              end.dy - _gridOriginOffset.dy,
+              end.dx - _gridOriginOffset.dx,
+            );
+            _alignGridPreviewVertex = _gridOriginOffset;
+            _alignGridSecondPreview = end;
+            _alignGridPhase = 0;
+            _alignGridHoveredPolyIndex = null;
+            fmHapticSmallClick();
+          }
+        }
       });
       _scheduleGridLodSync();
       return;
@@ -4098,8 +4669,17 @@ class _CraftingTestViewState extends State<CraftingTestView>
     return LayoutBuilder(
       builder: (context, constraints) {
         final viewportSize = constraints.biggest;
+        final hadViewport = _viewportSize.width > 1 && _viewportSize.height > 1;
         _viewportSize = viewportSize;
         _scheduleGridLodSync();
+        if (_pendingGroupIntro &&
+            !hadViewport &&
+            viewportSize.width > 1 &&
+            viewportSize.height > 1) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _pendingGroupIntro) _startGroupIntroCamera();
+          });
+        }
         return Stack(
           fit: StackFit.expand,
           children: [
@@ -4107,13 +4687,17 @@ class _CraftingTestViewState extends State<CraftingTestView>
             ..._buildPaperOverlays(viewportSize),
             if (_rotCopyGizmoActive && _rotCopyCenterWorld != null)
               _buildRotCopyGizmo(viewportSize),
-            // Step cards — top center, clear of the ← Dev back button.
+            // Step cards — full-width three-zone rail (matches cards-debug).
             if (_selectedSet != null && _selectedSet!.steps.length > 1)
               FmSafePositioned(
                 top: 48,
-                left: 72,
-                right: 72,
-                child: Center(child: _buildStepCards()),
+                left: 0,
+                right: 0,
+                child: FmStepCards(
+                  steps: _selectedSet!.steps,
+                  currentIndex: _currentStepIndex,
+                  promotingIndex: _promotingIndex,
+                ),
               ),
             // Main toolbar — bottom-left, above inventory + undo/redo.
             FmSafePositioned(
@@ -4174,6 +4758,12 @@ class _CraftingTestViewState extends State<CraftingTestView>
             ),
             // Tool modes — left side, below ← Dev / step-card row.
             FmSafePositioned(left: 12, top: 48, child: _buildToolModeBar()),
+            if (_selectedBlueprint != null)
+              FmSafePositioned(
+                right: 12,
+                top: 48,
+                child: _buildProgressBar(),
+              ),
             FmSafePositioned(
               right: 12,
               top: 48,
@@ -4187,10 +4777,6 @@ class _CraftingTestViewState extends State<CraftingTestView>
                     _buildSnapToolbar(),
                     const SizedBox(height: 12),
                     _buildConfigButton(),
-                    if (_selectedBlueprint != null) ...[
-                      const SizedBox(height: 8),
-                      _buildProgressBar(),
-                    ],
                   ],
                 ),
               ),
@@ -4420,19 +5006,18 @@ class _CraftingTestViewState extends State<CraftingTestView>
           const SizedBox(height: 2),
           _ToolModeButton(
             icon: Icons.grid_on,
-            tooltip: 'Align grid',
+            tooltip: 'Align grid (origin, then +Y)',
             isActive: _craftingMode == CraftingMode.alignGrid,
             onTap: isCutting
                 ? null
                 : () => setState(() {
                     if (_craftingMode == CraftingMode.alignGrid) {
                       _craftingMode = CraftingMode.pan;
-                      _alignGridPreviewVertex = null;
-                      _alignGridHoveredPolyIndex = null;
-                      _alignGridDragging = false;
-                      _alignGridDragStart = null;
+                      _clearAlignGridTransient();
                     } else {
                       _craftingMode = CraftingMode.alignGrid;
+                      _clearAlignGridTransient();
+                      _alignGridPreviewVertex = _gridOriginOffset;
                       _selectedPaperIds = {};
                       _isRotationGizmoActive = false;
                       _panModeSelectedPaperId = null;
@@ -4920,152 +5505,6 @@ class _CraftingTestViewState extends State<CraftingTestView>
     );
   }
 
-  Widget _buildStepCards() {
-    if (_selectedSet == null || _selectedSet!.steps.length <= 1) {
-      return const SizedBox.shrink();
-    }
-
-    return Builder(
-      builder: (context) {
-        final viewportHeight = MediaQuery.of(context).size.height;
-        final baseCardHeight = viewportHeight / 10;
-        final activeCardHeight = baseCardHeight * 1.15;
-        final baseCardWidth = baseCardHeight * 1.4;
-        final activeCardWidth = activeCardHeight * 1.4;
-        final overlapOffset = baseCardWidth * 0.35;
-
-        // Layout: completed cards on left, current centered, future stacked right.
-        final steps = _selectedSet!.steps;
-        final completedCount = _currentStepIndex;
-        final futureCount = steps.length - _currentStepIndex - 1;
-
-        // Total width calculation
-        final completedWidth = completedCount > 0
-            ? completedCount * baseCardWidth + (completedCount - 1) * 6
-            : 0.0;
-        final futureWidth = futureCount > 0
-            ? baseCardWidth + (futureCount - 1) * overlapOffset
-            : 0.0;
-        final gap = 12.0;
-        final totalWidth =
-            completedWidth +
-            (completedCount > 0 ? gap : 0) +
-            activeCardWidth +
-            (futureCount > 0 ? gap : 0) +
-            futureWidth;
-
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 400),
-          curve: Curves.easeOutCubic,
-          height: activeCardHeight + 8,
-          width: totalWidth,
-          child: Stack(
-            clipBehavior: Clip.none,
-            alignment: Alignment.centerLeft,
-            children: [
-              // Completed cards (left, spaced out)
-              for (int i = 0; i < completedCount; i++)
-                AnimatedPositioned(
-                  duration: const Duration(milliseconds: 400),
-                  curve: Curves.easeOutCubic,
-                  left: i * (baseCardWidth + 6),
-                  top: (activeCardHeight - baseCardHeight) / 2 + 4,
-                  child: _buildStepCardWidget(
-                    index: i,
-                    width: baseCardWidth,
-                    height: baseCardHeight,
-                  ),
-                ),
-
-              // Current (active) card - positioned after completed cards
-              AnimatedPositioned(
-                duration: const Duration(milliseconds: 400),
-                curve: Curves.easeOutCubic,
-                left: completedWidth + (completedCount > 0 ? gap : 0),
-                top: 4,
-                child: _buildStepCardWidget(
-                  index: _currentStepIndex,
-                  width: activeCardWidth,
-                  height: activeCardHeight,
-                ),
-              ),
-
-              // Future cards (right, stacked/overlapping)
-              for (int i = 0; i < futureCount; i++)
-                AnimatedPositioned(
-                  duration: const Duration(milliseconds: 400),
-                  curve: Curves.easeOutCubic,
-                  left:
-                      completedWidth +
-                      (completedCount > 0 ? gap : 0) +
-                      activeCardWidth +
-                      gap +
-                      i * overlapOffset,
-                  top: (activeCardHeight - baseCardHeight) / 2 + 4,
-                  child: _buildStepCardWidget(
-                    index: _currentStepIndex + 1 + i,
-                    width: baseCardWidth,
-                    height: baseCardHeight,
-                  ),
-                ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildStepCardWidget({
-    required int index,
-    required double width,
-    required double height,
-  }) {
-    final step = _selectedSet!.steps[index];
-    final isCurrent = index == _currentStepIndex;
-    final isCompleted = index < _currentStepIndex;
-    final iconSize = height * 0.4;
-
-    return AnimatedOpacity(
-      duration: const Duration(milliseconds: 300),
-      opacity: _stepTransitioning && isCurrent ? 0.5 : 1.0,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOutCubic,
-        width: width,
-        height: height,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isCurrent
-                ? const Color(0xFFAA66FF)
-                : isCompleted
-                ? const Color(0xFF66FF66)
-                : const Color(0xFF7733CC).withValues(alpha: 0.4),
-            width: isCurrent ? 2.0 : 1.5,
-          ),
-          color: isCompleted
-              ? const Color(0xFF66FF66).withValues(alpha: 0.1)
-              : isCurrent
-              ? const Color(0xFFAA66FF).withValues(alpha: 0.05)
-              : const Color(0xFF1A1A2E).withValues(alpha: 0.8),
-        ),
-        child: Center(
-          child: isCompleted
-              ? Icon(
-                  Icons.check,
-                  color: const Color(0xFF66FF66),
-                  size: iconSize,
-                )
-              : Icon(
-                  IconData(step.iconCodePoint, fontFamily: 'MaterialIcons'),
-                  color: isCurrent ? const Color(0xFFAA66FF) : Colors.white38,
-                  size: iconSize,
-                ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildUnionToggle() {
     return Material(
       color: Colors.black.withOpacity(0.7),
@@ -5376,10 +5815,11 @@ class _CraftingTestViewState extends State<CraftingTestView>
                   viewportSize.height,
                 );
                 final worldPerPixel = 2 * _orthoScale / shorter;
+                final panDelta = _panDeltaFromScreen(delta, worldPerPixel);
                 setState(() {
                   _panOffset = Offset(
-                    _panOffset.dx - delta.dx * worldPerPixel,
-                    _panOffset.dy + delta.dy * worldPerPixel,
+                    _panOffset.dx + panDelta.dx,
+                    _panOffset.dy + panDelta.dy,
                   );
                   _clampPanOffset();
                 });
@@ -5461,6 +5901,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
                     drawingPlaneSize: _drawingPlaneSize,
                     orthoScale: _orthoScale,
                     panOffset: _panOffset,
+                    viewRotation: _viewRotation,
                     canvasDisplayMode: _canvasDisplayMode,
                     showMinorLines: _showMinorLines,
                     papers: _placedPapers,
@@ -5473,6 +5914,10 @@ class _CraftingTestViewState extends State<CraftingTestView>
                     filledBlueprintIndices: _checkMode && !_blueprintUnionMode
                         ? _filledBlueprintIndices
                         : const {},
+                    groupOverlayPolygons: _groupOverlayPolygons,
+                    groupOverlayColors: _groupOverlayColors,
+                    activeHighlightT: _activeHighlightT,
+                    activeGlow: _activeGlow,
                     marqueeRect:
                         _isMarquee &&
                             _marqueeStartScreen != null &&
@@ -5536,7 +5981,9 @@ class _CraftingTestViewState extends State<CraftingTestView>
                     activeGridSpacing: _activeGridSpacing,
                     paperColorResolver: displayColorForPaper,
                     gridOriginOffset: _gridOriginOffset,
+                    gridRotation: _gridRotation,
                     alignGridIndicator: _alignGridPreviewVertex,
+                    alignGridAxisEnd: _alignGridSecondPreview,
                     alignGridHighlightPolyIndex: _alignGridHoveredPolyIndex,
                     stretchPaperId: _stretchPaperId,
                     stretchScaleX: _stretchScaleX,
@@ -6186,10 +6633,8 @@ class _CraftingTestViewState extends State<CraftingTestView>
   /// and holes wound CW in world space.
   (List<Offset>, List<List<Offset>>) _boundaryPolygons(Set<(int, int)> cells) {
     final s = _activeGridSpacing;
-    final ox = _gridOriginOffset.dx;
-    final oy = _gridOriginOffset.dy;
 
-    Offset gridToWorld(int gx, int gy) => Offset(ox + gx * s, oy + gy * s);
+    Offset gridToWorld(int gx, int gy) => _gridToWorld(gx * s, gy * s);
 
     // Collect directed boundary edges. For a cell (c,r), its boundary edges
     // (with exterior to the left of the direction) are:
@@ -7231,6 +7676,7 @@ class CraftingTestPainter extends CustomPainter {
     required this.drawingPlaneSize,
     required this.orthoScale,
     this.panOffset = Offset.zero,
+    this.viewRotation = 0,
     this.canvasDisplayMode = CanvasDisplayMode.grid,
     this.showMinorLines = true,
     this.papers = const [],
@@ -7239,6 +7685,10 @@ class CraftingTestPainter extends CustomPainter {
     this.eyeGeometry3d = FriendEyeGeometry3d.sphere,
     this.blueprintPolygons = const [],
     this.filledBlueprintIndices = const {},
+    this.groupOverlayPolygons = const [],
+    this.groupOverlayColors = const [],
+    this.activeHighlightT = 1.0,
+    this.activeGlow = 0.0,
     this.marqueeRect,
     this.marqueeIsIntersect = false,
     this.marqueeDashOffset = 0,
@@ -7275,7 +7725,9 @@ class CraftingTestPainter extends CustomPainter {
     this.activeGridSpacing,
     this.paperColorResolver,
     this.gridOriginOffset = Offset.zero,
+    this.gridRotation = math.pi / 2,
     this.alignGridIndicator,
+    this.alignGridAxisEnd,
     this.alignGridHighlightPolyIndex,
     this.stretchPaperId,
     this.stretchScaleX = 1.0,
@@ -7294,6 +7746,7 @@ class CraftingTestPainter extends CustomPainter {
   final double drawingPlaneSize;
   final double orthoScale;
   final Offset panOffset;
+  final double viewRotation;
   final CanvasDisplayMode canvasDisplayMode;
   final bool showMinorLines;
   final List<PlacedPaper> papers;
@@ -7302,6 +7755,10 @@ class CraftingTestPainter extends CustomPainter {
   final FriendEyeGeometry3d eyeGeometry3d;
   final List<List<Offset>> blueprintPolygons;
   final Set<int> filledBlueprintIndices;
+  final List<List<Offset>> groupOverlayPolygons;
+  final List<Color> groupOverlayColors;
+  final double activeHighlightT;
+  final double activeGlow;
   final Rect? marqueeRect;
   final bool marqueeIsIntersect;
   final double marqueeDashOffset;
@@ -7344,7 +7801,11 @@ class CraftingTestPainter extends CustomPainter {
   final double? activeGridSpacing;
   final Color Function(PlacedPaper paper)? paperColorResolver;
   final Offset gridOriginOffset;
+
+  /// World angle (radians) of the grid +Y axis.
+  final double gridRotation;
   final Offset? alignGridIndicator;
+  final Offset? alignGridAxisEnd;
   final int? alignGridHighlightPolyIndex;
 
   // Stretch gizmo
@@ -7382,12 +7843,13 @@ class CraftingTestPainter extends CustomPainter {
       size,
       orthoScale,
       panOffset: panOffset,
+      viewRotation: viewRotation,
     );
     final camera = scene_camera.Camera(
       name: 'shadow-cam',
       position: Vector3(panOffset.dx, panOffset.dy, 500),
       target: Vector3(panOffset.dx, panOffset.dy, 0),
-      up: Vector3(0, 1, 0),
+      up: Vector3(-math.sin(viewRotation), math.cos(viewRotation), 0),
       projection: scene_camera.ProjectionType.orthographic,
       orthographicScale: orthoScale,
       near: 0.1,
@@ -7413,6 +7875,7 @@ class CraftingTestPainter extends CustomPainter {
       _drawGrid(canvas, size, viewProjection);
       _drawGridRegionAssist(canvas, size, viewProjection);
       _drawStructureFootprint(canvas, size, viewProjection);
+      _drawGroupOverlayPolygons(canvas, size, viewProjection);
       _drawBlueprintPolygons(canvas, size, viewProjection);
       _drawPapers(canvas, size, viewProjection);
       _drawLockedPaperOverlays(canvas, size, viewProjection);
@@ -7581,21 +8044,57 @@ class CraftingTestPainter extends CustomPainter {
     const majorInterval = 4;
     final ox = gridOriginOffset.dx;
     final oy = gridOriginOffset.dy;
+    final xDir = _gridXDir(gridRotation);
+    final yDir = _gridYDir(gridRotation);
 
-    // Compute visible world extents from the viewport so the grid is infinite.
+    // Visible world AABB of the (possibly rolled) view frustum.
     final aspect = size.width / size.height;
     final halfH = orthoScale;
     final halfW = orthoScale * aspect;
-    final worldMinX = panOffset.dx - halfW;
-    final worldMaxX = panOffset.dx + halfW;
-    final worldMinY = panOffset.dy - halfH;
-    final worldMaxY = panOffset.dy + halfH;
+    final c = math.cos(viewRotation);
+    final s = math.sin(viewRotation);
+    Offset corner(double vx, double vy) =>
+        Offset(panOffset.dx + vx * c - vy * s, panOffset.dy + vx * s + vy * c);
+    final corners = [
+      corner(-halfW, -halfH),
+      corner(halfW, -halfH),
+      corner(halfW, halfH),
+      corner(-halfW, halfH),
+    ];
+    var worldMinX = corners.first.dx, worldMaxX = corners.first.dx;
+    var worldMinY = corners.first.dy, worldMaxY = corners.first.dy;
+    for (final p in corners) {
+      worldMinX = math.min(worldMinX, p.dx);
+      worldMaxX = math.max(worldMaxX, p.dx);
+      worldMinY = math.min(worldMinY, p.dy);
+      worldMaxY = math.max(worldMaxY, p.dy);
+    }
 
-    // Snap grid range to spacing boundaries relative to origin offset.
-    final iMin = ((worldMinX - ox) / spacing).floor() - 1;
-    final iMax = ((worldMaxX - ox) / spacing).ceil() + 1;
-    final jMin = ((worldMinY - oy) / spacing).floor() - 1;
-    final jMax = ((worldMaxY - oy) / spacing).ceil() + 1;
+    // Grid-space AABB of the world AABB corners (covers the frustum).
+    var gMinX = double.infinity, gMaxX = double.negativeInfinity;
+    var gMinY = double.infinity, gMaxY = double.negativeInfinity;
+    for (final p in [
+      Offset(worldMinX, worldMinY),
+      Offset(worldMaxX, worldMinY),
+      Offset(worldMaxX, worldMaxY),
+      Offset(worldMinX, worldMaxY),
+    ]) {
+      final g = _worldToGridCoords(p, gridOriginOffset, gridRotation);
+      gMinX = math.min(gMinX, g.dx);
+      gMaxX = math.max(gMaxX, g.dx);
+      gMinY = math.min(gMinY, g.dy);
+      gMaxY = math.max(gMaxY, g.dy);
+    }
+
+    final iMin = (gMinX / spacing).floor() - 1;
+    final iMax = (gMaxX / spacing).ceil() + 1;
+    final jMin = (gMinY / spacing).floor() - 1;
+    final jMax = (gMaxY / spacing).ceil() + 1;
+
+    Offset gridPt(double gi, double gj) => Offset(
+      ox + gi * xDir.dx + gj * yDir.dx,
+      oy + gi * xDir.dy + gj * yDir.dy,
+    );
 
     if (canvasDisplayMode == CanvasDisplayMode.grid) {
       final minorPaint = Paint()
@@ -7607,44 +8106,44 @@ class CraftingTestPainter extends CustomPainter {
         ..strokeWidth = 1.5
         ..color = Colors.grey.shade500.withValues(alpha: 0.75 * layerOpacity);
 
-      // Vertical lines
+      // Lines of constant i (parallel to +Y).
       for (var i = iMin; i <= iMax; i++) {
         final isMajor = i % majorInterval == 0;
         if (!showMinorLines && !isMajor) continue;
-        final pos = ox + i * spacing;
         final paint = isMajor ? majorPaint : minorPaint;
-
-        final a = _projectToScreen(
-          Vector3(pos, worldMinY - spacing, 0.1),
+        final a = gridPt(i * spacing, (jMin - 1) * spacing);
+        final b = gridPt(i * spacing, (jMax + 1) * spacing);
+        final sa = _projectToScreen(
+          Vector3(a.dx, a.dy, 0.1),
           viewProjection,
           size,
         );
-        final b = _projectToScreen(
-          Vector3(pos, worldMaxY + spacing, 0.1),
+        final sb = _projectToScreen(
+          Vector3(b.dx, b.dy, 0.1),
           viewProjection,
           size,
         );
-        if (a != null && b != null) canvas.drawLine(a, b, paint);
+        if (sa != null && sb != null) canvas.drawLine(sa, sb, paint);
       }
 
-      // Horizontal lines
+      // Lines of constant j (parallel to +X).
       for (var j = jMin; j <= jMax; j++) {
         final isMajor = j % majorInterval == 0;
         if (!showMinorLines && !isMajor) continue;
-        final pos = oy + j * spacing;
         final paint = isMajor ? majorPaint : minorPaint;
-
-        final c = _projectToScreen(
-          Vector3(worldMinX - spacing, pos, 0.1),
+        final a = gridPt((iMin - 1) * spacing, j * spacing);
+        final b = gridPt((iMax + 1) * spacing, j * spacing);
+        final sa = _projectToScreen(
+          Vector3(a.dx, a.dy, 0.1),
           viewProjection,
           size,
         );
-        final d = _projectToScreen(
-          Vector3(worldMaxX + spacing, pos, 0.1),
+        final sb = _projectToScreen(
+          Vector3(b.dx, b.dy, 0.1),
           viewProjection,
           size,
         );
-        if (c != null && d != null) canvas.drawLine(c, d, paint);
+        if (sa != null && sb != null) canvas.drawLine(sa, sb, paint);
       }
     } else {
       // Dot mode
@@ -7657,32 +8156,32 @@ class CraftingTestPainter extends CustomPainter {
       for (var i = iMin; i <= iMax; i++) {
         final iMajor = i % majorInterval == 0;
         if (!showMinorLines && !iMajor) continue;
-        final px = ox + i * spacing;
-        final wipeAlpha = hasWipe
-            ? dotWipeOpacityAt!(((px - worldMinX) / visibleW).clamp(0.0, 1.0))
-            : 1.0;
-        if (wipeAlpha <= 0) continue;
 
         for (var j = jMin; j <= jMax; j++) {
           final jMajor = j % majorInterval == 0;
           if (!showMinorLines && !jMajor) continue;
 
-          // Random per-dot dissolve: each dot fades out over a short window
-          // once the global dissolve progress passes its own threshold.
+          final world = gridPt(i * spacing, j * spacing);
+          final wipeAlpha = hasWipe
+              ? dotWipeOpacityAt!(
+                  ((world.dx - worldMinX) / visibleW).clamp(0.0, 1.0),
+                )
+              : 1.0;
+          if (wipeAlpha <= 0) continue;
+
           double dissolveAlpha = 1.0;
           if (dissolve != null) {
             const fadeWindow = 0.25;
             final threshold = _dotDissolveThreshold(i, j) * (1 - fadeWindow);
             if (dissolve >= threshold + fadeWindow) {
-              continue; // fully dissolved
+              continue;
             } else if (dissolve > threshold) {
               dissolveAlpha = 1.0 - (dissolve - threshold) / fadeWindow;
             }
           }
 
-          final py = oy + j * spacing;
           final pt = _projectToScreen(
-            Vector3(px, py, 0.1),
+            Vector3(world.dx, world.dy, 0.1),
             viewProjection,
             size,
           );
@@ -7720,24 +8219,20 @@ class CraftingTestPainter extends CustomPainter {
 
   bool _isPolygonGridAligned(List<Offset> poly, double spacing, Offset origin) {
     const eps = 1e-2;
+    bool onGrid(double v) {
+      final m = v % spacing;
+      final r = m.abs();
+      return r < eps || (spacing - r) < eps;
+    }
+
     for (var i = 0; i < poly.length; i++) {
       final a = poly[i];
       final b = poly[(i + 1) % poly.length];
-      final axOnGrid =
-          ((a.dx - origin.dx) % spacing).abs() < eps ||
-          (spacing - ((a.dx - origin.dx) % spacing).abs()) < eps;
-      final bxOnGrid =
-          ((b.dx - origin.dx) % spacing).abs() < eps ||
-          (spacing - ((b.dx - origin.dx) % spacing).abs()) < eps;
-      final ayOnGrid =
-          ((a.dy - origin.dy) % spacing).abs() < eps ||
-          (spacing - ((a.dy - origin.dy) % spacing).abs()) < eps;
-      final byOnGrid =
-          ((b.dy - origin.dy) % spacing).abs() < eps ||
-          (spacing - ((b.dy - origin.dy) % spacing).abs()) < eps;
-      final isVertical = (a.dx - b.dx).abs() < eps && axOnGrid && bxOnGrid;
-      final isHorizontal = (a.dy - b.dy).abs() < eps && ayOnGrid && byOnGrid;
-      if (!isVertical && !isHorizontal) return false;
+      final ga = _worldToGridCoords(a, origin, gridRotation);
+      final gb = _worldToGridCoords(b, origin, gridRotation);
+      final alongY = (ga.dx - gb.dx).abs() < eps && onGrid(ga.dx);
+      final alongX = (ga.dy - gb.dy).abs() < eps && onGrid(ga.dy);
+      if (!alongY && !alongX) return false;
     }
     return true;
   }
@@ -7762,23 +8257,58 @@ class CraftingTestPainter extends CustomPainter {
     }
     if (alignedPolys.isEmpty) return;
 
-    // Compute visible world extents.
+    // Visible world AABB of the (possibly rolled) view frustum.
     final aspect = size.width / size.height;
     final halfH = orthoScale;
     final halfW = orthoScale * aspect;
-    final worldMinX = panOffset.dx - halfW;
-    final worldMaxX = panOffset.dx + halfW;
-    final worldMinY = panOffset.dy - halfH;
-    final worldMaxY = panOffset.dy + halfH;
+    final c = math.cos(viewRotation);
+    final s = math.sin(viewRotation);
+    Offset corner(double vx, double vy) =>
+        Offset(panOffset.dx + vx * c - vy * s, panOffset.dy + vx * s + vy * c);
+    final corners = [
+      corner(-halfW, -halfH),
+      corner(halfW, -halfH),
+      corner(halfW, halfH),
+      corner(-halfW, halfH),
+    ];
+    var worldMinX = corners.first.dx, worldMaxX = corners.first.dx;
+    var worldMinY = corners.first.dy, worldMaxY = corners.first.dy;
+    for (final p in corners) {
+      worldMinX = math.min(worldMinX, p.dx);
+      worldMaxX = math.max(worldMaxX, p.dx);
+      worldMinY = math.min(worldMinY, p.dy);
+      worldMaxY = math.max(worldMaxY, p.dy);
+    }
 
-    final iMin = ((worldMinX - ox) / spacing).floor() - 1;
-    final iMax = ((worldMaxX - ox) / spacing).ceil() + 1;
-    final jMin = ((worldMinY - oy) / spacing).floor() - 1;
-    final jMax = ((worldMaxY - oy) / spacing).ceil() + 1;
+    var gMinX = double.infinity, gMaxX = double.negativeInfinity;
+    var gMinY = double.infinity, gMaxY = double.negativeInfinity;
+    for (final p in [
+      Offset(worldMinX, worldMinY),
+      Offset(worldMaxX, worldMinY),
+      Offset(worldMaxX, worldMaxY),
+      Offset(worldMinX, worldMaxY),
+    ]) {
+      final g = _worldToGridCoords(p, gridOriginOffset, gridRotation);
+      gMinX = math.min(gMinX, g.dx);
+      gMaxX = math.max(gMaxX, g.dx);
+      gMinY = math.min(gMinY, g.dy);
+      gMaxY = math.max(gMaxY, g.dy);
+    }
+
+    final iMin = (gMinX / spacing).floor() - 1;
+    final iMax = (gMaxX / spacing).ceil() + 1;
+    final jMin = (gMinY / spacing).floor() - 1;
+    final jMax = (gMaxY / spacing).ceil() + 1;
 
     final t = gridLodFadeT.clamp(0.0, 1.0);
     final layerOpacity = (gridLodFrom != gridLodTo && t < 1.0) ? t : 1.0;
     const majorInterval = 4;
+    final xDir = _gridXDir(gridRotation);
+    final yDir = _gridYDir(gridRotation);
+    Offset gridPt(double gi, double gj) => Offset(
+      ox + gi * xDir.dx + gj * yDir.dx,
+      oy + gi * xDir.dy + gj * yDir.dy,
+    );
 
     final goldPaint = Paint()
       ..style = PaintingStyle.fill
@@ -7787,14 +8317,11 @@ class CraftingTestPainter extends CustomPainter {
     for (var i = iMin; i <= iMax; i++) {
       final iMajor = i % majorInterval == 0;
       if (!showMinorLines && !iMajor) continue;
-      final px = ox + i * spacing;
 
       for (var j = jMin; j <= jMax; j++) {
         final jMajor = j % majorInterval == 0;
         if (!showMinorLines && !jMajor) continue;
-        final py = oy + j * spacing;
-
-        final worldPt = Offset(px, py);
+        final worldPt = gridPt(i * spacing, j * spacing);
         bool inside = false;
         for (final poly in alignedPolys) {
           if (_pointInPolygonPainter(worldPt, poly)) {
@@ -7804,7 +8331,11 @@ class CraftingTestPainter extends CustomPainter {
         }
         if (!inside) continue;
 
-        final pt = _projectToScreen(Vector3(px, py, 0.1), viewProjection, size);
+        final pt = _projectToScreen(
+          Vector3(worldPt.dx, worldPt.dy, 0.1),
+          viewProjection,
+          size,
+        );
         if (pt == null) continue;
         final isMajorDot = iMajor && jMajor;
         canvas.drawCircle(pt, isMajorDot ? 2.5 : 1.0, goldPaint);
@@ -7824,10 +8355,10 @@ class CraftingTestPainter extends CustomPainter {
         }
       }
       if (fromAlignedPolys.isNotEmpty) {
-        final fromIMin = ((worldMinX - ox) / spacingFrom).floor() - 1;
-        final fromIMax = ((worldMaxX - ox) / spacingFrom).ceil() + 1;
-        final fromJMin = ((worldMinY - oy) / spacingFrom).floor() - 1;
-        final fromJMax = ((worldMaxY - oy) / spacingFrom).ceil() + 1;
+        final fromIMin = (gMinX / spacingFrom).floor() - 1;
+        final fromIMax = (gMaxX / spacingFrom).ceil() + 1;
+        final fromJMin = (gMinY / spacingFrom).floor() - 1;
+        final fromJMax = (gMaxY / spacingFrom).ceil() + 1;
         final fromOpacity = 1.0 - t;
         final fromGoldPaint = Paint()
           ..style = PaintingStyle.fill
@@ -7836,12 +8367,10 @@ class CraftingTestPainter extends CustomPainter {
         for (var i = fromIMin; i <= fromIMax; i++) {
           final iMajor = i % majorInterval == 0;
           if (!showMinorLines && !iMajor) continue;
-          final px = ox + i * spacingFrom;
           for (var j = fromJMin; j <= fromJMax; j++) {
             final jMajor = j % majorInterval == 0;
             if (!showMinorLines && !jMajor) continue;
-            final py = oy + j * spacingFrom;
-            final worldPt = Offset(px, py);
+            final worldPt = gridPt(i * spacingFrom, j * spacingFrom);
             bool inside = false;
             for (final poly in fromAlignedPolys) {
               if (_pointInPolygonPainter(worldPt, poly)) {
@@ -7851,7 +8380,7 @@ class CraftingTestPainter extends CustomPainter {
             }
             if (!inside) continue;
             final pt = _projectToScreen(
-              Vector3(px, py, 0.1),
+              Vector3(worldPt.dx, worldPt.dy, 0.1),
               viewProjection,
               size,
             );
@@ -7924,6 +8453,36 @@ class CraftingTestPainter extends CustomPainter {
     }
   }
 
+  void _drawGroupOverlayPolygons(
+    Canvas canvas,
+    Size size,
+    Matrix4 viewProjection,
+  ) {
+    final count = math.min(
+      groupOverlayPolygons.length,
+      groupOverlayColors.length,
+    );
+    for (var i = 0; i < count; i++) {
+      final poly = groupOverlayPolygons[i];
+      final screenPts = <Offset>[];
+      for (final v in poly) {
+        final sp = _projectToScreen(
+          Vector3(v.dx, v.dy, 0.04),
+          viewProjection,
+          size,
+        );
+        if (sp != null) screenPts.add(sp);
+      }
+      if (screenPts.length < 3) continue;
+      final path = Path()..addPolygon(screenPts, true);
+      final paint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..color = groupOverlayColors[i];
+      canvas.drawPath(path, paint);
+    }
+  }
+
   void _drawBlueprintPolygons(
     Canvas canvas,
     Size size,
@@ -7931,15 +8490,47 @@ class CraftingTestPainter extends CustomPainter {
   ) {
     if (blueprintPolygons.isEmpty) return;
 
+    final grey = Colors.white.withValues(alpha: 0.22);
+    final yellow = Colors.yellow.withValues(alpha: 0.7);
+    final activeStroke = Color.lerp(
+      grey,
+      yellow,
+      activeHighlightT.clamp(0, 1),
+    )!;
+
     final defaultPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5
-      ..color = Colors.yellow.withValues(alpha: 0.7);
+      ..color = activeStroke;
 
     final filledPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.25
       ..color = Colors.greenAccent.withValues(alpha: 0.7);
+
+    // Soft yellow glow while intro-highlighting the active blueprint.
+    if (activeGlow > 0.01) {
+      final glowPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4.0 + 6.0 * activeGlow
+        ..color = Colors.yellow.withValues(alpha: 0.35 * activeGlow)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+      for (var i = 0; i < blueprintPolygons.length; i++) {
+        if (filledBlueprintIndices.contains(i)) continue;
+        final poly = blueprintPolygons[i];
+        final screenPts = <Offset>[];
+        for (final v in poly) {
+          final sp = _projectToScreen(
+            Vector3(v.dx, v.dy, 0.045),
+            viewProjection,
+            size,
+          );
+          if (sp != null) screenPts.add(sp);
+        }
+        if (screenPts.length < 3) continue;
+        canvas.drawPath(Path()..addPolygon(screenPts, true), glowPaint);
+      }
+    }
 
     for (var i = 0; i < blueprintPolygons.length; i++) {
       final poly = blueprintPolygons[i];
@@ -8137,6 +8728,8 @@ class CraftingTestPainter extends CustomPainter {
 
   void _drawPaintPreview(Canvas canvas, Size size, Matrix4 viewProjection) {
     final s = _effectiveGridSpacing;
+    final xDir = _gridXDir(gridRotation);
+    final yDir = _gridYDir(gridRotation);
     final ox = gridOriginOffset.dx;
     final oy = gridOriginOffset.dy;
     final fillPaint = Paint()
@@ -8147,18 +8740,21 @@ class CraftingTestPainter extends CustomPainter {
       ..strokeWidth = 0.5
       ..color = paintColor!.color.withValues(alpha: 0.85);
 
+    Offset corner(double gi, double gj) => Offset(
+      ox + gi * xDir.dx + gj * yDir.dx,
+      oy + gi * xDir.dy + gj * yDir.dy,
+    );
+
     for (final (col, row) in paintedCells) {
-      final x0 = ox + col * s;
-      final y0 = oy + row * s;
       final corners = [
-        Vector3(x0, y0, 1),
-        Vector3(x0 + s, y0, 1),
-        Vector3(x0 + s, y0 + s, 1),
-        Vector3(x0, y0 + s, 1),
+        corner(col * s, row * s),
+        corner((col + 1) * s, row * s),
+        corner((col + 1) * s, (row + 1) * s),
+        corner(col * s, (row + 1) * s),
       ];
       final projected = <Offset>[];
       for (final c in corners) {
-        final p = _projectToScreen(c, viewProjection, size);
+        final p = _projectToScreen(Vector3(c.dx, c.dy, 1), viewProjection, size);
         if (p != null) projected.add(p);
       }
       if (projected.length < 3) continue;
@@ -8171,6 +8767,8 @@ class CraftingTestPainter extends CustomPainter {
 
   void _drawErasePreview(Canvas canvas, Size size, Matrix4 viewProjection) {
     final s = _effectiveGridSpacing;
+    final xDir = _gridXDir(gridRotation);
+    final yDir = _gridYDir(gridRotation);
     final ox = gridOriginOffset.dx;
     final oy = gridOriginOffset.dy;
     final fillPaint = Paint()
@@ -8181,18 +8779,21 @@ class CraftingTestPainter extends CustomPainter {
       ..strokeWidth = 0.5
       ..color = const Color(0xAAFF4444);
 
+    Offset corner(double gi, double gj) => Offset(
+      ox + gi * xDir.dx + gj * yDir.dx,
+      oy + gi * xDir.dy + gj * yDir.dy,
+    );
+
     for (final (col, row) in erasedCells) {
-      final x0 = ox + col * s;
-      final y0 = oy + row * s;
       final corners = [
-        Vector3(x0, y0, 1),
-        Vector3(x0 + s, y0, 1),
-        Vector3(x0 + s, y0 + s, 1),
-        Vector3(x0, y0 + s, 1),
+        corner(col * s, row * s),
+        corner((col + 1) * s, row * s),
+        corner((col + 1) * s, (row + 1) * s),
+        corner(col * s, (row + 1) * s),
       ];
       final projected = <Offset>[];
       for (final c in corners) {
-        final p = _projectToScreen(c, viewProjection, size);
+        final p = _projectToScreen(Vector3(c.dx, c.dy, 1), viewProjection, size);
         if (p != null) projected.add(p);
       }
       if (projected.length < 3) continue;
@@ -8745,6 +9346,43 @@ class CraftingTestPainter extends CustomPainter {
       Offset(sp.dx, sp.dy + arm),
       crossPaint,
     );
+
+    final end = alignGridAxisEnd;
+    if (end != null) {
+      final ep = _projectToScreen(
+        Vector3(end.dx, end.dy, 0.2),
+        viewProjection,
+        size,
+      );
+      if (ep != null) {
+        final axisPaint = Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.0
+          ..color = Colors.cyanAccent.withValues(alpha: 0.9);
+        canvas.drawLine(sp, ep, axisPaint);
+        canvas.drawCircle(ep, 6.0, innerPaint);
+        canvas.drawCircle(ep, 6.0, outerPaint);
+
+        // Arrowhead toward +Y
+        final d = ep - sp;
+        final len = d.distance;
+        if (len > 1) {
+          final ux = d.dx / len;
+          final uy = d.dy / len;
+          const head = 10.0;
+          final left = Offset(
+            ep.dx - ux * head - uy * head * 0.55,
+            ep.dy - uy * head + ux * head * 0.55,
+          );
+          final right = Offset(
+            ep.dx - ux * head + uy * head * 0.55,
+            ep.dy - uy * head - ux * head * 0.55,
+          );
+          canvas.drawLine(ep, left, axisPaint);
+          canvas.drawLine(ep, right, axisPaint);
+        }
+      }
+    }
   }
 
   void _drawMarqueeRect(Canvas canvas, Rect rect, double dashOffset) {
@@ -9576,12 +10214,13 @@ Matrix4 craftingTestViewProjection(
   Size size,
   double orthoScale, {
   Offset panOffset = Offset.zero,
+  double viewRotation = 0,
 }) {
   final camera = scene_camera.Camera(
     name: 'shadow-cam',
     position: Vector3(panOffset.dx, panOffset.dy, 500),
     target: Vector3(panOffset.dx, panOffset.dy, 0),
-    up: Vector3(0, 1, 0),
+    up: Vector3(-math.sin(viewRotation), math.cos(viewRotation), 0),
     projection: scene_camera.ProjectionType.orthographic,
     orthographicScale: orthoScale,
     near: 0.1,
@@ -9598,6 +10237,7 @@ Vector3 craftingScreenToWorldOnPlane(
   double orthoScale,
   double planeZ, {
   Offset panOffset = Offset.zero,
+  double viewRotation = 0,
 }) {
   if (size.width <= 0 || size.height <= 0) {
     return Vector3(0, 0, planeZ);
@@ -9606,13 +10246,23 @@ Vector3 craftingScreenToWorldOnPlane(
     size,
     orthoScale,
     panOffset: panOffset,
+    viewRotation: viewRotation,
   );
   final inv = Matrix4.copy(mvp);
   final determinant = inv.invert();
   if (determinant == 0 || determinant.isNaN) {
-    final worldX = (screen.dx / size.width - 0.5) * 2 * orthoScale;
-    final worldY = -(screen.dy / size.height - 0.5) * 2 * orthoScale;
-    return Vector3(worldX, worldY, planeZ);
+    final aspect = size.width / size.height;
+    final ndcX = 2.0 * screen.dx / size.width - 1.0;
+    final ndcY = 1.0 - 2.0 * screen.dy / size.height;
+    final vx = ndcX * orthoScale * aspect;
+    final vy = ndcY * orthoScale;
+    final c = math.cos(viewRotation);
+    final s = math.sin(viewRotation);
+    return Vector3(
+      panOffset.dx + vx * c - vy * s,
+      panOffset.dy + vx * s + vy * c,
+      planeZ,
+    );
   }
   final ndcX = 2.0 * screen.dx / size.width - 1.0;
   final ndcY = 1.0 - 2.0 * screen.dy / size.height;
@@ -9626,15 +10276,11 @@ Vector3 craftingScreenToWorldOnPlane(
   final a = homog(inv.transform(Vector4(ndcX, ndcY, -1.0, 1.0)));
   final b = homog(inv.transform(Vector4(ndcX, ndcY, 1.0, 1.0)));
   if (a == null || b == null) {
-    final worldX = (screen.dx / size.width - 0.5) * 2 * orthoScale;
-    final worldY = -(screen.dy / size.height - 0.5) * 2 * orthoScale;
-    return Vector3(worldX, worldY, planeZ);
+    return Vector3(panOffset.dx, panOffset.dy, planeZ);
   }
   final dir = b - a;
   if (dir.z.abs() < 1e-8) {
-    final worldX = (screen.dx / size.width - 0.5) * 2 * orthoScale;
-    final worldY = -(screen.dy / size.height - 0.5) * 2 * orthoScale;
-    return Vector3(worldX, worldY, planeZ);
+    return Vector3(a.x, a.y, planeZ);
   }
   final t = (planeZ - a.z) / dir.z;
   return a + dir * t;
@@ -9645,13 +10291,183 @@ Offset craftingWorldToScreen(
   Size size,
   double orthoScale, {
   Offset panOffset = Offset.zero,
+  double viewRotation = 0,
 }) {
   final mvp = craftingTestViewProjection(
     size,
     orthoScale,
     panOffset: panOffset,
+    viewRotation: viewRotation,
   );
   return _projectToScreen(worldPos, mvp, size) ?? Offset.zero;
+}
+
+/// Unit +X of a grid whose +Y points at world angle [yAngle].
+Offset _gridXDir(double yAngle) =>
+    Offset(math.sin(yAngle), -math.cos(yAngle));
+
+/// Unit +Y of a grid whose +Y points at world angle [yAngle].
+Offset _gridYDir(double yAngle) =>
+    Offset(math.cos(yAngle), math.sin(yAngle));
+
+Offset _worldToGridCoords(Offset world, Offset origin, double yAngle) {
+  final xDir = _gridXDir(yAngle);
+  final yDir = _gridYDir(yAngle);
+  final rel = world - origin;
+  return Offset(
+    rel.dx * xDir.dx + rel.dy * xDir.dy,
+    rel.dx * yDir.dx + rel.dy * yDir.dy,
+  );
+}
+
+Offset _gridCoordsToWorld(Offset grid, Offset origin, double yAngle) {
+  final xDir = _gridXDir(yAngle);
+  final yDir = _gridYDir(yAngle);
+  return Offset(
+    origin.dx + grid.dx * xDir.dx + grid.dy * yDir.dx,
+    origin.dy + grid.dx * xDir.dy + grid.dy * yDir.dy,
+  );
+}
+
+double _undirectedEdgeAngle(double atan) {
+  var a = atan;
+  while (a <= -math.pi / 2) {
+    a += math.pi;
+  }
+  while (a > math.pi / 2) {
+    a -= math.pi;
+  }
+  return a;
+}
+
+/// Dominant undirected edge axis → grid +Y, with a vertex as the origin.
+({Offset anchor, double yAngle})? _computeDominantGridFrame(
+  List<List<Offset>> polygons,
+) {
+  // Quantize undirected angles to 0.5° buckets; score by edge count, then length.
+  const step = math.pi / 360;
+  final countByBucket = <int, int>{};
+  final lengthByBucket = <int, double>{};
+  final vertsByBucket = <int, List<Offset>>{};
+
+  for (final poly in polygons) {
+    if (poly.length < 2) continue;
+    for (var i = 0; i < poly.length; i++) {
+      final a = poly[i];
+      final b = poly[(i + 1) % poly.length];
+      final d = b - a;
+      final len = d.distance;
+      if (len < 1e-9) continue;
+      final undirected = _undirectedEdgeAngle(math.atan2(d.dy, d.dx));
+      final q = (undirected / step).round();
+      countByBucket[q] = (countByBucket[q] ?? 0) + 1;
+      lengthByBucket[q] = (lengthByBucket[q] ?? 0) + len;
+      (vertsByBucket[q] ??= []).addAll([a, b]);
+    }
+  }
+  if (countByBucket.isEmpty) return null;
+
+  var bestQ = countByBucket.keys.first;
+  var bestCount = countByBucket[bestQ]!;
+  var bestLen = lengthByBucket[bestQ] ?? 0.0;
+  for (final e in countByBucket.entries) {
+    final len = lengthByBucket[e.key] ?? 0.0;
+    if (e.value > bestCount || (e.value == bestCount && len > bestLen)) {
+      bestCount = e.value;
+      bestLen = len;
+      bestQ = e.key;
+    }
+  }
+
+  var undirected = bestQ * step;
+  undirected = _undirectedEdgeAngle(undirected);
+
+  // Pick a directed +Y among the two orientations on this axis.
+  // Prefer the direction closer to world +Y, then +X.
+  double score(double ang) => math.sin(ang) * 2 + math.cos(ang);
+  var yAngle = undirected;
+  final alt = undirected + math.pi;
+  if (score(alt) > score(yAngle)) yAngle = alt;
+
+  final candidates = vertsByBucket[bestQ] ?? const <Offset>[];
+  if (candidates.isEmpty) return null;
+
+  // Anchor = "bottom-left" vertex in the oriented grid frame.
+  Offset anchor = candidates.first;
+  var bestG = _worldToGridCoords(anchor, Offset.zero, yAngle);
+  for (final v in candidates) {
+    final g = _worldToGridCoords(v, Offset.zero, yAngle);
+    if (g.dx < bestG.dx - 1e-9 ||
+        ((g.dx - bestG.dx).abs() < 1e-9 && g.dy < bestG.dy)) {
+      anchor = v;
+      bestG = g;
+    }
+  }
+
+  return (anchor: anchor, yAngle: yAngle);
+}
+
+/// Undirected edge angles in (-π/2, π/2], so 0° and 180° collapse to one axis.
+List<double> _viewOrientationCandidates(List<List<Offset>> polygons) {
+  final angles = <double>{0.0};
+  void addEdgeAngle(double atan) {
+    // Map to (-π/2, π/2]: α and α+π are the same undirected line.
+    var a = atan;
+    while (a <= -math.pi / 2) {
+      a += math.pi;
+    }
+    while (a > math.pi / 2) {
+      a -= math.pi;
+    }
+    // Quantize to 0.5° to merge near-duplicates.
+    const step = math.pi / 360;
+    final q = (a / step).round() * step;
+    var nq = q;
+    while (nq <= -math.pi / 2) {
+      nq += math.pi;
+    }
+    while (nq > math.pi / 2) {
+      nq -= math.pi;
+    }
+    if (nq.abs() < 1e-9) nq = 0;
+    angles.add(nq);
+  }
+
+  for (final poly in polygons) {
+    if (poly.length < 2) continue;
+    for (var i = 0; i < poly.length; i++) {
+      final a = poly[i];
+      final b = poly[(i + 1) % poly.length];
+      final d = b - a;
+      if (d.distanceSquared < 1e-12) continue;
+      addEdgeAngle(math.atan2(d.dy, d.dx));
+    }
+  }
+  return angles.toList();
+}
+
+/// Axis-aligned bounds of [points] in a frame whose +X is world angle [phi].
+({Offset center, double width, double height}) _orientedBounds(
+  List<Offset> points,
+  double phi,
+) {
+  final c = math.cos(phi);
+  final s = math.sin(phi);
+  var minX = double.infinity, maxX = double.negativeInfinity;
+  var minY = double.infinity, maxY = double.negativeInfinity;
+  for (final p in points) {
+    final lx = p.dx * c + p.dy * s;
+    final ly = -p.dx * s + p.dy * c;
+    if (lx < minX) minX = lx;
+    if (lx > maxX) maxX = lx;
+    if (ly < minY) minY = ly;
+    if (ly > maxY) maxY = ly;
+  }
+  final midX = (minX + maxX) / 2;
+  final midY = (minY + maxY) / 2;
+  // Local (midX, midY) → world via basis X=(c,s), Y=(-s,c).
+  final center = Offset(midX * c - midY * s, midX * s + midY * c);
+  return (center: center, width: maxX - minX, height: maxY - minY);
 }
 
 class _Face {
