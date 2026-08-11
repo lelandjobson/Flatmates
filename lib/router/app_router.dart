@@ -1,5 +1,6 @@
 import 'package:go_router/go_router.dart';
 
+import '../screens/cards_debug_view.dart';
 import '../screens/dev_routes_screen.dart';
 import '../screens/gesture_system_view.dart';
 import '../screens/legacy_crafting_screen.dart';
@@ -48,6 +49,11 @@ final router = GoRouter(
       path: '/legacy-crafting',
       name: 'legacy_crafting',
       builder: (context, state) => const LegacyCraftingScreen(),
+    ),
+    GoRoute(
+      path: '/cards-debug',
+      name: 'cards_debug',
+      builder: (context, state) => const CardsDebugView(),
     ),
   ],
 );
