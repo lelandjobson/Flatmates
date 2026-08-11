@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../geometry/geometry_algorithms.dart';
 import '../gestures/gesture_system.dart';
 import '../ui/fm_dev_back_button.dart';
+import '../ui/fm_safe_area.dart';
+import '../ui/fm_screen.dart';
 
 const _pointerColors = [
   Color(0xFF00E5FF), // cyan
@@ -28,21 +30,15 @@ class _GestureSystemViewState extends State<GestureSystemView> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: GestureClassifier(
+    return FmScreen(
+      background: GestureClassifier(
         onGestureUpdate: _onGestureUpdate,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            CustomPaint(
-              painter: _GesturePainter(_gesture),
-            ),
-            _InfoPanel(gesture: _gesture),
-            const FmDevBackButton(),
-          ],
-        ),
+        child: CustomPaint(painter: _GesturePainter(_gesture)),
       ),
+      overlays: [
+        _InfoPanel(gesture: _gesture),
+        const FmDevBackButton(),
+      ],
     );
   }
 }
@@ -66,8 +62,8 @@ class _InfoPanel extends StatelessWidget {
       _ => const Color(0xFF00E5FF),
     };
 
-    return Positioned(
-      top: MediaQuery.of(context).padding.top,
+    return FmSafePositioned(
+      top: 0,
       left: 0,
       right: 0,
       child: IgnorePointer(
@@ -262,18 +258,10 @@ class _GesturePainter extends CustomPainter {
     );
 
     // Solid circle
-    canvas.drawCircle(
-      pos,
-      12,
-      Paint()..color = color.withValues(alpha: 0.8),
-    );
+    canvas.drawCircle(pos, 12, Paint()..color = color.withValues(alpha: 0.8));
 
     // Center dot
-    canvas.drawCircle(
-      pos,
-      4,
-      Paint()..color = Colors.white,
-    );
+    canvas.drawCircle(pos, 4, Paint()..color = Colors.white);
 
     // Trail from initial position
     if (pointer.hasMoved) {

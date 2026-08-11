@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import 'fm_safe_area.dart';
 import 'fm_theme.dart';
 
 class FmDevBackButton extends StatefulWidget {
@@ -18,7 +19,7 @@ class _FmDevBackButtonState extends State<FmDevBackButton> {
   Widget build(BuildContext context) {
     final theme = context.watch<FmThemeData>();
 
-    return Positioned(
+    return FmSafePositioned(
       top: 12,
       left: 12,
       child: MouseRegion(

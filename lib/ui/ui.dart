@@ -1,4 +1,6 @@
 export 'fm_theme.dart';
+export 'fm_safe_area.dart';
+export 'fm_screen.dart';
 export 'fm_tooltip.dart';
 export 'fm_button_base.dart';
 export 'fm_square_button.dart';

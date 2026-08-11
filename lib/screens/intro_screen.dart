@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../ui/fm_dev_back_button.dart';
+import '../ui/fm_screen.dart';
 
 class IntroScreen extends StatefulWidget {
   const IntroScreen({super.key});
@@ -44,27 +45,22 @@ class _IntroScreenState extends State<IntroScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          AnimatedBuilder(
-            animation: _flash,
-            builder: (context, child) {
-              return Center(
-                child: Container(
-                  width: 200,
-                  height: 200,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withValues(alpha: _flash.value),
-                  ),
-                ),
-              );
-            },
-          ),
-          const FmDevBackButton(),
-        ],
+    return FmScreen(
+      overlays: const [FmDevBackButton()],
+      background: AnimatedBuilder(
+        animation: _flash,
+        builder: (context, child) {
+          return Center(
+            child: Container(
+              width: 200,
+              height: 200,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: _flash.value),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

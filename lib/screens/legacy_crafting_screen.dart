@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/crafting_state.dart';
 import '../ui/crafting_workstation.dart';
+import '../ui/fm_screen.dart';
 
 class LegacyCraftingScreen extends StatefulWidget {
   const LegacyCraftingScreen({super.key});
@@ -15,9 +16,10 @@ class _LegacyCraftingScreenState extends State<LegacyCraftingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return FmScreen(
       backgroundColor: const Color(0xFF1A1A2E),
-      body: CraftingTestView(
+      // The workstation is full-bleed; its HUD applies safe insets per element.
+      background: CraftingTestView(
         structureId: 'legacy-test-structure',
         stateStore: _stateStore,
         canvasSize: 400.0,

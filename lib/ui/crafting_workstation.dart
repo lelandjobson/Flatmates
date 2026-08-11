@@ -23,6 +23,7 @@ import '../rendering/iso/friend_expression.dart';
 import '../rendering/lights.dart';
 import '../rendering/scene/camera.dart' as scene_camera;
 import '../tiles/tiles.dart';
+import 'fm_safe_area.dart';
 import 'object_radial_menu.dart';
 import 'rotation_gizmo.dart';
 import 'wipe_animation.dart';
@@ -3851,13 +3852,12 @@ class _CraftingTestViewState extends State<CraftingTestView>
             ..._buildPaperOverlays(viewportSize),
             if (_rotCopyGizmoActive && _rotCopyCenterWorld != null)
               _buildRotCopyGizmo(viewportSize),
-            Positioned(
+            FmSafePositioned(
               top: 12,
               left: 12,
-              child: SafeArea(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
                     GestureDetector(
                       onTap: widget.onDismiss,
                       child: Container(
@@ -3892,65 +3892,60 @@ class _CraftingTestViewState extends State<CraftingTestView>
                       const SizedBox(width: 8),
                       _buildCraftNowButton(),
                     ],
-                  ],
-                ),
+                ],
               ),
             ),
-            Positioned(
+            FmSafePositioned(
               left: 12,
               top: 60,
-              child: SafeArea(child: _buildToolModeBar()),
+              child: _buildToolModeBar(),
             ),
-            Positioned(
+            FmSafePositioned(
               right: 12,
               top: 0,
               bottom: 0,
-              child: SafeArea(
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: _buildSnapToolbar(),
-                ),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: _buildSnapToolbar(),
               ),
             ),
-            Positioned(
+            FmSafePositioned(
               top: 12,
               right: 12,
-              child: SafeArea(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildConfigButton(),
-                    if (_selectedBlueprint != null) ...[
-                      const SizedBox(height: 8),
-                      _buildProgressBar(),
-                    ],
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildConfigButton(),
+                  if (_selectedBlueprint != null) ...[
+                    const SizedBox(height: 8),
+                    _buildProgressBar(),
                   ],
-                ),
+                ],
               ),
             ),
             if (_craftingMode == CraftingMode.cutting)
-              Positioned(
+              FmSafePositioned(
                 left: 16,
                 bottom: 90,
-                child: SafeArea(child: _buildCutProgressBar()),
+                child: _buildCutProgressBar(),
               ),
-            Positioned(
+            FmSafePositioned(
               left: 0,
               right: 0,
               bottom: 86,
-              child: SafeArea(child: _buildUndoRedoBar()),
+              child: _buildUndoRedoBar(),
             ),
-            Positioned(
+            FmSafePositioned(
               right: 16,
               bottom: 100,
-              child: SafeArea(child: _buildCraftExecuteButton()),
+              child: _buildCraftExecuteButton(),
             ),
-            Positioned(
+            FmSafePositioned(
               left: 0,
               right: 0,
               bottom: 16,
-              child: SafeArea(child: _buildInventoryBar()),
+              child: _buildInventoryBar(),
             ),
           ],
         );
@@ -8817,11 +8812,10 @@ class _ConfigPopover extends StatelessWidget {
           onTap: onDismiss,
           child: const SizedBox.expand(),
         ),
-        Positioned(
+        FmSafePositioned(
           top: 70,
           right: 16,
-          child: SafeArea(
-            child: Material(
+          child: Material(
               color: const Color(0xEE1A1A2E),
               borderRadius: BorderRadius.circular(12),
               elevation: 12,
@@ -8933,7 +8927,6 @@ class _ConfigPopover extends StatelessWidget {
               ),
             ),
           ),
-        ),
       ],
     );
   }

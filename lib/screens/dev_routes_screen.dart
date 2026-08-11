@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../router/app_router.dart';
+import '../ui/fm_screen.dart';
 
 class DevRoutesScreen extends StatelessWidget {
   const DevRoutesScreen({super.key});
@@ -13,13 +14,13 @@ class DevRoutesScreen extends StatelessWidget {
         .where((r) => r.name != 'dev_routes')
         .toList();
 
-    return Scaffold(
-      backgroundColor: Colors.black,
+    return FmScreen(
       appBar: AppBar(
         title: const Text('Dev Routes'),
         backgroundColor: Colors.grey[900],
       ),
-      body: ListView.separated(
+      minimum: EdgeInsets.zero,
+      content: ListView.separated(
         padding: const EdgeInsets.all(16),
         itemCount: routes.length,
         separatorBuilder: (_, __) => const SizedBox(height: 8),
