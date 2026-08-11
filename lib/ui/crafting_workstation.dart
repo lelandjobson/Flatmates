@@ -11,6 +11,7 @@ import 'package:vector_math/vector_math_64.dart' hide Colors;
 import '../crafting/crafting_blueprint.dart';
 import '../crafting/crafting_history.dart';
 import '../crafting/crafting_material.dart';
+import '../crafting/blueprint_set.dart';
 import '../crafting/placed_paper.dart';
 import '../data/crafting_state.dart';
 import '../crafting/paper_splitting.dart';
@@ -586,6 +587,12 @@ class _CraftingTestViewState extends State<CraftingTestView>
   bool _blueprintUnionMode = false;
   List<List<Offset>> _blueprintUnionPolygons = [];
 
+  // Blueprint sets
+  List<BlueprintSet> _blueprintSets = [];
+  BlueprintSet? _selectedSet;
+  int _currentStepIndex = 0;
+  bool _stepTransitioning = false;
+
   // Check mode & locking
   bool _checkMode = true;
   Set<int> _filledBlueprintIndices = {};
@@ -920,7 +927,10 @@ class _CraftingTestViewState extends State<CraftingTestView>
       }
     }
     if (mounted) {
-      setState(() => _blueprints = loaded);
+      setState(() {
+        _blueprints = loaded;
+        _blueprintSets = _buildBlueprintSets(loaded);
+      });
       if (widget.defaultBlueprintName != null && _selectedBlueprint == null) {
         final match = loaded
             .where((b) => b.craft == widget.defaultBlueprintName)
@@ -930,6 +940,84 @@ class _CraftingTestViewState extends State<CraftingTestView>
         }
       }
     }
+  }
+
+  List<BlueprintSet> _buildBlueprintSets(List<CraftingBlueprint> blueprints) {
+    final sets = <BlueprintSet>[];
+
+    // The "example" multi-step set comes first.
+    sets.add(const BlueprintSet(
+      name: 'Example',
+      steps: [
+        BlueprintStep(craft: 'Group05', island: 0, label: 'Step 1', iconCodePoint: 0xe3c9),
+        BlueprintStep(craft: 'Group06', island: 0, label: 'Step 2', iconCodePoint: 0xe87e),
+        BlueprintStep(craft: 'Group05', island: 2, label: 'Step 3', iconCodePoint: 0xe8b8),
+      ],
+    ));
+
+    // Each existing blueprint becomes its own single-step set.
+    for (final bp in blueprints) {
+      sets.add(BlueprintSet.single(bp));
+    }
+
+    return sets;
+  }
+
+  CraftingBlueprint? _findBlueprintForStep(BlueprintStep step) {
+    return _blueprints
+        .where((b) => b.craft == step.craft && b.island == step.island)
+        .firstOrNull;
+  }
+
+  void _selectBlueprintSet(BlueprintSet? set) {
+    if (set == null) {
+      _selectedSet = null;
+      _currentStepIndex = 0;
+      _selectBlueprint(null);
+      return;
+    }
+
+    setState(() {
+      _selectedSet = set;
+      _currentStepIndex = 0;
+    });
+
+    final bp = _findBlueprintForStep(set.steps[0]);
+    _selectBlueprint(bp);
+  }
+
+  void _advanceToNextStep() {
+    if (_selectedSet == null) return;
+    final nextIndex = _currentStepIndex + 1;
+    if (nextIndex >= _selectedSet!.steps.length) return;
+
+    setState(() {
+      _stepTransitioning = true;
+      // Clear all state from the completed blueprint so nothing overlaps.
+      _placedPapers.clear();
+      _filledBlueprintIndices = {};
+      _blueprintWorldPolygons = [];
+      _blueprintUnionPolygons = [];
+      _blueprintTotalArea = 0;
+      _blueprintLockedArea = 0;
+      _completionPhase = CompletionPhase.none;
+      _foldNodeStates = {};
+      _foldSchedule = [];
+      _dotDissolveProgress = 0;
+      _foldOpacity = 0;
+      _foldColorProgress = 0;
+    });
+
+    // Brief delay for the card transition, then load next blueprint.
+    Future.delayed(const Duration(milliseconds: 400), () {
+      if (!mounted) return;
+      setState(() {
+        _currentStepIndex = nextIndex;
+        _stepTransitioning = false;
+      });
+      final bp = _findBlueprintForStep(_selectedSet!.steps[nextIndex]);
+      _selectBlueprint(bp);
+    });
   }
 
   void _selectBlueprint(CraftingBlueprint? blueprint) {
@@ -1265,6 +1353,15 @@ class _CraftingTestViewState extends State<CraftingTestView>
   void _updateCraftExecuteButtonVisibility() {
     final shouldShow = _isCraftComplete();
     if (shouldShow == _craftExecuteButtonVisible) return;
+
+    // When in a multi-step set, auto-trigger the completion sequence.
+    if (shouldShow && _selectedSet != null && _selectedSet!.steps.length > 1) {
+      setState(() => _craftExecuteButtonVisible = false);
+      _notifyCraftCompleted();
+      _startCompletionSequence();
+      return;
+    }
+
     setState(() => _craftExecuteButtonVisible = shouldShow);
     if (shouldShow) {
       _craftButtonAnimController.forward(from: 0);
@@ -1327,15 +1424,32 @@ class _CraftingTestViewState extends State<CraftingTestView>
     _buildFoldGeometry();
     _updateFoldAnimation(0);
 
-    setState(() {
-      _completionPhase = CompletionPhase.dissolveReveal;
-      _dotDissolveProgress = 0;
-      _foldOpacity = 0;
-      _foldColorProgress = 0;
-      _selectedPaperIds = {};
-      _isRotationGizmoActive = false;
-    });
-    _dissolveController.forward(from: 0);
+    final inSet = _selectedSet != null && _selectedSet!.steps.length > 1;
+
+    if (inSet) {
+      // Skip dissolve, jump straight to fold with a fast 1s duration.
+      setState(() {
+        _completionPhase = CompletionPhase.fold;
+        _dotDissolveProgress = 1;
+        _foldOpacity = 1;
+        _foldColorProgress = 0;
+        _selectedPaperIds = {};
+        _isRotationGizmoActive = false;
+      });
+      _foldController.duration = const Duration(milliseconds: 1000);
+      _foldController.forward(from: 0);
+    } else {
+      setState(() {
+        _completionPhase = CompletionPhase.dissolveReveal;
+        _dotDissolveProgress = 0;
+        _foldOpacity = 0;
+        _foldColorProgress = 0;
+        _selectedPaperIds = {};
+        _isRotationGizmoActive = false;
+      });
+      _foldController.duration = const Duration(seconds: 4);
+      _dissolveController.forward(from: 0);
+    }
   }
 
   void _onDissolveTick() {
@@ -1374,6 +1488,18 @@ class _CraftingTestViewState extends State<CraftingTestView>
       widget.onCraftFoldComplete?.call(
           _completedPapers, _selectedBlueprint!.craft, _selectedBlueprint!);
     }
+
+    // If there's a next step in the set, advance to it instead of dismissing.
+    if (_selectedSet != null &&
+        _currentStepIndex < _selectedSet!.steps.length - 1) {
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (!mounted) return;
+        setState(() => _completionPhase = CompletionPhase.none);
+        _advanceToNextStep();
+      });
+      return;
+    }
+
     widget.onDismiss?.call();
   }
 
@@ -3851,8 +3977,19 @@ class _CraftingTestViewState extends State<CraftingTestView>
             ..._buildPaperOverlays(viewportSize),
             if (_rotCopyGizmoActive && _rotCopyCenterWorld != null)
               _buildRotCopyGizmo(viewportSize),
+            // Step cards - top, centered
+            if (_selectedSet != null && _selectedSet!.steps.length > 1)
+              Positioned(
+                top: 12,
+                left: 0,
+                right: 0,
+                child: SafeArea(
+                  child: Center(child: _buildStepCards()),
+                ),
+              ),
+            // Main toolbar - BOTTOM
             Positioned(
-              top: 12,
+              bottom: 86,
               left: 12,
               child: SafeArea(
                 child: Row(
@@ -3878,7 +4015,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
                       const SizedBox(width: 8),
                       _buildCutButton(),
                     ],
-                    if (_blueprints.isNotEmpty) ...[
+                    if (_blueprintSets.isNotEmpty) ...[
                       const SizedBox(width: 8),
                       _buildBlueprintDropdown(),
                     ],
@@ -3898,7 +4035,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
             ),
             Positioned(
               left: 12,
-              top: 60,
+              top: 80,
               child: SafeArea(child: _buildToolModeBar()),
             ),
             Positioned(
@@ -3908,24 +4045,19 @@ class _CraftingTestViewState extends State<CraftingTestView>
               child: SafeArea(
                 child: Align(
                   alignment: Alignment.centerRight,
-                  child: _buildSnapToolbar(),
-                ),
-              ),
-            ),
-            Positioned(
-              top: 12,
-              right: 12,
-              child: SafeArea(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildConfigButton(),
-                    if (_selectedBlueprint != null) ...[
-                      const SizedBox(height: 8),
-                      _buildProgressBar(),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      _buildSnapToolbar(),
+                      const SizedBox(height: 12),
+                      _buildConfigButton(),
+                      if (_selectedBlueprint != null) ...[
+                        const SizedBox(height: 8),
+                        _buildProgressBar(),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -4574,41 +4706,198 @@ class _CraftingTestViewState extends State<CraftingTestView>
 
   Widget _buildBlueprintDropdown() {
     return Material(
-      color: Colors.black.withOpacity(0.7),
+      color: Colors.black.withValues(alpha: 0.7),
       borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: DropdownButton<String>(
-          value: _selectedBlueprint?.displayName,
-          hint: const Text(
-            'Blueprint',
-            style: TextStyle(color: Colors.white54, fontSize: 13),
+      child: PopupMenuButton<String>(
+        offset: Offset(0, -(_blueprintSets.length + 1) * 40.0),
+        color: const Color(0xFF1A1A2E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        onSelected: (value) {
+          if (value.isEmpty) {
+            _selectBlueprintSet(null);
+          } else {
+            final set = _blueprintSets
+                .where((s) => s.name == value)
+                .firstOrNull;
+            _selectBlueprintSet(set);
+          }
+        },
+        itemBuilder: (context) => [
+          const PopupMenuItem(
+            value: '',
+            child: Text('None', style: TextStyle(color: Colors.white54, fontSize: 13)),
           ),
-          dropdownColor: const Color(0xFF1A1A2E),
-          underline: const SizedBox.shrink(),
-          iconEnabledColor: Colors.white54,
-          style: const TextStyle(color: Colors.white, fontSize: 13),
-          items: [
-            const DropdownMenuItem(
-              value: '',
-              child: Text('None', style: TextStyle(color: Colors.white54)),
-            ),
-            for (final bp in _blueprints)
-              DropdownMenuItem(
-                value: bp.displayName,
-                child: Text(bp.displayName),
+          for (final set in _blueprintSets)
+            PopupMenuItem(
+              value: set.name,
+              child: Text(
+                set.name,
+                style: TextStyle(
+                  color: set.name == _selectedSet?.name ? Colors.white : Colors.white70,
+                  fontSize: 13,
+                  fontWeight: set.name == _selectedSet?.name ? FontWeight.bold : FontWeight.normal,
+                ),
               ),
-          ],
-          onChanged: (value) {
-            if (value == null || value.isEmpty) {
-              _selectBlueprint(null);
-            } else {
-              final bp = _blueprints
-                  .where((b) => b.displayName == value)
-                  .firstOrNull;
-              _selectBlueprint(bp);
-            }
-          },
+            ),
+        ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _selectedSet?.name ?? 'Blueprint Set',
+                style: TextStyle(
+                  color: _selectedSet != null ? Colors.white : Colors.white54,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(width: 4),
+              const Icon(Icons.arrow_drop_up, color: Colors.white54, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStepCards() {
+    if (_selectedSet == null || _selectedSet!.steps.length <= 1) {
+      return const SizedBox.shrink();
+    }
+
+    return Builder(
+      builder: (context) {
+        final viewportHeight = MediaQuery.of(context).size.height;
+        final baseCardHeight = viewportHeight / 10;
+        final activeCardHeight = baseCardHeight * 1.15;
+        final baseCardWidth = baseCardHeight * 1.4;
+        final activeCardWidth = activeCardHeight * 1.4;
+        final overlapOffset = baseCardWidth * 0.35;
+
+        // Layout: completed cards on left, current centered, future stacked right.
+        final steps = _selectedSet!.steps;
+        final completedCount = _currentStepIndex;
+        final futureCount = steps.length - _currentStepIndex - 1;
+
+        // Total width calculation
+        final completedWidth = completedCount > 0
+            ? completedCount * baseCardWidth + (completedCount - 1) * 6
+            : 0.0;
+        final futureWidth = futureCount > 0
+            ? baseCardWidth + (futureCount - 1) * overlapOffset
+            : 0.0;
+        final gap = 12.0;
+        final totalWidth = completedWidth +
+            (completedCount > 0 ? gap : 0) +
+            activeCardWidth +
+            (futureCount > 0 ? gap : 0) +
+            futureWidth;
+
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeOutCubic,
+          height: activeCardHeight + 8,
+          width: totalWidth,
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.centerLeft,
+            children: [
+              // Completed cards (left, spaced out)
+              for (int i = 0; i < completedCount; i++)
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 400),
+                  curve: Curves.easeOutCubic,
+                  left: i * (baseCardWidth + 6),
+                  top: (activeCardHeight - baseCardHeight) / 2 + 4,
+                  child: _buildStepCardWidget(
+                    index: i,
+                    width: baseCardWidth,
+                    height: baseCardHeight,
+                  ),
+                ),
+
+              // Current (active) card - positioned after completed cards
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 400),
+                curve: Curves.easeOutCubic,
+                left: completedWidth + (completedCount > 0 ? gap : 0),
+                top: 4,
+                child: _buildStepCardWidget(
+                  index: _currentStepIndex,
+                  width: activeCardWidth,
+                  height: activeCardHeight,
+                ),
+              ),
+
+              // Future cards (right, stacked/overlapping)
+              for (int i = 0; i < futureCount; i++)
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 400),
+                  curve: Curves.easeOutCubic,
+                  left: completedWidth +
+                      (completedCount > 0 ? gap : 0) +
+                      activeCardWidth +
+                      gap +
+                      i * overlapOffset,
+                  top: (activeCardHeight - baseCardHeight) / 2 + 4,
+                  child: _buildStepCardWidget(
+                    index: _currentStepIndex + 1 + i,
+                    width: baseCardWidth,
+                    height: baseCardHeight,
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildStepCardWidget({
+    required int index,
+    required double width,
+    required double height,
+  }) {
+    final step = _selectedSet!.steps[index];
+    final isCurrent = index == _currentStepIndex;
+    final isCompleted = index < _currentStepIndex;
+    final iconSize = height * 0.4;
+
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 300),
+      opacity: _stepTransitioning && isCurrent ? 0.5 : 1.0,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isCurrent
+                ? const Color(0xFFAA66FF)
+                : isCompleted
+                    ? const Color(0xFF66FF66)
+                    : const Color(0xFF7733CC).withValues(alpha: 0.4),
+            width: isCurrent ? 2.0 : 1.5,
+          ),
+          color: isCompleted
+              ? const Color(0xFF66FF66).withValues(alpha: 0.1)
+              : isCurrent
+                  ? const Color(0xFFAA66FF).withValues(alpha: 0.05)
+                  : const Color(0xFF1A1A2E).withValues(alpha: 0.8),
+        ),
+        child: Center(
+          child: isCompleted
+              ? Icon(Icons.check, color: const Color(0xFF66FF66), size: iconSize)
+              : Icon(
+                  IconData(step.iconCodePoint, fontFamily: 'MaterialIcons'),
+                  color: isCurrent
+                      ? const Color(0xFFAA66FF)
+                      : Colors.white38,
+                  size: iconSize,
+                ),
         ),
       ),
     );
