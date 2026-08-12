@@ -802,10 +802,22 @@ class _CraftingTestViewState extends State<CraftingTestView>
 
   // Gesture tracking for two-finger pan/zoom (via GestureClassifier).
   bool _isMultiTouch = false;
+
+  /// Once multitouch is seen, tools stay dead until *every* finger lifts.
+  /// Prevents the last finger-up from committing paint/erase/cut/etc.
+  bool _toolsSuppressedUntilPointersUp = false;
   int _canvasPointerCount = 0;
   Offset? _pinchStartPan;
   double? _pinchStartOrtho;
   Offset? _pinchAnchorWorld;
+
+  /// Undo-stack depth at the start of the current one-finger tool gesture.
+  /// Multitouch aborts revert any history pushed beyond this.
+  int _toolGestureUndoDepthAtDown = 0;
+
+  /// Grid pose at gesture start (align-grid mutates without undo).
+  Offset _preGestureGridOrigin = Offset.zero;
+  double _preGestureGridRotation = math.pi / 2;
 
   double _computeDrawingPlaneSize() {
     return widget.canvasSize ?? 400.0;
@@ -815,43 +827,120 @@ class _CraftingTestViewState extends State<CraftingTestView>
     // No clamping – canvas is infinite.
   }
 
+  bool get _toolsBlocked =>
+      _toolsSuppressedUntilPointersUp ||
+      _isMultiTouch ||
+      _canvasPointerCount >= 2;
+
   void _clearPinchBaseline() {
     _pinchStartPan = null;
     _pinchStartOrtho = null;
     _pinchAnchorWorld = null;
   }
 
+  void _beginToolGestureBaseline() {
+    _toolGestureUndoDepthAtDown = _history.undoDepth;
+    _preGestureGridOrigin = _gridOriginOffset;
+    _preGestureGridRotation = _gridRotation;
+  }
+
+  void _lockToolsForMultiTouch() {
+    _toolsSuppressedUntilPointersUp = true;
+  }
+
+  void _maybeUnlockToolsAfterPointersUp() {
+    if (_canvasPointerCount <= 0) {
+      _canvasPointerCount = 0;
+      _toolsSuppressedUntilPointersUp = false;
+      _isMultiTouch = false;
+      _clearPinchBaseline();
+    }
+  }
+
+  /// Cancel any in-progress one-finger tool work when a second finger lands.
+  /// Reverts history pushed during the gesture, clears previews, and restores
+  /// align-grid pose. Camera pan/zoom state is kept so pinch can continue.
   void _abortToolGestureForMultiTouch() {
-    _pointerDownPos = null;
-    _pointerDownPaperId = null;
-    _isDragging = false;
-    _dragPaperId = null;
-    _isMarquee = false;
-    _marqueeStartScreen = null;
-    _marqueeCurrentScreen = null;
-    _lineDrawStart = null;
-    _lineDrawPreview = null;
-    // Pan tool one-finger camera drag — must clear or a later move applies a
-    // huge stale delta against the pre-pinch finger position (pinch jitter).
-    _panDragLastScreen = null;
-    _panModeDragging = false;
-    _panModeDragLastScreen = null;
-    _paintedCells = {};
-    _lastPaintCell = null;
-    _paintDragPaperId = null;
-    _paintDragLastScreen = null;
-    _paintHadSelection = false;
-    _paintDeferredCell = null;
-    _paintSelectionIds = {};
-    _mirrorLineStart = null;
-    _mirrorLinePreview = null;
-    _transCopyStartWorld = null;
-    _transCopyCurrentWorld = null;
-    _erasedCells = {};
-    _lastEraseCell = null;
-    _alignGridPointerDown = null;
-    _alignGridHoveredPolyIndex = null;
-    _stretchHandleIndex = null;
+    // Revert mutations (move/stretch/etc.) recorded after finger-down.
+    var reverted = false;
+    while (_history.undoDepth > _toolGestureUndoDepthAtDown &&
+        _history.canUndo) {
+      final snap = _history.undo(_currentSnapshot('cancel-multitouch'));
+      if (snap != null) {
+        _placedPapers
+          ..clear()
+          ..addAll(snap.papers.map((s) => s.toPaper()));
+        _nextPaperId = snap.nextPaperId;
+        _inventory
+          ..clear()
+          ..addAll(snap.inventory);
+        _selectedPaperIds = Set<String>.from(snap.selectedPaperIds);
+        reverted = true;
+      }
+    }
+    _history.clearRedo();
+    _toolGestureUndoDepthAtDown = _history.undoDepth;
+
+    // Align-grid live-edits the grid without undo — snap back.
+    final gridChanged =
+        _gridOriginOffset != _preGestureGridOrigin ||
+        _gridRotation != _preGestureGridRotation;
+
+    setState(() {
+      if (gridChanged) {
+        _gridOriginOffset = _preGestureGridOrigin;
+        _gridRotation = _preGestureGridRotation;
+      }
+      if (reverted) {
+        _isRotationGizmoActive = false;
+      }
+
+      _pointerDownPos = null;
+      _pointerDownPaperId = null;
+      _isDragging = false;
+      _dragPaperId = null;
+      _isMarquee = false;
+      _marqueeStartScreen = null;
+      _marqueeCurrentScreen = null;
+      _lineDrawStart = null;
+      _lineDrawPreview = null;
+      // Pan tool one-finger camera drag — must clear or a later move applies a
+      // huge stale delta against the pre-pinch finger position (pinch jitter).
+      _panDragLastScreen = null;
+      _panModeDragging = false;
+      _panModeDragLastScreen = null;
+      _paintedCells = {};
+      _lastPaintCell = null;
+      _paintDragPaperId = null;
+      _paintDragLastScreen = null;
+      _paintHadSelection = false;
+      _paintDeferredCell = null;
+      _paintSelectionIds = {};
+      _mirrorLineStart = null;
+      _mirrorLinePreview = null;
+      _transCopyStartWorld = null;
+      _transCopyCurrentWorld = null;
+      _erasedCells = {};
+      _lastEraseCell = null;
+      _alignGridPhase = 0;
+      _alignGridPointerDown = null;
+      _alignGridHoveredPolyIndex = null;
+      _alignGridPreviewVertex = null;
+      _alignGridSecondPreview = null;
+      // Drop in-progress stretch without committing.
+      _stretchHandleIndex = null;
+      _stretchHandleStartWorld = null;
+      _stretchOriginalBounds = null;
+      _stretchScaleX = 1.0;
+      _stretchScaleY = 1.0;
+      _stretchAnchorLocal = Offset.zero;
+    });
+
+    if (reverted) {
+      _scheduleCheck();
+      _updateCraftExecuteButtonVisibility();
+    }
+    if (gridChanged) _scheduleGridLodSync();
   }
 
   /// Stable two-finger pan/zoom from [GestureClassifier] (span from gesture start).
@@ -870,6 +959,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
           _pinchAnchorWorld == null;
       if (!_isMultiTouch) {
         _isMultiTouch = true;
+        _lockToolsForMultiTouch();
         _abortToolGestureForMultiTouch();
       }
       if (needsBaseline) {
@@ -923,10 +1013,10 @@ class _CraftingTestViewState extends State<CraftingTestView>
     }
 
     if (_isMultiTouch) {
+      // Leave pinch mode when fingers drop below 2, but keep tools locked
+      // until the pointer count hits zero (last finger-up must not commit).
       _isMultiTouch = false;
       _clearPinchBaseline();
-      // Drop any one-finger pan/tool drag so a remaining finger can't resume
-      // with a pre-pinch screen anchor.
       _panDragLastScreen = null;
       _panModeDragging = false;
       _panModeDragLastScreen = null;
@@ -1127,7 +1217,18 @@ class _CraftingTestViewState extends State<CraftingTestView>
         _blueprints = loaded;
         _blueprintSets = _buildBlueprintSets(loaded, groupDefs);
       });
-      if (widget.defaultBlueprintName != null && _selectedBlueprint == null) {
+      // Prefer Group 05 as the default craft; fall back to widget override.
+      final group05 = _blueprintSets
+          .where(
+            (s) =>
+                s.isGroup &&
+                s.steps.any((st) => st.craft.toLowerCase() == 'group05'),
+          )
+          .firstOrNull;
+      if (group05 != null && _selectedSet == null) {
+        _selectBlueprintSet(group05);
+      } else if (widget.defaultBlueprintName != null &&
+          _selectedBlueprint == null) {
         final match = loaded
             .where((b) => b.craft == widget.defaultBlueprintName)
             .firstOrNull;
@@ -2487,9 +2588,9 @@ class _CraftingTestViewState extends State<CraftingTestView>
   /// Snap radius in world units derived from a fixed screen-pixel tolerance,
   /// so snapping feels consistent regardless of zoom level.
   double get _snapWorldRadius {
-    final shorter = math.min(_viewportSize.width, _viewportSize.height);
-    if (shorter < 1) return _minorGridSpacing * 0.5;
-    return _snapPixelTolerance * (2 * _orthoScale / shorter);
+    final h = _viewportSize.height;
+    if (h < 1) return _minorGridSpacing * 0.5;
+    return _snapPixelTolerance * (2 * _orthoScale / h);
   }
 
   /// Priority-weighted snap across multiple target categories.
@@ -2657,8 +2758,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
   ) {
     final bounds = _stretchOriginalBounds ?? _paperLocalBounds(paper);
     final handles = _stretchHandleWorldPositions(paper, bounds);
-    final shorter = math.min(viewportSize.width, viewportSize.height);
-    final worldPerPixel = 2 * _orthoScale / shorter;
+    final worldPerPixel = _worldUnitsPerPixel(viewportSize);
     final hitRadius = 15.0 * worldPerPixel;
 
     final worldPos = _screenToWorld(screenPos, viewportSize);
@@ -3240,6 +3340,17 @@ class _CraftingTestViewState extends State<CraftingTestView>
     );
   }
 
+  /// World units per screen pixel for the current ortho camera.
+  ///
+  /// Ortho half-height is [_orthoScale]; the frustum half-width is
+  /// `orthoScale * aspect`, so both axes share `2 * orthoScale / height`.
+  /// Using the shorter side (old behavior) overshoots pan/drag on portrait.
+  double _worldUnitsPerPixel(Size viewportSize) {
+    final h = viewportSize.height;
+    if (h < 1) return 0;
+    return 2 * _orthoScale / h;
+  }
+
   /// Maps a screen-space drag delta into world delta (y-up), honoring view roll.
   Offset _screenDeltaToWorldDelta(Offset screenDelta, double worldPerPixel) {
     final dx = screenDelta.dx * worldPerPixel;
@@ -3317,7 +3428,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
 
   void _pushUndo(String label, {bool? noOp}) {
     final isNoOp = noOp ?? _noOpUndoLabels.contains(label);
-    if (!isNoOp) fmHapticSmallClick();
+    if (!isNoOp && !_toolsBlocked) fmHapticSmallClick();
     _history.pushSnapshot(
       CraftingSnapshot.capture(
         papers: _placedPapers,
@@ -3332,6 +3443,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
 
   /// Adds [cell] to the paint preview if free; fires a small click when new.
   bool _tryPaintCell((int, int) cell) {
+    if (_toolsBlocked) return false;
     if (_paintedCells.contains(cell) ||
         _isCellOccupiedByPaper(cell.$1, cell.$2)) {
       return false;
@@ -3343,6 +3455,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
 
   /// Adds [cell] to the erase preview if occupied; fires a small click when new.
   bool _tryEraseCell((int, int) cell) {
+    if (_toolsBlocked) return false;
     if (_erasedCells.contains(cell) ||
         !_isCellOccupiedByPaper(cell.$1, cell.$2)) {
       return false;
@@ -3532,6 +3645,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
   void _handlePointerDown(Offset localPos, Size viewportSize) {
     if (_completionPhase != CompletionPhase.none) return;
     if (_craftingMode == CraftingMode.cutting) return;
+    if (_toolsBlocked) return;
 
     if (_isRotationGizmoActive) {
       final hitId = _hitTestPaper(localPos, viewportSize);
@@ -3807,7 +3921,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
     if (_craftingMode == CraftingMode.cutting) return;
     // Safety: pan tool's camera drag runs before the shared multitouch early-out
     // further down; never fight the pinch handler.
-    if (_isMultiTouch || _canvasPointerCount >= 2) return;
+    if (_toolsBlocked) return;
 
     if (_craftingMode == CraftingMode.stretch &&
         _stretchHandleIndex != null &&
@@ -3906,8 +4020,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
             .where((p) => p.id == _panModeSelectedPaperId)
             .firstOrNull;
         if (paper != null && !paper.locked) {
-          final shorter = math.min(viewportSize.width, viewportSize.height);
-          final worldPerPixel = 2 * _orthoScale / shorter;
+          final worldPerPixel = _worldUnitsPerPixel(viewportSize);
           final delta = localPos - _panModeDragLastScreen!;
           _panModeDragLastScreen = localPos;
           final worldDelta = _screenDeltaToWorldDelta(delta, worldPerPixel);
@@ -3920,8 +4033,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
       }
       if (_panDragLastScreen != null) {
         final delta = localPos - _panDragLastScreen!;
-        final shorter = math.min(viewportSize.width, viewportSize.height);
-        final worldPerPixel = 2 * _orthoScale / shorter;
+        final worldPerPixel = _worldUnitsPerPixel(viewportSize);
         final panDelta = _panDeltaFromScreen(delta, worldPerPixel);
         setState(() {
           _panOffset = Offset(
@@ -3964,8 +4076,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
             .where((p) => p.id == _paintDragPaperId)
             .firstOrNull;
         if (paper != null && !paper.locked) {
-          final shorter = math.min(viewportSize.width, viewportSize.height);
-          final worldPerPixel = 2 * _orthoScale / shorter;
+          final worldPerPixel = _worldUnitsPerPixel(viewportSize);
           final delta = localPos - _paintDragLastScreen!;
           _paintDragLastScreen = localPos;
           final worldDelta = _screenDeltaToWorldDelta(delta, worldPerPixel);
@@ -4053,7 +4164,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
       return;
     }
 
-    if (_isMultiTouch || _pointerDownPos == null) return;
+    if (_toolsBlocked || _pointerDownPos == null) return;
 
     if (!_isDragging && !_isMarquee) {
       final distance = (localPos - _pointerDownPos!).distance;
@@ -4095,8 +4206,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
           .firstOrNull;
       if (paper == null) return;
 
-      final shorter = math.min(viewportSize.width, viewportSize.height);
-      final worldPerPixel = 2 * _orthoScale / shorter;
+      final worldPerPixel = _worldUnitsPerPixel(viewportSize);
       final delta = localPos - _pointerDownPos!;
       _pointerDownPos = localPos;
       final worldDelta = _screenDeltaToWorldDelta(delta, worldPerPixel);
@@ -4181,6 +4291,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
   void _handlePointerUp(Offset localPos, Size viewportSize) {
     if (_completionPhase != CompletionPhase.none) return;
     if (_craftingMode == CraftingMode.cutting) return;
+    if (_toolsBlocked) return;
 
     if (_craftingMode == CraftingMode.stretch) {
       if (_stretchHandleIndex != null && _stretchPaperId != null) {
@@ -4421,7 +4532,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
       return;
     }
 
-    if (_isMultiTouch) {
+    if (_toolsBlocked) {
       _pointerDownPos = null;
       _pointerDownPaperId = null;
       _isDragging = false;
@@ -4856,16 +4967,9 @@ class _CraftingTestViewState extends State<CraftingTestView>
                     if (widget.onDismiss != null) const SizedBox(width: 8),
                     _buildCutButton(),
                   ],
-                  if (_blueprintSets.isNotEmpty) ...[
-                    if (widget.onDismiss != null ||
-                        (_craftingMode == CraftingMode.drawLine &&
-                            _drawnCutLines.isNotEmpty))
-                      const SizedBox(width: 8),
-                    _buildBlueprintDropdown(),
-                  ],
+                  // Blueprint dropdown hidden — Group 05 loads by default.
                   if (_selectedBlueprint != null) ...[
                     if (widget.onDismiss != null ||
-                        _blueprintSets.isNotEmpty ||
                         (_craftingMode == CraftingMode.drawLine &&
                             _drawnCutLines.isNotEmpty))
                       const SizedBox(width: 8),
@@ -5917,22 +6021,26 @@ class _CraftingTestViewState extends State<CraftingTestView>
             behavior: HitTestBehavior.opaque,
             onPointerDown: (e) {
               _canvasPointerCount++;
-              // Suppress tools on 2nd+ finger, but do NOT claim multitouch /
-              // pinch baselines here — GestureClassifier owns that so we don't
-              // race and leave pinch with null start ortho/pan.
-              if (_canvasPointerCount >= 2 || _isMultiTouch) {
+              // Suppress tools on 2nd+ finger / after any multitouch episode.
+              if (_canvasPointerCount >= 2 || _toolsSuppressedUntilPointersUp) {
+                _lockToolsForMultiTouch();
                 _abortToolGestureForMultiTouch();
                 return;
               }
+              _beginToolGestureBaseline();
               _handlePointerDown(e.localPosition, viewportSize);
             },
             onPointerMove: (e) {
-              if (_isMultiTouch || _canvasPointerCount >= 2) return;
+              if (_toolsBlocked) return;
               _handlePointerMove(e.localPosition, viewportSize);
             },
             onPointerUp: (e) {
               _canvasPointerCount = math.max(0, _canvasPointerCount - 1);
-              if (_isMultiTouch) return;
+              final suppress = _toolsSuppressedUntilPointersUp;
+              _maybeUnlockToolsAfterPointersUp();
+              // Never commit a tool action during/after multitouch — including
+              // the last finger lifting one-at-a-time after a pinch.
+              if (suppress) return;
               _handlePointerUp(e.localPosition, viewportSize);
             },
             onPointerSignal: (event) {
@@ -5947,6 +6055,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
             onPointerCancel: (_) {
               _canvasPointerCount = 0;
               _abortToolGestureForMultiTouch();
+              _toolsSuppressedUntilPointersUp = false;
               _isMultiTouch = false;
               _clearPinchBaseline();
             },

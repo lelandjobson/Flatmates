@@ -76,6 +76,7 @@ class CraftingHistory extends ChangeNotifier {
 
   bool get canUndo => _undoStack.isNotEmpty;
   bool get canRedo => _redoStack.isNotEmpty;
+  int get undoDepth => _undoStack.length;
   int get operativeActionCount => _operativeActionCount;
 
   /// Push the *current* state before a mutation. [snapshot] is the state
@@ -130,6 +131,13 @@ class CraftingHistory extends ChangeNotifier {
     _undoStack.clear();
     _redoStack.clear();
     _operativeActionCount = 0;
+    notifyListeners();
+  }
+
+  /// Drops redo entries (e.g. after cancelling an in-progress gesture).
+  void clearRedo() {
+    if (_redoStack.isEmpty) return;
+    _redoStack.clear();
     notifyListeners();
   }
 }
