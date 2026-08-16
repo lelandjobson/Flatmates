@@ -109,6 +109,7 @@ class MaterialModel {
     this.doubleSided = false,
     this.wireframe = false,
     this.opacity = 1.0,
+    this.strokeEdges = true,
     List<Color>? perFaceColors,
     this.exactPerFaceColors = false,
   }) : _perFaceColors = perFaceColors;
@@ -118,6 +119,7 @@ class MaterialModel {
       doubleSided = doubleSided,
       wireframe = false,
       opacity = 1.0,
+      strokeEdges = true,
       exactPerFaceColors = false,
       _perFaceColors = _defaultRainbowPalette;
 
@@ -127,6 +129,7 @@ class MaterialModel {
       doubleSided = doubleSided,
       wireframe = false,
       opacity = kGhostMaterialOpacity,
+      strokeEdges = true,
       exactPerFaceColors = false,
       _perFaceColors = null;
 
@@ -137,8 +140,12 @@ class MaterialModel {
   final bool wireframe;
 
   /// Fill opacity (0.0 = fully transparent, 1.0 = fully opaque).
-  /// Non-opaque meshes draw their edges in the material colour.
+  /// Non-opaque meshes draw their edges in the material colour when
+  /// [strokeEdges] is true.
   final double opacity;
+
+  /// When false, faces are filled only — no per-face edge strokes.
+  final bool strokeEdges;
   final List<Color>? _perFaceColors;
   List<Color>? get perFaceColors => _perFaceColors;
 

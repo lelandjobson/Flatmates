@@ -26,13 +26,22 @@ import '../tiles/tiles.dart';
 import '../gestures/gesture_system.dart';
 import 'fm_haptics.dart';
 import 'fm_safe_area.dart';
-import 'fm_step_cards.dart';
 import 'object_radial_menu.dart';
 import 'rotation_gizmo.dart';
 import 'wipe_animation.dart';
 
 /// Paper resize controls in the radial menu (disabled for now).
 const _kPaperSizeControlsEnabled = false;
+
+/// Inventory sheet half-extent as a fraction of one major grid cell.
+/// 0.5 = 50% of the original size-1 sheet (was a full major cell).
+const _kPaperHalfExtentPerLevel = 0.5;
+
+/// Dots inside a blueprint: grid-fit quality at the current zoom spacing.
+const _kGridFitMisaligned = Color(0xFFFF5252);
+const _kGridFitPartial = Color(0xFFFFD54F);
+const _kGridFitAligned = Color(0xFF69F0AE);
+const _kGridOriginDot = Color(0xFFFFFFFF);
 
 /// Friend walk animation during cut (disabled for now; logic preserved).
 const _kCutFriendAnimationEnabled = false;
@@ -449,7 +458,8 @@ class CraftingTestView extends StatefulWidget {
   /// In-memory store for persisting paper state across mode switches.
   final CraftingStateStore? stateStore;
 
-  /// When true, the drawing-plane outline is hidden (e.g. inside room editor).
+  /// When true, the drawing-plane outline (the large grey square) is hidden.
+  /// Defaults to hidden; pass `false` to show it.
   final bool hideDrawingPlane;
 
   /// When true, plays a horizontal dot-wipe reveal on entry.
@@ -624,11 +634,10 @@ class CraftingTestViewState extends State<CraftingTestView>
   List<BlueprintSet> _blueprintSets = [];
   BlueprintSet? _selectedSet;
   int _currentStepIndex = 0;
-  int? _promotingIndex;
   final Set<int> _completedStepIndices = {};
 
   /// Guards against double-advance while a step completion is in flight.
-  bool _stepAdvanceInProgress = false;
+  bool _fillCompleteLatched = false;
 
   /// Non-active group step polygons drawn grey/green behind the editable step.
   List<List<Offset>> _groupOverlayPolygons = [];
@@ -637,6 +646,21 @@ class CraftingTestViewState extends State<CraftingTestView>
   /// Active-step outline highlight (0 = grey → 1 = yellow) and early glow.
   double _activeHighlightT = 1.0;
   double _activeGlow = 0.0;
+
+  /// 0 = unlocked look, 1 = fully locked look (keepCanvas color fade).
+  double _lockFadeT = 1.0;
+  Set<String> _lockFadingPaperIds = {};
+  late final AnimationController _lockFadeController;
+
+  /// Extra papers fading out after a fill completes (not in undo history).
+  List<String> _discardOrder = [];
+  double _discardElapsedMs = 0;
+  late final AnimationController _discardController;
+
+  /// Blueprint/applique intro: 0 = start of two white flashes, 1 = settled yellow.
+  double _loadAnimT = 1.0;
+  bool _hideUnfilledBlueprint = false;
+  late final AnimationController _loadAnimController;
 
   // Camera ease-in-out transitions (group overview → step, step → step).
   late final AnimationController _cameraAnimController;
@@ -686,10 +710,6 @@ class CraftingTestViewState extends State<CraftingTestView>
   double _blueprintTotalArea = 0;
   double _blueprintLockedArea = 0;
 
-  // Craft execute button (shown at 100% coverage)
-  bool _craftExecuteButtonVisible = false;
-  late final AnimationController _craftButtonAnimController;
-
   // Completion animation
   CompletionPhase _completionPhase = CompletionPhase.none;
   // Drives the 0.5s dot-dissolve + geometry fade-in reveal.
@@ -732,15 +752,14 @@ class CraftingTestViewState extends State<CraftingTestView>
   Offset _gridOriginOffset = Offset.zero;
 
   /// World angle (radians) of the grid's +Y axis. Default π/2 = world +Y.
-  /// The two-click Align Grid tool sets this from the vector between picks.
+  /// Align Grid sets this from a press-and-drag (down = origin, up = +Y).
   double _gridRotation = math.pi / 2;
 
-  // Align-grid tool: phase 0 = pick origin, phase 1 = pick +Y direction point.
-  int _alignGridPhase = 0;
   int? _alignGridHoveredPolyIndex;
   Offset? _alignGridPreviewVertex;
   Offset? _alignGridSecondPreview;
   Offset? _alignGridPointerDown;
+  bool _alignGridDidDrag = false;
 
   /// Progressive grid LOD: 0 = base (32 divisions), -1 = subdivided (64), +N coarsens.
   int _gridLodLevel(Size viewport) {
@@ -822,6 +841,13 @@ class CraftingTestViewState extends State<CraftingTestView>
   // Gesture tracking for two-finger pan/zoom (via GestureClassifier).
   bool _isMultiTouch = false;
 
+  /// Trackpad / Magic Mouse pinch (PointerPanZoom) is active.
+  bool _panZoomActive = false;
+
+  /// Set for the whole pinch/pan-zoom episode. Tools stay dead until every
+  /// pointer is up *and* pan-zoom has ended.
+  bool _pinchEpisode = false;
+
   /// Once multitouch is seen, tools stay dead until *every* finger lifts.
   /// Prevents the last finger-up from committing paint/erase/cut/etc.
   bool _toolsSuppressedUntilPointersUp = false;
@@ -830,9 +856,10 @@ class CraftingTestViewState extends State<CraftingTestView>
   double? _pinchStartOrtho;
   Offset? _pinchAnchorWorld;
 
-  /// Undo-stack depth at the start of the current one-finger tool gesture.
-  /// Multitouch aborts revert any history pushed beyond this.
-  int _toolGestureUndoDepthAtDown = 0;
+  /// Pointer-down is deferred until slop or a clean tap so a trackpad pinch
+  /// never starts a tool (and never looks like undo).
+  Offset? _pendingToolDown;
+  Size? _pendingToolViewport;
 
   /// Grid pose at gesture start (align-grid mutates without undo).
   Offset _preGestureGridOrigin = Offset.zero;
@@ -849,7 +876,13 @@ class CraftingTestViewState extends State<CraftingTestView>
   bool get _toolsBlocked =>
       _toolsSuppressedUntilPointersUp ||
       _isMultiTouch ||
+      _panZoomActive ||
+      _pinchEpisode ||
       _canvasPointerCount >= 2;
+
+  /// History rewind is button-only. Block only while a pinch is in flight so
+  /// a trackpad pinch that starts on the undo button cannot fire it.
+  bool get _historyRewindAllowed => !_pinchEpisode && !_panZoomActive;
 
   void _clearPinchBaseline() {
     _pinchStartPan = null;
@@ -858,7 +891,6 @@ class CraftingTestViewState extends State<CraftingTestView>
   }
 
   void _beginToolGestureBaseline() {
-    _toolGestureUndoDepthAtDown = _history.undoDepth;
     _preGestureGridOrigin = _gridOriginOffset;
     _preGestureGridRotation = _gridRotation;
   }
@@ -868,50 +900,55 @@ class CraftingTestViewState extends State<CraftingTestView>
   }
 
   void _maybeUnlockToolsAfterPointersUp() {
-    if (_canvasPointerCount <= 0) {
+    if (_canvasPointerCount <= 0 && !_panZoomActive) {
       _canvasPointerCount = 0;
       _toolsSuppressedUntilPointersUp = false;
       _isMultiTouch = false;
+      _pinchEpisode = false;
       _clearPinchBaseline();
     }
   }
 
-  /// Cancel any in-progress one-finger tool work when a second finger lands.
-  /// Reverts history pushed during the gesture, clears previews, and restores
-  /// align-grid pose. Camera pan/zoom state is kept so pinch can continue.
-  void _abortToolGestureForMultiTouch() {
-    // Revert mutations (move/stretch/etc.) recorded after finger-down.
-    var reverted = false;
-    while (_history.undoDepth > _toolGestureUndoDepthAtDown &&
-        _history.canUndo) {
-      final snap = _history.undo(_currentSnapshot('cancel-multitouch'));
-      if (snap != null) {
-        _placedPapers
-          ..clear()
-          ..addAll(snap.papers.map((s) => s.toPaper()));
-        _nextPaperId = snap.nextPaperId;
-        _inventory
-          ..clear()
-          ..addAll(snap.inventory);
-        _selectedPaperIds = Set<String>.from(snap.selectedPaperIds);
-        reverted = true;
-      }
-    }
-    _history.clearRedo();
-    _toolGestureUndoDepthAtDown = _history.undoDepth;
+  void _cancelPendingToolDown() {
+    _pendingToolDown = null;
+    _pendingToolViewport = null;
+  }
 
-    // Align-grid live-edits the grid without undo — snap back.
-    final gridChanged =
-        _gridOriginOffset != _preGestureGridOrigin ||
-        _gridRotation != _preGestureGridRotation;
+  void _queueToolPointerDown(Offset localPos, Size viewportSize) {
+    _pendingToolDown = localPos;
+    _pendingToolViewport = viewportSize;
+  }
+
+  void _flushPendingToolDown() {
+    final pos = _pendingToolDown;
+    final vp = _pendingToolViewport;
+    if (pos == null || vp == null) return;
+    _pendingToolDown = null;
+    _pendingToolViewport = null;
+    if (_toolsBlocked) return;
+    _beginToolGestureBaseline();
+    _handlePointerDown(pos, vp);
+  }
+
+  /// Keep an in-progress paint/erase stroke instead of discarding it. Pinch
+  /// must never look like undo of the last cells the user just drew.
+  void _commitInProgressStroke() {
+    if (_paintedCells.isNotEmpty) _fusePaintedCells();
+    if (_erasedCells.isNotEmpty) _applyErase();
+  }
+
+  /// Stop live pointer tracking so pinch deltas cannot move papers or commit
+  /// a cut. Does not revert papers, grid, or history.
+  void _haltTransientPointersForPinch() {
+    final midAlignGrid = _alignGridPointerDown != null;
+    final gridChanged = midAlignGrid &&
+        (_gridOriginOffset != _preGestureGridOrigin ||
+            _gridRotation != _preGestureGridRotation);
 
     setState(() {
       if (gridChanged) {
         _gridOriginOffset = _preGestureGridOrigin;
         _gridRotation = _preGestureGridRotation;
-      }
-      if (reverted) {
-        _isRotationGizmoActive = false;
       }
 
       _pointerDownPos = null;
@@ -928,8 +965,6 @@ class CraftingTestViewState extends State<CraftingTestView>
       _panDragLastScreen = null;
       _panModeDragging = false;
       _panModeDragLastScreen = null;
-      _paintedCells = {};
-      _lastPaintCell = null;
       _paintDragPaperId = null;
       _paintDragLastScreen = null;
       _paintHadSelection = false;
@@ -939,14 +974,11 @@ class CraftingTestViewState extends State<CraftingTestView>
       _mirrorLinePreview = null;
       _transCopyStartWorld = null;
       _transCopyCurrentWorld = null;
-      _erasedCells = {};
-      _lastEraseCell = null;
-      _alignGridPhase = 0;
       _alignGridPointerDown = null;
+      _alignGridDidDrag = false;
       _alignGridHoveredPolyIndex = null;
       _alignGridPreviewVertex = null;
       _alignGridSecondPreview = null;
-      // Drop in-progress stretch without committing.
       _stretchHandleIndex = null;
       _stretchHandleStartWorld = null;
       _stretchOriginalBounds = null;
@@ -955,11 +987,18 @@ class CraftingTestViewState extends State<CraftingTestView>
       _stretchAnchorLocal = Offset.zero;
     });
 
-    if (reverted) {
-      _scheduleCheck();
-      _updateCraftExecuteButtonVisibility();
-    }
     if (gridChanged) _scheduleGridLodSync();
+  }
+
+  /// Pinch / second finger: lock tools, keep finished work, never rewind.
+  void _enterPinchExclusiveMode() {
+    _lockToolsForMultiTouch();
+    if (!_pinchEpisode) {
+      _commitInProgressStroke();
+    }
+    _pinchEpisode = true;
+    _cancelPendingToolDown();
+    _haltTransientPointersForPinch();
   }
 
   /// Stable two-finger pan/zoom from [GestureClassifier] (span from gesture start).
@@ -971,6 +1010,10 @@ class CraftingTestViewState extends State<CraftingTestView>
         (state.type == GestureType.twoFingerDrag && state.pointers.isEmpty);
 
     if (isTwoFinger) {
+      // Trackpad pan-zoom reports twoFingerDrag with no pointer ids.
+      if (state.pointers.isEmpty) {
+        _panZoomActive = true;
+      }
       // Child Listener may have already flagged multitouch to suppress tools;
       // still (re)capture baselines if missing so pinch can run.
       final needsBaseline = _pinchStartOrtho == null ||
@@ -978,8 +1021,7 @@ class CraftingTestViewState extends State<CraftingTestView>
           _pinchAnchorWorld == null;
       if (!_isMultiTouch) {
         _isMultiTouch = true;
-        _lockToolsForMultiTouch();
-        _abortToolGestureForMultiTouch();
+        _enterPinchExclusiveMode();
       }
       if (needsBaseline) {
         _pinchStartPan = _panOffset;
@@ -1032,14 +1074,16 @@ class CraftingTestViewState extends State<CraftingTestView>
     }
 
     if (_isMultiTouch) {
-      // Leave pinch mode when fingers drop below 2, but keep tools locked
-      // until the pointer count hits zero (last finger-up must not commit).
+      // Leave pinch camera mode when fingers drop below 2, but keep tools
+      // locked until every pointer is up and pan-zoom has ended.
       _isMultiTouch = false;
+      _panZoomActive = false;
       _clearPinchBaseline();
       _panDragLastScreen = null;
       _panModeDragging = false;
       _panModeDragLastScreen = null;
       _pointerDownPos = null;
+      _maybeUnlockToolsAfterPointersUp();
     }
   }
 
@@ -1084,6 +1128,43 @@ class CraftingTestViewState extends State<CraftingTestView>
       }
     });
 
+    _lockFadeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 380),
+    )..addListener(() {
+        setState(() => _lockFadeT = _lockFadeController.value);
+      });
+    _lockFadeController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        final shouldLoad = _hideUnfilledBlueprint;
+        setState(() {
+          _lockFadingPaperIds = {};
+          _lockFadeT = 1.0;
+        });
+        if (shouldLoad) _playBlueprintLoadAnim();
+      }
+    });
+
+    _discardController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 280),
+    )..addListener(_onDiscardTick);
+    _discardController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) _onDiscardDone();
+    });
+
+    _loadAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..addListener(() {
+        setState(() => _loadAnimT = _loadAnimController.value);
+      });
+    _loadAnimController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        setState(() => _loadAnimT = 1.0);
+      }
+    });
+
     _progressAnimController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 500),
@@ -1109,11 +1190,6 @@ class CraftingTestViewState extends State<CraftingTestView>
       vsync: this,
       duration: const Duration(milliseconds: 300),
     )..addListener(_onMagnetAnimTick);
-
-    _craftButtonAnimController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    )..addListener(() => setState(() {}));
 
     _gridLodAnimController = AnimationController(
       vsync: this,
@@ -1187,11 +1263,13 @@ class CraftingTestViewState extends State<CraftingTestView>
     _cutAnimController.dispose();
     _marqueeDashController.dispose();
     _lockAnimController.dispose();
+    _lockFadeController.dispose();
+    _discardController.dispose();
+    _loadAnimController.dispose();
     _progressAnimController.dispose();
     _dissolveController.dispose();
     _foldController.dispose();
     _magnetAnimController.dispose();
-    _craftButtonAnimController.dispose();
     _gridLodAnimController.dispose();
     _cameraAnimController.dispose();
     super.dispose();
@@ -1229,11 +1307,6 @@ class CraftingTestViewState extends State<CraftingTestView>
       final wanted = widget.initialBlueprintSet ?? widget.defaultBlueprintName;
       if (wanted != null && _selectedSet == null && _selectedBlueprint == null) {
         _selectInitialBlueprint(wanted);
-      } else if (wanted == null &&
-          sets.length == 1 &&
-          _selectedSet == null &&
-          _selectedBlueprint == null) {
-        _selectBlueprintSet(sets.first);
       }
     }
   }
@@ -1242,15 +1315,6 @@ class CraftingTestViewState extends State<CraftingTestView>
     final key = wanted.trim().toLowerCase();
     if (key.isEmpty) return;
 
-    final setMatch = _blueprintSets.where((s) {
-      if (s.name.toLowerCase() == key) return true;
-      return s.steps.any((st) => st.craft.toLowerCase() == key);
-    }).firstOrNull;
-    if (setMatch != null) {
-      _selectBlueprintSet(setMatch);
-      return;
-    }
-
     final bpMatch =
         _blueprints.where((b) => b.craft.toLowerCase() == key).firstOrNull;
     if (bpMatch != null) {
@@ -1258,14 +1322,25 @@ class CraftingTestViewState extends State<CraftingTestView>
       return;
     }
 
-    // house_foo (or whatever was requested) is the only bundled craft.
-    if (_blueprintSets.isNotEmpty) {
+    final setMatch = _blueprintSets.where((s) {
+      if (s.name.toLowerCase() == key) return true;
+      return s.steps.any((st) => st.craft.toLowerCase() == key);
+    }).firstOrNull;
+    if (setMatch != null) {
+      final first = _findBlueprintForStep(setMatch.steps.first);
+      if (first != null) {
+        _selectBlueprint(first);
+        return;
+      }
+    }
+
+    if (_blueprints.isNotEmpty) {
       debugPrint(
-        '[craft] initial set "$wanted" not found; using ${_blueprintSets.first.name}',
+        '[craft] initial "$wanted" not found; using ${_blueprints.first.displayName}',
       );
-      _selectBlueprintSet(_blueprintSets.first);
+      _selectBlueprint(_blueprints.first);
     } else {
-      debugPrint('[craft] no blueprint sets loaded; cannot select "$wanted"');
+      debugPrint('[craft] no blueprints loaded; cannot select "$wanted"');
     }
   }
 
@@ -1274,6 +1349,7 @@ class CraftingTestViewState extends State<CraftingTestView>
   }
 
   void _selectBlueprintSet(BlueprintSet? set) {
+    _fillCompleteLatched = false;
     if (set == null) {
       _selectedSet = null;
       _currentStepIndex = 0;
@@ -1290,143 +1366,95 @@ class CraftingTestViewState extends State<CraftingTestView>
       _selectedSet = set;
       _currentStepIndex = 0;
       _completedStepIndices.clear();
-      _promotingIndex = null;
-      _stepAdvanceInProgress = false;
-      // Fresh group/set session — drop prior locked papers from the canvas.
-      _placedPapers.removeWhere((p) => p.locked);
+      _wipeCanvasPapers();
+      _blueprintProgress.clear();
     });
 
     final bp = _findBlueprintForStep(set.steps[0]);
     _selectBlueprint(bp);
   }
 
-  bool _sameAssemblyCanvas(BlueprintStep? a, BlueprintStep? b) {
-    if (a == null || b == null) return false;
-    return a.craft == b.craft && a.stepIndex == b.stepIndex;
-  }
-
-  void _advanceToNextStep() {
-    if (_selectedSet == null) return;
-    if (_stepAdvanceInProgress) {
-      debugPrint(
-        '[craft-step] advance ignored (already in progress) '
-        'step=$_currentStepIndex completed=$_completedStepIndices',
-      );
-      return;
-    }
-    final nextIndex = _currentStepIndex + 1;
-    if (nextIndex >= _selectedSet!.steps.length) return;
-    final fromStep = _currentStepIndex;
-    final fromNav = _selectedSet!.steps[fromStep];
-    final toNav = _selectedSet!.steps[nextIndex];
-    final keepCanvas = _sameAssemblyCanvas(fromNav, toNav);
-
-    debugPrint(
-      '[craft-step] advance $fromStep → $nextIndex '
-      '(keepCanvas=$keepCanvas, filled=${_filledBlueprintIndices.length}, '
-      'lockedArea=$_blueprintLockedArea/$_blueprintTotalArea)',
-    );
-
-    _stepAdvanceInProgress = true;
-    setState(() {
-      _completedStepIndices.add(fromStep);
-      for (final paper in _placedPapers) {
-        if (paper.lockedBlueprintIndex != null) {
-          paper.locked = true;
-        }
-      }
-      _filledBlueprintIndices = {};
-      _blueprintLockedArea = 0;
-      _blueprintTotalArea = 0;
-      if (!keepCanvas) {
-        _placedPapers.clear();
-        _blueprintWorldPolygons = [];
-        _blueprintUnionPolygons = [];
-      }
-      _completionPhase = CompletionPhase.none;
-      _craftExecuteButtonVisible = false;
-      _foldNodeStates = {};
-      _foldSchedule = [];
-      _dotDissolveProgress = 0;
-      _foldOpacity = 0;
-      _foldColorProgress = 0;
-    });
-
-    Future.delayed(FmStepCards.baseDuration, () {
-      if (!mounted) {
-        _stepAdvanceInProgress = false;
-        return;
-      }
-      if (_selectedSet == null) {
-        _stepAdvanceInProgress = false;
-        return;
-      }
-      debugPrint(
-        '[craft-step] loading step $nextIndex '
-        '(papers=${_placedPapers.length}, '
-        'locked=${_placedPapers.where((p) => p.locked).length})',
-      );
-      setState(() {
-        _promotingIndex = nextIndex;
-        _currentStepIndex = nextIndex;
-      });
-      Future.delayed(FmStepCards.promoteDuration, () {
-        if (!mounted) return;
-        if (_promotingIndex == nextIndex) {
-          setState(() => _promotingIndex = null);
-        }
-      });
-      final bp = _findBlueprintForStep(_selectedSet!.steps[nextIndex]);
-      _selectBlueprint(bp, animateCameraToStep: true, keepCanvas: keepCanvas);
-      _stepAdvanceInProgress = false;
-      debugPrint(
-        '[craft-step] now on step $_currentStepIndex '
-        'completed=$_completedStepIndices '
-        'activePolys=${_blueprintWorldPolygons.length} '
-        'totalArea=$_blueprintTotalArea',
-      );
-    });
-  }
-
-  /// Apply a blueprint after the view is mounted (e.g. 3D unfold handoff).
+  /// Apply a single fill blueprint. Hosts that sequence steps (assembly view)
+  /// call this once per beat; the workstation no longer advances a set.
   ///
-  /// When [panOffset] / [orthoScale] / [viewRotation] are provided, the craft
-  /// camera is set explicitly so it can match the host 3D view.
-  ///
-  /// The dominant-edge grid frame is installed with the blueprint before the
-  /// dot grid is revealed, so the backdrop never appears misaligned.
+  /// When [keepCanvas] is true, committed papers stay (parts → applique /
+  /// next q-layer). The camera and grid pose are left alone; papers lock
+  /// immediately and fade into the locked look, then the new outlines play
+  /// the load animation.
   void applyBlueprint(
     CraftingBlueprint blueprint, {
     Offset? panOffset,
     double? orthoScale,
     double? viewRotation,
+    bool keepCanvas = false,
   }) {
     if (!mounted) return;
-    // Replace any prior craft/island entry so asset JSON cannot shadow a
-    // world-space handoff blueprint of the same name.
     _blueprints = [
       ..._blueprints.where((b) => b.fillKey != blueprint.fillKey),
       blueprint,
     ];
-    _blueprintSets = [
-      ..._blueprintSets.where(
-        (s) => !s.steps.any((st) => st.fillKey == blueprint.fillKey),
-      ),
-      BlueprintSet.single(blueprint),
-    ];
+    _selectedSet = BlueprintSet.single(blueprint);
+    _currentStepIndex = 0;
+    _fillCompleteLatched = false;
 
-    // Install blueprint + grid pose while canvas stays hidden (none), then
-    // reveal dots in a follow-up frame so alignment is already correct.
-    _selectBlueprintSet(BlueprintSet.single(blueprint));
+    final justLocked = <String>{};
+    if (keepCanvas) {
+      for (final paper in _placedPapers) {
+        if (paper.lockedBlueprintIndex != null) {
+          paper.locked = true;
+          justLocked.add(paper.id);
+        }
+      }
+      _deselectLockedPapers();
+    } else {
+      // New assembly step (not a same-step applique): drop every paper
+      // and saved fill, including unlocked leftovers from the last beat.
+      _wipeCanvasPapers();
+      _blueprintProgress.clear();
+    }
+
+    _selectBlueprint(
+      blueprint,
+      keepCanvas: keepCanvas,
+      keepCamera: keepCanvas,
+    );
 
     setState(() {
-      if (panOffset != null) _panOffset = panOffset;
-      if (orthoScale != null) _orthoScale = orthoScale;
-      if (viewRotation != null) _viewRotation = viewRotation;
+      if (!keepCanvas) {
+        if (panOffset != null) _panOffset = panOffset;
+        if (orthoScale != null) _orthoScale = orthoScale;
+        if (viewRotation != null) _viewRotation = viewRotation;
+      }
       _canvasDisplayMode = CanvasDisplayMode.dot;
     });
     _scheduleGridLodSync();
     _scheduleCheck();
+
+    if (keepCanvas && justLocked.isNotEmpty) {
+      _startLockFadeThenLoad(justLocked);
+    } else {
+      _playBlueprintLoadAnim();
+    }
+  }
+
+  void _startLockFadeThenLoad(Set<String> paperIds) {
+    _lockFadeController.stop();
+    _loadAnimController.stop();
+    setState(() {
+      _lockFadingPaperIds = paperIds;
+      _lockFadeT = 0;
+      _hideUnfilledBlueprint = true;
+      _loadAnimT = 0;
+    });
+    _lockFadeController.forward(from: 0);
+  }
+
+  void _playBlueprintLoadAnim() {
+    setState(() {
+      _hideUnfilledBlueprint = false;
+      _loadAnimT = 0;
+    });
+    _loadAnimController.forward(from: 0);
   }
 
   /// Clear the active blueprint (used when reversing a 3D handoff).
@@ -1439,6 +1467,7 @@ class CraftingTestViewState extends State<CraftingTestView>
     CraftingBlueprint? blueprint, {
     bool animateCameraToStep = false,
     bool keepCanvas = false,
+    bool keepCamera = false,
   }) {
     setState(() {
       if (_selectedBlueprint != null && !keepCanvas) {
@@ -1465,11 +1494,12 @@ class CraftingTestViewState extends State<CraftingTestView>
         } else {
           _blueprintProgress.remove(outKey);
         }
-        _placedPapers.removeWhere((p) => p.locked);
+        _wipeCanvasPapers();
       }
       _lockAnimatingPaperIds = {};
       _lockAnimProgress = 0;
 
+      _fillCompleteLatched = false;
       _selectedBlueprint = blueprint;
       _blueprintWorldPolygons = [];
       _blueprintUnionPolygons = [];
@@ -1478,7 +1508,7 @@ class CraftingTestViewState extends State<CraftingTestView>
       _alignGridPreviewVertex = null;
       _alignGridSecondPreview = null;
       _alignGridHoveredPolyIndex = null;
-      _alignGridPhase = 0;
+      _alignGridDidDrag = false;
       if (blueprint == null) {
         _gridOriginOffset = Offset.zero;
         _gridRotation = math.pi / 2;
@@ -1490,8 +1520,6 @@ class CraftingTestViewState extends State<CraftingTestView>
       final allScaled = _scaleBlueprintPolygons(blueprint);
 
       _completionPhase = CompletionPhase.none;
-      _craftExecuteButtonVisible = false;
-      _craftButtonAnimController.reset();
       _dissolveController.reset();
       _foldController.reset();
       _dotDissolveProgress = 0;
@@ -1506,13 +1534,15 @@ class CraftingTestViewState extends State<CraftingTestView>
         _polyIndexToRegion[i] = layers[i];
       }
       _blueprintWorldPolygons = allScaled;
-      final gridFrame = _computeDominantGridFrame(allScaled);
-      if (gridFrame != null) {
-        _gridOriginOffset = gridFrame.anchor;
-        _gridRotation = gridFrame.yAngle;
-      } else {
-        _gridOriginOffset = Offset.zero;
-        _gridRotation = math.pi / 2;
+      if (!keepCamera) {
+        final gridFrame = _computeDominantGridFrame(allScaled);
+        if (gridFrame != null) {
+          _gridOriginOffset = gridFrame.anchor;
+          _gridRotation = gridFrame.yAngle;
+        } else {
+          _gridOriginOffset = Offset.zero;
+          _gridRotation = math.pi / 2;
+        }
       }
 
       _blueprintTotalArea = 0;
@@ -1536,14 +1566,15 @@ class CraftingTestViewState extends State<CraftingTestView>
             }
           }
         }
-      } else if (animateCameraToStep) {
+      } else {
         _filledBlueprintIndices = {};
         _blueprintLockedArea = 0;
       }
 
       _rebuildStepOverlays();
 
-      if (!animateCameraToStep &&
+      if (!keepCamera &&
+          !animateCameraToStep &&
           allScaled.isNotEmpty &&
           blueprint.foldedGeometryId == null) {
         if (_viewportSize.width < 1 || _viewportSize.height < 1) {
@@ -1746,7 +1777,7 @@ class CraftingTestViewState extends State<CraftingTestView>
     final paperIds = <String>[];
     for (final paper in _placedPapers) {
       // Papers committed to a finished step stay out of the active match.
-      if (paper.locked) continue;
+      if (paper.locked || _isDiscardingPaper(paper.id)) continue;
       final corners = _paperWorldCorners(paper);
       paperPolys.add(corners.map((v) => Offset(v.x, v.y)).toList());
       paperIds.add(paper.id);
@@ -1763,11 +1794,6 @@ class CraftingTestViewState extends State<CraftingTestView>
     try {
       final result = await compute(_checkCoverage, params);
       if (!mounted || generation != _checkGeneration) return;
-      if (_stepAdvanceInProgress) {
-        debugPrint('[craft-group] check result ignored (advance in progress)');
-        return;
-      }
-
       final previouslyFilled = _filledBlueprintIndices;
       final newlyFilled = result.difference(previouslyFilled);
 
@@ -1792,7 +1818,6 @@ class CraftingTestViewState extends State<CraftingTestView>
 
       setState(() => _filledBlueprintIndices = result);
       _recomputeLockedArea();
-      _updateCraftExecuteButtonVisibility();
     } catch (e, st) {
       debugPrint('Check coverage failed: $e\n$st');
     }
@@ -1854,50 +1879,116 @@ class CraftingTestViewState extends State<CraftingTestView>
       _lockAnimatingPaperIds = {};
       _lockAnimProgress = 0;
     });
-    // _recomputeLockedArea already calls _updateCraftExecuteButtonVisibility.
+    // _recomputeLockedArea already calls _maybeCompleteFill.
     _recomputeLockedArea();
     _scheduleCheck();
   }
 
   bool _isCraftComplete() {
-    if (_stepAdvanceInProgress) return false;
+    if (_fillCompleteLatched) return false;
     return _blueprintTotalArea > 0 &&
         _blueprintLockedArea >= _blueprintTotalArea * 0.999 &&
         _completionPhase == CompletionPhase.none;
   }
 
-  void _updateCraftExecuteButtonVisibility() {
-    final shouldShow = _isCraftComplete();
-    if (shouldShow == _craftExecuteButtonVisible) return;
+  /// 100% geometry fill is the only completion trigger. Latch before notifying
+  /// so a second check in the same frame cannot fire twice; [applyBlueprint]
+  /// clears the latch for the next fill. Do not run the legacy fold/dismiss
+  /// sequence here — that would re-latch the newly loaded fill.
+  void _maybeCompleteFill() {
+    if (!_isCraftComplete()) return;
 
-    // When in a multi-step set, auto-trigger the completion sequence.
-    if (shouldShow && _selectedSet != null && _selectedSet!.steps.length > 1) {
-      if (_stepAdvanceInProgress) return;
-      debugPrint(
-        '[craft-group] step $_currentStepIndex complete → auto-advance '
-        '(locked=$_blueprintLockedArea / total=$_blueprintTotalArea, '
-        'filled=${_filledBlueprintIndices.length})',
-      );
-      setState(() => _craftExecuteButtonVisible = false);
+    debugPrint(
+      '[craft] fill complete '
+      '(locked=$_blueprintLockedArea / total=$_blueprintTotalArea, '
+      'filled=${_filledBlueprintIndices.length})',
+    );
+    _fillCompleteLatched = true;
+    fmHapticBigClick();
+    _beginExtraPaperDiscard();
+  }
+
+  static const _kDiscardStaggerMs = 50.0;
+  static const _kDiscardFadeMs = 280.0;
+
+  bool _isDiscardingPaper(String id) => _discardOrder.contains(id);
+
+  Map<String, double> _discardOpacities() {
+    if (_discardOrder.isEmpty) return const {};
+    final out = <String, double>{};
+    for (var i = 0; i < _discardOrder.length; i++) {
+      final t = ((_discardElapsedMs - i * _kDiscardStaggerMs) / _kDiscardFadeMs)
+          .clamp(0.0, 1.0);
+      out[_discardOrder[i]] = 1.0 - t;
+    }
+    return out;
+  }
+
+  void _stopExtraPaperDiscard() {
+    _discardController.stop();
+    _discardOrder = [];
+    _discardElapsedMs = 0;
+  }
+
+  void _beginExtraPaperDiscard() {
+    final extras = _placedPapers
+        .where((p) => !p.locked && p.lockedBlueprintIndex == null)
+        .toList();
+    extras.sort((a, b) {
+      if (_viewportSize.width < 1 || _viewportSize.height < 1) {
+        return b.position.y.compareTo(a.position.y);
+      }
+      final sa = _worldToScreen(a.position, _viewportSize);
+      final sb = _worldToScreen(b.position, _viewportSize);
+      return sa.dy.compareTo(sb.dy);
+    });
+
+    if (extras.isEmpty) {
       _notifyCraftCompleted();
-      _startCompletionSequence();
       return;
     }
 
-    setState(() => _craftExecuteButtonVisible = shouldShow);
-    if (shouldShow) {
-      _craftButtonAnimController.forward(from: 0);
-    } else {
-      _craftButtonAnimController.reverse();
+    _discardOrder = extras.map((p) => p.id).toList();
+    _discardElapsedMs = 0;
+    _selectedPaperIds.removeWhere(_isDiscardingPaper);
+    if (_panModeSelectedPaperId != null &&
+        _isDiscardingPaper(_panModeSelectedPaperId!)) {
+      _panModeSelectedPaperId = null;
     }
+    final totalMs =
+        ((_discardOrder.length - 1) * _kDiscardStaggerMs + _kDiscardFadeMs)
+            .round();
+    _discardController.duration = Duration(milliseconds: totalMs);
+    _discardController.forward(from: 0);
   }
 
-  void _onCraftExecutePressed() {
-    if (!_isCraftComplete()) return;
-    setState(() => _craftExecuteButtonVisible = false);
-    _craftButtonAnimController.reverse();
+  void _onDiscardTick() {
+    final dur = _discardController.duration;
+    if (dur == null || dur.inMilliseconds <= 0) return;
+    _discardElapsedMs = dur.inMilliseconds * _discardController.value;
+    final gone = <String>{};
+    for (var i = 0; i < _discardOrder.length; i++) {
+      if (_discardElapsedMs >= i * _kDiscardStaggerMs + _kDiscardFadeMs) {
+        gone.add(_discardOrder[i]);
+      }
+    }
+    if (gone.isEmpty) {
+      setState(() {});
+      return;
+    }
+    setState(() {
+      _placedPapers.removeWhere((p) => gone.contains(p.id));
+    });
+  }
+
+  void _onDiscardDone() {
+    if (!mounted) return;
+    setState(() {
+      _placedPapers.removeWhere((p) => _discardOrder.contains(p.id));
+      _discardOrder = [];
+      _discardElapsedMs = 0;
+    });
     _notifyCraftCompleted();
-    _startCompletionSequence();
   }
 
   void _recomputeLockedArea() {
@@ -1919,7 +2010,7 @@ class CraftingTestViewState extends State<CraftingTestView>
       _progressAnimTo = newProgress;
       _progressAnimController.forward(from: 0);
     }
-    _updateCraftExecuteButtonVisibility();
+    _maybeCompleteFill();
   }
 
   void _notifyCraftCompleted() {
@@ -1928,7 +2019,6 @@ class CraftingTestViewState extends State<CraftingTestView>
         .where((p) => p.lockedBlueprintIndex != null)
         .map((p) => CraftingPaperState.fromPaper(p))
         .toList();
-    if (matchedPapers.isEmpty) return;
     _completedPapers = matchedPapers;
     widget.onCraftCompleted?.call(
       matchedPapers,
@@ -1946,16 +2036,13 @@ class CraftingTestViewState extends State<CraftingTestView>
         _completionPhase != CompletionPhase.none) {
       return;
     }
-    if (_stepAdvanceInProgress) {
-      debugPrint('[craft-group] completion ignored (advance in progress)');
-      return;
-    }
+    if (_fillCompleteLatched) return;
 
     debugPrint(
-      '[craft-group] completion sequence at step $_currentStepIndex '
-      '(set=${_selectedSet?.name}, steps=${_selectedSet?.steps.length})',
+      '[craft] completion for ${_selectedBlueprint!.displayName}',
     );
 
+    _fillCompleteLatched = true;
     fmHapticBigClick();
 
     // Skip dissolve/fold for now — finish immediately.
@@ -1967,13 +2054,6 @@ class CraftingTestViewState extends State<CraftingTestView>
       );
     }
 
-    if (_selectedSet != null &&
-        _currentStepIndex < _selectedSet!.steps.length - 1) {
-      _advanceToNextStep();
-      return;
-    }
-
-    // Entire set (or single blueprint) finished.
     widget.onDismiss?.call();
   }
 
@@ -2010,16 +2090,6 @@ class CraftingTestViewState extends State<CraftingTestView>
         _selectedBlueprint!.craft,
         _selectedBlueprint!,
       );
-    }
-
-    if (_selectedSet != null &&
-        _currentStepIndex < _selectedSet!.steps.length - 1) {
-      Future.delayed(const Duration(milliseconds: 600), () {
-        if (!mounted) return;
-        setState(() => _completionPhase = CompletionPhase.none);
-        _advanceToNextStep();
-      });
-      return;
     }
 
     widget.onDismiss?.call();
@@ -2783,11 +2853,33 @@ class CraftingTestViewState extends State<CraftingTestView>
   }
 
   void _clearAlignGridTransient() {
-    _alignGridPhase = 0;
     _alignGridPreviewVertex = null;
     _alignGridSecondPreview = null;
     _alignGridHoveredPolyIndex = null;
     _alignGridPointerDown = null;
+    _alignGridDidDrag = false;
+  }
+
+  ({Offset point, int? hitIdx}) _alignGridPick(Offset wp) {
+    int? hitIdx;
+    for (var i = 0; i < _blueprintWorldPolygons.length; i++) {
+      if (_pointInPolygon(wp, _blueprintWorldPolygons[i])) {
+        hitIdx = i;
+        break;
+      }
+    }
+    final vertex = hitIdx != null
+        ? _closestBlueprintVertex(wp, polyIndex: hitIdx)
+        : _closestBlueprintVertex(wp, maxDist: _snapWorldRadius * 3);
+    return (point: vertex ?? wp, hitIdx: hitIdx);
+  }
+
+  /// Snap the grid origin to [vertex] so paint/erase cells share that corner.
+  void _applyAlignGridOrigin(Offset vertex, {int? hitIdx}) {
+    _gridOriginOffset = vertex;
+    _alignGridPreviewVertex = vertex;
+    _alignGridSecondPreview = null;
+    _alignGridHoveredPolyIndex = hitIdx;
   }
 
   /// Nearest blueprint vertex to [target], optionally constrained to one poly.
@@ -3011,6 +3103,7 @@ class CraftingTestViewState extends State<CraftingTestView>
       _gridToWorld(col * s + inset, (row + 1) * s - inset),
     ];
     for (final paper in _placedPapers) {
+      if (paper.locked || _isDiscardingPaper(paper.id)) continue;
       bool allInside = true;
       for (final c in corners) {
         final local = _worldToPaperLocal(Vector3(c.dx, c.dy, _paperZ), paper);
@@ -3040,6 +3133,7 @@ class CraftingTestViewState extends State<CraftingTestView>
       final center = _gridCellCenter(nc, nr, s);
       final pt = Vector3(center.dx, center.dy, _paperZ);
       for (final paper in papers) {
+        if (paper.locked) continue;
         final local = _worldToPaperLocal(pt, paper);
         if (_isPointInLocalPaper(local, paper)) return true;
       }
@@ -3084,7 +3178,8 @@ class CraftingTestViewState extends State<CraftingTestView>
     return result;
   }
 
-  double _paperHalfSizeForLevel(int level) => level * _majorGridSpacing;
+  double _paperHalfSizeForLevel(int level) =>
+      level * _majorGridSpacing * _kPaperHalfExtentPerLevel;
 
   List<Offset> _paperLocalVertices(PlacedPaper paper) {
     if (paper.localVertices != null) return paper.localVertices!;
@@ -3191,10 +3286,53 @@ class CraftingTestViewState extends State<CraftingTestView>
     final worldPos = _screenToWorld(screenPos, viewportSize);
     for (int i = _placedPapers.length - 1; i >= 0; i--) {
       final paper = _placedPapers[i];
+      if (paper.locked || _isDiscardingPaper(paper.id)) continue;
       final localPt = _worldToPaperLocal(worldPos, paper);
       if (_isPointInLocalPaper(localPt, paper)) return paper.id;
     }
     return null;
+  }
+
+  /// Remove every paper and related selection / lock-fade state.
+  void _wipeCanvasPapers() {
+    _stopExtraPaperDiscard();
+    _placedPapers.clear();
+    _selectedPaperIds = {};
+    _panModeSelectedPaperId = null;
+    _stretchPaperId = null;
+    _stretchHandleIndex = null;
+    _isRotationGizmoActive = false;
+    _lockFadingPaperIds = {};
+    _lockAnimatingPaperIds = {};
+    _lockAnimProgress = 0;
+    _lockFadeT = 0;
+    _lockFadeController.stop();
+    _filledBlueprintIndices = {};
+    _blueprintLockedArea = 0;
+  }
+
+  /// Drop locked papers from the current selection (and pan-mode focus).
+  void _deselectLockedPapers() {
+    _selectedPaperIds.removeWhere((id) {
+      final paper = _placedPapers.where((p) => p.id == id).firstOrNull;
+      return paper == null || paper.locked;
+    });
+    if (_panModeSelectedPaperId != null) {
+      final paper = _placedPapers
+          .where((p) => p.id == _panModeSelectedPaperId)
+          .firstOrNull;
+      if (paper == null || paper.locked) {
+        _panModeSelectedPaperId = null;
+      }
+    }
+    if (_stretchPaperId != null) {
+      final paper =
+          _placedPapers.where((p) => p.id == _stretchPaperId).firstOrNull;
+      if (paper == null || paper.locked) {
+        _stretchPaperId = null;
+        _stretchHandleIndex = null;
+      }
+    }
   }
 
   Offset _worldToPaperLocal(Vector3 worldPos, PlacedPaper paper) {
@@ -3294,19 +3432,24 @@ class CraftingTestViewState extends State<CraftingTestView>
       _nextPaperId = snap.nextPaperId;
       _inventory.clear();
       _inventory.addAll(snap.inventory);
-      _selectedPaperIds = Set<String>.from(snap.selectedPaperIds);
+      _selectedPaperIds = {
+        for (final id in snap.selectedPaperIds)
+          if (_placedPapers.any((p) => p.id == id && !p.locked)) id,
+      };
       _isRotationGizmoActive = false;
     });
     _scheduleCheck();
-    _updateCraftExecuteButtonVisibility();
+    _maybeCompleteFill();
   }
 
   void _undo() {
+    if (!_historyRewindAllowed) return;
     final snap = _history.undo(_currentSnapshot('current'));
     if (snap != null) _applySnapshot(snap);
   }
 
   void _redo() {
+    if (!_historyRewindAllowed) return;
     final snap = _history.redo(_currentSnapshot('current'));
     if (snap != null) _applySnapshot(snap);
   }
@@ -3638,32 +3781,11 @@ class CraftingTestViewState extends State<CraftingTestView>
 
     if (_craftingMode == CraftingMode.alignGrid) {
       final worldPos = _screenToWorld(localPos, viewportSize);
-      final wp = Offset(worldPos.x, worldPos.y);
-      int? hitIdx;
-      for (var i = 0; i < _blueprintWorldPolygons.length; i++) {
-        if (_pointInPolygon(wp, _blueprintWorldPolygons[i])) {
-          hitIdx = i;
-          break;
-        }
-      }
-      final vertex = hitIdx != null
-          ? _closestBlueprintVertex(wp, polyIndex: hitIdx)
-          : _closestBlueprintVertex(wp, maxDist: _snapWorldRadius * 3);
+      final pick = _alignGridPick(Offset(worldPos.x, worldPos.y));
       setState(() {
         _alignGridPointerDown = localPos;
-        _alignGridHoveredPolyIndex = hitIdx;
-        if (_alignGridPhase == 0) {
-          _alignGridPreviewVertex = vertex;
-          _alignGridSecondPreview = null;
-        } else {
-          _alignGridSecondPreview = vertex ?? wp;
-          final anchor = _gridOriginOffset;
-          final end = _alignGridSecondPreview!;
-          final d = end - anchor;
-          if (d.distanceSquared > 1e-12) {
-            _gridRotation = math.atan2(d.dy, d.dx);
-          }
-        }
+        _alignGridDidDrag = false;
+        _applyAlignGridOrigin(pick.point, hitIdx: pick.hitIdx);
       });
       _scheduleGridLodSync();
       return;
@@ -3947,29 +4069,19 @@ class CraftingTestViewState extends State<CraftingTestView>
 
     if (_craftingMode == CraftingMode.alignGrid &&
         _alignGridPointerDown != null) {
-      final worldPos = _screenToWorld(localPos, viewportSize);
-      final wp = Offset(worldPos.x, worldPos.y);
-      int? hitIdx;
-      for (var i = 0; i < _blueprintWorldPolygons.length; i++) {
-        if (_pointInPolygon(wp, _blueprintWorldPolygons[i])) {
-          hitIdx = i;
-          break;
-        }
+      if (!_alignGridDidDrag &&
+          (localPos - _alignGridPointerDown!).distance < _dragThreshold) {
+        return;
       }
-      final vertex = hitIdx != null
-          ? _closestBlueprintVertex(wp, polyIndex: hitIdx)
-          : _closestBlueprintVertex(wp, maxDist: _snapWorldRadius * 3);
+      final worldPos = _screenToWorld(localPos, viewportSize);
+      final pick = _alignGridPick(Offset(worldPos.x, worldPos.y));
       setState(() {
-        _alignGridHoveredPolyIndex = hitIdx;
-        if (_alignGridPhase == 0) {
-          _alignGridPreviewVertex = vertex;
-        } else {
-          final end = vertex ?? wp;
-          _alignGridSecondPreview = end;
-          final d = end - _gridOriginOffset;
-          if (d.distanceSquared > 1e-12) {
-            _gridRotation = math.atan2(d.dy, d.dx);
-          }
+        _alignGridDidDrag = true;
+        _alignGridHoveredPolyIndex = pick.hitIdx;
+        _alignGridSecondPreview = pick.point;
+        final d = pick.point - _gridOriginOffset;
+        if (d.distanceSquared > 1e-12) {
+          _gridRotation = math.atan2(d.dy, d.dx);
         }
       });
       _scheduleGridLodSync();
@@ -4279,67 +4391,32 @@ class CraftingTestViewState extends State<CraftingTestView>
     }
 
     if (_craftingMode == CraftingMode.alignGrid) {
-      final down = _alignGridPointerDown;
+      final didDrag = _alignGridDidDrag;
       _alignGridPointerDown = null;
-      if (down != null && (localPos - down).distance > _dragThreshold) {
-        // Treated as a pan/drag — don't commit a click.
-        setState(() {
-          _alignGridHoveredPolyIndex = null;
-          if (_alignGridPhase == 0) {
-            _alignGridPreviewVertex = null;
-          }
-        });
-        return;
-      }
-
-      final worldPos = _screenToWorld(localPos, viewportSize);
-      final wp = Offset(worldPos.x, worldPos.y);
-      int? hitIdx;
-      for (var i = 0; i < _blueprintWorldPolygons.length; i++) {
-        if (_pointInPolygon(wp, _blueprintWorldPolygons[i])) {
-          hitIdx = i;
-          break;
-        }
-      }
-      final vertex = hitIdx != null
-          ? _closestBlueprintVertex(wp, polyIndex: hitIdx)
-          : _closestBlueprintVertex(wp, maxDist: _snapWorldRadius * 3);
+      _alignGridDidDrag = false;
 
       setState(() {
-        if (_alignGridPhase == 0) {
-          if (vertex == null) {
-            // Empty click: restore auto-alignment for the active blueprint.
-            _applyAutoGridAlignment(_blueprintWorldPolygons);
-            _clearAlignGridTransient();
-            fmHapticSmallClick();
-          } else {
-            _gridOriginOffset = vertex;
-            _alignGridPreviewVertex = vertex;
-            _alignGridSecondPreview = null;
-            _alignGridPhase = 1;
-            _alignGridHoveredPolyIndex = hitIdx;
-            fmHapticSmallClick();
-          }
+        if (!didDrag) {
+          // Quick tap: origin already set on down; keep prior axes.
+          _alignGridSecondPreview = null;
+          _alignGridHoveredPolyIndex = null;
+          _alignGridPreviewVertex = _gridOriginOffset;
         } else {
-          final end = vertex ?? wp;
-          if ((end - _gridOriginOffset).distanceSquared < 1e-12) {
-            // Cancel direction pick; keep origin.
-            _alignGridPhase = 0;
-            _alignGridSecondPreview = null;
-            _alignGridHoveredPolyIndex = null;
-          } else {
+          final worldPos = _screenToWorld(localPos, viewportSize);
+          final pick = _alignGridPick(Offset(worldPos.x, worldPos.y));
+          final end = pick.point;
+          if ((end - _gridOriginOffset).distanceSquared > 1e-12) {
             _gridRotation = math.atan2(
               end.dy - _gridOriginOffset.dy,
               end.dx - _gridOriginOffset.dx,
             );
-            _alignGridPreviewVertex = _gridOriginOffset;
             _alignGridSecondPreview = end;
-            _alignGridPhase = 0;
-            _alignGridHoveredPolyIndex = null;
-            fmHapticSmallClick();
           }
+          _alignGridPreviewVertex = _gridOriginOffset;
+          _alignGridHoveredPolyIndex = null;
         }
       });
+      fmHapticSmallClick();
       _scheduleGridLodSync();
       return;
     }
@@ -4466,11 +4543,13 @@ class CraftingTestViewState extends State<CraftingTestView>
           setState(() {
             if (tapped?.groupId != null) {
               _selectedPaperIds = _placedPapers
-                  .where((p) => p.groupId == tapped!.groupId)
+                  .where((p) => p.groupId == tapped!.groupId && !p.locked)
                   .map((p) => p.id)
                   .toSet();
-            } else {
+            } else if (tapped != null && !tapped.locked) {
               _selectedPaperIds = {_pointerDownPaperId!};
+            } else {
+              _selectedPaperIds = {};
             }
             _isRotationGizmoActive = false;
           });
@@ -4527,6 +4606,7 @@ class CraftingTestViewState extends State<CraftingTestView>
 
     final result = <String>{};
     for (final paper in _placedPapers) {
+      if (paper.locked) continue;
       final corners = _paperWorldCorners(paper);
       if (fullyInside) {
         final allInside = corners.every(
@@ -4736,25 +4816,15 @@ class CraftingTestViewState extends State<CraftingTestView>
             });
           });
         }
-        return Stack(
+        return GestureClassifier(
+          onGestureUpdate: (state) => _onCraftGesture(state, viewportSize),
+          child: Stack(
           fit: StackFit.expand,
           children: [
             _buildCanvas(viewportSize),
             ..._buildPaperOverlays(viewportSize),
             if (_rotCopyGizmoActive && _rotCopyCenterWorld != null)
               _buildRotCopyGizmo(viewportSize),
-            // Step cards — full-width three-zone rail (matches cards-debug).
-            if (_selectedSet != null && _selectedSet!.steps.length > 1)
-              FmSafePositioned(
-                top: 48,
-                left: 0,
-                right: 0,
-                child: FmStepCards(
-                  steps: _selectedSet!.steps,
-                  currentIndex: _currentStepIndex,
-                  promotingIndex: _promotingIndex,
-                ),
-              ),
             // Main toolbar — bottom-left, above inventory + undo/redo.
             FmSafePositioned(
               bottom: 86,
@@ -4800,24 +4870,30 @@ class CraftingTestViewState extends State<CraftingTestView>
                     _buildCheckModeToggle(),
                     const SizedBox(width: 8),
                     _buildFillAllButton(),
-                    const SizedBox(width: 8),
-                    _buildCraftNowButton(),
                   ],
                 ],
               ),
             ),
-            // Tool modes — left side, below ← Dev / step-card row.
-            FmSafePositioned(left: 12, top: 48, child: _buildToolModeBar()),
+            // Tool modes — vertically centered on the left.
+            FmSafePositioned(
+              left: 12,
+              top: 0,
+              bottom: 0,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: _buildToolModeBar(),
+              ),
+            ),
             if (_selectedBlueprint != null)
               FmSafePositioned(
                 right: 12,
-                top: 48,
+                top: 88,
                 child: _buildProgressBar(),
               ),
             FmSafePositioned(
               right: 12,
-              top: 48,
-              bottom: 100,
+              top: 0,
+              bottom: 80,
               child: Align(
                 alignment: Alignment.centerRight,
                 child: Column(
@@ -4844,17 +4920,13 @@ class CraftingTestViewState extends State<CraftingTestView>
               child: _buildUndoRedoBar(),
             ),
             FmSafePositioned(
-              right: 16,
-              bottom: 100,
-              child: _buildCraftExecuteButton(),
-            ),
-            FmSafePositioned(
               left: 0,
               right: 0,
               bottom: 16,
               child: _buildInventoryBar(),
             ),
           ],
+        ),
         );
       },
     );
@@ -5056,7 +5128,7 @@ class CraftingTestViewState extends State<CraftingTestView>
           const SizedBox(height: 2),
           _ToolModeButton(
             icon: Icons.grid_on,
-            tooltip: 'Align grid (origin, then +Y)',
+            tooltip: 'Align grid (drag +Y, tap to move origin)',
             isActive: _craftingMode == CraftingMode.alignGrid,
             onTap: isCutting
                 ? null
@@ -5676,122 +5748,20 @@ class CraftingTestViewState extends State<CraftingTestView>
   void _fillAll() {
     if (_selectedBlueprint == null ||
         _blueprintWorldPolygons.isEmpty ||
-        _completionPhase != CompletionPhase.none) {
-      return;
-    }
-
-    // Find which blueprint polygon indices are NOT yet filled (locked).
-    final unfilledIndices = <int>[];
-    for (var i = 0; i < _blueprintWorldPolygons.length; i++) {
-      final alreadyLocked = _placedPapers.any(
-        (p) => p.locked && p.lockedBlueprintIndex == i,
-      );
-      if (!alreadyLocked) {
-        unfilledIndices.add(i);
-      }
-    }
-    if (unfilledIndices.isEmpty) return;
-
-    // Leave one piece out -- pick the last unfilled index.
-    final leaveOutIdx = unfilledIndices.removeLast();
-    final colors = PaperColor.values;
-
-    setState(() {
-      // Place papers that exactly match each unfilled blueprint polygon.
-      for (final bpIdx in unfilledIndices) {
-        final poly = _blueprintWorldPolygons[bpIdx];
-        if (poly.length < 3) continue;
-
-        final centroid = _polyCentroid(poly);
-        final localVerts = poly
-            .map((v) => Offset(v.dx - centroid.dx, v.dy - centroid.dy))
-            .toList();
-
-        final paper = PlacedPaper(
-          id: 'paper_${_nextPaperId++}',
-          paperColor: colors[bpIdx % colors.length],
-          position: Vector3(centroid.dx, centroid.dy, _paperZ),
-          localVertices: localVerts,
-        );
-        _placedPapers.add(paper);
-      }
-
-      // Place the leave-out piece offset from its target position.
-      final leavePoly = _blueprintWorldPolygons[leaveOutIdx];
-      if (leavePoly.length >= 3) {
-        final centroid = _polyCentroid(leavePoly);
-        final localVerts = leavePoly
-            .map((v) => Offset(v.dx - centroid.dx, v.dy - centroid.dy))
-            .toList();
-
-        final paper = PlacedPaper(
-          id: 'paper_${_nextPaperId++}',
-          paperColor: colors[leaveOutIdx % colors.length],
-          position: Vector3(
-            centroid.dx + _majorGridSpacing * 3,
-            centroid.dy + _majorGridSpacing * 2,
-            _paperZ,
-          ),
-          localVertices: localVerts,
-        );
-        _placedPapers.add(paper);
-      }
-    });
-
-    _scheduleCheck();
-  }
-
-  Widget _buildCraftNowButton() {
-    return Material(
-      color: Colors.black.withValues(alpha: 0.7),
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: _completionPhase == CompletionPhase.none ? _craftNow : null,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.bolt,
-                color: _completionPhase == CompletionPhase.none
-                    ? Colors.orangeAccent
-                    : Colors.white24,
-                size: 18,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                'Craft Now',
-                style: TextStyle(
-                  color: _completionPhase == CompletionPhase.none
-                      ? Colors.white
-                      : Colors.white38,
-                  fontSize: 12,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _craftNow() {
-    if (_selectedBlueprint == null ||
-        _blueprintWorldPolygons.isEmpty ||
-        _completionPhase != CompletionPhase.none) {
+        _completionPhase != CompletionPhase.none ||
+        _fillCompleteLatched) {
       return;
     }
 
     final colors = PaperColor.values;
-
     setState(() {
       for (var i = 0; i < _blueprintWorldPolygons.length; i++) {
-        final alreadyLocked = _placedPapers.any(
-          (p) => p.locked && p.lockedBlueprintIndex == i,
-        );
-        if (alreadyLocked) continue;
+        final alreadyFilled = _filledBlueprintIndices.contains(i) ||
+            _placedPapers.any((p) => p.lockedBlueprintIndex == i);
+        if (alreadyFilled) {
+          _filledBlueprintIndices.add(i);
+          continue;
+        }
 
         final poly = _blueprintWorldPolygons[i];
         if (poly.length < 3) continue;
@@ -5807,18 +5777,14 @@ class CraftingTestViewState extends State<CraftingTestView>
           position: Vector3(centroid.dx, centroid.dy, _paperZ),
           localVertices: localVerts,
         );
-        paper.locked = true;
         paper.lockedBlueprintIndex = i;
         _placedPapers.add(paper);
         _filledBlueprintIndices.add(i);
       }
-
       _blueprintLockedArea = _blueprintTotalArea;
-      _craftExecuteButtonVisible = false;
     });
 
-    _notifyCraftCompleted();
-    _startCompletionSequence();
+    _maybeCompleteFill();
   }
 
   // ---------------------------------------------------------------------------
@@ -5836,34 +5802,55 @@ class CraftingTestViewState extends State<CraftingTestView>
       },
       builder: (context, candidateData, rejectedData) {
         final isReceivingDrag = candidateData.isNotEmpty;
-        return GestureClassifier(
-          onGestureUpdate: (state) => _onCraftGesture(state, viewportSize),
-          child: Listener(
+        return Listener(
             key: _canvasKey,
             behavior: HitTestBehavior.opaque,
             onPointerDown: (e) {
               _canvasPointerCount++;
-              // Suppress tools on 2nd+ finger / after any multitouch episode.
-              if (_canvasPointerCount >= 2 || _toolsSuppressedUntilPointersUp) {
-                _lockToolsForMultiTouch();
-                _abortToolGestureForMultiTouch();
+              if (_canvasPointerCount >= 2 ||
+                  _toolsSuppressedUntilPointersUp ||
+                  _panZoomActive ||
+                  _pinchEpisode) {
+                _enterPinchExclusiveMode();
                 return;
               }
-              _beginToolGestureBaseline();
-              _handlePointerDown(e.localPosition, viewportSize);
+              // Defer the tool until slop or a clean tap — a trackpad pinch
+              // often delivers PointerDown before PointerPanZoomStart.
+              _queueToolPointerDown(e.localPosition, viewportSize);
             },
             onPointerMove: (e) {
-              if (_toolsBlocked) return;
+              if (_toolsBlocked) {
+                _cancelPendingToolDown();
+                return;
+              }
+              if (_pendingToolDown != null) {
+                if ((e.localPosition - _pendingToolDown!).distance <
+                    _dragThreshold) {
+                  return;
+                }
+                _flushPendingToolDown();
+              }
               _handlePointerMove(e.localPosition, viewportSize);
             },
             onPointerUp: (e) {
               _canvasPointerCount = math.max(0, _canvasPointerCount - 1);
-              final suppress = _toolsSuppressedUntilPointersUp;
+              final suppress = _toolsBlocked || _pinchEpisode;
+              if (!suppress && _pendingToolDown != null) {
+                _flushPendingToolDown();
+              } else {
+                _cancelPendingToolDown();
+              }
               _maybeUnlockToolsAfterPointersUp();
-              // Never commit a tool action during/after multitouch — including
-              // the last finger lifting one-at-a-time after a pinch.
               if (suppress) return;
               _handlePointerUp(e.localPosition, viewportSize);
+            },
+            onPointerPanZoomStart: (_) {
+              _panZoomActive = true;
+              _enterPinchExclusiveMode();
+            },
+            onPointerPanZoomEnd: (_) {
+              _panZoomActive = false;
+              _maybeUnlockToolsAfterPointersUp();
             },
             onPointerSignal: (event) {
               if (event is PointerScrollEvent) {
@@ -5876,10 +5863,11 @@ class CraftingTestViewState extends State<CraftingTestView>
             },
             onPointerCancel: (_) {
               _canvasPointerCount = 0;
-              _abortToolGestureForMultiTouch();
-              _toolsSuppressedUntilPointersUp = false;
-              _isMultiTouch = false;
-              _clearPinchBaseline();
+              _cancelPendingToolDown();
+              _enterPinchExclusiveMode();
+              if (!_panZoomActive) {
+                _maybeUnlockToolsAfterPointersUp();
+              }
             },
             child: Stack(
               fit: StackFit.expand,
@@ -5911,6 +5899,11 @@ class CraftingTestViewState extends State<CraftingTestView>
                     groupOverlayColors: _groupOverlayColors,
                     activeHighlightT: _activeHighlightT,
                     activeGlow: _activeGlow,
+                    loadAnimT: _loadAnimT,
+                    hideUnfilledBlueprint: _hideUnfilledBlueprint,
+                    lockFadingPaperIds: _lockFadingPaperIds,
+                    lockFadeT: _lockFadeT,
+                    discardOpacityById: _discardOpacities(),
                     marqueeRect:
                         _isMarquee &&
                             _marqueeStartScreen != null &&
@@ -6002,8 +5995,7 @@ class CraftingTestViewState extends State<CraftingTestView>
                   ),
               ],
             ),
-          ),
-        );
+          );
       },
     );
   }
@@ -6024,7 +6016,7 @@ class CraftingTestViewState extends State<CraftingTestView>
     }
 
     final selectedPapers = _placedPapers
-        .where((p) => _selectedPaperIds.contains(p.id))
+        .where((p) => _selectedPaperIds.contains(p.id) && !p.locked)
         .toList();
     if (selectedPapers.isEmpty) return const [];
 
@@ -6775,7 +6767,6 @@ class CraftingTestViewState extends State<CraftingTestView>
   }
 
   void _fusePaintedCells() {
-    _pushUndo('Paint');
     final cells = Set<(int, int)>.from(_paintedCells);
     setState(() {
       _paintedCells = {};
@@ -6783,6 +6774,7 @@ class CraftingTestViewState extends State<CraftingTestView>
     });
 
     if (cells.isEmpty) return;
+    _pushUndo('Paint');
 
     // Consume material from structure inventory (1 unit per cell painted)
     String? materialId;
@@ -7323,39 +7315,6 @@ class CraftingTestViewState extends State<CraftingTestView>
     );
   }
 
-  Widget _buildCraftExecuteButton() {
-    if (!_craftExecuteButtonVisible && _craftButtonAnimController.isDismissed) {
-      return const SizedBox.shrink();
-    }
-
-    return SlideTransition(
-      position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
-          .animate(
-            CurvedAnimation(
-              parent: _craftButtonAnimController,
-              curve: Curves.easeOutCubic,
-            ),
-          ),
-      child: FadeTransition(
-        opacity: _craftButtonAnimController,
-        child: ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.red,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            elevation: 8,
-            textStyle: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          onPressed: _isCraftComplete() ? _onCraftExecutePressed : null,
-          child: const Text('Craft!'),
-        ),
-      ),
-    );
-  }
-
   // ---------------------------------------------------------------------------
   // Inventory bar
   // ---------------------------------------------------------------------------
@@ -7682,6 +7641,11 @@ class CraftingTestPainter extends CustomPainter {
     this.groupOverlayColors = const [],
     this.activeHighlightT = 1.0,
     this.activeGlow = 0.0,
+    this.loadAnimT = 1.0,
+    this.hideUnfilledBlueprint = false,
+    this.lockFadingPaperIds = const {},
+    this.lockFadeT = 1.0,
+    this.discardOpacityById = const {},
     this.marqueeRect,
     this.marqueeIsIntersect = false,
     this.marqueeDashOffset = 0,
@@ -7752,6 +7716,11 @@ class CraftingTestPainter extends CustomPainter {
   final List<Color> groupOverlayColors;
   final double activeHighlightT;
   final double activeGlow;
+  final double loadAnimT;
+  final bool hideUnfilledBlueprint;
+  final Set<String> lockFadingPaperIds;
+  final double lockFadeT;
+  final Map<String, double> discardOpacityById;
   final Rect? marqueeRect;
   final bool marqueeIsIntersect;
   final double marqueeDashOffset;
@@ -7818,7 +7787,8 @@ class CraftingTestPainter extends CustomPainter {
     return base * math.pow(2, lod).toDouble();
   }
 
-  double _paperHalfSizeForLevel(int level) => level * drawingPlaneSize / 4;
+  double _paperHalfSizeForLevel(int level) =>
+      level * drawingPlaneSize / 4 * _kPaperHalfExtentPerLevel;
 
   /// Stable pseudo-random value in [0, 1) for a grid dot at (i, j), used to
   /// stagger the dissolve so dots fade out in a scattered pattern.
@@ -7866,7 +7836,6 @@ class CraftingTestPainter extends CustomPainter {
     } else {
       if (!hideDrawingPlane) _drawDrawingPlane(canvas, size, viewProjection);
       _drawGrid(canvas, size, viewProjection);
-      _drawGridRegionAssist(canvas, size, viewProjection);
       _drawStructureFootprint(canvas, size, viewProjection);
       _drawGroupOverlayPolygons(canvas, size, viewProjection);
       _drawBlueprintPolygons(canvas, size, viewProjection);
@@ -8139,20 +8108,21 @@ class CraftingTestPainter extends CustomPainter {
         if (sa != null && sb != null) canvas.drawLine(sa, sb, paint);
       }
     } else {
-      // Dot mode
-      const minorBaseAlpha = 0.45;
-      const majorBaseAlpha = 0.85;
+      // Dot mode — uniform size; interior dots tint by grid-fit quality.
+      final fitColors = _blueprintGridFitColors(spacing);
+      const dotRadius = 1.35;
+      const originRadius = 3.6;
+      const baseAlpha = 0.55;
       final hasWipe = dotWipeOpacityAt != null;
       final dissolve = dotDissolveProgress;
       final visibleW = worldMaxX - worldMinX;
+      Offset? originScreen;
 
       for (var i = iMin; i <= iMax; i++) {
-        final iMajor = i % majorInterval == 0;
-        if (!showMinorLines && !iMajor) continue;
+        if (!showMinorLines && i % majorInterval != 0) continue;
 
         for (var j = jMin; j <= jMax; j++) {
-          final jMajor = j % majorInterval == 0;
-          if (!showMinorLines && !jMajor) continue;
+          if (!showMinorLines && j % majorInterval != 0) continue;
 
           final world = gridPt(i * spacing, j * spacing);
           final wipeAlpha = hasWipe
@@ -8179,22 +8149,52 @@ class CraftingTestPainter extends CustomPainter {
             size,
           );
           if (pt == null) continue;
-          final isMajorDot = iMajor && jMajor;
-          final baseAlpha = isMajorDot ? majorBaseAlpha : minorBaseAlpha;
-          final paint = Paint()
-            ..style = PaintingStyle.fill
-            ..color = (isMajorDot ? Colors.grey.shade500 : Colors.grey.shade400)
-                .withValues(
-                  alpha: baseAlpha * wipeAlpha * dissolveAlpha * layerOpacity,
-                );
-          canvas.drawCircle(pt, isMajorDot ? 2.5 : 1.0, paint);
+
+          final isOrigin = i == 0 && j == 0;
+          if (isOrigin) {
+            originScreen = pt;
+            continue;
+          }
+
+          final interior = _interiorGridFitColor(world, fitColors);
+          final color = (interior ?? Colors.grey.shade400).withValues(
+            alpha: (interior != null ? 0.85 : baseAlpha) *
+                wipeAlpha *
+                dissolveAlpha *
+                layerOpacity,
+          );
+          canvas.drawCircle(
+            pt,
+            dotRadius,
+            Paint()
+              ..style = PaintingStyle.fill
+              ..color = color,
+          );
         }
+      }
+
+      if (originScreen != null) {
+        canvas.drawCircle(
+          originScreen,
+          originRadius + 1.2,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.4
+            ..color = _kGridOriginDot.withValues(alpha: 0.95 * layerOpacity),
+        );
+        canvas.drawCircle(
+          originScreen,
+          originRadius,
+          Paint()
+            ..style = PaintingStyle.fill
+            ..color = _kGridOriginDot.withValues(alpha: 0.92 * layerOpacity),
+        );
       }
     }
   }
 
   // -------------------------------------------------------------------------
-  // Grid Region Assist
+  // Blueprint grid-fit (interior dot tint)
   // -------------------------------------------------------------------------
 
   static bool _pointInPolygonPainter(Offset p, List<Offset> polygon) {
@@ -8210,180 +8210,60 @@ class CraftingTestPainter extends CustomPainter {
     return inside;
   }
 
-  bool _isPolygonGridAligned(List<Offset> poly, double spacing, Offset origin) {
-    const eps = 1e-2;
-    bool onGrid(double v) {
-      final m = v % spacing;
-      final r = m.abs();
-      return r < eps || (spacing - r) < eps;
+  /// Color of interior dots for each blueprint polygon at [spacing].
+  List<(List<Offset> poly, Color color)> _blueprintGridFitColors(double spacing) {
+    final out = <(List<Offset>, Color)>[];
+    for (final poly in blueprintPolygons) {
+      if (poly.length < 3) continue;
+      out.add((poly, _gridFitColorForPolygon(poly, spacing)));
     }
+    return out;
+  }
 
+  Color? _interiorGridFitColor(
+    Offset world,
+    List<(List<Offset>, Color)> fitColors,
+  ) {
+    for (final (poly, color) in fitColors) {
+      if (_pointInPolygonPainter(world, poly)) return color;
+    }
+    return null;
+  }
+
+  /// Red: <2 edges on the current grid. Yellow: ≥2 but not a majority.
+  /// Green: most edges lie on a grid line at this zoom.
+  Color _gridFitColorForPolygon(List<Offset> poly, double spacing) {
+    var edges = 0;
+    var aligned = 0;
     for (var i = 0; i < poly.length; i++) {
       final a = poly[i];
       final b = poly[(i + 1) % poly.length];
-      final ga = _worldToGridCoords(a, origin, gridRotation);
-      final gb = _worldToGridCoords(b, origin, gridRotation);
-      final alongY = (ga.dx - gb.dx).abs() < eps && onGrid(ga.dx);
-      final alongX = (ga.dy - gb.dy).abs() < eps && onGrid(ga.dy);
-      if (!alongY && !alongX) return false;
+      if ((b - a).distance < 1e-6) continue;
+      edges++;
+      if (_edgeOnCurrentGrid(a, b, spacing)) aligned++;
     }
-    return true;
+    if (edges == 0 || aligned < 2) return _kGridFitMisaligned;
+    if (aligned * 2 > edges) return _kGridFitAligned;
+    return _kGridFitPartial;
   }
 
-  void _drawGridRegionAssist(Canvas canvas, Size size, Matrix4 viewProjection) {
-    if (!gridRegionAssist) return;
-    if (canvasDisplayMode != CanvasDisplayMode.dot) return;
-
-    final spacing = _gridSpacingForLod(gridLodTo);
-    final ox = gridOriginOffset.dx;
-    final oy = gridOriginOffset.dy;
-
-    // Collect grid-aligned polygons (skip filled ones).
-    final alignedPolys = <List<Offset>>[];
-    for (var i = 0; i < blueprintPolygons.length; i++) {
-      if (filledBlueprintIndices.contains(i)) continue;
-      final poly = blueprintPolygons[i];
-      if (poly.length < 3) continue;
-      if (_isPolygonGridAligned(poly, spacing, gridOriginOffset)) {
-        alignedPolys.add(poly);
-      }
+  bool _edgeOnCurrentGrid(Offset a, Offset b, double spacing) {
+    if (spacing <= 1e-9) return false;
+    final ga = _worldToGridCoords(a, gridOriginOffset, gridRotation);
+    final gb = _worldToGridCoords(b, gridOriginOffset, gridRotation);
+    final dx = (ga.dx - gb.dx).abs();
+    final dy = (ga.dy - gb.dy).abs();
+    final len = (gb - ga).distance;
+    if (len < 1e-9) return false;
+    const parallelFrac = 0.08;
+    final tol = spacing * 0.08;
+    bool onLine(double v) {
+      final nearest = (v / spacing).round() * spacing;
+      return (v - nearest).abs() <= tol;
     }
-    if (alignedPolys.isEmpty) return;
-
-    // Visible world AABB of the (possibly rolled) view frustum.
-    final aspect = size.width / size.height;
-    final halfH = orthoScale;
-    final halfW = orthoScale * aspect;
-    final c = math.cos(viewRotation);
-    final s = math.sin(viewRotation);
-    Offset corner(double vx, double vy) =>
-        Offset(panOffset.dx + vx * c - vy * s, panOffset.dy + vx * s + vy * c);
-    final corners = [
-      corner(-halfW, -halfH),
-      corner(halfW, -halfH),
-      corner(halfW, halfH),
-      corner(-halfW, halfH),
-    ];
-    var worldMinX = corners.first.dx, worldMaxX = corners.first.dx;
-    var worldMinY = corners.first.dy, worldMaxY = corners.first.dy;
-    for (final p in corners) {
-      worldMinX = math.min(worldMinX, p.dx);
-      worldMaxX = math.max(worldMaxX, p.dx);
-      worldMinY = math.min(worldMinY, p.dy);
-      worldMaxY = math.max(worldMaxY, p.dy);
-    }
-
-    var gMinX = double.infinity, gMaxX = double.negativeInfinity;
-    var gMinY = double.infinity, gMaxY = double.negativeInfinity;
-    for (final p in [
-      Offset(worldMinX, worldMinY),
-      Offset(worldMaxX, worldMinY),
-      Offset(worldMaxX, worldMaxY),
-      Offset(worldMinX, worldMaxY),
-    ]) {
-      final g = _worldToGridCoords(p, gridOriginOffset, gridRotation);
-      gMinX = math.min(gMinX, g.dx);
-      gMaxX = math.max(gMaxX, g.dx);
-      gMinY = math.min(gMinY, g.dy);
-      gMaxY = math.max(gMaxY, g.dy);
-    }
-
-    final iMin = (gMinX / spacing).floor() - 1;
-    final iMax = (gMaxX / spacing).ceil() + 1;
-    final jMin = (gMinY / spacing).floor() - 1;
-    final jMax = (gMaxY / spacing).ceil() + 1;
-
-    final t = gridLodFadeT.clamp(0.0, 1.0);
-    final layerOpacity = (gridLodFrom != gridLodTo && t < 1.0) ? t : 1.0;
-    const majorInterval = 4;
-    final xDir = _gridXDir(gridRotation);
-    final yDir = _gridYDir(gridRotation);
-    Offset gridPt(double gi, double gj) => Offset(
-      ox + gi * xDir.dx + gj * yDir.dx,
-      oy + gi * xDir.dy + gj * yDir.dy,
-    );
-
-    final goldPaint = Paint()
-      ..style = PaintingStyle.fill
-      ..color = Colors.yellow.withValues(alpha: 0.7 * layerOpacity);
-
-    for (var i = iMin; i <= iMax; i++) {
-      final iMajor = i % majorInterval == 0;
-      if (!showMinorLines && !iMajor) continue;
-
-      for (var j = jMin; j <= jMax; j++) {
-        final jMajor = j % majorInterval == 0;
-        if (!showMinorLines && !jMajor) continue;
-        final worldPt = gridPt(i * spacing, j * spacing);
-        bool inside = false;
-        for (final poly in alignedPolys) {
-          if (_pointInPolygonPainter(worldPt, poly)) {
-            inside = true;
-            break;
-          }
-        }
-        if (!inside) continue;
-
-        final pt = _projectToScreen(
-          Vector3(worldPt.dx, worldPt.dy, 0.1),
-          viewProjection,
-          size,
-        );
-        if (pt == null) continue;
-        final isMajorDot = iMajor && jMajor;
-        canvas.drawCircle(pt, isMajorDot ? 2.5 : 1.0, goldPaint);
-      }
-    }
-
-    // If crossfading LODs, also draw for the outgoing LOD.
-    if (gridLodFrom != gridLodTo && t < 1.0) {
-      final spacingFrom = _gridSpacingForLod(gridLodFrom);
-      final fromAlignedPolys = <List<Offset>>[];
-      for (var i = 0; i < blueprintPolygons.length; i++) {
-        if (filledBlueprintIndices.contains(i)) continue;
-        final poly = blueprintPolygons[i];
-        if (poly.length < 3) continue;
-        if (_isPolygonGridAligned(poly, spacingFrom, gridOriginOffset)) {
-          fromAlignedPolys.add(poly);
-        }
-      }
-      if (fromAlignedPolys.isNotEmpty) {
-        final fromIMin = (gMinX / spacingFrom).floor() - 1;
-        final fromIMax = (gMaxX / spacingFrom).ceil() + 1;
-        final fromJMin = (gMinY / spacingFrom).floor() - 1;
-        final fromJMax = (gMaxY / spacingFrom).ceil() + 1;
-        final fromOpacity = 1.0 - t;
-        final fromGoldPaint = Paint()
-          ..style = PaintingStyle.fill
-          ..color = Colors.yellow.withValues(alpha: 0.7 * fromOpacity);
-
-        for (var i = fromIMin; i <= fromIMax; i++) {
-          final iMajor = i % majorInterval == 0;
-          if (!showMinorLines && !iMajor) continue;
-          for (var j = fromJMin; j <= fromJMax; j++) {
-            final jMajor = j % majorInterval == 0;
-            if (!showMinorLines && !jMajor) continue;
-            final worldPt = gridPt(i * spacingFrom, j * spacingFrom);
-            bool inside = false;
-            for (final poly in fromAlignedPolys) {
-              if (_pointInPolygonPainter(worldPt, poly)) {
-                inside = true;
-                break;
-              }
-            }
-            if (!inside) continue;
-            final pt = _projectToScreen(
-              Vector3(worldPt.dx, worldPt.dy, 0.1),
-              viewProjection,
-              size,
-            );
-            if (pt == null) continue;
-            final isMajorDot = iMajor && jMajor;
-            canvas.drawCircle(pt, isMajorDot ? 2.5 : 1.0, fromGoldPaint);
-          }
-        }
-      }
-    }
+    final alongGridY = dx / len <= parallelFrac && onLine(ga.dx);
+    final alongGridX = dy / len <= parallelFrac && onLine(ga.dy);
+    return alongGridY || alongGridX;
   }
 
   void _drawStructureFootprint(
@@ -8476,6 +8356,34 @@ class CraftingTestPainter extends CustomPainter {
     }
   }
 
+  /// Two white flashes, then settle to the blueprint yellow.
+  ({Color color, double width, double glow}) _blueprintLoadStroke(
+    Color settled,
+  ) {
+    final t = loadAnimT.clamp(0.0, 1.0);
+    if (t >= 1 || hideUnfilledBlueprint) {
+      return (color: settled, width: 1.5, glow: 0.0);
+    }
+    const flashEnd = 0.58;
+    if (t < flashEnd) {
+      final local = t / flashEnd;
+      final pulse = math.sin(local * math.pi * 2).abs();
+      return (
+        color: Colors.white.withValues(alpha: 0.2 + 0.8 * pulse),
+        width: 1.5 + 2.2 * pulse,
+        glow: pulse,
+      );
+    }
+    final settle = Curves.easeOut.transform(
+      ((t - flashEnd) / (1 - flashEnd)).clamp(0.0, 1.0),
+    );
+    return (
+      color: Color.lerp(Colors.white, settled, settle)!,
+      width: 3.7 + (1.5 - 3.7) * settle,
+      glow: (1.0 - settle) * 0.35,
+    );
+  }
+
   void _drawBlueprintPolygons(
     Canvas canvas,
     Size size,
@@ -8485,28 +8393,30 @@ class CraftingTestPainter extends CustomPainter {
 
     final grey = Colors.white.withValues(alpha: 0.22);
     final yellow = Colors.yellow.withValues(alpha: 0.7);
-    final activeStroke = Color.lerp(
+    final settledStroke = Color.lerp(
       grey,
       yellow,
       activeHighlightT.clamp(0, 1),
     )!;
+    final load = _blueprintLoadStroke(settledStroke);
 
     final defaultPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
-      ..color = activeStroke;
+      ..strokeWidth = load.width
+      ..color = load.color;
 
     final filledPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.25
       ..color = Colors.greenAccent.withValues(alpha: 0.7);
 
-    // Soft yellow glow while intro-highlighting the active blueprint.
-    if (activeGlow > 0.01) {
+    // Soft glow during load flashes and camera intro.
+    final glow = math.max(activeGlow, load.glow);
+    if (glow > 0.01) {
       final glowPaint = Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 4.0 + 6.0 * activeGlow
-        ..color = Colors.yellow.withValues(alpha: 0.35 * activeGlow)
+        ..strokeWidth = 4.0 + 6.0 * glow
+        ..color = Colors.white.withValues(alpha: 0.45 * glow)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
       for (var i = 0; i < blueprintPolygons.length; i++) {
         if (filledBlueprintIndices.contains(i)) continue;
@@ -8525,54 +8435,26 @@ class CraftingTestPainter extends CustomPainter {
       }
     }
 
-    for (var i = 0; i < blueprintPolygons.length; i++) {
-      final poly = blueprintPolygons[i];
-      final screenPts = <Offset>[];
-      for (final v in poly) {
-        final sp = _projectToScreen(
-          Vector3(v.dx, v.dy, 0.05),
-          viewProjection,
-          size,
-        );
-        if (sp != null) screenPts.add(sp);
-      }
-      if (screenPts.length < 3) continue;
-      final path = Path()..addPolygon(screenPts, true);
-      final paint = filledBlueprintIndices.contains(i)
-          ? filledPaint
-          : defaultPaint;
-      canvas.drawPath(path, paint);
-      final isFilled = filledBlueprintIndices.contains(i);
-      final t = gridLodFadeT.clamp(0.0, 1.0);
-      if (gridLodFrom != gridLodTo && t < 1.0) {
-        _drawBlueprintPolygonGrid(
-          canvas,
-          poly,
-          size,
-          viewProjection,
-          isFilled: isFilled,
-          lod: gridLodFrom,
-          layerOpacity: 1.0 - t,
-        );
-        _drawBlueprintPolygonGrid(
-          canvas,
-          poly,
-          size,
-          viewProjection,
-          isFilled: isFilled,
-          lod: gridLodTo,
-          layerOpacity: t,
-        );
-      } else {
-        _drawBlueprintPolygonGrid(
-          canvas,
-          poly,
-          size,
-          viewProjection,
-          isFilled: isFilled,
-          lod: gridLodTo,
-          layerOpacity: 1.0,
-        );
+    if (hideUnfilledBlueprint && loadAnimT < 1) {
+      // Lock-fade beat: new outlines stay hidden until the load flash.
+    } else {
+      for (var i = 0; i < blueprintPolygons.length; i++) {
+        final poly = blueprintPolygons[i];
+        final screenPts = <Offset>[];
+        for (final v in poly) {
+          final sp = _projectToScreen(
+            Vector3(v.dx, v.dy, 0.05),
+            viewProjection,
+            size,
+          );
+          if (sp != null) screenPts.add(sp);
+        }
+        if (screenPts.length < 3) continue;
+        final path = Path()..addPolygon(screenPts, true);
+        final paint = filledBlueprintIndices.contains(i)
+            ? filledPaint
+            : defaultPaint;
+        canvas.drawPath(path, paint);
       }
     }
 
@@ -8598,125 +8480,6 @@ class CraftingTestPainter extends CustomPainter {
         canvas.drawPath(path, highlightPaint);
       }
     }
-  }
-
-  void _drawBlueprintPolygonGrid(
-    Canvas canvas,
-    List<Offset> poly,
-    Size size,
-    Matrix4 viewProjection, {
-    required bool isFilled,
-    required int lod,
-    required double layerOpacity,
-  }) {
-    if (poly.length < 3 || layerOpacity <= 0) return;
-
-    final spacing = _gridSpacingForLod(lod);
-    final majorInterval = 4;
-
-    // Longest edge defines U axis; origin at its start vertex.
-    var bestEdge = 0;
-    var bestLenSq = 0.0;
-    for (var i = 0; i < poly.length; i++) {
-      final a = poly[i];
-      final b = poly[(i + 1) % poly.length];
-      final lenSq =
-          (b.dx - a.dx) * (b.dx - a.dx) + (b.dy - a.dy) * (b.dy - a.dy);
-      if (lenSq > bestLenSq) {
-        bestLenSq = lenSq;
-        bestEdge = i;
-      }
-    }
-
-    final origin = poly[bestEdge];
-    final edgeEnd = poly[(bestEdge + 1) % poly.length];
-    var uDir = edgeEnd - origin;
-    final uLen = uDir.distance;
-    if (uLen < 1e-9) return;
-    uDir = Offset(uDir.dx / uLen, uDir.dy / uLen);
-    var vDir = Offset(-uDir.dy, uDir.dx);
-
-    final centroid = _blueprintPolygonCentroid(poly);
-    final toCentroid = centroid - origin;
-    if (toCentroid.dx * vDir.dx + toCentroid.dy * vDir.dy < 0) {
-      vDir = Offset(-vDir.dx, -vDir.dy);
-    }
-
-    var uMin = double.infinity, uMax = -double.infinity;
-    var vMin = double.infinity, vMax = -double.infinity;
-    for (final p in poly) {
-      final d = p - origin;
-      final u = d.dx * uDir.dx + d.dy * uDir.dy;
-      final v = d.dx * vDir.dx + d.dy * vDir.dy;
-      uMin = math.min(uMin, u);
-      uMax = math.max(uMax, u);
-      vMin = math.min(vMin, v);
-      vMax = math.max(vMax, v);
-    }
-
-    final pad = spacing * 0.5;
-    uMin -= pad;
-    uMax += pad;
-    vMin -= pad;
-    vMax += pad;
-
-    const outlineAlpha = 0.7;
-    const gridAlpha = outlineAlpha / 3;
-    final baseColor = isFilled ? Colors.greenAccent : Colors.yellow;
-    final gridColor = baseColor.withValues(alpha: gridAlpha * layerOpacity);
-
-    for (var pass = 0; pass < 2; pass++) {
-      final alongU = pass == 0;
-      final minCoord = alongU ? vMin : uMin;
-      final maxCoord = alongU ? vMax : uMax;
-      final start = (minCoord / spacing).floor() * spacing;
-      for (var c = start; c <= maxCoord + 1e-9; c += spacing) {
-        final index = (c / spacing).round().abs();
-        final isMajor = index % majorInterval == 0;
-        final linePaint = Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = isMajor ? 0.75 : 0.5
-          ..color = gridColor;
-
-        final a = alongU
-            ? origin + uDir * uMin + vDir * c
-            : origin + uDir * c + vDir * vMin;
-        final b = alongU
-            ? origin + uDir * uMax + vDir * c
-            : origin + uDir * c + vDir * vMax;
-
-        for (final (wa, wb) in _clipSegmentToPolygon(a, b, poly)) {
-          final sa = _projectToScreen(
-            Vector3(wa.dx, wa.dy, 0.06),
-            viewProjection,
-            size,
-          );
-          final sb = _projectToScreen(
-            Vector3(wb.dx, wb.dy, 0.06),
-            viewProjection,
-            size,
-          );
-          if (sa != null && sb != null) {
-            canvas.drawLine(sa, sb, linePaint);
-          }
-        }
-      }
-    }
-  }
-
-  static Offset _blueprintPolygonCentroid(List<Offset> polygon) {
-    double cx = 0, cy = 0, area = 0;
-    for (int i = 0; i < polygon.length; i++) {
-      final j = (i + 1) % polygon.length;
-      final cross =
-          polygon[i].dx * polygon[j].dy - polygon[j].dx * polygon[i].dy;
-      area += cross;
-      cx += (polygon[i].dx + polygon[j].dx) * cross;
-      cy += (polygon[i].dy + polygon[j].dy) * cross;
-    }
-    area /= 2;
-    if (area.abs() < 1e-12) return polygon.first;
-    return Offset(cx / (6 * area), cy / (6 * area));
   }
 
   void _drawPaintPreview(Canvas canvas, Size size, Matrix4 viewProjection) {
@@ -8798,9 +8561,11 @@ class CraftingTestPainter extends CustomPainter {
   }
 
   void _drawPapers(Canvas canvas, Size size, Matrix4 viewProjection) {
+    // Locked first, then live, so committed geometry never covers new work.
+    for (final lockedLayer in const [true, false]) {
     final paperPaths = <(Path, PlacedPaper)>[];
-
     for (final paper in papers) {
+      if (paper.locked != lockedLayer) continue;
       final hs = _paperHalfSizeForLevel(paper.sizeLevel);
       final localVerts =
           paper.localVertices ??
@@ -8852,16 +8617,23 @@ class CraftingTestPainter extends CustomPainter {
           screenCorners.map((p) => p + const Offset(2, 2)).toList(),
           true,
         );
+      final discardT = discardOpacityById[paper.id];
       canvas.drawPath(
         shadowPath,
         Paint()
           ..style = PaintingStyle.fill
-          ..color = Colors.black.withOpacity(0.08),
+          ..color = Colors.black.withOpacity(0.08 * (discardT ?? 1.0)),
       );
 
       final baseColor =
           paperColorResolver?.call(paper) ?? paper.paperColor.color;
-      final Color fillColor = baseColor.withValues(alpha: 0.85);
+      final fading = lockFadingPaperIds.contains(paper.id);
+      final fillAlpha = discardT != null
+          ? 0.85 * discardT
+          : fading
+          ? 0.85 + (0.15 - 0.85) * lockFadeT.clamp(0.0, 1.0)
+          : (paper.locked ? 0.15 : 0.85);
+      final Color fillColor = baseColor.withValues(alpha: fillAlpha);
 
       canvas.drawPath(
         paperPath,
@@ -8875,7 +8647,7 @@ class CraftingTestPainter extends CustomPainter {
         final cutPaint = Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.0
-          ..color = Colors.white.withOpacity(0.5);
+          ..color = Colors.white.withOpacity(paper.locked ? 0.12 : 0.5);
         for (final seg in paper.cutSegments) {
           final clipped = _clipSegmentToPolygon(seg.$1, seg.$2, localVerts);
           for (final (ca, cb) in clipped) {
@@ -8902,8 +8674,14 @@ class CraftingTestPainter extends CustomPainter {
 
       paperPaths.add((paperPath, paper));
     }
+    _strokePaperBorders(canvas, paperPaths);
+    }
+  }
 
-    // Pass 2: borders on top of all fills
+  void _strokePaperBorders(
+    Canvas canvas,
+    List<(Path, PlacedPaper)> paperPaths,
+  ) {
     for (final (paperPath, paper) in paperPaths) {
       final isSelected = selectedPaperIds.contains(paper.id);
       final isMatched = paper.isBlueprintMatched;
@@ -8911,10 +8689,23 @@ class CraftingTestPainter extends CustomPainter {
 
       Color borderColor;
       double borderWidth;
-      if (isAnimating) {
+      final discardT = discardOpacityById[paper.id];
+      if (discardT != null) {
+        borderColor = Colors.white.withValues(alpha: 0.75 * discardT);
+        borderWidth = 0.75;
+      } else if (isAnimating) {
         borderColor = Color.lerp(Colors.white, Colors.green, lockAnimProgress)!;
         borderWidth = 1.0 + lockAnimProgress * 1.0;
-      } else if (isMatched) {
+      } else if (lockFadingPaperIds.contains(paper.id)) {
+        final t = lockFadeT.clamp(0.0, 1.0);
+        final from = isMatched ? Colors.green : Colors.white;
+        borderColor = Color.lerp(
+          from,
+          Colors.white.withValues(alpha: 0.15),
+          t,
+        )!;
+        borderWidth = 2.0 + (0.75 - 2.0) * t;
+      } else if (paper.locked) {
         borderColor = Colors.green;
         borderWidth = 2.0;
       } else if (isSelected) {
@@ -8942,7 +8733,10 @@ class CraftingTestPainter extends CustomPainter {
   ) {
     final matchedPapers = papers
         .where(
-          (p) => p.isBlueprintMatched && !lockAnimatingPaperIds.contains(p.id),
+          (p) =>
+              p.isBlueprintMatched &&
+              !p.locked &&
+              !lockAnimatingPaperIds.contains(p.id),
         )
         .toList();
     if (matchedPapers.isEmpty) return;

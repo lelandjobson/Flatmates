@@ -2,14 +2,12 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:vector_math/vector_math_64.dart' hide Colors;
 
 import '../crafting/craft_manifest.dart';
+import '../crafting/craft_step_meshes.dart';
 import '../geometry/geometry.dart';
-import '../geometry/obj_parser.dart';
 import '../rendering/lights.dart';
-import '../rendering/mesh.dart';
 import '../rendering/scene/camera.dart';
 import '../rendering/scene/camera_controller.dart';
 import '../rendering/scene/scene.dart';
@@ -28,26 +26,7 @@ class CraftModelPreviewView extends StatefulWidget {
   State<CraftModelPreviewView> createState() => _CraftModelPreviewViewState();
 }
 
-class _StepMeshes {
-  _StepMeshes({
-    required this.step,
-    required this.parts,
-    required this.appliques,
-  });
-
-  final CraftStep step;
-  final Mesh? parts;
-  final Mesh? appliques;
-
-  Iterable<Mesh> get meshes sync* {
-    if (parts != null) yield parts!;
-    if (appliques != null) yield appliques!;
-  }
-}
-
 class _CraftModelPreviewViewState extends State<CraftModelPreviewView> {
-  static const _appliqueColor = Color(0xFFFF66AA);
-
   late final Scene _scene;
   late final OrbitCameraController _orbit;
   int _mouseButtons = 0;
@@ -56,7 +35,7 @@ class _CraftModelPreviewViewState extends State<CraftModelPreviewView> {
   int _lastTouchPointerCount = 0;
 
   CraftManifest? _manifest;
-  final List<_StepMeshes> _steps = [];
+  final List<CraftStepMeshes> _steps = [];
   int _stepIndex = 0;
   String? _error;
   bool _loading = true;
@@ -121,73 +100,19 @@ class _CraftModelPreviewViewState extends State<CraftModelPreviewView> {
 
   Future<void> _loadCraft() async {
     try {
-      final manifests = await CraftManifest.loadAll();
-      final manifest = manifests
-          .where((m) => m.craft.toLowerCase() == widget.craftName.toLowerCase())
-          .firstOrNull;
-      if (manifest == null) {
-        setState(() {
-          _loading = false;
-          _error = 'Craft "${widget.craftName}" not found.';
-        });
-        return;
-      }
-
-      final loaded = <_StepMeshes>[];
-      for (var i = 0; i < manifest.steps.length; i++) {
-        final step = manifest.steps[i];
-        final path = 'assets/models/${manifest.craft}/${step.model}';
-        String source;
-        try {
-          source = await rootBundle.loadString(path);
-        } catch (_) {
-          loaded.add(_StepMeshes(step: step, parts: null, appliques: null));
-          continue;
-        }
-        final groups = ObjParser.parseGroups(
-          id: '${manifest.craft}_step_${step.index}',
-          source: source,
-        );
-        Mesh? parts;
-        Mesh? appliques;
-        final hue = (i * 137.5) % 360;
-        final partColor = HSLColor.fromAHSL(1, hue, 0.55, 0.5).toColor();
-        for (final entry in groups.entries) {
-          final name = entry.key.toLowerCase();
-          final isApplique = name.contains('applique');
-          final mesh = Mesh(
-            id: '${manifest.craft}_${step.index}_${entry.key}',
-            name: entry.key,
-            geometry: entry.value,
-            material: MaterialModel(
-              color: isApplique ? _appliqueColor : partColor,
-              doubleSided: true,
-            ),
-          );
-          if (isApplique) {
-            appliques = mesh;
-          } else {
-            parts = mesh;
-          }
-        }
-        loaded.add(
-          _StepMeshes(step: step, parts: parts, appliques: appliques),
-        );
-      }
-
-      _centerAssembly(loaded);
+      final assembly = await CraftStepAssembly.load(widget.craftName);
 
       _scene.setMeshes([
-        for (final step in loaded) ...step.meshes,
+        for (final step in assembly.steps) ...step.meshes,
       ]);
-      _fitCamera(loaded);
+      _fitCamera(assembly.steps);
 
       if (!mounted) return;
       setState(() {
-        _manifest = manifest;
+        _manifest = assembly.manifest;
         _steps
           ..clear()
-          ..addAll(loaded);
+          ..addAll(assembly.steps);
         _loading = false;
         _stepIndex = 0;
       });
@@ -201,39 +126,7 @@ class _CraftModelPreviewViewState extends State<CraftModelPreviewView> {
     }
   }
 
-  void _centerAssembly(List<_StepMeshes> steps) {
-    final verts = <Vector3>[
-      for (final step in steps)
-        for (final mesh in step.meshes)
-          ...mesh.geometry.vertices,
-    ];
-    if (verts.isEmpty) return;
-    var minX = verts.first.x, maxX = verts.first.x;
-    var minY = verts.first.y, maxY = verts.first.y;
-    var minZ = verts.first.z, maxZ = verts.first.z;
-    for (final v in verts) {
-      minX = math.min(minX, v.x);
-      maxX = math.max(maxX, v.x);
-      minY = math.min(minY, v.y);
-      maxY = math.max(maxY, v.y);
-      minZ = math.min(minZ, v.z);
-      maxZ = math.max(maxZ, v.z);
-    }
-    final cx = (minX + maxX) / 2;
-    final cy = (minY + maxY) / 2;
-    final cz = (minZ + maxZ) / 2;
-    for (final step in steps) {
-      for (final mesh in step.meshes) {
-        for (final v in mesh.geometry.vertices) {
-          v.x -= cx;
-          v.y -= cy;
-          v.z -= cz;
-        }
-      }
-    }
-  }
-
-  void _fitCamera(List<_StepMeshes> steps) {
+  void _fitCamera(List<CraftStepMeshes> steps) {
     final verts = <Vector3>[
       for (final step in steps)
         for (final mesh in step.meshes)
@@ -278,7 +171,7 @@ class _CraftModelPreviewViewState extends State<CraftModelPreviewView> {
         step.parts!.material = mode(partColor);
       }
       if (step.appliques != null) {
-        step.appliques!.material = mode(_appliqueColor);
+        step.appliques!.material = mode(CraftStepAssembly.appliqueColor);
       }
     }
     _scene.markNeedsPaint();

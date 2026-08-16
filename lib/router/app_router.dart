@@ -10,6 +10,7 @@ import '../screens/intro_screen.dart';
 import '../screens/intro_crafting_view.dart';
 import '../screens/mixed_3d_crafting_view.dart';
 import '../screens/book_view.dart';
+import '../screens/craft_assembly_view.dart';
 import '../screens/craft_model_preview_view.dart';
 
 /// Swap between '/dev-routes' and '/' to start at the dev menu or title screen.
@@ -72,6 +73,11 @@ final router = GoRouter(
       path: '/craft-model-preview',
       name: 'craft_model_preview',
       builder: (context, state) => const CraftModelPreviewView(),
+    ),
+    GoRoute(
+      path: '/craft-assembly',
+      name: 'craft_assembly',
+      builder: (context, state) => const CraftAssemblyView(),
     ),
   ],
 );

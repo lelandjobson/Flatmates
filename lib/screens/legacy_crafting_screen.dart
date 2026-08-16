@@ -6,7 +6,10 @@ import '../ui/fm_dev_back_button.dart';
 import '../ui/fm_screen.dart';
 
 class LegacyCraftingScreen extends StatefulWidget {
-  const LegacyCraftingScreen({super.key});
+  const LegacyCraftingScreen({super.key, this.showDrawingPlane = false});
+
+  /// When true, shows the large grey drawing-plane square.
+  final bool showDrawingPlane;
 
   @override
   State<LegacyCraftingScreen> createState() => _LegacyCraftingScreenState();
@@ -25,7 +28,7 @@ class _LegacyCraftingScreenState extends State<LegacyCraftingScreen> {
         structureId: 'legacy-test-structure',
         stateStore: _stateStore,
         canvasSize: 400.0,
-        hideDrawingPlane: false,
+        hideDrawingPlane: !widget.showDrawingPlane,
         showDotWipe: false,
         initialBlueprintSet: 'house_foo',
       ),

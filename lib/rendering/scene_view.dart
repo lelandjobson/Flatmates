@@ -113,7 +113,9 @@ class ScenePainter extends CustomPainter {
 
     facesToDraw.sort((a, b) => a.depth.compareTo(b.depth));
 
-    _drawGrid(canvas, size, viewProjection);
+    if (debugOptions.showWorldXyPlane) {
+      _drawGrid(canvas, size, viewProjection);
+    }
 
     // Paint pools: reuse Paint objects by color to reduce allocation.
     final fillPool = <Color, Paint>{};
@@ -170,6 +172,8 @@ class ScenePainter extends CustomPainter {
             ..color = face.edgeColor!.withOpacity(0.8),
         );
         canvas.drawPath(path, coloredStroke);
+      } else if (!face.strokeEdges) {
+        // Fill only.
       } else if (face.isTessellated) {
         if (debugOptions.enableGrout) {
           final seamPaint = seamPool.putIfAbsent(
@@ -318,7 +322,10 @@ class ScenePainter extends CustomPainter {
           isTessellated: isTessellated,
           isWireframe: mesh.material.wireframe,
           opacity: materialOpacity,
-          edgeColor: materialOpacity < 1.0 ? baseColor : null,
+          strokeEdges: mesh.material.strokeEdges,
+          edgeColor: materialOpacity < 1.0 && mesh.material.strokeEdges
+              ? baseColor
+              : null,
         ),
       );
     }
@@ -418,6 +425,7 @@ class _ProjectedFace {
     this.isTessellated = false,
     this.isWireframe = false,
     this.opacity = 1.0,
+    this.strokeEdges = true,
     this.edgeColor,
   });
 
@@ -434,6 +442,9 @@ class _ProjectedFace {
 
   /// Fill opacity from the material (1.0 = fully opaque).
   final double opacity;
+
+  /// When false, skip per-face edge strokes (silhouette overlays can replace them).
+  final bool strokeEdges;
 
   /// When non-null, edges are drawn in this colour instead of the default
   /// white stroke.  Used for non-opaque and wireframe faces.
@@ -453,6 +464,7 @@ class SceneDebugOptions {
     this.wireframeOnly = false,
     this.showTessellationWireframe = false,
     this.enableGrout = false,
+    this.showWorldXyPlane = true,
   });
 
   final bool showNormals;
@@ -466,6 +478,9 @@ class SceneDebugOptions {
   /// When true, tessellated faces are drawn with a hairline same-color stroke
   /// to seal sub-pixel gaps between adjacent triangles. Off by default.
   final bool enableGrout;
+
+  /// When true, draws the world XY plane grid behind the scene.
+  final bool showWorldXyPlane;
 }
 
 Vector4 _transformPosition(Matrix4 matrix, Vector3 position) {
