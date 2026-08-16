@@ -16,6 +16,7 @@ class MeshUnfoldAnimatable implements SceneAnimatable {
     Geometry Function(Geometry geometry)? geometryMapper,
     bool ensureOutwardNormals = true,
     bool initiallyUnfolded = false,
+    this.onFoldAnimationCompleted,
   })  : _unfoldedGeometry = unfoldedGeometry,
         _duration = duration,
         _vsync = vsync,
@@ -32,6 +33,9 @@ class MeshUnfoldAnimatable implements SceneAnimatable {
   final Geometry Function(Geometry geometry)? _geometryMapper;
   final bool _ensureOutwardNormals;
   final bool _initiallyUnfolded;
+
+  /// Fired when a [setUnfolded] animation reaches its end (not on [jumpTo]).
+  final VoidCallback? onFoldAnimationCompleted;
 
   FoldAnimator? _foldAnimator;
   bool _isUnfolded = false;
@@ -58,6 +62,7 @@ class MeshUnfoldAnimatable implements SceneAnimatable {
       ensureOutwardNormals: _ensureOutwardNormals,
       geometryMapper: _geometryMapper,
       onChanged: scene.markNeedsPaint,
+      onCompleted: onFoldAnimationCompleted,
     )..jumpTo(_initiallyUnfolded);
     _isUnfolded = _initiallyUnfolded;
   }

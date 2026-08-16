@@ -56,28 +56,34 @@ class OrbitCameraController extends ChangeNotifier {
   void pan(Offset delta) {
     if (delta == Offset.zero) return;
     final forward = camera.forward;
-    var planeRight = _projectOntoPlane(Vector3(1, 0, 0), forward);
+    var planeRight = camera.right;
     if (planeRight.length2 == 0) {
-      planeRight = _projectOntoPlane(Vector3(0, 0, 1), forward);
-    }
-    if (planeRight.length2 == 0) {
-      planeRight = Vector3(1, 0, 0);
-    } else {
-      planeRight.normalize();
+      planeRight = _projectOntoPlane(Vector3(1, 0, 0), forward);
+      if (planeRight.length2 == 0) {
+        planeRight = _projectOntoPlane(Vector3(0, 0, 1), forward);
+      }
+      if (planeRight.length2 == 0) {
+        planeRight = Vector3(1, 0, 0);
+      } else {
+        planeRight.normalize();
+      }
     }
 
-    var planeUp = forward.cross(planeRight);
+    // Screen-up in the view plane (perpendicular to look and right).
+    var planeUp = planeRight.cross(forward);
     if (planeUp.length2 == 0) {
       planeUp = Vector3(0, 1, 0);
     } else {
       planeUp.normalize();
     }
+
     final double scale = (_radius * panSensitivity).clamp(0.01, 100.0);
     final translation =
         (planeRight * (-delta.dx * scale)) + (planeUp * (delta.dy * scale));
 
     _target.add(translation);
     camera.position.add(translation);
+    camera.setTarget(_target);
     _updateSphericalFromCamera();
     notifyListeners();
   }

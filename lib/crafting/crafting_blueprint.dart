@@ -247,6 +247,15 @@ class TransformTree {
 // Blueprint (top-level)
 // ---------------------------------------------------------------------------
 
+/// How unfolded vertex coordinates in a [CraftingBlueprint] are interpreted.
+enum BlueprintCoordinateSpace {
+  /// Default: values are craft-grid cells; multiply by minorGridSpacing.
+  grid,
+
+  /// Values are already craft world units (same space as papers / 3D handoff).
+  world,
+}
+
 class CraftingBlueprint {
   const CraftingBlueprint({
     required this.version,
@@ -256,6 +265,8 @@ class CraftingBlueprint {
     required this.foldedOffset,
     required this.unfoldedYDisplacement,
     required this.transformTree,
+    this.coordinateSpace = BlueprintCoordinateSpace.grid,
+    this.foldedGeometryId,
   });
 
   final int version;
@@ -277,13 +288,26 @@ class CraftingBlueprint {
 
   final TransformTree transformTree;
 
+  /// When [BlueprintCoordinateSpace.world], skip minor-grid scaling on load.
+  final BlueprintCoordinateSpace coordinateSpace;
+
+  /// Optional link back to a [FoldedGeometry.id] for 3D↔craft handoff.
+  final String? foldedGeometryId;
+
   /// Display name combining craft and island (e.g. "Group03" or "Group03 #1").
   String get displayName =>
       island == 0 ? craft : '$craft #$island';
 
+  bool get isWorldSpace =>
+      coordinateSpace == BlueprintCoordinateSpace.world;
+
   factory CraftingBlueprint.fromJson(Map<String, dynamic> json) {
     final oo = json['origin_offset'] as List;
     final fo = json['folded_offset'] as List? ?? [0, 0, 0];
+    final spaceRaw = json['coordinateSpace'] as String?;
+    final space = spaceRaw == 'world'
+        ? BlueprintCoordinateSpace.world
+        : BlueprintCoordinateSpace.grid;
 
     return CraftingBlueprint(
       version: json['version'] as int,
@@ -302,6 +326,8 @@ class CraftingBlueprint {
           (json['unfoldedYDisplacement'] as num).toDouble(),
       transformTree: TransformTree.fromJson(
           json['transformTree'] as Map<String, dynamic>),
+      coordinateSpace: space,
+      foldedGeometryId: json['foldedGeometryId'] as String?,
     );
   }
 }

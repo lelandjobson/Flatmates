@@ -40,6 +40,7 @@ flutter:
     - assets/crafting_blueprints/group06/blueprint/
     - assets/crafting_blueprints/group08/blueprint/
     - assets/crafting_blueprints/group09/blueprint/
+    - assets/crafting_blueprints/cube/blueprint/
     - assets/models/group01/model/geo/
     - assets/models/group02/model/geo/
     - assets/models/group03/model/geo/

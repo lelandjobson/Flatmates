@@ -11,6 +11,7 @@ class FoldAnimator {
     required Duration duration,
     required TickerProvider vsync,
     required VoidCallback onChanged,
+    this.onCompleted,
     this.ensureOutwardNormals = false,
     Geometry Function(Geometry geometry)? geometryMapper,
   })  : _duration = duration,
@@ -20,17 +21,21 @@ class FoldAnimator {
       vsync: vsync,
       duration: _duration,
       value: 1,
-    )..addListener(_applyFrame);
+    )
+      ..addListener(_applyFrame)
+      ..addStatusListener(_handleStatus);
     _applyFrame();
   }
 
   final FoldedGeometry foldedGeometry;
   final Mesh mesh;
   final VoidCallback _onChanged;
+  final VoidCallback? onCompleted;
   final bool ensureOutwardNormals;
   final Geometry Function(Geometry geometry)? _geometryMapper;
   late final AnimationController _controller;
   Duration _duration;
+  bool? _pendingUnfoldedTarget;
 
   Duration get duration => _duration;
   set duration(Duration value) {
@@ -41,6 +46,7 @@ class FoldAnimator {
   bool get isUnfolded => _controller.value <= 1e-3;
 
   void jumpTo(bool unfolded) {
+    _pendingUnfoldedTarget = null;
     _controller.value = unfolded ? 0 : 1;
     _applyFrame();
   }
@@ -48,8 +54,10 @@ class FoldAnimator {
   void setUnfolded(bool unfolded) {
     final target = unfolded ? 0.0 : 1.0;
     if ((target - _controller.value).abs() <= 1e-4) {
+      onCompleted?.call();
       return;
     }
+    _pendingUnfoldedTarget = unfolded;
     _controller.animateTo(
       target,
       duration: _duration,
@@ -58,7 +66,16 @@ class FoldAnimator {
   }
 
   void dispose() {
-    _controller.dispose();
+    _controller
+      ..removeStatusListener(_handleStatus)
+      ..dispose();
+  }
+
+  void _handleStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    if (_pendingUnfoldedTarget == null) return;
+    _pendingUnfoldedTarget = null;
+    onCompleted?.call();
   }
 
   void _applyFrame() {
@@ -75,4 +92,3 @@ class FoldAnimator {
     _onChanged();
   }
 }
-

@@ -110,6 +110,7 @@ class MaterialModel {
     this.wireframe = false,
     this.opacity = 1.0,
     List<Color>? perFaceColors,
+    this.exactPerFaceColors = false,
   }) : _perFaceColors = perFaceColors;
 
   const MaterialModel.rainbow({bool doubleSided = false})
@@ -117,7 +118,17 @@ class MaterialModel {
       doubleSided = doubleSided,
       wireframe = false,
       opacity = 1.0,
+      exactPerFaceColors = false,
       _perFaceColors = _defaultRainbowPalette;
+
+  /// Uncrafted / placeholder mesh: grey fill at 50% opacity.
+  const MaterialModel.ghost({bool doubleSided = true})
+    : color = kGhostMaterialColor,
+      doubleSided = doubleSided,
+      wireframe = false,
+      opacity = kGhostMaterialOpacity,
+      exactPerFaceColors = false,
+      _perFaceColors = null;
 
   final Color color;
   final bool doubleSided;
@@ -130,6 +141,13 @@ class MaterialModel {
   final double opacity;
   final List<Color>? _perFaceColors;
   List<Color>? get perFaceColors => _perFaceColors;
+
+  /// When true, [perFaceColors]\[i\] is exactly the color for face [i]
+  /// (no seed-based palette rotation). Used for crafted face materials.
+  final bool exactPerFaceColors;
+
+  static const Color kGhostMaterialColor = Color(0xFF9E9E9E);
+  static const double kGhostMaterialOpacity = 0.5;
 
   static const List<Color> _defaultRainbowPalette = <Color>[
     Color(0xFFFF0059),
@@ -163,6 +181,12 @@ class MaterialModel {
   Color colorForFace(int faceIndex, {int? seed}) {
     final palette = _perFaceColors;
     if (palette == null || palette.isEmpty) {
+      return color;
+    }
+    if (exactPerFaceColors) {
+      if (faceIndex >= 0 && faceIndex < palette.length) {
+        return palette[faceIndex];
+      }
       return color;
     }
     final startIndex = seed == null ? 0 : seed.abs() % palette.length;

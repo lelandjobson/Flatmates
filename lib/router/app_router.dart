@@ -8,6 +8,8 @@ import '../screens/loading_screen.dart';
 import '../screens/main_menu_screen.dart';
 import '../screens/intro_screen.dart';
 import '../screens/intro_crafting_view.dart';
+import '../screens/mixed_3d_crafting_view.dart';
+import '../screens/book_view.dart';
 
 /// Swap between '/dev-routes' and '/' to start at the dev menu or title screen.
 const kInitialLocation = '/dev-routes';
@@ -51,9 +53,19 @@ final router = GoRouter(
       builder: (context, state) => const LegacyCraftingScreen(),
     ),
     GoRoute(
+      path: '/mixed-3d-crafting',
+      name: 'mixed_3d_crafting',
+      builder: (context, state) => const Mixed3dCraftingView(),
+    ),
+    GoRoute(
       path: '/cards-debug',
       name: 'cards_debug',
       builder: (context, state) => const CardsDebugView(),
+    ),
+    GoRoute(
+      path: '/book',
+      name: 'book',
+      builder: (context, state) => const BookView(),
     ),
   ],
 );

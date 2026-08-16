@@ -415,7 +415,9 @@ class CraftingTestView extends StatefulWidget {
     this.stateStore,
     this.hideDrawingPlane = true,
     this.showDotWipe = false,
+    this.initialBlueprintSet,
     this.defaultBlueprintName,
+    this.initialCanvasDisplayMode,
     this.initialOrthoScale,
     this.structureInventory,
     this.materialRegistry,
@@ -444,8 +446,18 @@ class CraftingTestView extends StatefulWidget {
   /// When true, plays a horizontal dot-wipe reveal on entry.
   final bool showDotWipe;
 
-  /// When set, the blueprint with this name is auto-selected after loading.
+  /// Optional initial [BlueprintSet] / craft selection after assets load.
+  ///
+  /// Matches a set [BlueprintSet.name], a group craft folder, or a single
+  /// blueprint craft name (case-insensitive). When null (default), no
+  /// blueprint is pre-selected.
+  final String? initialBlueprintSet;
+
+  /// Legacy alias for [initialBlueprintSet] (single-blueprint craft name).
   final String? defaultBlueprintName;
+
+  /// Initial canvas backdrop (grid / dot / none). When null, defaults to dot.
+  final CanvasDisplayMode? initialCanvasDisplayMode;
 
   /// Sets the initial orthographic scale (e.g. to match the room editor's
   /// final camera so the house and dashed footprint align perfectly).
@@ -476,10 +488,10 @@ class CraftingTestView extends StatefulWidget {
   onCraftFoldComplete;
 
   @override
-  State<CraftingTestView> createState() => _CraftingTestViewState();
+  State<CraftingTestView> createState() => CraftingTestViewState();
 }
 
-class _CraftingTestViewState extends State<CraftingTestView>
+class CraftingTestViewState extends State<CraftingTestView>
     with TickerProviderStateMixin {
   // Friend state (used only during cut animation)
   Quaternion _objectRotation = Quaternion.identity();
@@ -1027,6 +1039,11 @@ class _CraftingTestViewState extends State<CraftingTestView>
   @override
   void initState() {
     super.initState();
+    _canvasDisplayMode =
+        widget.initialCanvasDisplayMode ?? CanvasDisplayMode.dot;
+    if (_canvasDisplayMode == CanvasDisplayMode.none) {
+      _gridRegionAssist = false;
+    }
     _drawingPlaneSize = _computeDrawingPlaneSize();
     if (widget.canvasSize != null) {
       _orthoScale = widget.initialOrthoScale ?? _drawingPlaneSize * 1.1;
@@ -1217,25 +1234,31 @@ class _CraftingTestViewState extends State<CraftingTestView>
         _blueprints = loaded;
         _blueprintSets = _buildBlueprintSets(loaded, groupDefs);
       });
-      // Prefer Group 05 as the default craft; fall back to widget override.
-      final group05 = _blueprintSets
-          .where(
-            (s) =>
-                s.isGroup &&
-                s.steps.any((st) => st.craft.toLowerCase() == 'group05'),
-          )
-          .firstOrNull;
-      if (group05 != null && _selectedSet == null) {
-        _selectBlueprintSet(group05);
-      } else if (widget.defaultBlueprintName != null &&
-          _selectedBlueprint == null) {
-        final match = loaded
-            .where((b) => b.craft == widget.defaultBlueprintName)
-            .firstOrNull;
-        if (match != null) {
-          _selectBlueprint(match);
-        }
+      // Only auto-select when the host asked for an initial set/blueprint.
+      final wanted = widget.initialBlueprintSet ?? widget.defaultBlueprintName;
+      if (wanted != null && _selectedSet == null && _selectedBlueprint == null) {
+        _selectInitialBlueprint(wanted);
       }
+    }
+  }
+
+  void _selectInitialBlueprint(String wanted) {
+    final key = wanted.trim().toLowerCase();
+    if (key.isEmpty) return;
+
+    final setMatch = _blueprintSets.where((s) {
+      if (s.name.toLowerCase() == key) return true;
+      return s.steps.any((st) => st.craft.toLowerCase() == key);
+    }).firstOrNull;
+    if (setMatch != null) {
+      _selectBlueprintSet(setMatch);
+      return;
+    }
+
+    final bpMatch =
+        _blueprints.where((b) => b.craft.toLowerCase() == key).firstOrNull;
+    if (bpMatch != null) {
+      _selectBlueprint(bpMatch);
     }
   }
 
@@ -1386,6 +1409,58 @@ class _CraftingTestViewState extends State<CraftingTestView>
     });
   }
 
+  /// Apply a blueprint after the view is mounted (e.g. 3D unfold handoff).
+  ///
+  /// When [panOffset] / [orthoScale] / [viewRotation] are provided, the craft
+  /// camera is set explicitly so it can match the host 3D view.
+  ///
+  /// The dominant-edge grid frame is installed with the blueprint before the
+  /// dot grid is revealed, so the backdrop never appears misaligned.
+  void applyBlueprint(
+    CraftingBlueprint blueprint, {
+    Offset? panOffset,
+    double? orthoScale,
+    double? viewRotation,
+  }) {
+    if (!mounted) return;
+    // Replace any prior craft/island entry so asset JSON cannot shadow a
+    // world-space handoff blueprint of the same name.
+    _blueprints = [
+      ..._blueprints.where(
+        (b) => !(b.craft == blueprint.craft && b.island == blueprint.island),
+      ),
+      blueprint,
+    ];
+    _blueprintSets = [
+      ..._blueprintSets.where(
+        (s) => !s.steps.any(
+          (st) =>
+              st.craft == blueprint.craft && st.island == blueprint.island,
+        ),
+      ),
+      BlueprintSet.single(blueprint),
+    ];
+
+    // Install blueprint + grid pose while canvas stays hidden (none), then
+    // reveal dots in a follow-up frame so alignment is already correct.
+    _selectBlueprintSet(BlueprintSet.single(blueprint));
+
+    setState(() {
+      if (panOffset != null) _panOffset = panOffset;
+      if (orthoScale != null) _orthoScale = orthoScale;
+      if (viewRotation != null) _viewRotation = viewRotation;
+      _canvasDisplayMode = CanvasDisplayMode.dot;
+    });
+    _scheduleGridLodSync();
+    _scheduleCheck();
+  }
+
+  /// Clear the active blueprint (used when reversing a 3D handoff).
+  void clearBlueprint() {
+    if (!mounted) return;
+    _selectBlueprintSet(null);
+  }
+
   void _selectBlueprint(
     CraftingBlueprint? blueprint, {
     bool playGroupIntro = false,
@@ -1454,7 +1529,15 @@ class _CraftingTestViewState extends State<CraftingTestView>
 
       late final double nudgeX, nudgeY, cx, cy;
       final List<List<Offset>> allScaled;
-      if (useGroupLayout) {
+      if (blueprint.isWorldSpace) {
+        // 3D handoff: polygons already sit in craft world space — do not
+        // re-center or snap (would break the seamless outline transfer).
+        nudgeX = 0;
+        nudgeY = 0;
+        cx = 0;
+        cy = 0;
+        allScaled = _scaleBlueprintPolygons(blueprint, 0, 0, 0, 0);
+      } else if (useGroupLayout) {
         // Group layout offsets already place islands; no extra centering.
         nudgeX = layoutOffset.dx;
         nudgeY = layoutOffset.dy;
@@ -1496,7 +1579,16 @@ class _CraftingTestViewState extends State<CraftingTestView>
         }
       }
       _blueprintWorldPolygons = allScaled;
-      _applyAutoGridAlignment(allScaled);
+      // Place the grid from the dominant-edge frame up front (same math the
+      // Align Grid tool uses) so the backdrop is correct on first paint.
+      final gridFrame = _computeDominantGridFrame(allScaled);
+      if (gridFrame != null) {
+        _gridOriginOffset = gridFrame.anchor;
+        _gridRotation = gridFrame.yAngle;
+      } else {
+        _gridOriginOffset = Offset.zero;
+        _gridRotation = math.pi / 2;
+      }
 
       _blueprintTotalArea = 0;
       for (final poly in allScaled) {
@@ -1538,7 +1630,10 @@ class _CraftingTestViewState extends State<CraftingTestView>
         _activeGlow = 0.0;
       }
 
-      if (!playGroupIntro && !animateCameraToStep && allScaled.isNotEmpty) {
+      if (!playGroupIntro &&
+          !animateCameraToStep &&
+          allScaled.isNotEmpty &&
+          !blueprint.isWorldSpace) {
         final cam = _cameraForPolygons(allScaled);
         _orthoScale = cam.ortho;
         _panOffset = cam.pan;
@@ -1570,6 +1665,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
     double rotationDeg = 0,
   }) {
     final scaled = <List<Offset>>[];
+    final unit = blueprint.isWorldSpace ? 1.0 : _minorGridSpacing;
     for (final node in blueprint.transformTree.nodes) {
       final verts = node.unfoldedPolygon2D;
       if (verts.length < 3) continue;
@@ -1577,8 +1673,8 @@ class _CraftingTestViewState extends State<CraftingTestView>
         verts
             .map(
               (v) => Offset(
-                v.dx * _minorGridSpacing - cx,
-                v.dy * _minorGridSpacing - cy,
+                v.dx * unit - cx,
+                v.dy * unit - cy,
               ),
             )
             .toList(),
@@ -1852,8 +1948,10 @@ class _CraftingTestViewState extends State<CraftingTestView>
         allScaled.add(
           verts
               .map(
-                (v) =>
-                    Offset(v.dx * _minorGridSpacing, v.dy * _minorGridSpacing),
+                (v) => Offset(
+                  v.dx * (blueprint.isWorldSpace ? 1.0 : _minorGridSpacing),
+                  v.dy * (blueprint.isWorldSpace ? 1.0 : _minorGridSpacing),
+                ),
               )
               .toList(),
         );
@@ -1864,13 +1962,14 @@ class _CraftingTestViewState extends State<CraftingTestView>
     // Use the root node's polygon for centering when available, otherwise all.
     final root = blueprint.transformTree.root;
     final rootVerts = root.unfoldedPolygon2D;
+    final unit = blueprint.isWorldSpace ? 1.0 : _minorGridSpacing;
     final anchorPolygons = rootVerts.length >= 3
         ? [
             rootVerts
                 .map(
                   (v) => Offset(
-                    v.dx * _minorGridSpacing,
-                    v.dy * _minorGridSpacing,
+                    v.dx * unit,
+                    v.dy * unit,
                   ),
                 )
                 .toList(),
@@ -1919,6 +2018,7 @@ class _CraftingTestViewState extends State<CraftingTestView>
     double nudgeY,
   ) {
     final byLayer = <String, List<List<Offset>>>{};
+    final unit = blueprint.isWorldSpace ? 1.0 : _minorGridSpacing;
     for (final node in blueprint.transformTree.nodes) {
       final verts = node.unfoldedPolygon2D;
       if (verts.length < 3) continue;
@@ -1926,8 +2026,8 @@ class _CraftingTestViewState extends State<CraftingTestView>
         verts
             .map(
               (v) => Offset(
-                v.dx * _minorGridSpacing - cx + nudgeX,
-                v.dy * _minorGridSpacing - cy + nudgeY,
+                v.dx * unit - cx + nudgeX,
+                v.dy * unit - cy + nudgeY,
               ),
             )
             .toList(),
@@ -4967,7 +5067,8 @@ class _CraftingTestViewState extends State<CraftingTestView>
                     if (widget.onDismiss != null) const SizedBox(width: 8),
                     _buildCutButton(),
                   ],
-                  // Blueprint dropdown hidden — Group 05 loads by default.
+                  // Blueprint dropdown hidden — selection comes from
+                  // initialBlueprintSet / defaultBlueprintName (else none).
                   if (_selectedBlueprint != null) ...[
                     if (widget.onDismiss != null ||
                         (_craftingMode == CraftingMode.drawLine &&
@@ -10512,6 +10613,9 @@ double _undirectedEdgeAngle(double atan) {
 }
 
 /// Dominant undirected edge axis → grid +Y, with a vertex as the origin.
+///
+/// Orientation: most common undirected edge direction (180° collapses to the
+/// same axis). Anchor: blueprint vertex furthest left, then highest.
 ({Offset anchor, double yAngle})? _computeDominantGridFrame(
   List<List<Offset>> polygons,
 ) {
@@ -10519,7 +10623,6 @@ double _undirectedEdgeAngle(double atan) {
   const step = math.pi / 360;
   final countByBucket = <int, int>{};
   final lengthByBucket = <int, double>{};
-  final vertsByBucket = <int, List<Offset>>{};
 
   for (final poly in polygons) {
     if (poly.length < 2) continue;
@@ -10533,7 +10636,6 @@ double _undirectedEdgeAngle(double atan) {
       final q = (undirected / step).round();
       countByBucket[q] = (countByBucket[q] ?? 0) + 1;
       lengthByBucket[q] = (lengthByBucket[q] ?? 0) + len;
-      (vertsByBucket[q] ??= []).addAll([a, b]);
     }
   }
   if (countByBucket.isEmpty) return null;
@@ -10560,20 +10662,18 @@ double _undirectedEdgeAngle(double atan) {
   final alt = undirected + math.pi;
   if (score(alt) > score(yAngle)) yAngle = alt;
 
-  final candidates = vertsByBucket[bestQ] ?? const <Offset>[];
-  if (candidates.isEmpty) return null;
-
-  // Anchor = "bottom-left" vertex in the oriented grid frame.
-  Offset anchor = candidates.first;
-  var bestG = _worldToGridCoords(anchor, Offset.zero, yAngle);
-  for (final v in candidates) {
-    final g = _worldToGridCoords(v, Offset.zero, yAngle);
-    if (g.dx < bestG.dx - 1e-9 ||
-        ((g.dx - bestG.dx).abs() < 1e-9 && g.dy < bestG.dy)) {
-      anchor = v;
-      bestG = g;
+  // Anchor = furthest left, then highest (world +Y up) among all verts.
+  Offset? anchor;
+  for (final poly in polygons) {
+    for (final v in poly) {
+      if (anchor == null ||
+          v.dx < anchor.dx - 1e-9 ||
+          ((v.dx - anchor.dx).abs() < 1e-9 && v.dy > anchor.dy)) {
+        anchor = v;
+      }
     }
   }
+  if (anchor == null) return null;
 
   return (anchor: anchor, yAngle: yAngle);
 }
