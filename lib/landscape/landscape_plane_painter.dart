@@ -19,6 +19,8 @@ class LandscapePlanePainter extends CustomPainter {
     required this.worldSize,
     required this.tilesSide,
     required this.pixelsPerTile,
+    this.hoverWx,
+    this.hoverWy,
   }) : super(repaint: orbit);
 
   final Camera camera;
@@ -27,6 +29,8 @@ class LandscapePlanePainter extends CustomPainter {
   final double worldSize;
   final int tilesSide;
   final int pixelsPerTile;
+  final int? hoverWx;
+  final int? hoverWy;
 
   static final Paint _imagePaint = Paint()
     ..isAntiAlias = false
@@ -46,6 +50,12 @@ class LandscapePlanePainter extends CustomPainter {
     ..style = PaintingStyle.stroke
     ..isAntiAlias = true;
 
+  static final Paint _hoverPaint = Paint()
+    ..color = const Color(0xAAFFFFFF)
+    ..strokeWidth = 1.5
+    ..style = PaintingStyle.stroke
+    ..isAntiAlias = true;
+
   @override
   void paint(Canvas canvas, Size size) {
     canvas.drawRect(Offset.zero & size, _bgPaint);
@@ -59,6 +69,38 @@ class LandscapePlanePainter extends CustomPainter {
 
     _drawTessellatedPlane(canvas, mvp, size, half, img);
     _drawTileGrid(canvas, mvp, size, half);
+    _drawHoverPixel(canvas, mvp, size, half);
+  }
+
+  void _drawHoverPixel(Canvas canvas, Matrix4 mvp, Size size, double half) {
+    final hx = hoverWx;
+    final hy = hoverWy;
+    if (hx == null || hy == null) return;
+    final side = tilesSide * pixelsPerTile;
+    if (hx < 0 || hy < 0 || hx >= side || hy >= side) return;
+
+    final x0 = -half + hx;
+    final z0 = -half + hy;
+    final x1 = x0 + 1;
+    final z1 = z0 + 1;
+    final corners = <Vector3>[
+      Vector3(x0, 0, z0),
+      Vector3(x1, 0, z0),
+      Vector3(x1, 0, z1),
+      Vector3(x0, 0, z1),
+    ];
+    final path = Path();
+    for (var i = 0; i < corners.length; i++) {
+      final p = _projectToScreen(corners[i], mvp, size);
+      if (p == null) return;
+      if (i == 0) {
+        path.moveTo(p.dx, p.dy);
+      } else {
+        path.lineTo(p.dx, p.dy);
+      }
+    }
+    path.close();
+    canvas.drawPath(path, _hoverPaint);
   }
 
   void _drawTessellatedPlane(
@@ -218,6 +260,8 @@ class LandscapePlanePainter extends CustomPainter {
         oldDelegate.worldSize != worldSize ||
         oldDelegate.tilesSide != tilesSide ||
         oldDelegate.pixelsPerTile != pixelsPerTile ||
+        oldDelegate.hoverWx != hoverWx ||
+        oldDelegate.hoverWy != hoverWy ||
         oldDelegate.camera != camera ||
         oldDelegate.orbit != orbit;
   }

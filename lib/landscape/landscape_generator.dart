@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../rendering/iso/perlin_noise.dart';
+import 'landscape_grid.dart';
 import 'landscape_material.dart';
 
 /// Seeds a world-pixel landscape and bakes it to a sharp [ui.Image] atlas.
@@ -53,12 +54,12 @@ class LandscapeGenerator {
   Color colorAt(int wx, int wy) {
     final material = materialAt(wx, wy);
     final gradient = params.gradients[material]!;
-    final t = _gaussianUnit(wx, wy, material.index);
+    final t = gaussianUnit(wx, wy, material.index);
     return gradient.sample(t);
   }
 
   /// Deterministic Gaussian sample in [0, 1], mean 0.5.
-  double _gaussianUnit(int wx, int wy, int materialIndex) {
+  double gaussianUnit(int wx, int wy, int materialIndex) {
     final u1 = _hash01(params.seed, wx, wy, materialIndex, 1);
     final u2 = _hash01(params.seed, wx, wy, materialIndex, 2);
     final r = math.sqrt(-2.0 * math.log(u1.clamp(1e-12, 1.0)));
@@ -75,7 +76,6 @@ class LandscapeGenerator {
     h = _mix64(h ^ y);
     h = _mix64(h ^ a);
     h = _mix64(h ^ b);
-    // Unsigned top 53 bits → [0, 1)
     return (h >>> 11) * (1.0 / 9007199254740992.0);
   }
 
@@ -88,26 +88,22 @@ class LandscapeGenerator {
     return z ^ (z >>> 31);
   }
 
-  /// Bake the full grid to an RGBA atlas, optionally nearest-upscaled.
+  /// Procedural fill then atlas bake.
   Future<ui.Image> bakeAtlas() async {
+    final grid = LandscapeGrid.fromGenerator(this);
+    return bakeAtlasFromGrid(grid);
+  }
+
+  /// Bake [grid] to an RGBA atlas (empty → background black), with sharpness.
+  Future<ui.Image> bakeAtlasFromGrid(LandscapeGrid grid) async {
     final p = params.clamped();
-    final side = p.worldPixelsSide;
+    final side = grid.side;
     final sharp = p.sharpness;
-    // Reuse this generator when params already match the clamped set.
-    final gen = identical(p, params) ||
-            (p.seed == params.seed &&
-                p.tilesSide == params.tilesSide &&
-                p.pixelsPerTile == params.pixelsPerTile &&
-                p.sharpness == params.sharpness &&
-                p.colorSigma == params.colorSigma &&
-                p.noiseFrequency == params.noiseFrequency)
-        ? this
-        : LandscapeGenerator(p);
     final base = Uint32List(side * side);
 
     for (var y = 0; y < side; y++) {
       for (var x = 0; x < side; x++) {
-        base[y * side + x] = _packRgba(gen.colorAt(x, y));
+        base[y * side + x] = packRgba(grid.colorAt(x, y, p));
       }
     }
 
@@ -142,7 +138,7 @@ class LandscapeGenerator {
 }
 
 /// Pack Color into little-endian RGBA for [ui.PixelFormat.rgba8888].
-int _packRgba(Color color) {
+int packRgba(Color color) {
   final r = (color.r * 255.0).round() & 0xff;
   final g = (color.g * 255.0).round() & 0xff;
   final b = (color.b * 255.0).round() & 0xff;
