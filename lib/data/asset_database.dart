@@ -34,8 +34,6 @@ class AssetDefinition {
     this.prefab,
     this.imagePath,
     this.objAssetPath,
-    this.objCellPaths,
-    this.objLayerCellPaths,
     this.color,
     this.scale = 1.0,
     this.customPathGeometry,
@@ -64,16 +62,8 @@ class AssetDefinition {
   /// For image-based assets
   final String? imagePath;
 
-  /// For OBJ model assets (e.g. "assets/models/group01.obj")
+  /// For OBJ model assets (e.g. "assets/models/house_foo/steps/1.obj")
   final String? objAssetPath;
-
-  /// For sliced OBJ model groups: maps grid (col, row) to asset path.
-  /// Keys are `(x, y)` where x is column (0..4) and y is row (0..4).
-  final Map<(int, int), String>? objCellPaths;
-
-  /// For layered OBJ model groups: maps layer name to its cell grid.
-  /// Each layer contains the same 5x5 grid of OBJ cells.
-  final Map<String, Map<(int, int), String>>? objLayerCellPaths;
 
   /// Optional color override
   final Color? color;
@@ -119,12 +109,6 @@ enum AssetSourceType {
 
   /// Loaded from a Wavefront OBJ model file
   obj,
-
-  /// Loaded from a group of pre-sliced OBJ files (5x5 grid cells)
-  objGroup,
-
-  /// Loaded from a multi-layer group of pre-sliced OBJ files
-  objLayeredGroup,
 }
 
 /// Database of asset type definitions

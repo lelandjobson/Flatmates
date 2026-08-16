@@ -18,8 +18,8 @@ class ObjParser {
   ///
   /// When [center] is true (default), the geometry is auto-centered so X/Z
   /// are centered at the origin and Y starts at 0. Set to false when loading
-  /// pre-sliced OBJ cells that share a tile-local coordinate frame — the
-  /// caller is then responsible for centering the combined result.
+  /// meshes that share a world coordinate frame — the caller is then
+  /// responsible for centering the combined result.
   static Geometry parse({
     required String id,
     required String name,
@@ -116,6 +116,136 @@ class ObjParser {
 
     return ensureOutwardFacingGeometry(
       Geometry(id: id, name: name, vertices: vertices, faces: faces),
+    );
+  }
+
+  /// Parses named `o` / `g` groups into separate geometries.
+  ///
+  /// Vertices stay in a shared world frame ([center] is not applied). Groups
+  /// with no faces are omitted.
+  static Map<String, Geometry> parseGroups({
+    required String id,
+    required String source,
+  }) {
+    final vertices = <Vector3>[];
+    final vertexIndexRemap = <int>[];
+    final dedupeLookup = <_VectorKey, int>{};
+    final facesByGroup = <String, List<List<int>>>{};
+    var currentGroup = 'default';
+    final lines = source.split(RegExp(r'\r?\n'));
+
+    for (final rawLine in lines) {
+      var line = rawLine;
+      final commentIndex = line.indexOf('#');
+      if (commentIndex != -1) {
+        line = line.substring(0, commentIndex);
+      }
+      line = line.trim();
+      if (line.isEmpty) continue;
+
+      final tokens = line.split(RegExp(r'\s+'));
+      if (tokens.isEmpty) continue;
+      final prefix = tokens.first;
+
+      if (prefix == 'o' || prefix == 'g') {
+        currentGroup = tokens.length > 1 ? tokens.sublist(1).join(' ') : prefix;
+        facesByGroup.putIfAbsent(currentGroup, () => []);
+        continue;
+      }
+
+      if (prefix == 'v') {
+        if (tokens.length < 4) {
+          throw FormatException('Malformed vertex line: "$rawLine"');
+        }
+        final x = _parseDouble(tokens[1], rawLine);
+        final objY = _parseDouble(tokens[2], rawLine);
+        final objZ = _parseDouble(tokens[3], rawLine);
+        final y = objZ;
+        final z = objY;
+        final key = _VectorKey(x, y, z);
+        final existing = dedupeLookup[key];
+        if (existing != null) {
+          vertexIndexRemap.add(existing);
+        } else {
+          final index = vertices.length;
+          vertices.add(Vector3(x, y, z));
+          dedupeLookup[key] = index;
+          vertexIndexRemap.add(index);
+        }
+        continue;
+      }
+
+      if (prefix == 'f') {
+        if (tokens.length < 4) {
+          throw FormatException(
+            'Face must have at least three vertices: "$rawLine"',
+          );
+        }
+        final indices = <int>[];
+        for (var i = 1; i < tokens.length; i++) {
+          final element = tokens[i];
+          if (element.isEmpty) continue;
+          final vertexToken = element.split('/').first;
+          if (vertexToken.isEmpty) {
+            throw FormatException(
+              'Face vertex is missing an index: "$rawLine"',
+            );
+          }
+          indices.add(
+            _resolveObjIndex(
+              token: vertexToken,
+              remap: vertexIndexRemap,
+              line: rawLine,
+            ),
+          );
+        }
+        if (indices.length < 3) {
+          throw FormatException(
+            'Face must reference at least 3 vertices: "$rawLine"',
+          );
+        }
+        (facesByGroup[currentGroup] ??= []).add(indices);
+      }
+    }
+
+    if (vertices.isEmpty) {
+      throw const FormatException('OBJ source did not contain any vertices.');
+    }
+
+    final result = <String, Geometry>{};
+    for (final entry in facesByGroup.entries) {
+      if (entry.value.isEmpty) continue;
+      result[entry.key] = _geometryFromSharedVertices(
+        id: '${id}_${entry.key}',
+        name: entry.key,
+        vertices: vertices,
+        faces: entry.value,
+      );
+    }
+    return result;
+  }
+
+  static Geometry _geometryFromSharedVertices({
+    required String id,
+    required String name,
+    required List<Vector3> vertices,
+    required List<List<int>> faces,
+  }) {
+    final used = <int>{};
+    for (final face in faces) {
+      used.addAll(face);
+    }
+    final remap = <int, int>{};
+    final compactVerts = <Vector3>[];
+    for (final oldIndex in used.toList()..sort()) {
+      remap[oldIndex] = compactVerts.length;
+      compactVerts.add(vertices[oldIndex].clone());
+    }
+    final compactFaces = [
+      for (final face in faces) [for (final i in face) remap[i]!],
+    ];
+    return ensureOutwardFacingGeometry(
+      Geometry(id: id, name: name, vertices: compactVerts, faces: compactFaces),
     );
   }
 }

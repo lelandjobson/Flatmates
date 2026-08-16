@@ -88,13 +88,20 @@ CraftingBlueprint craftingBlueprintFromFoldedGeometry({
   nodes.sort((a, b) => a.id.compareTo(b.id));
 
   return CraftingBlueprint(
-    version: 7,
+    version: 9,
     craft: craft,
-    island: island,
-    originOffset: Offset.zero,
-    foldedOffset: Vector3.zero(),
-    unfoldedYDisplacement: 0,
-    transformTree: TransformTree(rootId: rootId, nodes: nodes),
+    stepIndex: island,
+    logicalIndex: island,
+    kind: BlueprintStepKind.parts,
+    islands: [
+      CraftingIsland(
+        index: 0,
+        originOffset: Offset.zero,
+        foldedOffset: Vector3.zero(),
+        unfoldedYDisplacement: 0,
+        transformTree: TransformTree(rootId: rootId, nodes: nodes),
+      ),
+    ],
     coordinateSpace: BlueprintCoordinateSpace.world,
     foldedGeometryId: foldedGeometryId ?? folded.id,
   );

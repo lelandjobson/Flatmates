@@ -33,13 +33,25 @@ class MovementTransform extends FoldingTransform {
     );
   }
 
-  static Matrix4 _parseMatrix4(List rows) {
+  /// Accepts v9 nested 4x4 row lists or a flat 16-float row-major array.
+  static Matrix4 _parseMatrix4(List values) {
     final m = Matrix4.zero();
-    for (var r = 0; r < 4; r++) {
-      final row = rows[r] as List;
-      for (var c = 0; c < 4; c++) {
-        m.setEntry(r, c, (row[c] as num).toDouble());
+    if (values.isNotEmpty && values.first is List) {
+      for (var r = 0; r < 4; r++) {
+        final row = values[r] as List;
+        for (var c = 0; c < 4; c++) {
+          m.setEntry(r, c, (row[c] as num).toDouble());
+        }
       }
+      return m;
+    }
+    if (values.length != 16) {
+      throw FormatException(
+        'Movement matrix must be 4x4 rows or 16 floats, got ${values.length}',
+      );
+    }
+    for (var i = 0; i < 16; i++) {
+      m.setEntry(i ~/ 4, i % 4, (values[i] as num).toDouble());
     }
     return m;
   }
@@ -109,6 +121,8 @@ class TransformTreeNode {
     required this.foldedVertices,
     required this.unfoldedVertices,
     required this.transform,
+    this.foldedHoles = const [],
+    this.unfoldedHoles = const [],
   });
 
   final int id;
@@ -118,6 +132,8 @@ class TransformTreeNode {
   final List<int> childIds;
   final List<Vector3> foldedVertices;
   final List<Vector3> unfoldedVertices;
+  final List<List<Vector3>> foldedHoles;
+  final List<List<Vector3>> unfoldedHoles;
   final FoldingTransform transform;
 
   /// The unfolded polygon projected to 2D (dropping Z, which is ~0).
@@ -130,17 +146,24 @@ class TransformTreeNode {
 
   factory TransformTreeNode.fromJson(Map<String, dynamic> json) {
     return TransformTreeNode(
-      id: json['id'] as int,
-      faceIndex: json['faceIndex'] as int,
-      layer: json['layer'] as String,
-      parentId: json['parentId'] as int?,
-      childIds: (json['childIds'] as List).cast<int>(),
-      foldedVertices: _parseVec3List(json['foldedVertices'] as List),
-      unfoldedVertices: _parseVec3List(json['unfoldedVertices'] as List),
+      id: (json['id'] as num).toInt(),
+      faceIndex: (json['faceIndex'] as num).toInt(),
+      layer: json['layer'] as String? ?? 'GEO',
+      parentId: (json['parentId'] as num?)?.toInt(),
+      childIds: _parseIntList(json['childIds'] as List? ?? const []),
+      foldedVertices: _parseVec3List(json['foldedVertices'] as List? ?? const []),
+      unfoldedVertices:
+          _parseVec3List(json['unfoldedVertices'] as List? ?? const []),
+      foldedHoles: _parseVec3ListList(json['foldedHoles'] as List? ?? const []),
+      unfoldedHoles:
+          _parseVec3ListList(json['unfoldedHoles'] as List? ?? const []),
       transform:
           FoldingTransform.fromJson(json['transform'] as Map<String, dynamic>),
     );
   }
+
+  static List<int> _parseIntList(List json) =>
+      json.map((v) => (v as num).toInt()).toList();
 
   static List<Vector3> _parseVec3List(List json) {
     return json.map((v) {
@@ -151,6 +174,10 @@ class TransformTreeNode {
         (l[2] as num).toDouble(),
       );
     }).toList();
+  }
+
+  static List<List<Vector3>> _parseVec3ListList(List json) {
+    return json.map((ring) => _parseVec3List(ring as List)).toList();
   }
 }
 
@@ -191,16 +218,14 @@ class TransformTree {
     final all = rootToLeafOrder();
     final visited = <int>{};
     final result = <TransformTreeNode>[];
-    final leaves =
-        all.where((n) => n.childIds.isEmpty).toList();
+    final leaves = all.where((n) => n.childIds.isEmpty).toList();
     final queue = Queue<TransformTreeNode>.from(leaves);
 
     while (queue.isNotEmpty) {
       final node = queue.removeFirst();
       if (visited.contains(node.id)) continue;
 
-      final allChildrenDone =
-          node.childIds.every((c) => visited.contains(c));
+      final allChildrenDone = node.childIds.every((c) => visited.contains(c));
       if (!allChildrenDone) {
         queue.add(node);
         continue;
@@ -234,85 +259,49 @@ class TransformTree {
   factory TransformTree.fromJson(Map<String, dynamic> json) {
     final nodesJson = json['nodes'] as List;
     return TransformTree(
-      rootId: json['rootId'] as int,
+      rootId: (json['rootId'] as num).toInt(),
       nodes: nodesJson
-          .map((n) =>
-              TransformTreeNode.fromJson(n as Map<String, dynamic>))
+          .map((n) => TransformTreeNode.fromJson(n as Map<String, dynamic>))
           .toList(),
     );
   }
 }
 
 // ---------------------------------------------------------------------------
-// Blueprint (top-level)
+// Blueprint (runtime fill target)
 // ---------------------------------------------------------------------------
 
 /// How unfolded vertex coordinates in a [CraftingBlueprint] are interpreted.
 enum BlueprintCoordinateSpace {
-  /// Default: values are craft-grid cells; multiply by minorGridSpacing.
-  grid,
-
   /// Values are already craft world units (same space as papers / 3D handoff).
   world,
+
+  /// Values are flatpipeline craft units, where 1 unit is one minor grid cell.
+  craftUnits,
 }
 
-class CraftingBlueprint {
-  const CraftingBlueprint({
-    required this.version,
-    required this.craft,
-    required this.island,
+enum BlueprintStepKind { parts, applique }
+
+class CraftingIsland {
+  const CraftingIsland({
+    required this.index,
     required this.originOffset,
     required this.foldedOffset,
     required this.unfoldedYDisplacement,
     required this.transformTree,
-    this.coordinateSpace = BlueprintCoordinateSpace.grid,
-    this.foldedGeometryId,
   });
 
-  final int version;
-
-  /// Craft name (original Rhino group name casing).
-  final String craft;
-
-  /// Zero-based island index within the craft.
-  final int island;
-
-  /// Bbox min of flat layout subtracted from all unfolded coordinates.
+  final int index;
   final Offset originOffset;
-
-  /// Negated pre-unfold translation for folded mesh positioning.
   final Vector3 foldedOffset;
-
-  /// Recommended Y displacement for visual separation during unfold.
   final double unfoldedYDisplacement;
-
   final TransformTree transformTree;
 
-  /// When [BlueprintCoordinateSpace.world], skip minor-grid scaling on load.
-  final BlueprintCoordinateSpace coordinateSpace;
-
-  /// Optional link back to a [FoldedGeometry.id] for 3D↔craft handoff.
-  final String? foldedGeometryId;
-
-  /// Display name combining craft and island (e.g. "Group03" or "Group03 #1").
-  String get displayName =>
-      island == 0 ? craft : '$craft #$island';
-
-  bool get isWorldSpace =>
-      coordinateSpace == BlueprintCoordinateSpace.world;
-
-  factory CraftingBlueprint.fromJson(Map<String, dynamic> json) {
-    final oo = json['origin_offset'] as List;
-    final fo = json['folded_offset'] as List? ?? [0, 0, 0];
-    final spaceRaw = json['coordinateSpace'] as String?;
-    final space = spaceRaw == 'world'
-        ? BlueprintCoordinateSpace.world
-        : BlueprintCoordinateSpace.grid;
-
-    return CraftingBlueprint(
-      version: json['version'] as int,
-      craft: json['craft'] as String,
-      island: json['island'] as int,
+  factory CraftingIsland.fromJson(Map<String, dynamic> json) {
+    final oo = json['origin_offset'] as List? ?? const [0, 0];
+    final fo = json['folded_offset'] as List? ?? const [0, 0, 0];
+    return CraftingIsland(
+      index: (json['island'] as num?)?.toInt() ?? 0,
       originOffset: Offset(
         (oo[0] as num).toDouble(),
         (oo[1] as num).toDouble(),
@@ -323,12 +312,128 @@ class CraftingBlueprint {
         (fo[2] as num).toDouble(),
       ),
       unfoldedYDisplacement:
-          (json['unfoldedYDisplacement'] as num).toDouble(),
+          (json['unfoldedYDisplacement'] as num?)?.toDouble() ?? 0,
       transformTree: TransformTree.fromJson(
-          json['transformTree'] as Map<String, dynamic>),
-      coordinateSpace: space,
-      foldedGeometryId: json['foldedGeometryId'] as String?,
+        json['transformTree'] as Map<String, dynamic>,
+      ),
     );
+  }
+}
+
+class CraftingBlueprint {
+  const CraftingBlueprint({
+    required this.version,
+    required this.craft,
+    required this.stepIndex,
+    required this.logicalIndex,
+    required this.kind,
+    required this.islands,
+    this.qLayer,
+    this.appliqueSurfaces = const [],
+    this.appliqueCurves = const [],
+    this.coordinateSpace = BlueprintCoordinateSpace.world,
+    this.foldedGeometryId,
+  });
+
+  final int version;
+  final String craft;
+
+  /// Index into the parent craft's `steps` array.
+  final int stepIndex;
+
+  /// Logical step number from the source layer (`index` in the manifest).
+  final int logicalIndex;
+
+  final BlueprintStepKind kind;
+  final int? qLayer;
+  final List<CraftingIsland> islands;
+
+  /// Applique surface outlines in absolute flat coordinates.
+  final List<List<Vector3>> appliqueSurfaces;
+
+  /// Applique boundary curves in absolute flat coordinates.
+  final List<List<Vector3>> appliqueCurves;
+
+  final BlueprintCoordinateSpace coordinateSpace;
+  final String? foldedGeometryId;
+
+  bool get isWorldSpace => coordinateSpace == BlueprintCoordinateSpace.world;
+
+  /// Multiplier taking this blueprint's coordinates into craft world units.
+  double worldScale(double minorGridSpacing) => switch (coordinateSpace) {
+        BlueprintCoordinateSpace.world => 1.0,
+        BlueprintCoordinateSpace.craftUnits => minorGridSpacing,
+      };
+
+  bool get isApplique => kind == BlueprintStepKind.applique;
+
+  String get fillKey => '$craft#$stepIndex#${kind.name}#${qLayer ?? -1}';
+
+  String get displayName => isApplique
+      ? '$craft step $logicalIndex applique ${(qLayer ?? 0) + 1}'
+      : (logicalIndex == 0 && stepIndex == 0 ? craft : '$craft step $logicalIndex');
+
+  /// First island tree — used by single-island runtime handoff (mixed-3D).
+  TransformTree get transformTree => islands.first.transformTree;
+
+  Offset get originOffset =>
+      islands.isEmpty ? Offset.zero : islands.first.originOffset;
+
+  Vector3 get foldedOffset =>
+      islands.isEmpty ? Vector3.zero() : islands.first.foldedOffset;
+
+  double get unfoldedYDisplacement =>
+      islands.isEmpty ? 0 : islands.first.unfoldedYDisplacement;
+
+  Iterable<TransformTreeNode> get allNodes =>
+      islands.expand((i) => i.transformTree.nodes);
+
+  /// Unfolded fill polygons, with each island's origin applied and coordinates
+  /// multiplied by [scale] (see [worldScale]).
+  List<List<Offset>> unfoldedFillPolygons({double scale = 1.0}) {
+    if (isApplique) {
+      return [
+        for (final ring in appliqueSurfaces)
+          if (ring.length >= 3)
+            [for (final v in ring) Offset(v.x * scale, v.y * scale)],
+      ];
+    }
+    return _islandPolygons(scale);
+  }
+
+  /// Part-fill polygons for overlaying under an applique step (same layout).
+  List<List<Offset>> partOverlayPolygons({double scale = 1.0}) =>
+      _islandPolygons(scale);
+
+  List<List<Offset>> _islandPolygons(double scale) {
+    final out = <List<Offset>>[];
+    for (final island in islands) {
+      for (final node in island.transformTree.nodes) {
+        final verts = node.unfoldedPolygon2D;
+        if (verts.length < 3) continue;
+        out.add([
+          for (final v in verts)
+            Offset(
+              (v.dx + island.originOffset.dx) * scale,
+              (v.dy + island.originOffset.dy) * scale,
+            ),
+        ]);
+      }
+    }
+    return out;
+  }
+
+  List<String> fillPolygonLayers() {
+    if (isApplique) {
+      return List.filled(appliqueSurfaces.where((r) => r.length >= 3).length, 'applique');
+    }
+    final layers = <String>[];
+    for (final island in islands) {
+      for (final node in island.transformTree.nodes) {
+        if (node.unfoldedPolygon2D.length >= 3) layers.add(node.layer);
+      }
+    }
+    return layers;
   }
 }
 
@@ -345,8 +450,11 @@ Matrix4 lerpMatrix4(Matrix4 a, Matrix4 b, double t) {
   final result = Matrix4.zero();
   for (var i = 0; i < 4; i++) {
     for (var j = 0; j < 4; j++) {
-      result.setEntry(i, j,
-          a.entry(i, j) + (b.entry(i, j) - a.entry(i, j)) * t);
+      result.setEntry(
+        i,
+        j,
+        a.entry(i, j) + (b.entry(i, j) - a.entry(i, j)) * t,
+      );
     }
   }
   return result;

@@ -1,16 +1,15 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:vector_math/vector_math_64.dart' hide Colors;
 
 import '../crafting/crafting_blueprint.dart';
 import '../crafting/crafting_history.dart';
 import '../crafting/crafting_material.dart';
+import '../crafting/craft_manifest.dart';
 import '../crafting/blueprint_set.dart';
 import '../crafting/placed_paper.dart';
 import '../data/crafting_state.dart';
@@ -345,13 +344,23 @@ enum CompletionPhase { none, dissolveReveal, fold, done }
 class _FoldNodeState {
   _FoldNodeState({
     required this.nodeId,
+    required this.localId,
+    required this.islandIndex,
     required this.node,
+    required this.tree,
     required this.unfoldedVertices3D,
+    required this.originOffset,
+    required this.foldedOffset,
   });
 
   final int nodeId;
+  final int localId;
+  final int islandIndex;
   final TransformTreeNode node;
+  final TransformTree tree;
   final List<Vector3> unfoldedVertices3D;
+  final Vector3 originOffset;
+  final Vector3 foldedOffset;
   Matrix4 cumulativeMatrix = Matrix4.identity();
 }
 
@@ -638,9 +647,7 @@ class CraftingTestViewState extends State<CraftingTestView>
   double _camRotFrom = 0;
   double _camRotTo = 0;
   bool _cameraIntroHighlight = false;
-
-  /// Group intro requested before the first layout pass had a real viewport.
-  bool _pendingGroupIntro = false;
+  bool _pendingCameraFit = false;
 
   // Check mode & locking
   bool _checkMode = true;
@@ -1207,37 +1214,26 @@ class CraftingTestViewState extends State<CraftingTestView>
   // ---------------------------------------------------------------------------
 
   Future<void> _loadBlueprints() async {
-    final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
-    final paths = manifest
-        .listAssets()
-        .where(
-          (p) =>
-              p.startsWith('assets/crafting_blueprints/') &&
-              p.endsWith('.json') &&
-              !p.endsWith('/group.json'),
-        )
-        .toList();
-
+    final manifests = await CraftManifest.loadAll();
     final loaded = <CraftingBlueprint>[];
-    for (final path in paths) {
-      try {
-        final jsonStr = await rootBundle.loadString(path);
-        final json = jsonDecode(jsonStr) as Map<String, dynamic>;
-        loaded.add(CraftingBlueprint.fromJson(json));
-      } catch (_) {
-        // Skip malformed files.
-      }
+    final sets = <BlueprintSet>[];
+    for (final manifest in manifests) {
+      loaded.addAll(manifest.toFillBlueprints());
+      sets.add(manifest.toBlueprintSet());
     }
-    final groupDefs = await BlueprintGroupDef.loadAll();
     if (mounted) {
       setState(() {
         _blueprints = loaded;
-        _blueprintSets = _buildBlueprintSets(loaded, groupDefs);
+        _blueprintSets = sets;
       });
-      // Only auto-select when the host asked for an initial set/blueprint.
       final wanted = widget.initialBlueprintSet ?? widget.defaultBlueprintName;
       if (wanted != null && _selectedSet == null && _selectedBlueprint == null) {
         _selectInitialBlueprint(wanted);
+      } else if (wanted == null &&
+          sets.length == 1 &&
+          _selectedSet == null &&
+          _selectedBlueprint == null) {
+        _selectBlueprintSet(sets.first);
       }
     }
   }
@@ -1259,39 +1255,22 @@ class CraftingTestViewState extends State<CraftingTestView>
         _blueprints.where((b) => b.craft.toLowerCase() == key).firstOrNull;
     if (bpMatch != null) {
       _selectBlueprint(bpMatch);
+      return;
     }
-  }
 
-  List<BlueprintSet> _buildBlueprintSets(
-    List<CraftingBlueprint> blueprints,
-    List<BlueprintGroupDef> groupDefs,
-  ) {
-    final sets = <BlueprintSet>[];
-    final groupedCrafts = <String>{};
-
-    for (final def in groupDefs) {
-      final set = def.toBlueprintSet(
-        blueprints,
-        minorGridSpacing: _minorGridSpacing,
+    // house_foo (or whatever was requested) is the only bundled craft.
+    if (_blueprintSets.isNotEmpty) {
+      debugPrint(
+        '[craft] initial set "$wanted" not found; using ${_blueprintSets.first.name}',
       );
-      if (set == null) continue;
-      sets.add(set);
-      groupedCrafts.add(def.craftFolder.toLowerCase());
+      _selectBlueprintSet(_blueprintSets.first);
+    } else {
+      debugPrint('[craft] no blueprint sets loaded; cannot select "$wanted"');
     }
-
-    // Islands not covered by a group.json remain selectable as single-step sets.
-    for (final bp in blueprints) {
-      if (groupedCrafts.contains(bp.craft.toLowerCase())) continue;
-      sets.add(BlueprintSet.single(bp));
-    }
-
-    return sets;
   }
 
   CraftingBlueprint? _findBlueprintForStep(BlueprintStep step) {
-    return _blueprints
-        .where((b) => b.craft == step.craft && b.island == step.island)
-        .firstOrNull;
+    return _blueprints.where((b) => b.fillKey == step.fillKey).firstOrNull;
   }
 
   void _selectBlueprintSet(BlueprintSet? set) {
@@ -1318,48 +1297,48 @@ class CraftingTestViewState extends State<CraftingTestView>
     });
 
     final bp = _findBlueprintForStep(set.steps[0]);
-    if (set.isGroup) {
-      _selectBlueprint(bp, playGroupIntro: true);
-    } else {
-      _selectBlueprint(bp);
-    }
+    _selectBlueprint(bp);
+  }
+
+  bool _sameAssemblyCanvas(BlueprintStep? a, BlueprintStep? b) {
+    if (a == null || b == null) return false;
+    return a.craft == b.craft && a.stepIndex == b.stepIndex;
   }
 
   void _advanceToNextStep() {
     if (_selectedSet == null) return;
     if (_stepAdvanceInProgress) {
       debugPrint(
-        '[craft-group] advance ignored (already in progress) '
+        '[craft-step] advance ignored (already in progress) '
         'step=$_currentStepIndex completed=$_completedStepIndices',
       );
       return;
     }
     final nextIndex = _currentStepIndex + 1;
     if (nextIndex >= _selectedSet!.steps.length) return;
-    final isGroup = _selectedSet!.isGroup;
     final fromStep = _currentStepIndex;
+    final fromNav = _selectedSet!.steps[fromStep];
+    final toNav = _selectedSet!.steps[nextIndex];
+    final keepCanvas = _sameAssemblyCanvas(fromNav, toNav);
 
     debugPrint(
-      '[craft-group] advance $fromStep → $nextIndex '
-      '(group=$isGroup, filled=${_filledBlueprintIndices.length}, '
+      '[craft-step] advance $fromStep → $nextIndex '
+      '(keepCanvas=$keepCanvas, filled=${_filledBlueprintIndices.length}, '
       'lockedArea=$_blueprintLockedArea/$_blueprintTotalArea)',
     );
 
     _stepAdvanceInProgress = true;
     setState(() {
       _completedStepIndices.add(fromStep);
-      // Commit matched papers so later steps can't rematch or clear them.
       for (final paper in _placedPapers) {
         if (paper.lockedBlueprintIndex != null) {
           paper.locked = true;
         }
       }
-      // Invalidate completion immediately so visibility/check can't re-fire
-      // advance while we wait for the card transition.
       _filledBlueprintIndices = {};
       _blueprintLockedArea = 0;
       _blueprintTotalArea = 0;
-      if (!isGroup) {
+      if (!keepCanvas) {
         _placedPapers.clear();
         _blueprintWorldPolygons = [];
         _blueprintUnionPolygons = [];
@@ -1383,7 +1362,7 @@ class CraftingTestViewState extends State<CraftingTestView>
         return;
       }
       debugPrint(
-        '[craft-group] loading step $nextIndex '
+        '[craft-step] loading step $nextIndex '
         '(papers=${_placedPapers.length}, '
         'locked=${_placedPapers.where((p) => p.locked).length})',
       );
@@ -1398,10 +1377,10 @@ class CraftingTestViewState extends State<CraftingTestView>
         }
       });
       final bp = _findBlueprintForStep(_selectedSet!.steps[nextIndex]);
-      _selectBlueprint(bp, animateCameraToStep: isGroup);
+      _selectBlueprint(bp, animateCameraToStep: true, keepCanvas: keepCanvas);
       _stepAdvanceInProgress = false;
       debugPrint(
-        '[craft-group] now on step $_currentStepIndex '
+        '[craft-step] now on step $_currentStepIndex '
         'completed=$_completedStepIndices '
         'activePolys=${_blueprintWorldPolygons.length} '
         'totalArea=$_blueprintTotalArea',
@@ -1426,17 +1405,12 @@ class CraftingTestViewState extends State<CraftingTestView>
     // Replace any prior craft/island entry so asset JSON cannot shadow a
     // world-space handoff blueprint of the same name.
     _blueprints = [
-      ..._blueprints.where(
-        (b) => !(b.craft == blueprint.craft && b.island == blueprint.island),
-      ),
+      ..._blueprints.where((b) => b.fillKey != blueprint.fillKey),
       blueprint,
     ];
     _blueprintSets = [
       ..._blueprintSets.where(
-        (s) => !s.steps.any(
-          (st) =>
-              st.craft == blueprint.craft && st.island == blueprint.island,
-        ),
+        (s) => !s.steps.any((st) => st.fillKey == blueprint.fillKey),
       ),
       BlueprintSet.single(blueprint),
     ];
@@ -1463,16 +1437,11 @@ class CraftingTestViewState extends State<CraftingTestView>
 
   void _selectBlueprint(
     CraftingBlueprint? blueprint, {
-    bool playGroupIntro = false,
     bool animateCameraToStep = false,
+    bool keepCanvas = false,
   }) {
-    final stayingInGroup =
-        (_selectedSet?.isGroup ?? false) &&
-        (playGroupIntro || animateCameraToStep);
-
     setState(() {
-      // Save locked papers for the outgoing blueprint (non-group switches).
-      if (_selectedBlueprint != null && !stayingInGroup) {
+      if (_selectedBlueprint != null && !keepCanvas) {
         final outKey = _progressKey(_selectedBlueprint!);
         final locked = _placedPapers
             .where((p) => p.locked && p.lockedBlueprintIndex != null)
@@ -1518,47 +1487,8 @@ class CraftingTestViewState extends State<CraftingTestView>
         return;
       }
 
-      final useGroupLayout = _selectedSet?.isGroup == true;
-      final activeStep =
-          useGroupLayout &&
-              _currentStepIndex < (_selectedSet?.steps.length ?? 0)
-          ? _selectedSet!.steps[_currentStepIndex]
-          : null;
-      final layoutOffset = activeStep?.layoutOffset ?? Offset.zero;
-      final layoutRotationDeg = activeStep?.layoutRotationDeg ?? 0.0;
+      final allScaled = _scaleBlueprintPolygons(blueprint);
 
-      late final double nudgeX, nudgeY, cx, cy;
-      final List<List<Offset>> allScaled;
-      if (blueprint.isWorldSpace) {
-        // 3D handoff: polygons already sit in craft world space — do not
-        // re-center or snap (would break the seamless outline transfer).
-        nudgeX = 0;
-        nudgeY = 0;
-        cx = 0;
-        cy = 0;
-        allScaled = _scaleBlueprintPolygons(blueprint, 0, 0, 0, 0);
-      } else if (useGroupLayout) {
-        // Group layout offsets already place islands; no extra centering.
-        nudgeX = layoutOffset.dx;
-        nudgeY = layoutOffset.dy;
-        cx = 0;
-        cy = 0;
-        allScaled = _scaleBlueprintPolygons(
-          blueprint,
-          nudgeX,
-          nudgeY,
-          cx,
-          cy,
-          rotationDeg: layoutRotationDeg,
-        );
-      } else {
-        final offset = _computeBlueprintOffset(blueprint);
-        if (offset == null) return;
-        (nudgeX, nudgeY, cx, cy) = offset;
-        allScaled = _scaleBlueprintPolygons(blueprint, nudgeX, nudgeY, cx, cy);
-      }
-
-      // Reset completion state (animations disabled).
       _completionPhase = CompletionPhase.none;
       _craftExecuteButtonVisible = false;
       _craftButtonAnimController.reset();
@@ -1571,16 +1501,11 @@ class CraftingTestViewState extends State<CraftingTestView>
       _foldSchedule = [];
 
       _polyIndexToRegion = {};
-      var polyI = 0;
-      for (final node in blueprint.transformTree.nodes) {
-        if (node.unfoldedPolygon2D.length >= 3) {
-          _polyIndexToRegion[polyI] = node.layer;
-          polyI++;
-        }
+      final layers = blueprint.fillPolygonLayers();
+      for (var i = 0; i < layers.length && i < allScaled.length; i++) {
+        _polyIndexToRegion[i] = layers[i];
       }
       _blueprintWorldPolygons = allScaled;
-      // Place the grid from the dominant-edge frame up front (same math the
-      // Align Grid tool uses) so the backdrop is correct on first paint.
       final gridFrame = _computeDominantGridFrame(allScaled);
       if (gridFrame != null) {
         _gridOriginOffset = gridFrame.anchor;
@@ -1595,13 +1520,10 @@ class CraftingTestViewState extends State<CraftingTestView>
         _blueprintTotalArea += _polyArea(poly).abs();
       }
 
-      _blueprintUnionPolygons = useGroupLayout
-          ? allScaled
-          : _computeUnionPolygons(blueprint, cx, cy, nudgeX, nudgeY);
+      _blueprintUnionPolygons = allScaled;
       _filledBlueprintIndices = {};
 
-      // Restore locked papers only when not staying in a live group session.
-      if (!stayingInGroup) {
+      if (!keepCanvas) {
         final saved = _blueprintProgress[_progressKey(blueprint)];
         if (saved != null) {
           for (final snap in saved) {
@@ -1615,104 +1537,41 @@ class CraftingTestViewState extends State<CraftingTestView>
           }
         }
       } else if (animateCameraToStep) {
-        // Re-derive filled indices from papers already locked to this step's polys.
-        // Papers keep global positions; fill state starts fresh for the new active step.
         _filledBlueprintIndices = {};
         _blueprintLockedArea = 0;
       }
 
-      if (useGroupLayout) {
-        _rebuildGroupOverlays();
-      } else {
-        _groupOverlayPolygons = [];
-        _groupOverlayColors = [];
-        _activeHighlightT = 1.0;
-        _activeGlow = 0.0;
-      }
+      _rebuildStepOverlays();
 
-      if (!playGroupIntro &&
-          !animateCameraToStep &&
+      if (!animateCameraToStep &&
           allScaled.isNotEmpty &&
-          !blueprint.isWorldSpace) {
-        final cam = _cameraForPolygons(allScaled);
-        _orthoScale = cam.ortho;
-        _panOffset = cam.pan;
-        _viewRotation = cam.rotation;
+          blueprint.foldedGeometryId == null) {
+        if (_viewportSize.width < 1 || _viewportSize.height < 1) {
+          _pendingCameraFit = true;
+        } else {
+          final cam = _cameraForPolygons(allScaled);
+          _orthoScale = cam.ortho;
+          _panOffset = cam.pan;
+          _viewRotation = cam.rotation;
+        }
       }
     });
 
-    if (playGroupIntro && _selectedSet?.isGroup == true) {
-      _startGroupIntroCamera();
-    } else if (animateCameraToStep && _selectedSet?.isGroup == true) {
-      if (_blueprintWorldPolygons.isNotEmpty) {
-        final cam = _cameraForPolygons(_blueprintWorldPolygons);
-        _animateCameraTo(cam.pan, cam.ortho, rotation: cam.rotation);
-      }
+    if (animateCameraToStep && _blueprintWorldPolygons.isNotEmpty) {
+      final cam = _cameraForPolygons(_blueprintWorldPolygons);
+      _animateCameraTo(cam.pan, cam.ortho, rotation: cam.rotation);
     }
 
     _scheduleCheck();
     _scheduleGridLodSync();
   }
 
-  String _progressKey(CraftingBlueprint bp) => '${bp.craft}#${bp.island}';
+  String _progressKey(CraftingBlueprint bp) => bp.fillKey;
 
-  List<List<Offset>> _scaleBlueprintPolygons(
-    CraftingBlueprint blueprint,
-    double nudgeX,
-    double nudgeY,
-    double cx,
-    double cy, {
-    double rotationDeg = 0,
-  }) {
-    final scaled = <List<Offset>>[];
-    final unit = blueprint.isWorldSpace ? 1.0 : _minorGridSpacing;
-    for (final node in blueprint.transformTree.nodes) {
-      final verts = node.unfoldedPolygon2D;
-      if (verts.length < 3) continue;
-      scaled.add(
-        verts
-            .map(
-              (v) => Offset(
-                v.dx * unit - cx,
-                v.dy * unit - cy,
-              ),
-            )
-            .toList(),
-      );
-    }
-    if (scaled.isEmpty) return scaled;
-
-    List<List<Offset>> oriented = scaled;
-    if (rotationDeg != 0) {
-      var sx = 0.0, sy = 0.0, n = 0;
-      for (final poly in scaled) {
-        for (final p in poly) {
-          sx += p.dx;
-          sy += p.dy;
-          n++;
-        }
-      }
-      final ox = sx / n;
-      final oy = sy / n;
-      final rad = rotationDeg * math.pi / 180;
-      final c = math.cos(rad);
-      final s = math.sin(rad);
-      oriented = [
-        for (final poly in scaled)
-          [
-            for (final p in poly)
-              Offset(
-                ox + (p.dx - ox) * c - (p.dy - oy) * s,
-                oy + (p.dx - ox) * s + (p.dy - oy) * c,
-              ),
-          ],
-      ];
-    }
-
-    return [
-      for (final poly in oriented)
-        [for (final p in poly) Offset(p.dx + nudgeX, p.dy + nudgeY)],
-    ];
+  List<List<Offset>> _scaleBlueprintPolygons(CraftingBlueprint blueprint) {
+    return blueprint.unfoldedFillPolygons(
+      scale: blueprint.worldScale(_minorGridSpacing),
+    );
   }
 
   Rect? _boundsOfPolygons(List<List<Offset>> polygons) {
@@ -1800,90 +1659,23 @@ class CraftingTestViewState extends State<CraftingTestView>
     ], padding: padding);
   }
 
-  void _rebuildGroupOverlays() {
-    final set = _selectedSet;
+  void _rebuildStepOverlays() {
     _groupOverlayPolygons = [];
     _groupOverlayColors = [];
-    if (set == null || !set.isGroup) return;
-
-    for (var step = 0; step < set.steps.length; step++) {
-      if (step == _currentStepIndex) continue;
-      final bp = _findBlueprintForStep(set.steps[step]);
-      if (bp == null) continue;
-      final offset = set.steps[step].layoutOffset;
-      final polys = _scaleBlueprintPolygons(
-        bp,
-        offset.dx,
-        offset.dy,
-        0,
-        0,
-        rotationDeg: set.steps[step].layoutRotationDeg,
-      );
-      final color = _completedStepIndices.contains(step)
-          ? Colors.greenAccent.withValues(alpha: 0.7)
-          : Colors.white.withValues(alpha: 0.22);
-      for (final poly in polys) {
-        _groupOverlayPolygons.add(poly);
-        _groupOverlayColors.add(color);
-      }
-    }
-  }
-
-  void _startGroupIntroCamera() {
-    final set = _selectedSet;
-    if (set == null || !set.isGroup) return;
-
-    // Need a real viewport to fit portrait/landscape correctly.
-    if (_viewportSize.width < 1 || _viewportSize.height < 1) {
-      _pendingGroupIntro = true;
+    final bp = _selectedBlueprint;
+    if (bp == null || !bp.isApplique) {
+      _activeHighlightT = 1.0;
+      _activeGlow = 0.0;
       return;
     }
-    _pendingGroupIntro = false;
-
-    // Overview bounds across every component.
-    final allPolys = <List<Offset>>[];
-    for (var step = 0; step < set.steps.length; step++) {
-      final bp = _findBlueprintForStep(set.steps[step]);
-      if (bp == null) continue;
-      final offset = set.steps[step].layoutOffset;
-      allPolys.addAll(
-        _scaleBlueprintPolygons(
-          bp,
-          offset.dx,
-          offset.dy,
-          0,
-          0,
-          rotationDeg: set.steps[step].layoutRotationDeg,
-        ),
-      );
+    const overlay = Color(0xFFFF88CC);
+    final scale = bp.worldScale(_minorGridSpacing);
+    for (final poly in bp.partOverlayPolygons(scale: scale)) {
+      _groupOverlayPolygons.add(poly);
+      _groupOverlayColors.add(overlay.withValues(alpha: 0.18));
     }
-    final overview = _boundsOfPolygons(allPolys);
-    final first = _boundsOfPolygons(_blueprintWorldPolygons);
-    if (overview == null || first == null) return;
-
-    final overviewCam = _cameraForPolygons(allPolys, padding: 0.85);
-    final firstCam = _cameraForPolygons(_blueprintWorldPolygons, padding: 0.7);
-
-    // Hold the full-group overview briefly before zooming in.
-    setState(() {
-      _panOffset = overviewCam.pan;
-      _orthoScale = overviewCam.ortho;
-      _viewRotation = overviewCam.rotation;
-      _activeHighlightT = 0;
-      _activeGlow = 0;
-    });
-
-    Future.delayed(const Duration(seconds: 2), () {
-      if (!mounted) return;
-      if (_selectedSet != set) return;
-      _animateCameraTo(
-        firstCam.pan,
-        firstCam.ortho,
-        rotation: firstCam.rotation,
-        introHighlight: true,
-        duration: const Duration(milliseconds: 1400),
-      );
-    });
+    _activeHighlightT = 1.0;
+    _activeGlow = 0.0;
   }
 
   void _animateCameraTo(
@@ -1934,110 +1726,6 @@ class CraftingTestViewState extends State<CraftingTestView>
       }
     });
     _scheduleGridLodSync();
-  }
-
-  /// Computes the centering/snap offset from the unfolded polygon bounding box.
-  /// Returns (nudgeX, nudgeY, cx, cy) or null if there's no geometry.
-  (double, double, double, double)? _computeBlueprintOffset(
-    CraftingBlueprint blueprint,
-  ) {
-    final allScaled = <List<Offset>>[];
-    for (final node in blueprint.transformTree.nodes) {
-      final verts = node.unfoldedPolygon2D;
-      if (verts.length >= 3) {
-        allScaled.add(
-          verts
-              .map(
-                (v) => Offset(
-                  v.dx * (blueprint.isWorldSpace ? 1.0 : _minorGridSpacing),
-                  v.dy * (blueprint.isWorldSpace ? 1.0 : _minorGridSpacing),
-                ),
-              )
-              .toList(),
-        );
-      }
-    }
-    if (allScaled.isEmpty) return null;
-
-    // Use the root node's polygon for centering when available, otherwise all.
-    final root = blueprint.transformTree.root;
-    final rootVerts = root.unfoldedPolygon2D;
-    final unit = blueprint.isWorldSpace ? 1.0 : _minorGridSpacing;
-    final anchorPolygons = rootVerts.length >= 3
-        ? [
-            rootVerts
-                .map(
-                  (v) => Offset(
-                    v.dx * unit,
-                    v.dy * unit,
-                  ),
-                )
-                .toList(),
-          ]
-        : allScaled;
-
-    var minX = double.infinity, minY = double.infinity;
-    var maxX = -double.infinity, maxY = -double.infinity;
-    for (final poly in anchorPolygons) {
-      for (final v in poly) {
-        minX = math.min(minX, v.dx);
-        minY = math.min(minY, v.dy);
-        maxX = math.max(maxX, v.dx);
-        maxY = math.max(maxY, v.dy);
-      }
-    }
-
-    final cx = (minX + maxX) / 2;
-    final cy = (minY + maxY) / 2;
-    final newMinX = minX - cx;
-    final newMinY = minY - cy;
-    final snappedX = (newMinX / _minorGridSpacing).round() * _minorGridSpacing;
-    final snappedY = (newMinY / _minorGridSpacing).round() * _minorGridSpacing;
-
-    return (snappedX - newMinX, snappedY - newMinY, cx, cy);
-  }
-
-  /// Computes the union of polygons per layer, then concatenates all results.
-  List<List<Offset>> _computeUnionPolygons(
-    CraftingBlueprint blueprint,
-    double cx,
-    double cy,
-    double nudgeX,
-    double nudgeY,
-  ) {
-    final perLayer = _computePerLayerUnions(blueprint, cx, cy, nudgeX, nudgeY);
-    return perLayer.values.expand((polys) => polys).toList();
-  }
-
-  /// Builds per-layer union polygons keyed by layer name.
-  Map<String, List<List<Offset>>> _computePerLayerUnions(
-    CraftingBlueprint blueprint,
-    double cx,
-    double cy,
-    double nudgeX,
-    double nudgeY,
-  ) {
-    final byLayer = <String, List<List<Offset>>>{};
-    final unit = blueprint.isWorldSpace ? 1.0 : _minorGridSpacing;
-    for (final node in blueprint.transformTree.nodes) {
-      final verts = node.unfoldedPolygon2D;
-      if (verts.length < 3) continue;
-      (byLayer[node.layer] ??= []).add(
-        verts
-            .map(
-              (v) => Offset(
-                v.dx * unit - cx + nudgeX,
-                v.dy * unit - cy + nudgeY,
-              ),
-            )
-            .toList(),
-      );
-    }
-    final result = <String, List<List<Offset>>>{};
-    for (final entry in byLayer.entries) {
-      result[entry.key] = unionPolygons(entry.value);
-    }
-    return result;
   }
 
   // ---------------------------------------------------------------------------
@@ -2340,52 +2028,70 @@ class CraftingTestViewState extends State<CraftingTestView>
   void _buildFoldGeometry() {
     if (_selectedBlueprint == null) return;
     final bp = _selectedBlueprint!;
-    final tree = bp.transformTree;
+    const stride = 100000;
 
-    // Create a _FoldNodeState for every node using raw 3D vertices.
     _foldNodeStates = {};
-    for (final node in tree.nodes) {
-      _foldNodeStates[node.id] = _FoldNodeState(
-        nodeId: node.id,
-        node: node,
-        unfoldedVertices3D: node.unfoldedVertices
-            .map((v) => v.clone())
-            .toList(),
+    _foldSchedule = [];
+    final scheduled = <TransformTreeNode>[];
+
+    for (var i = 0; i < bp.islands.length; i++) {
+      final island = bp.islands[i];
+      final tree = island.transformTree;
+      final origin = Vector3(
+        island.originOffset.dx,
+        island.originOffset.dy + island.unfoldedYDisplacement,
+        0,
       );
+      for (final node in tree.nodes) {
+        final id = i * stride + node.id;
+        _foldNodeStates[id] = _FoldNodeState(
+          nodeId: id,
+          localId: node.id,
+          islandIndex: i,
+          node: node,
+          tree: tree,
+          unfoldedVertices3D: node.unfoldedVertices.map((v) => v.clone()).toList(),
+          originOffset: origin,
+          foldedOffset: island.foldedOffset.clone(),
+        );
+      }
+      scheduled.addAll(tree.leafToRootOrder());
     }
 
-    // Build the leaf-to-root staggered schedule with overlapping windows.
-    final leafToRoot = tree.leafToRootOrder();
-    _foldSchedule = [];
-    final count = leafToRoot.length;
+    final count = scheduled.length;
     if (count > 0) {
       const overlap = 0.7;
       final slotDuration = count > 1
           ? 1.0 / (1.0 + (count - 1) * (1.0 - overlap))
           : 1.0;
-      for (var i = 0; i < count; i++) {
-        final startT = i * slotDuration * (1.0 - overlap);
-        final endT = (startT + slotDuration).clamp(0.0, 1.0);
-        _foldSchedule.add((leafToRoot[i].id, startT, endT));
+      var i = 0;
+      for (var islandI = 0; islandI < bp.islands.length; islandI++) {
+        for (final node in bp.islands[islandI].transformTree.leafToRootOrder()) {
+          final startT = i * slotDuration * (1.0 - overlap);
+          final endT = (startT + slotDuration).clamp(0.0, 1.0);
+          _foldSchedule.add((islandI * stride + node.id, startT, endT));
+          i++;
+        }
       }
     }
 
-    // Store blueprint offsets for displacement interpolation.
-    _foldOriginOffset = Vector3(
-      bp.originOffset.dx,
-      bp.originOffset.dy + bp.unfoldedYDisplacement,
-      0,
-    );
-    _foldFoldedOffset = bp.foldedOffset.clone();
+    _foldOriginOffset = bp.islands.isEmpty
+        ? Vector3.zero()
+        : Vector3(
+            bp.originOffset.dx,
+            bp.originOffset.dy + bp.unfoldedYDisplacement,
+            0,
+          );
+    _foldFoldedOffset =
+        bp.islands.isEmpty ? Vector3.zero() : bp.foldedOffset.clone();
     _foldDisplacementMatrix = Matrix4.identity();
 
-    // Compute raw-space centroid and ortho scale for the orbit camera.
     double rMinX = double.infinity, rMinY = double.infinity;
     double rMaxX = double.negativeInfinity, rMaxY = double.negativeInfinity;
-    for (final node in tree.nodes) {
-      for (final v in node.unfoldedVertices) {
-        final wx = v.x + _foldOriginOffset.x;
-        final wy = v.y + _foldOriginOffset.y;
+    for (final state in _foldNodeStates.values) {
+      for (final v in state.unfoldedVertices3D) {
+        final wx = v.x + state.originOffset.x;
+        final wy = v.y + state.originOffset.y;
         rMinX = math.min(rMinX, wx);
         rMinY = math.min(rMinY, wy);
         rMaxX = math.max(rMaxX, wx);
@@ -2404,17 +2110,12 @@ class CraftingTestViewState extends State<CraftingTestView>
 
   void _updateFoldAnimation(double globalT) {
     if (_foldNodeStates.isEmpty) return;
-    final bp = _selectedBlueprint;
-    if (bp == null) return;
-    final tree = bp.transformTree;
 
-    // Reset all cumulative matrices to identity.
     for (final state in _foldNodeStates.values) {
       state.cumulativeMatrix = Matrix4.identity();
     }
 
-    // Walk the schedule (leaf-to-root). For each node, compute the step
-    // matrix and multiply it into the node AND all its descendants.
+    const stride = 100000;
     for (final (nodeId, startT, endT) in _foldSchedule) {
       final state = _foldNodeStates[nodeId];
       if (state == null) continue;
@@ -2436,8 +2137,11 @@ class CraftingTestViewState extends State<CraftingTestView>
         continue;
       }
 
-      // Apply stepMatrix to this node and all descendants.
-      final affected = <int>{nodeId, ...tree.descendants(nodeId)};
+      final affected = <int>{
+        nodeId,
+        for (final d in state.tree.descendants(state.localId))
+          state.islandIndex * stride + d,
+      };
       for (final id in affected) {
         final s = _foldNodeStates[id];
         if (s != null) {
@@ -2446,10 +2150,18 @@ class CraftingTestViewState extends State<CraftingTestView>
       }
     }
 
-    // Compute island displacement: lerp from unfolded origin to folded offset.
-    final dispPos =
-        _foldOriginOffset + (_foldFoldedOffset - _foldOriginOffset) * globalT;
-    _foldDisplacementMatrix = Matrix4.identity()..setTranslation(dispPos);
+    for (final state in _foldNodeStates.values) {
+      final dispPos = state.originOffset +
+          (state.foldedOffset - state.originOffset) * globalT;
+      final disp = Matrix4.identity()..setTranslation(dispPos);
+      state.cumulativeMatrix = disp * state.cumulativeMatrix;
+    }
+    _foldDisplacementMatrix = Matrix4.identity();
+    if (_foldNodeStates.isNotEmpty) {
+      final first = _foldNodeStates.values.first;
+      _foldOriginOffset = first.originOffset;
+      _foldFoldedOffset = first.foldedOffset;
+    }
   }
 
   /// View-projection for the fold. The camera does NOT orbit: it stays at a
@@ -5007,12 +4719,21 @@ class CraftingTestViewState extends State<CraftingTestView>
         final hadViewport = _viewportSize.width > 1 && _viewportSize.height > 1;
         _viewportSize = viewportSize;
         _scheduleGridLodSync();
-        if (_pendingGroupIntro &&
+        if (_pendingCameraFit &&
             !hadViewport &&
             viewportSize.width > 1 &&
-            viewportSize.height > 1) {
+            viewportSize.height > 1 &&
+            _blueprintWorldPolygons.isNotEmpty) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted && _pendingGroupIntro) _startGroupIntroCamera();
+            if (!mounted || !_pendingCameraFit) return;
+            if (_blueprintWorldPolygons.isEmpty) return;
+            _pendingCameraFit = false;
+            final cam = _cameraForPolygons(_blueprintWorldPolygons);
+            setState(() {
+              _orthoScale = cam.ortho;
+              _panOffset = cam.pan;
+              _viewRotation = cam.rotation;
+            });
           });
         }
         return Stack(

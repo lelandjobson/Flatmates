@@ -34,9 +34,7 @@ class CompletedCraft {
       (isoSprites != null && isoSprites!.isNotEmpty) ||
       (vectorSprites != null && vectorSprites!.isNotEmpty);
 
-  /// Asset type id of the OBJ model group that represents this craft in the
-  /// world (e.g. blueprint "Group01" -> "obj_group01"). The OBJ model group is
-  /// a 5x5x5 assembly that maps to a single tile footprint.
+  /// Asset type id used when placing this craft in the world.
   String get objTypeId => 'obj_${blueprintName.toLowerCase()}';
 
   @override

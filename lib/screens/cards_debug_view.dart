@@ -5,6 +5,7 @@ import '../ui/fm_dev_back_button.dart';
 import '../ui/fm_screen.dart';
 import '../ui/fm_step_cards.dart';
 import '../crafting/blueprint_set.dart';
+import '../crafting/crafting_blueprint.dart';
 
 class CardsDebugView extends StatefulWidget {
   const CardsDebugView({super.key});
@@ -26,7 +27,9 @@ class _CardsDebugViewState extends State<CardsDebugView> {
     _stepCount,
     (i) => BlueprintStep(
       craft: 'Step${i + 1}',
-      island: 0,
+      stepIndex: i,
+      logicalIndex: i + 1,
+      kind: BlueprintStepKind.parts,
       label: 'Step ${i + 1}',
       iconCodePoint: [0xe3c9, 0xe87e, 0xe8b8, 0xe55b, 0xe145][i % 5],
     ),

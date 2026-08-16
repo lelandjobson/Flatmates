@@ -27,7 +27,7 @@ class _LegacyCraftingScreenState extends State<LegacyCraftingScreen> {
         canvasSize: 400.0,
         hideDrawingPlane: false,
         showDotWipe: false,
-        initialBlueprintSet: 'Group 05',
+        initialBlueprintSet: 'house_foo',
       ),
     );
   }

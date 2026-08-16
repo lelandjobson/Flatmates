@@ -62,7 +62,7 @@ class CraftSpriteGenerator {
   }
 
   /// Renders the fully-folded 3D blueprint from the given view angle.
-  /// Uses the v7 transform tree: each node's foldedVertices are already in
+  /// Uses each island's transform tree: foldedVertices are already in
   /// their folded 3D position, so we project directly (no hinge folding).
   ///
   /// Camera model matches [IsoVectorGenerator._generateVectorViewFromGeometry]:
@@ -70,13 +70,11 @@ class CraftSpriteGenerator {
   /// projection via scene [Camera], and a 128x64 sprite canvas.
   VectorIsoSprite _renderFoldedBlueprint(
       CompletedCraft craft, CraftingBlueprint blueprint, double azimuthRad) {
-    final tree = blueprint.transformTree;
-
     final size = Size(IsoProjection.tileWidth, IsoProjection.tileHeight);
 
     // Collect all vertices to determine extents for ortho scale.
     final allVerts = <Vector3>[];
-    for (final node in tree.nodes) {
+    for (final node in blueprint.allNodes) {
       if (node.foldedVertices.length >= 3) {
         allVerts.addAll(node.foldedVertices);
       }
@@ -129,7 +127,7 @@ class CraftSpriteGenerator {
 
     // Re-iterate nodes to project with the proper camera.
     var vertIdx = 0;
-    for (final node in tree.nodes) {
+    for (final node in blueprint.allNodes) {
       final origVerts = node.foldedVertices;
       if (origVerts.length < 3) continue;
 

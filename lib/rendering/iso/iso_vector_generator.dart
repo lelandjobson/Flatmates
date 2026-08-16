@@ -468,67 +468,6 @@ class IsoVectorGenerator {
     );
   }
 
-  /// Generate view sprites for all world view angles from a [Geometry] with
-  /// pre-assigned grid cells per face.
-  ///
-  /// [faceGridCells] maps each face index to its `(row, col)` in the 5x5
-  /// grid. This bypasses [GeometrySlicer] and uses the pre-computed
-  /// assignments from sliced OBJ filenames.
-  Future<FullSpriteGenerationResult>
-      generateAllViewSpritesFromGeometryWithGrid(
-    Geometry geometry,
-    Color color, {
-    required List<(int, int)> faceGridCells,
-    double scale = 1.0,
-    int? worldViewCount,
-    bool closedSolid = false,
-  }) async {
-    final bench = SpriteBenchmark()..start();
-    final viewCount = worldViewCount ?? IsoProjection.viewCount;
-    final width = IsoProjection.tileWidth;
-    final height = IsoProjection.tileHeight;
-    final size = Size(width, height);
-
-    final fixedGeometry = closedSolid ? fixWindingOrder(geometry) : geometry;
-    final tessGeometry = _tessellateForDepthSort(fixedGeometry);
-    bench
-      ..originalFaces = fixedGeometry.faces.length
-      ..tessellatedFaces = tessGeometry.faces.length;
-
-    final viewAngles = worldViewAngles(viewCount);
-    final allSprites = <IsoSprite>[];
-    final allBounds = <Rect>[];
-
-    for (final angle in viewAngles) {
-      final (sprite, _, bounds) = await _generateVectorViewFromGeometry(
-        tessGeometry,
-        color,
-        angle,
-        size,
-        scale,
-        benchmark: bench,
-        edgeGeometry: fixedGeometry,
-        closedSolid: closedSolid,
-      );
-      allSprites.add(sprite);
-      if (bounds != null) allBounds.add(bounds);
-    }
-
-    final cardinals = cardinalIndices(viewCount);
-    final cardinalSprites = [for (final i in cardinals) allSprites[i]];
-    final anchorOffset = _anchorFromBounds(allBounds, size);
-
-    bench.stop();
-    lastBenchmark = bench;
-    if (kDebugMode) debugPrint(bench.toString());
-
-    return FullSpriteGenerationResult(
-      cardinalSprites: cardinalSprites,
-      allSprites: allSprites,
-      anchorOffset: anchorOffset,
-    );
-  }
-
   /// Render one view of a [Geometry] (expected to be pre-tessellated by the
   /// caller when depth-sort accuracy matters).
   ///
@@ -1159,7 +1098,6 @@ class IsoVectorGenerator {
     List<DirectionalLight> lights,
     double globalIllumination, {
     bool assignGrid = false,
-    List<(int, int)>? faceGridCells,
     _ViewTiming? timing,
     Geometry? edgeGeometry,
     bool skipEdgeClassify = false,
@@ -1237,10 +1175,7 @@ class IsoVectorGenerator {
 
       int gridRow = -1;
       int gridCol = -1;
-      if (faceGridCells != null && fi < faceGridCells.length) {
-        gridRow = faceGridCells[fi].$1;
-        gridCol = faceGridCells[fi].$2;
-      } else if (assignGrid) {
+      if (assignGrid) {
         gridRow = GeometrySlicer.rowForZ(faceCenter.z);
         gridCol = GeometrySlicer.colForX(faceCenter.x);
       }

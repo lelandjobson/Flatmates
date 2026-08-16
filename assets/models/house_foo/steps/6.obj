@@ -1,0 +1,10 @@
+# FlatmatesRh OBJ export
+# @craft: house_foo
+# @cell: step_6
+o house_foo_step_6_parts
+v 2 8 2.5999999046325684
+v 5 8 2.5999999046325684
+v 2 2 2.5999999046325684
+v 5 2 2.5999999046325684
+f 4 2 1 3
+o house_foo_step_6_appliques

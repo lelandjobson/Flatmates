@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'friend_expression.dart';
 import 'iso_asset.dart';
 import '../../data/asset_database.dart';
@@ -154,51 +153,6 @@ class IsoAssetCache {
           color: definition.color ?? Colors.white,
           scale: definition.scale,
           generateAllViews: definition.generateAllViews,
-        );
-
-      case AssetSourceType.objGroup:
-        if (definition.objCellPaths == null ||
-            definition.objCellPaths!.isEmpty) {
-          if (kDebugMode) {
-            debugPrint('OBJ group cell paths are empty for: ${definition.name}');
-          }
-          return null;
-        }
-        final cellSources = <(int, int), String>{};
-        for (final entry in definition.objCellPaths!.entries) {
-          final source = await rootBundle.loadString(entry.value);
-          cellSources[entry.key] = source;
-        }
-        return await _assetLoader.generateFromObjGroup(
-          definition.name,
-          cellSources,
-          color: definition.color ?? Colors.white,
-          scale: definition.scale,
-        );
-
-      case AssetSourceType.objLayeredGroup:
-        if (definition.objLayerCellPaths == null ||
-            definition.objLayerCellPaths!.isEmpty) {
-          if (kDebugMode) {
-            debugPrint('OBJ layered group paths are empty for: ${definition.name}');
-          }
-          return null;
-        }
-        // Flatten all layers into a single cell map by concatenating OBJ
-        // sources for each grid cell.
-        final flatCells = <(int, int), String>{};
-        for (final layerEntry in definition.objLayerCellPaths!.values) {
-          for (final cellEntry in layerEntry.entries) {
-            final source = await rootBundle.loadString(cellEntry.value);
-            flatCells[cellEntry.key] =
-                (flatCells[cellEntry.key] ?? '') + source;
-          }
-        }
-        return await _assetLoader.generateFromObjGroup(
-          definition.name,
-          flatCells,
-          color: definition.color ?? Colors.white,
-          scale: definition.scale,
         );
     }
   }

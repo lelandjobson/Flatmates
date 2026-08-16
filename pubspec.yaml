@@ -31,23 +31,5 @@ flutter:
     - lib/geometry/prefabs/Cableclamp.obj
     - assets/crafts/
     - assets/crafts/img/
-    - assets/crafting_blueprints/group01/blueprint/
-    - assets/crafting_blueprints/group02/blueprint/
-    - assets/crafting_blueprints/group03/blueprint/
-    - assets/crafting_blueprints/group04/blueprint/
-    - assets/crafting_blueprints/group05/blueprint/
-    - assets/crafting_blueprints/group05/group.json
-    - assets/crafting_blueprints/group06/blueprint/
-    - assets/crafting_blueprints/group08/blueprint/
-    - assets/crafting_blueprints/group09/blueprint/
-    - assets/crafting_blueprints/cube/blueprint/
-    - assets/models/group01/model/geo/
-    - assets/models/group02/model/geo/
-    - assets/models/group03/model/geo/
-    - assets/models/group04/model/geo/
-    - assets/models/group05/model/geo/
-    - assets/models/group06/model/geo/
-    - assets/models/group08/model/geo/
-    - assets/models/group09/model/a/
-    - assets/models/group09/model/b/
-    - assets/models/group09/model/metal/
+    - assets/crafting_blueprints/house_foo/
+    - assets/models/house_foo/steps/
