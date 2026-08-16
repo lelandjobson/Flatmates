@@ -21,6 +21,7 @@ class LandscapePlanePainter extends CustomPainter {
     required this.pixelsPerTile,
     this.hoverWx,
     this.hoverWy,
+    this.hoverBrushSize = 1,
   }) : super(repaint: orbit);
 
   final Camera camera;
@@ -31,6 +32,7 @@ class LandscapePlanePainter extends CustomPainter {
   final int pixelsPerTile;
   final int? hoverWx;
   final int? hoverWy;
+  final int hoverBrushSize;
 
   static final Paint _imagePaint = Paint()
     ..isAntiAlias = false
@@ -79,10 +81,13 @@ class LandscapePlanePainter extends CustomPainter {
     final side = tilesSide * pixelsPerTile;
     if (hx < 0 || hy < 0 || hx >= side || hy >= side) return;
 
-    final x0 = -half + hx;
-    final z0 = -half + hy;
-    final x1 = x0 + 1;
-    final z1 = z0 + 1;
+    final brush = hoverBrushSize.clamp(1, 25);
+    final originX = hx - brush ~/ 2;
+    final originY = hy - brush ~/ 2;
+    final x0 = -half + originX;
+    final z0 = -half + originY;
+    final x1 = x0 + brush;
+    final z1 = z0 + brush;
     final corners = <Vector3>[
       Vector3(x0, 0, z0),
       Vector3(x1, 0, z0),
@@ -262,6 +267,7 @@ class LandscapePlanePainter extends CustomPainter {
         oldDelegate.pixelsPerTile != pixelsPerTile ||
         oldDelegate.hoverWx != hoverWx ||
         oldDelegate.hoverWy != hoverWy ||
+        oldDelegate.hoverBrushSize != hoverBrushSize ||
         oldDelegate.camera != camera ||
         oldDelegate.orbit != orbit;
   }

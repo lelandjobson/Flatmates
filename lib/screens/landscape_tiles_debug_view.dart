@@ -47,6 +47,7 @@ class _LandscapeTilesDebugViewState extends State<LandscapeTilesDebugView> {
   LandscapeTool _tool = LandscapeTool.orbit;
   bool _playing = false;
   int _caGeneration = 0;
+  int _eraserSize = 1;
 
   Offset? _lastTouchFocalPoint;
   double _lastTouchScale = 1.0;
@@ -253,7 +254,7 @@ class _LandscapeTilesDebugViewState extends State<LandscapeTilesDebugView> {
     if (grid == null) return;
     final hit = _hitAt(local);
     if (hit == null) return;
-    if (grid.erase(hit.wx, hit.wy)) {
+    if (grid.eraseBrush(hit.wx, hit.wy, _eraserSize)) {
       setState(() {
         _hoverWx = hit.wx;
         _hoverWy = hit.wy;
@@ -369,6 +370,7 @@ class _LandscapeTilesDebugViewState extends State<LandscapeTilesDebugView> {
                   pixelsPerTile: _params.pixelsPerTile,
                   hoverWx: _canErase ? _hoverWx : null,
                   hoverWy: _canErase ? _hoverWy : null,
+                  hoverBrushSize: _eraserSize,
                 ),
                 isComplex: true,
                 willChange: true,
@@ -383,10 +385,12 @@ class _LandscapeTilesDebugViewState extends State<LandscapeTilesDebugView> {
         _ToolStrip(
           tool: _tool,
           playing: _playing,
+          eraserSize: _eraserSize,
           onOrbit: () => _setTool(LandscapeTool.orbit),
           onErase: () => _setTool(LandscapeTool.erase),
           onPlay: _playCa,
           onPause: _pauseCa,
+          onEraserSizeChanged: (v) => setState(() => _eraserSize = v),
         ),
         _StatusChip(status: _status, baking: _baking, playing: _playing),
         _ControlsPanel(
@@ -406,18 +410,24 @@ class _ToolStrip extends StatelessWidget {
   const _ToolStrip({
     required this.tool,
     required this.playing,
+    required this.eraserSize,
     required this.onOrbit,
     required this.onErase,
     required this.onPlay,
     required this.onPause,
+    required this.onEraserSizeChanged,
   });
 
   final LandscapeTool tool;
   final bool playing;
+  final int eraserSize;
   final VoidCallback onOrbit;
   final VoidCallback onErase;
   final VoidCallback onPlay;
   final VoidCallback onPause;
+  final ValueChanged<int> onEraserSizeChanged;
+
+  static const int maxEraserSize = 25;
 
   @override
   Widget build(BuildContext context) {
@@ -432,36 +442,62 @@ class _ToolStrip extends StatelessWidget {
         ),
         child: Padding(
           padding: const EdgeInsets.all(6),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              _ToolButton(
-                label: 'Orbit',
-                selected: tool == LandscapeTool.orbit,
-                onTap: onOrbit,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _ToolButton(
+                    label: 'Orbit',
+                    selected: tool == LandscapeTool.orbit,
+                    onTap: onOrbit,
+                  ),
+                  const SizedBox(width: 6),
+                  _ToolButton(
+                    label: 'Erase',
+                    selected: tool == LandscapeTool.erase,
+                    enabled: !playing,
+                    onTap: onErase,
+                  ),
+                  const SizedBox(width: 10),
+                  Container(width: 1, height: 22, color: Colors.white24),
+                  const SizedBox(width: 10),
+                  _ToolButton(
+                    label: 'Play',
+                    selected: playing,
+                    enabled: !playing,
+                    onTap: onPlay,
+                  ),
+                  const SizedBox(width: 6),
+                  _ToolButton(
+                    label: 'Pause',
+                    selected: !playing,
+                    enabled: playing,
+                    onTap: onPause,
+                  ),
+                ],
               ),
-              const SizedBox(width: 6),
-              _ToolButton(
-                label: 'Erase',
-                selected: tool == LandscapeTool.erase,
+              const SizedBox(height: 8),
+              Text(
+                'Eraser $eraserSize×$eraserSize',
+                style: TextStyle(
+                  color: playing ? Colors.white30 : Colors.white60,
+                  fontSize: 11,
+                ),
+              ),
+              const SizedBox(height: 4),
+              FmSlider(
+                value: eraserSize.toDouble().clamp(1, maxEraserSize.toDouble()),
+                min: 1,
+                max: maxEraserSize.toDouble(),
+                width: 220,
+                height: 28,
                 enabled: !playing,
-                onTap: onErase,
-              ),
-              const SizedBox(width: 10),
-              Container(width: 1, height: 22, color: Colors.white24),
-              const SizedBox(width: 10),
-              _ToolButton(
-                label: 'Play',
-                selected: playing,
-                enabled: !playing,
-                onTap: onPlay,
-              ),
-              const SizedBox(width: 6),
-              _ToolButton(
-                label: 'Pause',
-                selected: !playing,
-                enabled: playing,
-                onTap: onPause,
+                onChanged: playing
+                    ? null
+                    : (v) => onEraserSizeChanged(v.round().clamp(1, maxEraserSize)),
               ),
             ],
           ),
