@@ -10,6 +10,7 @@ import '../screens/intro_screen.dart';
 import '../screens/intro_crafting_view.dart';
 import '../screens/mixed_3d_crafting_view.dart';
 import '../screens/book_view.dart';
+import '../screens/landscape_tiles_debug_view.dart';
 
 /// Swap between '/dev-routes' and '/' to start at the dev menu or title screen.
 const kInitialLocation = '/dev-routes';
@@ -66,6 +67,11 @@ final router = GoRouter(
       path: '/book',
       name: 'book',
       builder: (context, state) => const BookView(),
+    ),
+    GoRoute(
+      path: '/landscape-tiles-debug',
+      name: 'landscape_tiles_debug',
+      builder: (context, state) => const LandscapeTilesDebugView(),
     ),
   ],
 );

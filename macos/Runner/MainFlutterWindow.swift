@@ -6,24 +6,19 @@ class MainFlutterWindow: NSWindow {
     let flutterViewController = FlutterViewController()
     self.contentViewController = flutterViewController
 
-    // Simulate iPhone 15 viewport (393×852 logical points).
-    // Comment out or toggle the flag below to restore free-form sizing.
-    let simulateMobile = true
-    if simulateMobile {
-      let mobileSize = NSSize(width: 393, height: 852)
-      self.setContentSize(mobileSize)
-      self.contentMinSize = mobileSize
-      self.contentMaxSize = mobileSize
-      self.styleMask.remove(.resizable)
-      if let screen = self.screen {
-        let screenFrame = screen.visibleFrame
-        let x = screenFrame.midX - mobileSize.width / 2
-        let y = screenFrame.midY - mobileSize.height / 2
-        self.setFrameOrigin(NSPoint(x: x, y: y))
-      }
-    } else {
-      let windowFrame = self.frame
-      self.setFrame(windowFrame, display: true)
+    // Sensible desktop default; keep the window freely resizable.
+    let defaultSize = NSSize(width: 1280, height: 800)
+    self.setContentSize(defaultSize)
+    self.contentMinSize = NSSize(width: 640, height: 480)
+    self.styleMask.insert(.resizable)
+
+    if let screen = self.screen ?? NSScreen.main {
+      let visible = screen.visibleFrame
+      let origin = NSPoint(
+        x: visible.midX - defaultSize.width / 2,
+        y: visible.midY - defaultSize.height / 2
+      )
+      self.setFrameOrigin(origin)
     }
 
     RegisterGeneratedPlugins(registry: flutterViewController)
