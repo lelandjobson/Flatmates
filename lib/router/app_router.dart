@@ -12,6 +12,7 @@ import '../screens/mixed_3d_crafting_view.dart';
 import '../screens/book_view.dart';
 import '../screens/craft_assembly_view.dart';
 import '../screens/craft_model_preview_view.dart';
+import '../screens/landscape_tiles_debug_view.dart';
 
 /// Swap between '/dev-routes' and '/' to start at the dev menu or title screen.
 const kInitialLocation = '/dev-routes';
@@ -78,6 +79,11 @@ final router = GoRouter(
       path: '/craft-assembly',
       name: 'craft_assembly',
       builder: (context, state) => const CraftAssemblyView(),
+    ),
+    GoRoute(
+      path: '/landscape-tiles-debug',
+      name: 'landscape_tiles_debug',
+      builder: (context, state) => const LandscapeTilesDebugView(),
     ),
   ],
 );
