@@ -363,7 +363,7 @@ class _LandscapeTilesDebugViewState extends State<LandscapeTilesDebugView> {
               child: CustomPaint(
                 painter: LandscapePlanePainter(
                   camera: _camera,
-                  orbit: _orbit,
+                  listenable: _orbit,
                   image: _atlas,
                   worldSize: worldSize,
                   tilesSide: _params.tilesSide,

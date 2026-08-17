@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:vector_math/vector_math_64.dart' hide Colors;
 
 import '../rendering/scene/camera.dart';
-import '../rendering/scene/camera_controller.dart';
 
 /// Draws a landscape atlas as a textured ground plane (XZ, Y=0) through [camera].
 ///
@@ -14,7 +13,7 @@ import '../rendering/scene/camera_controller.dart';
 class LandscapePlanePainter extends CustomPainter {
   LandscapePlanePainter({
     required this.camera,
-    required this.orbit,
+    required this.listenable,
     required this.image,
     required this.worldSize,
     required this.tilesSide,
@@ -22,10 +21,10 @@ class LandscapePlanePainter extends CustomPainter {
     this.hoverWx,
     this.hoverWy,
     this.hoverBrushSize = 1,
-  }) : super(repaint: orbit);
+  }) : super(repaint: listenable);
 
   final Camera camera;
-  final OrbitCameraController orbit;
+  final Listenable listenable;
   final ui.Image? image;
   final double worldSize;
   final int tilesSide;
@@ -269,6 +268,6 @@ class LandscapePlanePainter extends CustomPainter {
         oldDelegate.hoverWy != hoverWy ||
         oldDelegate.hoverBrushSize != hoverBrushSize ||
         oldDelegate.camera != camera ||
-        oldDelegate.orbit != orbit;
+        oldDelegate.listenable != listenable;
   }
 }
