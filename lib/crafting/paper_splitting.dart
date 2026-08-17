@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 import '../geometry/polygon_union.dart';
@@ -7,45 +8,124 @@ import '../geometry/polygon_union.dart';
 /// Returns a list of polygons (vertex lists). If the cuts don't form a
 /// complete boundary that divides the polygon, returns a single-element list
 /// containing the original polygon unchanged.
+///
+/// When [holes] are provided, cut lines are clipped to the solid region
+/// (exterior minus holes) and hole boundaries are treated as paper edges,
+/// not as infinite cutting lines.
 List<List<Offset>> splitPolygonByCuts(
+  List<Offset> polygon,
+  List<(Offset, Offset)> cutSegments, {
+  List<List<Offset>> holes = const [],
+}) {
+  return [
+    for (final piece in splitPaperByCuts(polygon, cutSegments, holes: holes))
+      piece.$1,
+  ];
+}
+
+/// Like [splitPolygonByCuts], but keeps hole rings on each resulting piece.
+///
+/// A hole that a cut opens becomes part of that piece's exterior. Untouched
+/// holes stay attached to the piece that still contains them.
+List<(List<Offset> exterior, List<List<Offset>> holes)> splitPaperByCuts(
+  List<Offset> polygon,
+  List<(Offset, Offset)> cutSegments, {
+  List<List<Offset>> holes = const [],
+}) {
+  if (polygon.length < 3) return [(polygon, holes)];
+  final validHoles = [
+    for (final hole in holes)
+      if (hole.length >= 3) hole,
+  ];
+  if (cutSegments.isEmpty) return [(polygon, validHoles)];
+
+  final clipped = <(Offset, Offset)>[];
+  for (final seg in cutSegments) {
+    clipped.addAll(_clipLineToSolid(seg.$1, seg.$2, polygon, validHoles));
+  }
+  if (clipped.isEmpty) return [(polygon, validHoles)];
+
+  final solid = _solidFacesFromGraph(polygon, validHoles, clipped);
+  if (solid.isEmpty) {
+    final exteriors = _splitExteriorOnly(polygon, cutSegments);
+    return _attachHoles(exteriors, validHoles);
+  }
+  return _attachHoles(solid, validHoles);
+}
+
+List<List<Offset>> _solidFacesFromGraph(
+  List<Offset> polygon,
+  List<List<Offset>> holes,
+  List<(Offset, Offset)> clippedCuts,
+) {
+  final allSegments = <(Offset, Offset)>[];
+  for (var i = 0; i < polygon.length; i++) {
+    allSegments.add((polygon[i], polygon[(i + 1) % polygon.length]));
+  }
+  for (final hole in holes) {
+    for (var i = 0; i < hole.length; i++) {
+      allSegments.add((hole[i], hole[(i + 1) % hole.length]));
+    }
+  }
+  allSegments.addAll(clippedCuts);
+
+  final faces = PlanarGraph(splitAllAtIntersections(allSegments)).findFaces();
+  final solid = <List<Offset>>[];
+  for (final face in faces) {
+    if (face.length < 3) continue;
+    if (polygonSignedArea(face).abs() <= planarEpsilon) continue;
+    // Sample just inside the face, not the centroid: a C-shaped piece's
+    // centroid often lands in the hole, which would drop a real half.
+    // The unbounded outer walk and the "outside" of a disconnected hole
+    // have their interior outside the face polygon.
+    final sample = _faceInteriorPoint(face);
+    if (!isInsidePolygon(sample, face)) continue;
+    if (_isInSolid(sample, polygon, holes)) {
+      solid.add(face);
+    }
+  }
+  return solid;
+}
+
+/// Point just to the right of the first usable edge. Rightmost-turn faces
+/// have their interior on the right, so this sits inside the face even when
+/// the centroid does not.
+Offset _faceInteriorPoint(List<Offset> face) {
+  const offset = 1e-4;
+  for (var i = 0; i < face.length; i++) {
+    final a = face[i];
+    final b = face[(i + 1) % face.length];
+    final dx = b.dx - a.dx;
+    final dy = b.dy - a.dy;
+    final len2 = dx * dx + dy * dy;
+    if (len2 < planarEpsilon * planarEpsilon) continue;
+    final inv = offset / math.sqrt(len2);
+    return Offset((a.dx + b.dx) / 2 + dy * inv, (a.dy + b.dy) / 2 - dx * inv);
+  }
+  return polygonCentroid(face);
+}
+
+List<List<Offset>> _splitExteriorOnly(
   List<Offset> polygon,
   List<(Offset, Offset)> cutSegments,
 ) {
-  if (polygon.length < 3 || cutSegments.isEmpty) return [polygon];
-
-  // 1. Clip cut lines to the polygon boundary.  Each cut segment is
-  //    treated as an infinite line so that cuts drawn inside the paper
-  //    automatically extend to the polygon edges, producing a complete
-  //    partition rather than a floating interior chord.
   final clipped = <(Offset, Offset)>[];
   for (final seg in cutSegments) {
-    final inside = _clipLineToPolygon(seg.$1, seg.$2, polygon);
-    clipped.addAll(inside);
+    clipped.addAll(_clipLineToSolid(seg.$1, seg.$2, polygon, const []));
   }
   if (clipped.isEmpty) return [polygon];
 
-  // 2. Collect all segments: polygon edges + clipped cuts.
   final allSegments = <(Offset, Offset)>[];
   for (var i = 0; i < polygon.length; i++) {
     allSegments.add((polygon[i], polygon[(i + 1) % polygon.length]));
   }
   allSegments.addAll(clipped);
 
-  // 3. Find all intersection points between every pair of segments and
-  //    split segments at those points.
-  final atomicSegments = splitAllAtIntersections(allSegments);
-
-  // 4. Build adjacency graph with vertices merged by proximity.
-  final graph = PlanarGraph(atomicSegments);
-
-  // 5. Traverse faces using rightmost-turn walk.
-  final faces = graph.findFaces();
-
+  final faces = PlanarGraph(splitAllAtIntersections(allSegments)).findFaces();
   if (faces.length <= 1) return [polygon];
 
-  // 6. Discard the unbounded face (largest absolute signed area).
   double maxArea = -1;
-  int unboundedIdx = 0;
+  var unboundedIdx = 0;
   for (var i = 0; i < faces.length; i++) {
     final area = polygonSignedArea(faces[i]).abs();
     if (area > maxArea) {
@@ -65,37 +145,89 @@ List<List<Offset>> splitPolygonByCuts(
   return result.isEmpty ? [polygon] : result;
 }
 
-// ---------------------------------------------------------------------------
-// Line clipping (specific to paper splitting)
-// ---------------------------------------------------------------------------
+List<(List<Offset>, List<List<Offset>>)> _attachHoles(
+  List<List<Offset>> faces,
+  List<List<Offset>> holes,
+) {
+  if (faces.isEmpty) return const [];
+  final assigned = List.generate(faces.length, (_) => <List<Offset>>[]);
+  for (final hole in holes) {
+    if (_holeIsOpenInAny(hole, faces)) continue;
+    final hc = polygonCentroid(hole);
+    int? best;
+    var bestArea = double.infinity;
+    for (var i = 0; i < faces.length; i++) {
+      if (!isInsidePolygon(hc, faces[i])) continue;
+      final area = polygonSignedArea(faces[i]).abs();
+      if (area < bestArea) {
+        bestArea = area;
+        best = i;
+      }
+    }
+    if (best != null) assigned[best].add(hole);
+  }
+  return [for (var i = 0; i < faces.length; i++) (faces[i], assigned[i])];
+}
 
-/// Clips the **line** through (a,b) to the interior of a simple polygon,
-/// returning the sub-segments that lie inside.
-///
-/// Unlike segment clipping, this treats the cut as an infinite line so that
-/// a short cut drawn inside the paper extends to the polygon boundary on
-/// both sides, producing a complete edge-to-edge partition.
-List<(Offset, Offset)> _clipLineToPolygon(
+bool _holeIsOpenInAny(List<Offset> hole, List<List<Offset>> faces) {
+  const merge = planarEpsilon * 100;
+  for (final face in faces) {
+    var hits = 0;
+    for (final h in hole) {
+      for (final f in face) {
+        if ((h - f).distance < merge) {
+          hits++;
+          break;
+        }
+      }
+    }
+    if (hits >= 2) return true;
+  }
+  return false;
+}
+
+bool _isInSolid(
+  Offset p,
+  List<Offset> exterior,
+  List<List<Offset>> holes,
+) {
+  if (!isInsidePolygon(p, exterior)) return false;
+  for (final hole in holes) {
+    if (isInsidePolygon(p, hole)) return false;
+  }
+  return true;
+}
+
+/// Clips the infinite line through (a,b) to the solid region of a possibly
+/// holed polygon, returning the sub-segments that lie on paper.
+List<(Offset, Offset)> _clipLineToSolid(
   Offset a,
   Offset b,
-  List<Offset> polygon,
+  List<Offset> exterior,
+  List<List<Offset>> holes,
 ) {
   final dx = b.dx - a.dx;
   final dy = b.dy - a.dy;
-  if (dx * dx + dy * dy < planarEpsilon * planarEpsilon) return [];
+  if (dx * dx + dy * dy < planarEpsilon * planarEpsilon) return const [];
 
   final hits = <double>[];
-
-  for (var i = 0; i < polygon.length; i++) {
-    final p = polygon[i];
-    final q = polygon[(i + 1) % polygon.length];
-    final t = _lineSegmentIntersectionT(a, b, p, q);
-    if (t != null) {
-      hits.add(t);
+  void addHits(List<Offset> ring) {
+    for (var i = 0; i < ring.length; i++) {
+      final t = _lineSegmentIntersectionT(
+        a,
+        b,
+        ring[i],
+        ring[(i + 1) % ring.length],
+      );
+      if (t != null) hits.add(t);
     }
   }
 
-  if (hits.length < 2) return [];
+  addHits(exterior);
+  for (final hole in holes) {
+    addHits(hole);
+  }
+  if (hits.length < 2) return const [];
   hits.sort();
 
   final result = <(Offset, Offset)>[];
@@ -105,7 +237,7 @@ List<(Offset, Offset)> _clipLineToPolygon(
     if ((t1 - t0) < planarEpsilon) continue;
     final mid = (t0 + t1) / 2;
     final midPt = Offset(a.dx + dx * mid, a.dy + dy * mid);
-    if (isInsidePolygon(midPt, polygon)) {
+    if (_isInSolid(midPt, exterior, holes)) {
       result.add((
         Offset(a.dx + dx * t0, a.dy + dy * t0),
         Offset(a.dx + dx * t1, a.dy + dy * t1),

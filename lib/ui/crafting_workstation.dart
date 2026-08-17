@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:vector_math/vector_math_64.dart' hide Colors;
 
 import '../crafting/crafting_blueprint.dart';
@@ -17,6 +18,7 @@ import '../crafting/paper_splitting.dart';
 import '../gameplay/inventory.dart';
 import '../geometry/polygon_union.dart';
 import '../geometry/geometry.dart';
+import '../geometry/geometry_2d.dart';
 import '../geometry/geometry_algorithms.dart';
 import '../geometry/prefabs/prefab_factory.dart';
 import '../rendering/iso/friend_expression.dart';
@@ -46,6 +48,10 @@ const _kGridOriginDot = Color(0xFFFFFFFF);
 /// Friend walk animation during cut (disabled for now; logic preserved).
 const _kCutFriendAnimationEnabled = false;
 
+/// Space reserved above the centered bottom control column so side chrome
+/// (tools, snap, close) does not overlap Fill All / undo / paper slots.
+const _kBottomControlColumnClearance = 176.0;
+
 const _noOpUndoLabels = {'Select', 'Deselect', 'Invert'};
 
 /// Target number of grid cells visible across the viewport short axis.
@@ -68,16 +74,23 @@ class _CheckCoverageParams {
     required this.blueprintPolygons,
     required this.paperPolygons,
     required this.tolerance,
+    this.blueprintHoles = const [],
+    this.paperHoles = const [],
   });
 
   final List<List<Offset>> blueprintPolygons;
+  final List<List<List<Offset>>> blueprintHoles;
   final List<List<Offset>> paperPolygons;
+  final List<List<List<Offset>>> paperHoles;
   final double tolerance;
 }
 
 class _AABB {
   const _AABB(this.minX, this.minY, this.maxX, this.maxY);
   final double minX, minY, maxX, maxY;
+
+  bool overlaps(_AABB o) =>
+      maxX >= o.minX && minX <= o.maxX && maxY >= o.minY && minY <= o.maxY;
 }
 
 _AABB _aabb(List<Offset> poly) {
@@ -214,6 +227,32 @@ double _hausdorff(List<Offset> from, List<Offset> to) {
   return worst;
 }
 
+bool _compoundShapesMatch(
+  List<Offset> paper,
+  List<List<Offset>> paperHoles,
+  List<Offset> blueprint,
+  List<List<Offset>> blueprintHoles,
+  double tol,
+) {
+  if (!_shapesMatch(paper, blueprint, tol)) return false;
+  if (paperHoles.length != blueprintHoles.length) return false;
+  if (paperHoles.isEmpty) return true;
+  final used = <int>{};
+  for (final hole in paperHoles) {
+    var matched = false;
+    for (var i = 0; i < blueprintHoles.length; i++) {
+      if (used.contains(i)) continue;
+      if (_shapesMatch(hole, blueprintHoles[i], tol)) {
+        used.add(i);
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) return false;
+  }
+  return true;
+}
+
 /// Peg-in-hole shape match: area + centroid pre-check, then symmetric
 /// Hausdorff vertex-to-edge distance. Works regardless of vertex count,
 /// vertex order, or winding direction.
@@ -270,9 +309,16 @@ Set<int> _checkCoverage(_CheckCoverageParams params) {
     );
   }
 
-  for (final paper in params.paperPolygons) {
+  for (var pi = 0; pi < params.paperPolygons.length; pi++) {
+    final paper = params.paperPolygons[pi];
     if (paper.length < 3) continue;
     final cleaned = _removeCollinears(_dedup(paper, dedupTol), angularTolRad);
+    final pHoles = pi < params.paperHoles.length
+        ? [
+            for (final h in params.paperHoles[pi])
+              _removeCollinears(_dedup(h, dedupTol), angularTolRad),
+          ]
+        : const <List<Offset>>[];
     final pBox = _aabb(cleaned);
     final candidates = hash.query(
       _AABB(pBox.minX - tol, pBox.minY - tol, pBox.maxX + tol, pBox.maxY + tol),
@@ -281,7 +327,13 @@ Set<int> _checkCoverage(_CheckCoverageParams params) {
 
     for (final bpIdx in candidates) {
       if (filled.contains(bpIdx)) continue;
-      if (_shapesMatch(cleaned, bpClean[bpIdx], tol)) {
+      final bHoles = bpIdx < params.blueprintHoles.length
+          ? [
+              for (final h in params.blueprintHoles[bpIdx])
+                _dedup(h, dedupTol),
+            ]
+          : const <List<Offset>>[];
+      if (_compoundShapesMatch(cleaned, pHoles, bpClean[bpIdx], bHoles, tol)) {
         filled.add(bpIdx);
       }
     }
@@ -307,8 +359,10 @@ enum CraftingMode {
   rotationCopy,
   erase,
   alignGrid,
-  stretch,
+  stencil,
 }
+
+enum StencilShape { rectangle, circle }
 
 class ToolpathSegment {
   const ToolpathSegment(this.start, this.end, this.isCutting);
@@ -396,6 +450,7 @@ class _LockedPaperSnapshot {
     required this.localHoles,
     required this.lockedBlueprintIndex,
     this.materialId,
+    this.stackOrder = 0,
   });
 
   final String id;
@@ -407,12 +462,14 @@ class _LockedPaperSnapshot {
   final List<List<Offset>> localHoles;
   final int lockedBlueprintIndex;
   final String? materialId;
+  final double stackOrder;
 
   PlacedPaper toPaper() {
     final p = PlacedPaper(
       id: id,
       paperColor: paperColor,
       position: position.clone(),
+      stackOrder: stackOrder,
       rotationDeg: rotationDeg,
       sizeLevel: sizeLevel,
       localVertices: localVertices,
@@ -566,6 +623,15 @@ class CraftingTestViewState extends State<CraftingTestView>
   // Marquee dash animation
   late final AnimationController _marqueeDashController;
 
+  // Shared handle-box follow (stencil + stretch)
+  late final Ticker _handleFollowTicker;
+  Duration? _handleFollowLast;
+  Rect? _handleFollowDisplay;
+  Rect? _handleFollowTarget;
+  void Function(Rect display)? _handleFollowApply;
+  VoidCallback? _handleFollowOnSettled;
+  bool _handleFollowSettling = false;
+
   // Lock animation
   late final AnimationController _lockAnimController;
   late final CurvedAnimation _lockAnimCurve;
@@ -596,6 +662,7 @@ class CraftingTestViewState extends State<CraftingTestView>
   // Placed papers
   final List<PlacedPaper> _placedPapers = [];
   int _nextPaperId = 0;
+  int _nextStackMajor = 1;
 
   // Mirror tool
   Offset? _mirrorLineStart;
@@ -609,6 +676,7 @@ class CraftingTestViewState extends State<CraftingTestView>
   // Selection copy: last source pose, reused while the new copies stay selected.
   Offset? _copyMemorySourceCentroid;
   double _copyMemorySourceRotationDeg = 0;
+  Set<String>? _copyMemorySourceIds;
   Set<String>? _copyMemoryResultIds;
   bool _suppressCopyMemorySync = false;
 
@@ -616,6 +684,12 @@ class CraftingTestViewState extends State<CraftingTestView>
   Set<String> _selectedPaperIdsRaw = {};
   Set<String> get _selectedPaperIds => _selectedPaperIdsRaw;
   set _selectedPaperIds(Set<String> ids) {
+    if (_stretchPaperId != null && !ids.contains(_stretchPaperId)) {
+      _bakeStretch();
+      _stretchPaperId = null;
+      _clearStretchBox();
+      _stopHandleFollow();
+    }
     _selectedPaperIdsRaw = ids;
     if (!_suppressCopyMemorySync) {
       _syncCopyMemoryWithSelection();
@@ -645,6 +719,13 @@ class CraftingTestViewState extends State<CraftingTestView>
   List<CraftingBlueprint> _blueprints = [];
   CraftingBlueprint? _selectedBlueprint;
   List<List<Offset>> _blueprintWorldPolygons = [];
+  List<List<List<Offset>>> _blueprintWorldHoles = [];
+  /// All rings used for vertex / edge / ray snap (current step + holes +
+  /// underlying parts on applique steps).
+  List<(List<Offset> ring, bool isHole)> _snapWorldLoops = [];
+  List<List<List<Offset>>> _underlyingWorldHoles = [];
+  /// Blueprint edge whose infinite ray the current cut is locked to.
+  (Offset, Offset)? _cutSnapRay;
   bool _blueprintUnionMode = false;
   List<List<Offset>> _blueprintUnionPolygons = [];
 
@@ -714,15 +795,23 @@ class CraftingTestViewState extends State<CraftingTestView>
   int? _magnetPrevBpIndex;
   double get _magnetDistance => 2 * _majorGridSpacing;
 
-  // Stretch tool
+  // Stretch tool (same handle-box model as the stencil)
   String? _stretchPaperId;
-  Offset? _stretchHandleStartWorld;
   int? _stretchHandleIndex; // 0-3 edges (T,R,B,L), 4-7 corners (TL,TR,BR,BL)
-  double _stretchScaleX = 1.0;
-  double _stretchScaleY = 1.0;
-  Rect? _stretchOriginalBounds; // local-space AABB before drag began
-  Offset _stretchAnchorLocal =
-      Offset.zero; // opposite edge/corner in local space
+  Rect? _stretchStartLocal;
+  Rect? _stretchDisplayLocal;
+
+  // Stencil tool (widget, not a paper piece)
+  StencilShape _stencilShape = StencilShape.rectangle;
+  Offset _stencilPosition = Offset.zero;
+  double _stencilHalfW = 1;
+  double _stencilHalfH = 1;
+  bool _stencilSelected = false;
+  bool _stencilDragging = false;
+  Offset? _stencilDragStartWorld;
+  Offset? _stencilDragStartPos;
+  int? _stencilHandleIndex;
+  Rect? _stencilResizeStart;
 
   // Blueprint progress tracking
   double _blueprintTotalArea = 0;
@@ -994,12 +1083,13 @@ class CraftingTestViewState extends State<CraftingTestView>
       _alignGridHoveredPolyIndex = null;
       _alignGridPreviewVertex = null;
       _alignGridSecondPreview = null;
-      _stretchHandleIndex = null;
-      _stretchHandleStartWorld = null;
-      _stretchOriginalBounds = null;
-      _stretchScaleX = 1.0;
-      _stretchScaleY = 1.0;
-      _stretchAnchorLocal = Offset.zero;
+      _clearStretchBox();
+      _stencilHandleIndex = null;
+      _stencilResizeStart = null;
+      _stencilDragging = false;
+      _stencilDragStartWorld = null;
+      _stencilDragStartPos = null;
+      _stopHandleFollow();
     });
 
     if (gridChanged) _scheduleGridLodSync();
@@ -1115,6 +1205,8 @@ class CraftingTestViewState extends State<CraftingTestView>
       _orthoScale = widget.initialOrthoScale ?? _drawingPlaneSize * 1.1;
     }
     _geometry = _buildGeometry();
+
+    _handleFollowTicker = createTicker(_onHandleFollowTick);
 
     _cutAnimController = AnimationController(vsync: this)
       ..addListener(_onCutAnimTick)
@@ -1273,6 +1365,7 @@ class CraftingTestViewState extends State<CraftingTestView>
     _placedPapers.clear();
     _placedPapers.addAll(state.papers.map((s) => s.toPaper()));
     _nextPaperId = state.nextPaperId;
+    _ensureStackOrders();
   }
 
   void _saveCraftingState() {
@@ -1300,6 +1393,7 @@ class CraftingTestViewState extends State<CraftingTestView>
     _magnetAnimController.dispose();
     _gridLodAnimController.dispose();
     _cameraAnimController.dispose();
+    _handleFollowTicker.dispose();
     super.dispose();
   }
 
@@ -1448,6 +1542,24 @@ class CraftingTestViewState extends State<CraftingTestView>
     );
 
     setState(() {
+      _craftingMode = CraftingMode.select;
+      _drawnCutLines.clear();
+      _resetCutStroke();
+      _panModeSelectedPaperId = null;
+      _paintedCells = {};
+      _lastPaintCell = null;
+      _erasedCells = {};
+      _lastEraseCell = null;
+      _stretchPaperId = null;
+      _clearStretchBox();
+      _stencilSelected = false;
+      _stencilHandleIndex = null;
+      _stopHandleFollow();
+      _mirrorLineStart = null;
+      _mirrorLinePreview = null;
+      _rotCopyGizmoActive = false;
+      _rotCopyCenterWorld = null;
+      _clearAlignGridTransient();
       if (!keepCanvas) {
         if (panOffset != null) _panOffset = panOffset;
         if (orthoScale != null) _orthoScale = orthoScale;
@@ -1516,6 +1628,7 @@ class CraftingTestViewState extends State<CraftingTestView>
                   localHoles: p.localHoles,
                   lockedBlueprintIndex: p.lockedBlueprintIndex!,
                   materialId: p.materialId,
+                  stackOrder: p.stackOrder,
                 ),
               )
               .toList();
@@ -1530,6 +1643,7 @@ class CraftingTestViewState extends State<CraftingTestView>
       _fillCompleteLatched = false;
       _selectedBlueprint = blueprint;
       _blueprintWorldPolygons = [];
+      _blueprintWorldHoles = [];
       _blueprintUnionPolygons = [];
       _blueprintTotalArea = 0;
       _blueprintLockedArea = 0;
@@ -1542,6 +1656,8 @@ class CraftingTestViewState extends State<CraftingTestView>
         _gridRotation = math.pi / 2;
         _groupOverlayPolygons = [];
         _groupOverlayColors = [];
+        _underlyingWorldHoles = [];
+        _snapWorldLoops = [];
         return;
       }
 
@@ -1561,7 +1677,12 @@ class CraftingTestViewState extends State<CraftingTestView>
       for (var i = 0; i < layers.length && i < allScaled.length; i++) {
         _polyIndexToRegion[i] = layers[i];
       }
-      _blueprintWorldPolygons = allScaled;
+      _applyBlueprintPolygons(
+        allScaled,
+        blueprint.unfoldedFillHoles(
+          scale: blueprint.worldScale(_minorGridSpacing),
+        ),
+      );
       if (!keepCamera) {
         final gridFrame = _computeDominantGridFrame(allScaled);
         if (gridFrame != null) {
@@ -1574,11 +1695,17 @@ class CraftingTestViewState extends State<CraftingTestView>
       }
 
       _blueprintTotalArea = 0;
-      for (final poly in allScaled) {
-        _blueprintTotalArea += _polyArea(poly).abs();
+      for (var i = 0; i < _blueprintWorldPolygons.length; i++) {
+        var area = _polyArea(_blueprintWorldPolygons[i]).abs();
+        if (i < _blueprintWorldHoles.length) {
+          for (final hole in _blueprintWorldHoles[i]) {
+            area -= _polyArea(hole).abs();
+          }
+        }
+        _blueprintTotalArea += area;
       }
 
-      _blueprintUnionPolygons = allScaled;
+      _blueprintUnionPolygons = _blueprintWorldPolygons;
       _filledBlueprintIndices = {};
 
       if (!keepCanvas) {
@@ -1588,9 +1715,16 @@ class CraftingTestViewState extends State<CraftingTestView>
             _placedPapers.add(snap.toPaper());
             _filledBlueprintIndices.add(snap.lockedBlueprintIndex);
             if (snap.lockedBlueprintIndex < allScaled.length) {
-              _blueprintLockedArea += _polyArea(
+              var area = _polyArea(
                 allScaled[snap.lockedBlueprintIndex],
               ).abs();
+              if (snap.lockedBlueprintIndex < _blueprintWorldHoles.length) {
+                for (final hole
+                    in _blueprintWorldHoles[snap.lockedBlueprintIndex]) {
+                  area -= _polyArea(hole).abs();
+                }
+              }
+              _blueprintLockedArea += area;
             }
           }
         }
@@ -1600,6 +1734,7 @@ class CraftingTestViewState extends State<CraftingTestView>
       }
 
       _rebuildStepOverlays();
+      _ensureStackOrders();
 
       if (!keepCamera &&
           !animateCameraToStep &&
@@ -1631,6 +1766,32 @@ class CraftingTestViewState extends State<CraftingTestView>
     return blueprint.unfoldedFillPolygons(
       scale: blueprint.worldScale(_minorGridSpacing),
     );
+  }
+
+  /// Store unfolded exteriors and the hole rings authored on each node.
+  void _applyBlueprintPolygons(
+    List<List<Offset>> raw,
+    List<List<List<Offset>>> holes,
+  ) {
+    _blueprintWorldPolygons = raw;
+    _blueprintWorldHoles = [
+      for (var i = 0; i < raw.length; i++)
+        i < holes.length ? holes[i] : const <List<Offset>>[],
+    ];
+    _rebuildSnapGeometry();
+  }
+
+  void _rebuildSnapGeometry() {
+    _snapWorldLoops = [
+      for (final poly in _blueprintWorldPolygons) (poly, false),
+      for (var i = 0; i < _blueprintWorldPolygons.length; i++)
+        if (i < _blueprintWorldHoles.length)
+          for (final hole in _blueprintWorldHoles[i]) (hole, true),
+      for (final poly in _groupOverlayPolygons) (poly, false),
+      for (var i = 0; i < _groupOverlayPolygons.length; i++)
+        if (i < _underlyingWorldHoles.length)
+          for (final hole in _underlyingWorldHoles[i]) (hole, true),
+    ];
   }
 
   Rect? _boundsOfPolygons(List<List<Offset>> polygons) {
@@ -1721,10 +1882,12 @@ class CraftingTestViewState extends State<CraftingTestView>
   void _rebuildStepOverlays() {
     _groupOverlayPolygons = [];
     _groupOverlayColors = [];
+    _underlyingWorldHoles = [];
     final bp = _selectedBlueprint;
     if (bp == null || !bp.isApplique) {
       _activeHighlightT = 1.0;
       _activeGlow = 0.0;
+      _rebuildSnapGeometry();
       return;
     }
     const overlay = Color(0xFFFF88CC);
@@ -1733,8 +1896,10 @@ class CraftingTestViewState extends State<CraftingTestView>
       _groupOverlayPolygons.add(poly);
       _groupOverlayColors.add(overlay.withValues(alpha: 0.18));
     }
+    _underlyingWorldHoles = bp.partOverlayHoles(scale: scale);
     _activeHighlightT = 1.0;
     _activeGlow = 0.0;
+    _rebuildSnapGeometry();
   }
 
   void _animateCameraTo(
@@ -1802,12 +1967,14 @@ class CraftingTestViewState extends State<CraftingTestView>
     final bpPolygons = List<List<Offset>>.from(_blueprintWorldPolygons);
 
     final paperPolys = <List<Offset>>[];
+    final paperHoles = <List<List<Offset>>>[];
     final paperIds = <String>[];
     for (final paper in _placedPapers) {
       // Papers committed to a finished step stay out of the active match.
       if (paper.locked || _isDiscardingPaper(paper.id)) continue;
       final corners = _paperWorldCorners(paper);
       paperPolys.add(corners.map((v) => Offset(v.x, v.y)).toList());
+      paperHoles.add(_paperWorldHoles2D(paper));
       paperIds.add(paper.id);
     }
 
@@ -1815,7 +1982,9 @@ class CraftingTestViewState extends State<CraftingTestView>
 
     final params = _CheckCoverageParams(
       blueprintPolygons: bpPolygons,
+      blueprintHoles: _blueprintWorldHoles,
       paperPolygons: paperPolys,
+      paperHoles: paperHoles,
       tolerance: tolerance,
     );
 
@@ -1832,7 +2001,13 @@ class CraftingTestViewState extends State<CraftingTestView>
       );
 
       if (newlyFilled.isNotEmpty && _lockAnimatingPaperIds.isEmpty) {
-        _startLockAnimation(newlyFilled, bpPolygons, paperPolys, paperIds);
+        _startLockAnimation(
+          newlyFilled,
+          bpPolygons,
+          paperPolys,
+          paperHoles,
+          paperIds,
+        );
       }
 
       // Only clear match indices on unlocked papers for the active step.
@@ -1844,7 +2019,10 @@ class CraftingTestViewState extends State<CraftingTestView>
         }
       }
 
-      setState(() => _filledBlueprintIndices = result);
+      setState(() {
+        _filledBlueprintIndices = result;
+        _exitTransformIfPieceFitted();
+      });
       _recomputeLockedArea();
     } catch (e, st) {
       debugPrint('Check coverage failed: $e\n$st');
@@ -1855,6 +2033,7 @@ class CraftingTestViewState extends State<CraftingTestView>
     Set<int> newlyFilled,
     List<List<Offset>> bpPolygons,
     List<List<Offset>> paperPolys,
+    List<List<List<Offset>>> paperHoles,
     List<String> paperIds,
   ) {
     final tolerance = 0.1 * _minorGridSpacing;
@@ -1871,6 +2050,12 @@ class CraftingTestViewState extends State<CraftingTestView>
         _dedup(bpPolygons[bpIdx], dedupTol),
         angularTolRad,
       );
+      final bHoles = bpIdx < _blueprintWorldHoles.length
+          ? [
+              for (final h in _blueprintWorldHoles[bpIdx])
+                _dedup(h, dedupTol),
+            ]
+          : const <List<Offset>>[];
 
       for (var pi = 0; pi < paperPolys.length; pi++) {
         final pid = paperIds[pi];
@@ -1879,7 +2064,19 @@ class CraftingTestViewState extends State<CraftingTestView>
           _dedup(paperPolys[pi], dedupTol),
           angularTolRad,
         );
-        if (_shapesMatch(cleaned, bpClean, tolerance)) {
+        final pHoles = pi < paperHoles.length
+            ? [
+                for (final h in paperHoles[pi])
+                  _removeCollinears(_dedup(h, dedupTol), angularTolRad),
+              ]
+            : const <List<Offset>>[];
+        if (_compoundShapesMatch(
+          cleaned,
+          pHoles,
+          bpClean,
+          bHoles,
+          tolerance,
+        )) {
           animating.add(pid);
           paperToBpIndex[pid] = bpIdx;
           break;
@@ -1896,8 +2093,10 @@ class CraftingTestViewState extends State<CraftingTestView>
         final paper = _placedPapers.where((p) => p.id == entry.key).firstOrNull;
         if (paper != null) {
           paper.lockedBlueprintIndex = entry.value;
+          paper.opsLocked = true;
         }
       }
+      _exitTransformIfPieceFitted();
     });
     _lockAnimController.forward(from: 0);
   }
@@ -2359,7 +2558,7 @@ class CraftingTestViewState extends State<CraftingTestView>
     final allIntersections = <Offset>[];
     for (final line in _drawnCutLines) {
       for (final paper in _placedPapers) {
-        if (paper.locked) continue;
+        if (_isToolProtected(paper)) continue;
         final worldCorners = _paperWorldCorners(paper);
         final poly = worldCorners.map((v) => Offset(v.x, v.y)).toList();
         for (var i = 0; i < poly.length; i++) {
@@ -2548,8 +2747,10 @@ class CraftingTestViewState extends State<CraftingTestView>
     }
 
     List<Offset>? bpVerts;
-    if (_snapBlueprint && _blueprintWorldPolygons.isNotEmpty) {
-      bpVerts = _blueprintWorldPolygons.expand((poly) => poly).toList();
+    if (_snapBlueprint && _snapWorldLoops.isNotEmpty) {
+      bpVerts = [
+        for (final (ring, _) in _snapWorldLoops) ...ring,
+      ];
     }
 
     for (final v in movingVertices) {
@@ -2608,24 +2809,30 @@ class CraftingTestViewState extends State<CraftingTestView>
   static const _kCutBlueprintSnapScale = 2.6;
   static const _kCutAdjacentDistScale = 0.62;
   static const _kCutParallelDot = 0.99; // ~8°; 180° counts as the same direction
+  static const _kCutRayAngleDeg = 5.0;
 
   /// Cut-line snap: blueprint vertices beat the grid whenever they are nearby.
   /// If the stroke started on a blueprint vertex, adjacent vertices (the other
   /// ends of edges that share that vertex) get a slight extra pull.
-  ({Offset point, List<_BpVertexRef> refs}) _snapCutPoint(
+  /// When the drag angle matches an incident edge within [_kCutRayAngleDeg],
+  /// the end point locks to that edge's infinite ray.
+  ({Offset point, List<_BpVertexRef> refs, (Offset, Offset)? ray}) _snapCutPoint(
     Offset worldPt, {
     List<_BpVertexRef> fromVertexRefs = const [],
   }) {
     final gridRadius = _snapWorldRadius;
     final bpRadius = gridRadius * _kCutBlueprintSnapScale;
+    final ray = fromVertexRefs.isEmpty
+        ? null
+        : _bestCutRay(fromVertexRefs.first.point, worldPt, fromVertexRefs);
 
     _BpVertexRef? bestRef;
     var bestScore = double.infinity;
-    if (_snapBlueprint && _blueprintWorldPolygons.isNotEmpty) {
-      for (var pi = 0; pi < _blueprintWorldPolygons.length; pi++) {
-        final poly = _blueprintWorldPolygons[pi];
-        for (var vi = 0; vi < poly.length; vi++) {
-          final dist = (poly[vi] - worldPt).distance;
+    if (_snapBlueprint && _snapWorldLoops.isNotEmpty) {
+      for (var pi = 0; pi < _snapWorldLoops.length; pi++) {
+        final ring = _snapWorldLoops[pi].$1;
+        for (var vi = 0; vi < ring.length; vi++) {
+          final dist = (ring[vi] - worldPt).distance;
           if (dist > bpRadius) continue;
           var score = dist;
           if (fromVertexRefs.isNotEmpty &&
@@ -2636,15 +2843,27 @@ class CraftingTestViewState extends State<CraftingTestView>
           }
           if (score < bestScore) {
             bestScore = score;
-            bestRef = _BpVertexRef(pi, vi, poly[vi]);
+            bestRef = _BpVertexRef(pi, vi, ring[vi]);
           }
         }
       }
     }
     if (bestRef != null) {
+      final onRay = ray == null ||
+          _distanceToLine(bestRef.point, ray.$1, ray.$2) <=
+              math.max(1e-4, gridRadius * 0.15);
       return (
         point: bestRef.point,
         refs: _blueprintVertexRefsAt(bestRef.point),
+        ray: onRay ? ray : null,
+      );
+    }
+
+    if (ray != null) {
+      return (
+        point: _projectOntoLine(worldPt, ray.$1, ray.$2),
+        refs: const [],
+        ray: ray,
       );
     }
 
@@ -2663,24 +2882,75 @@ class CraftingTestViewState extends State<CraftingTestView>
         }
       }
       if (bestPaper != null) {
-        return (point: bestPaper, refs: const []);
+        return (point: bestPaper, refs: const [], ray: null);
       }
     }
 
     if (_snapGrid) {
-      return (point: _snapPointToGrid(worldPt), refs: const []);
+      return (point: _snapPointToGrid(worldPt), refs: const [], ray: null);
     }
-    return (point: worldPt, refs: const []);
+    return (point: worldPt, refs: const [], ray: null);
+  }
+
+  (Offset, Offset)? _bestCutRay(
+    Offset start,
+    Offset pointer,
+    List<_BpVertexRef> refs,
+  ) {
+    if (!_snapBlueprint) return null;
+    final drag = pointer - start;
+    final dragLen = drag.distance;
+    if (dragLen < 1e-6) return null;
+    final dragUnit = drag / dragLen;
+    final minDot = math.cos(_kCutRayAngleDeg * math.pi / 180);
+    (Offset, Offset)? best;
+    var bestDot = minDot;
+    for (final (a, b) in _incidentSnapEdges(refs)) {
+      final edge = b - a;
+      final edgeLen = edge.distance;
+      if (edgeLen < 1e-6) continue;
+      final edgeUnit = edge / edgeLen;
+      final aligned =
+          (dragUnit.dx * edgeUnit.dx + dragUnit.dy * edgeUnit.dy).abs();
+      if (aligned >= bestDot) {
+        bestDot = aligned;
+        best = (a, b);
+      }
+    }
+    return best;
+  }
+
+  Iterable<(Offset, Offset)> _incidentSnapEdges(List<_BpVertexRef> refs) sync* {
+    for (final ref in refs) {
+      if (ref.polyIndex < 0 || ref.polyIndex >= _snapWorldLoops.length) {
+        continue;
+      }
+      final ring = _snapWorldLoops[ref.polyIndex].$1;
+      final n = ring.length;
+      if (n < 2) continue;
+      final i = ref.vertexIndex;
+      if (i < 0 || i >= n) continue;
+      yield (ring[i], ring[(i + 1) % n]);
+      yield (ring[i], ring[(i + n - 1) % n]);
+    }
+  }
+
+  static Offset _projectOntoLine(Offset point, Offset a, Offset b) {
+    final ab = b - a;
+    final len2 = ab.dx * ab.dx + ab.dy * ab.dy;
+    if (len2 < 1e-12) return a;
+    final t = ((point.dx - a.dx) * ab.dx + (point.dy - a.dy) * ab.dy) / len2;
+    return Offset(a.dx + ab.dx * t, a.dy + ab.dy * t);
   }
 
   List<_BpVertexRef> _blueprintVertexRefsAt(Offset point) {
     const eps2 = 1e-8;
     final refs = <_BpVertexRef>[];
-    for (var pi = 0; pi < _blueprintWorldPolygons.length; pi++) {
-      final poly = _blueprintWorldPolygons[pi];
-      for (var vi = 0; vi < poly.length; vi++) {
-        if ((poly[vi] - point).distanceSquared <= eps2) {
-          refs.add(_BpVertexRef(pi, vi, poly[vi]));
+    for (var pi = 0; pi < _snapWorldLoops.length; pi++) {
+      final ring = _snapWorldLoops[pi].$1;
+      for (var vi = 0; vi < ring.length; vi++) {
+        if ((ring[vi] - point).distanceSquared <= eps2) {
+          refs.add(_BpVertexRef(pi, vi, ring[vi]));
         }
       }
     }
@@ -2693,7 +2963,8 @@ class CraftingTestViewState extends State<CraftingTestView>
     int vertexIndex,
   ) {
     if (start.polyIndex != polyIndex) return false;
-    final n = _blueprintWorldPolygons[polyIndex].length;
+    if (polyIndex < 0 || polyIndex >= _snapWorldLoops.length) return false;
+    final n = _snapWorldLoops[polyIndex].$1.length;
     if (n < 2) return false;
     final d = (vertexIndex - start.vertexIndex).abs();
     return d == 1 || d == n - 1;
@@ -2703,6 +2974,7 @@ class CraftingTestViewState extends State<CraftingTestView>
     _lineDrawStart = null;
     _lineDrawPreview = null;
     _cutStartVertexRefs = const [];
+    _cutSnapRay = null;
     if (fadeHighlights) {
       _fadeCutHighlights();
     }
@@ -2744,7 +3016,7 @@ class CraftingTestViewState extends State<CraftingTestView>
     final cutUnit = cut / cutLen;
     final (extA, extB) = extendLineSegment(start, end, _drawingPlaneSize);
     final hits = <(Offset, Offset)>[];
-    for (final poly in _blueprintWorldPolygons) {
+    for (final (poly, _) in _snapWorldLoops) {
       if (poly.length < 2) continue;
       for (var i = 0; i < poly.length; i++) {
         final a = poly[i];
@@ -2799,6 +3071,300 @@ class CraftingTestViewState extends State<CraftingTestView>
   }
 
   // ---------------------------------------------------------------------------
+  // Shared handle-box (stencil + stretch)
+  // ---------------------------------------------------------------------------
+
+  static const _kHandleFollowRate = 18.0;
+
+  /// 0=top, 1=right, 2=bottom, 3=left, 4=TL, 5=TR, 6=BR, 7=BL (Y-up).
+  ({bool left, bool right, bool top, bool bottom}) _handleMoves(
+    int handleIndex,
+  ) {
+    return (
+      left: handleIndex == 3 || handleIndex == 4 || handleIndex == 7,
+      right: handleIndex == 1 || handleIndex == 5 || handleIndex == 6,
+      top: handleIndex == 0 || handleIndex == 4 || handleIndex == 5,
+      bottom: handleIndex == 2 || handleIndex == 6 || handleIndex == 7,
+    );
+  }
+
+  Rect _resizeHandleBox({
+    required Rect start,
+    required int handleIndex,
+    required Offset pointer,
+    bool uniformCorners = false,
+    double minSize = 0.01,
+  }) {
+    var minX = start.left;
+    var maxX = start.right;
+    var minY = start.top;
+    var maxY = start.bottom;
+    final moves = _handleMoves(handleIndex);
+    if (moves.left) minX = pointer.dx;
+    if (moves.right) maxX = pointer.dx;
+    if (moves.bottom) minY = pointer.dy;
+    if (moves.top) maxY = pointer.dy;
+    if (uniformCorners && handleIndex >= 4) {
+      final fixedX = moves.left ? start.right : start.left;
+      final fixedY = moves.bottom ? start.bottom : start.top;
+      final s = math.max(
+        (pointer.dx - fixedX).abs(),
+        (pointer.dy - fixedY).abs(),
+      );
+      minX = moves.left ? fixedX - s : fixedX;
+      maxX = moves.left ? fixedX : fixedX + s;
+      minY = moves.bottom ? fixedY - s : fixedY;
+      maxY = moves.bottom ? fixedY : fixedY + s;
+    }
+    if (maxX < minX) {
+      final t = minX;
+      minX = maxX;
+      maxX = t;
+    }
+    if (maxY < minY) {
+      final t = minY;
+      minY = maxY;
+      maxY = t;
+    }
+    if (maxX - minX < minSize) {
+      if (moves.left) {
+        minX = maxX - minSize;
+      } else if (moves.right) {
+        maxX = minX + minSize;
+      } else {
+        final mid = (minX + maxX) / 2;
+        minX = mid - minSize / 2;
+        maxX = mid + minSize / 2;
+      }
+    }
+    if (maxY - minY < minSize) {
+      if (moves.bottom) {
+        minY = maxY - minSize;
+      } else if (moves.top) {
+        maxY = minY + minSize;
+      } else {
+        final mid = (minY + maxY) / 2;
+        minY = mid - minSize / 2;
+        maxY = mid + minSize / 2;
+      }
+    }
+    return Rect.fromLTRB(minX, minY, maxX, maxY);
+  }
+
+  Rect _snapHandleBox(
+    Rect r,
+    int handleIndex, {
+    Iterable<(Offset a, Offset b, bool isHole)>? edges,
+    Iterable<(Offset p, bool isHole)>? vertices,
+    Offset Function(Offset point)? snapGridPoint,
+  }) {
+    final moves = _handleMoves(handleIndex);
+    var minX = r.left;
+    var maxX = r.right;
+    var minY = r.top;
+    var maxY = r.bottom;
+    var snappedX = false;
+    var snappedY = false;
+
+    ({double value, double score})? axis({
+      required double value,
+      required bool isX,
+      required double spanMin,
+      required double spanMax,
+    }) {
+      return _snapStencilAxis(
+        value: value,
+        isX: isX,
+        spanMin: spanMin,
+        spanMax: spanMax,
+        edges: edges,
+      );
+    }
+
+    if (moves.left) {
+      final s = axis(value: minX, isX: true, spanMin: minY, spanMax: maxY);
+      if (s != null) {
+        minX = s.value;
+        snappedX = true;
+      }
+    }
+    if (moves.right) {
+      final s = axis(value: maxX, isX: true, spanMin: minY, spanMax: maxY);
+      if (s != null) {
+        maxX = s.value;
+        snappedX = true;
+      }
+    }
+    if (moves.bottom) {
+      final s = axis(value: minY, isX: false, spanMin: minX, spanMax: maxX);
+      if (s != null) {
+        minY = s.value;
+        snappedY = true;
+      }
+    }
+    if (moves.top) {
+      final s = axis(value: maxY, isX: false, spanMin: minX, spanMax: maxX);
+      if (s != null) {
+        maxY = s.value;
+        snappedY = true;
+      }
+    }
+
+    final verts = vertices ?? _blueprintSnapVertices();
+    if (_snapBlueprint && handleIndex >= 4) {
+      final corner = Offset(
+        moves.left ? minX : maxX,
+        moves.bottom ? minY : maxY,
+      );
+      final vertRadius = _snapWorldRadius * _kStencilBlueprintSnapScale;
+      double bestScore = double.infinity;
+      Offset? best;
+      for (final (p, isHole) in verts) {
+        final dist = (p - corner).distance;
+        if (dist > vertRadius) continue;
+        final score = isHole ? dist * _kStencilHoleScoreScale : dist;
+        if (score < bestScore) {
+          bestScore = score;
+          best = p;
+        }
+      }
+      if (best != null) {
+        if (moves.left) minX = best.dx;
+        if (moves.right) maxX = best.dx;
+        if (moves.bottom) minY = best.dy;
+        if (moves.top) maxY = best.dy;
+        snappedX = true;
+        snappedY = true;
+      }
+    }
+
+    if (_snapGrid && snapGridPoint != null) {
+      if ((moves.left || moves.right) && !snappedX) {
+        final x = moves.left ? minX : maxX;
+        final g = snapGridPoint(Offset(x, (minY + maxY) / 2));
+        if (moves.left) minX = g.dx;
+        if (moves.right) maxX = g.dx;
+      }
+      if ((moves.top || moves.bottom) && !snappedY) {
+        final y = moves.bottom ? minY : maxY;
+        final g = snapGridPoint(Offset((minX + maxX) / 2, y));
+        if (moves.bottom) minY = g.dy;
+        if (moves.top) maxY = g.dy;
+      }
+    }
+
+    return Rect.fromLTRB(minX, minY, maxX, maxY);
+  }
+
+  void _beginHandleFollow(Rect current, void Function(Rect) apply) {
+    _handleFollowDisplay = current;
+    _handleFollowTarget = current;
+    _handleFollowApply = apply;
+    _handleFollowOnSettled = null;
+    _handleFollowSettling = false;
+    apply(current);
+    _ensureHandleFollowTicker();
+  }
+
+  void _setHandleFollowTarget(Rect target) {
+    _handleFollowTarget = target;
+    _handleFollowDisplay ??= target;
+    _ensureHandleFollowTicker();
+  }
+
+  void _settleHandleFollow({VoidCallback? onSettled}) {
+    _handleFollowSettling = true;
+    _handleFollowOnSettled = onSettled;
+    _ensureHandleFollowTicker();
+  }
+
+  void _stopHandleFollow() {
+    _handleFollowTicker.stop();
+    _handleFollowLast = null;
+    _handleFollowDisplay = null;
+    _handleFollowTarget = null;
+    _handleFollowApply = null;
+    _handleFollowOnSettled = null;
+    _handleFollowSettling = false;
+  }
+
+  void _ensureHandleFollowTicker() {
+    if (!_handleFollowTicker.isActive) {
+      _handleFollowLast = null;
+      _handleFollowTicker.start();
+    }
+  }
+
+  void _onHandleFollowTick(Duration elapsed) {
+    final last = _handleFollowLast;
+    _handleFollowLast = elapsed;
+    if (last == null) return;
+    final dt = (elapsed - last).inMicroseconds / 1e6;
+    if (dt <= 0 || dt > 0.1) return;
+    final display = _handleFollowDisplay;
+    final target = _handleFollowTarget;
+    final apply = _handleFollowApply;
+    if (display == null || target == null || apply == null) return;
+
+    final t = 1 - math.exp(-_kHandleFollowRate * dt);
+    final next = Rect.lerp(display, target, t)!;
+    final close = (next.left - target.left).abs() < 1e-4 &&
+        (next.right - target.right).abs() < 1e-4 &&
+        (next.top - target.top).abs() < 1e-4 &&
+        (next.bottom - target.bottom).abs() < 1e-4;
+    final settled = close ? target : next;
+    _handleFollowDisplay = settled;
+    if (!mounted) return;
+    setState(() => apply(settled));
+    if (close) {
+      if (_handleFollowSettling) {
+        final done = _handleFollowOnSettled;
+        _handleFollowSettling = false;
+        _handleFollowOnSettled = null;
+        done?.call();
+      }
+      if (_stencilHandleIndex == null &&
+          _stretchHandleIndex == null &&
+          !_handleFollowSettling) {
+        _handleFollowTicker.stop();
+        _handleFollowLast = null;
+      }
+    }
+  }
+
+  Offset _mapBoxPoint(Offset v, Rect from, Rect to) {
+    final w = from.width.abs() < 1e-9 ? 1.0 : from.width;
+    final h = from.height.abs() < 1e-9 ? 1.0 : from.height;
+    return Offset(
+      to.left + (v.dx - from.left) / w * to.width,
+      to.top + (v.dy - from.top) / h * to.height,
+    );
+  }
+
+  /// True when [verts] have collapsed to a point, a line, or zero area.
+  bool _isDegenerateXformPolygon(List<Offset> verts) {
+    if (verts.length < 3) return true;
+    if (_polyArea(verts).abs() <= 1e-6) return true;
+    var minX = verts[0].dx, maxX = verts[0].dx;
+    var minY = verts[0].dy, maxY = verts[0].dy;
+    for (final v in verts) {
+      if (v.dx < minX) minX = v.dx;
+      if (v.dx > maxX) maxX = v.dx;
+      if (v.dy < minY) minY = v.dy;
+      if (v.dy > maxY) maxY = v.dy;
+    }
+    return (maxX - minX) <= 1e-6 || (maxY - minY) <= 1e-6;
+  }
+
+  bool _stretchBoundsAreDegenerate(PlacedPaper paper, Rect from, Rect to) {
+    if (to.width.abs() <= 1e-6 || to.height.abs() <= 1e-6) return true;
+    final mapped = [
+      for (final v in _paperLocalVertices(paper)) _mapBoxPoint(v, from, to),
+    ];
+    return _isDegenerateXformPolygon(mapped);
+  }
+
+  // ---------------------------------------------------------------------------
   // Stretch tool helpers
   // ---------------------------------------------------------------------------
 
@@ -2816,178 +3382,181 @@ class CraftingTestViewState extends State<CraftingTestView>
     return Rect.fromLTRB(minX, minY, maxX, maxY);
   }
 
-  /// Transform a local coordinate by the current stretch (anchor-relative).
-  double _stretchLocal(double v, double anchor, double scale) {
-    return v * scale + anchor * (1 - scale);
-  }
-
-  /// 8 handle positions for the stretch gizmo in world space.
-  /// 0=top, 1=right, 2=bottom, 3=left (edge midpoints)
-  /// 4=topLeft, 5=topRight, 6=bottomRight, 7=bottomLeft (corners)
-  List<Offset> _stretchHandleWorldPositions(PlacedPaper paper, Rect bounds) {
-    final cx = paper.position.x;
-    final cy = paper.position.y;
+  Offset _paperLocalToWorld(Offset local, PlacedPaper paper) {
     final rad = paper.rotationDeg * math.pi / 180;
     final cosA = math.cos(rad);
     final sinA = math.sin(rad);
-    final ax = _stretchAnchorLocal.dx;
-    final ay = _stretchAnchorLocal.dy;
-    final sx = _stretchScaleX;
-    final sy = _stretchScaleY;
+    return Offset(
+      paper.position.x + local.dx * cosA - local.dy * sinA,
+      paper.position.y + local.dx * sinA + local.dy * cosA,
+    );
+  }
 
-    Offset toWorld(double lx, double ly) {
-      final slx = _stretchLocal(lx, ax, sx);
-      final sly = _stretchLocal(ly, ay, sy);
-      return Offset(cx + slx * cosA - sly * sinA, cy + slx * sinA + sly * cosA);
-    }
-
+  List<Offset> _stretchHandleWorldPositions(PlacedPaper paper, Rect bounds) {
+    Offset toWorld(double lx, double ly) =>
+        _paperLocalToWorld(Offset(lx, ly), paper);
     final l = bounds.left, r = bounds.right;
     final t = bounds.top, b = bounds.bottom;
     final mx = (l + r) / 2, my = (t + b) / 2;
-
     return [
-      toWorld(mx, b), // 0: top (max Y in world)
-      toWorld(r, my), // 1: right
-      toWorld(mx, t), // 2: bottom
-      toWorld(l, my), // 3: left
-      toWorld(l, b), // 4: topLeft
-      toWorld(r, b), // 5: topRight
-      toWorld(r, t), // 6: bottomRight
-      toWorld(l, t), // 7: bottomLeft
+      toWorld(mx, b),
+      toWorld(r, my),
+      toWorld(mx, t),
+      toWorld(l, my),
+      toWorld(l, b),
+      toWorld(r, b),
+      toWorld(r, t),
+      toWorld(l, t),
     ];
   }
 
-  /// Hit-test stretch handles — returns handle index 0-7 or null.
   int? _hitTestStretchHandle(
     Offset screenPos,
     Size viewportSize,
     PlacedPaper paper,
   ) {
-    final bounds = _stretchOriginalBounds ?? _paperLocalBounds(paper);
+    final bounds =
+        _stretchDisplayLocal ?? _stretchStartLocal ?? _paperLocalBounds(paper);
     final handles = _stretchHandleWorldPositions(paper, bounds);
-    final worldPerPixel = _worldUnitsPerPixel(viewportSize);
-    final hitRadius = 15.0 * worldPerPixel;
-
-    final worldPos = _screenToWorld(screenPos, viewportSize);
-    final wp = Offset(worldPos.x, worldPos.y);
-
-    for (var i = 0; i < handles.length; i++) {
-      if ((handles[i] - wp).distance <= hitRadius) return i;
-    }
-    return null;
-  }
-
-  /// Snap a stretched edge coordinate to blueprint polygon edges.
-  /// [axisValue] is the world-space coordinate of the edge being stretched.
-  /// [isHorizontal] true for left/right edges (snapping X), false for
-  /// top/bottom edges (snapping Y).
-  /// Returns the snapped value, or null if no snap found.
-  double? _snapStretchToBlueprintEdge(
-    double axisValue,
-    bool isHorizontal,
-    PlacedPaper paper,
-  ) {
-    if (!_snapBlueprint || _blueprintWorldPolygons.isEmpty) return null;
-    final radius = _snapWorldRadius;
-    double bestDist = double.infinity;
-    double? bestSnap;
-
-    for (final poly in _blueprintWorldPolygons) {
-      for (var i = 0; i < poly.length; i++) {
-        final a = poly[i];
-        final b = poly[(i + 1) % poly.length];
-        if (isHorizontal) {
-          // Snap to vertical blueprint edges (constant X)
-          if ((a.dx - b.dx).abs() < 1e-4) {
-            final dist = (a.dx - axisValue).abs();
-            if (dist < bestDist && dist <= radius) {
-              bestDist = dist;
-              bestSnap = a.dx;
-            }
-          }
-        } else {
-          // Snap to horizontal blueprint edges (constant Y)
-          if ((a.dy - b.dy).abs() < 1e-4) {
-            final dist = (a.dy - axisValue).abs();
-            if (dist < bestDist && dist <= radius) {
-              bestDist = dist;
-              bestSnap = a.dy;
-            }
-          }
-        }
+    const hitRadius = 20.0;
+    int? best;
+    var bestDist = hitRadius;
+    for (final i in const [4, 5, 6, 7, 0, 1, 2, 3]) {
+      final sp = _worldToScreen(
+        Vector3(handles[i].dx, handles[i].dy, _paperZ),
+        viewportSize,
+      );
+      final dist = (sp - screenPos).distance;
+      if (dist <= bestDist) {
+        bestDist = dist;
+        best = i;
       }
     }
-    return bestSnap;
+    return best;
   }
 
-  /// Round a scale factor to the nearest 5% increment.
-  double _roundToStretchIncrement(double scale) {
-    return (scale * 20).round() / 20.0;
-  }
-
-  /// Anchor point in local space for the given handle index.
-  /// For edge handles the non-stretched axis anchors at 0 (center).
-  Offset _stretchAnchorForHandle(int handleIndex, Rect bounds) {
-    switch (handleIndex) {
-      case 0:
-        return Offset(0, bounds.top); // top edge → anchor bottom
-      case 1:
-        return Offset(bounds.left, 0); // right edge → anchor left
-      case 2:
-        return Offset(0, bounds.bottom); // bottom edge → anchor top
-      case 3:
-        return Offset(bounds.right, 0); // left edge → anchor right
-      case 4:
-        return Offset(bounds.right, bounds.top); // TL → anchor BR
-      case 5:
-        return Offset(bounds.left, bounds.top); // TR → anchor BL
-      case 6:
-        return Offset(bounds.left, bounds.bottom); // BR → anchor TL
-      case 7:
-        return Offset(bounds.right, bounds.bottom); // BL → anchor TR
-      default:
-        return Offset.zero;
+  Iterable<(Offset a, Offset b, bool isHole)> _stretchLocalSnapEdges(
+    PlacedPaper paper,
+  ) sync* {
+    for (final (a, b, isHole) in _blueprintSnapEdges()) {
+      yield (
+        _worldToPaperLocal(Vector3(a.dx, a.dy, 0), paper),
+        _worldToPaperLocal(Vector3(b.dx, b.dy, 0), paper),
+        isHole,
+      );
     }
   }
 
-  void _applyStretch() {
-    if (_stretchPaperId == null) return;
-    final paper = _placedPapers
-        .where((p) => p.id == _stretchPaperId)
-        .firstOrNull;
-    if (paper == null) return;
-    if ((_stretchScaleX - 1.0).abs() < 1e-4 &&
-        (_stretchScaleY - 1.0).abs() < 1e-4)
+  Iterable<(Offset p, bool isHole)> _stretchLocalSnapVertices(
+    PlacedPaper paper,
+  ) sync* {
+    for (final (p, isHole) in _blueprintSnapVertices()) {
+      yield (_worldToPaperLocal(Vector3(p.dx, p.dy, 0), paper), isHole);
+    }
+  }
+
+  Rect _stretchTargetFromPointer(
+    PlacedPaper paper,
+    int handleIndex,
+    Offset world,
+  ) {
+    final start = _stretchStartLocal ?? _paperLocalBounds(paper);
+    final local = _worldToPaperLocal(Vector3(world.dx, world.dy, 0), paper);
+    final raw = _resizeHandleBox(
+      start: start,
+      handleIndex: handleIndex,
+      pointer: local,
+    );
+    return _snapHandleBox(
+      raw,
+      handleIndex,
+      edges: _stretchLocalSnapEdges(paper),
+      vertices: _stretchLocalSnapVertices(paper),
+      snapGridPoint: (p) {
+        final g = _snapPointToGrid(_paperLocalToWorld(p, paper));
+        return _worldToPaperLocal(Vector3(g.dx, g.dy, 0), paper);
+      },
+    );
+  }
+
+  void _clearStretchBox() {
+    _stretchStartLocal = null;
+    _stretchDisplayLocal = null;
+    _stretchHandleIndex = null;
+  }
+
+  void _startTransform(PlacedPaper paper) {
+    if (paper.locked) return;
+    setState(() {
+      _craftingMode = CraftingMode.select;
+      _isRotationGizmoActive = false;
+      _stretchPaperId = paper.id;
+      _clearStretchBox();
+      _selectedPaperIds = {paper.id};
+    });
+  }
+
+  void _endTransform({bool deselect = false}) {
+    _bakeStretch();
+    _stretchPaperId = null;
+    _clearStretchBox();
+    _stopHandleFollow();
+    if (deselect) {
+      _selectedPaperIds = {};
+      _isRotationGizmoActive = false;
+    }
+  }
+
+  /// Leave xform for a piece that just fitted a blueprint slot (green edges).
+  void _exitTransformIfPieceFitted() {
+    final id = _stretchPaperId;
+    if (id == null || _stretchHandleIndex != null) return;
+    final paper = _placedPapers.where((p) => p.id == id).firstOrNull;
+    if (paper == null || !paper.isBlueprintMatched) return;
+    _endTransform();
+  }
+
+  void _bakeStretch() {
+    final paperId = _stretchPaperId;
+    final from = _stretchStartLocal;
+    final to = _stretchDisplayLocal;
+    if (paperId == null || from == null || to == null) {
+      _clearStretchBox();
+      _stopHandleFollow();
       return;
+    }
+    final unchanged = (from.left - to.left).abs() < 1e-6 &&
+        (from.right - to.right).abs() < 1e-6 &&
+        (from.top - to.top).abs() < 1e-6 &&
+        (from.bottom - to.bottom).abs() < 1e-6;
+    if (unchanged) {
+      _clearStretchBox();
+      _stopHandleFollow();
+      return;
+    }
+    final paper = _placedPapers.where((p) => p.id == paperId).firstOrNull;
+    if (paper == null) {
+      _clearStretchBox();
+      _stopHandleFollow();
+      return;
+    }
 
-    final sx = _stretchScaleX;
-    final sy = _stretchScaleY;
-    final ax = _stretchAnchorLocal.dx;
-    final ay = _stretchAnchorLocal.dy;
+    if (_stretchBoundsAreDegenerate(paper, from, to)) {
+      _stretchDisplayLocal = from;
+      _handleFollowDisplay = from;
+      _handleFollowTarget = from;
+      _stopHandleFollow();
+      return;
+    }
 
-    // Scale each vertex relative to the anchor point
-    Offset xformOff(Offset v) =>
-        Offset(v.dx * sx + ax * (1 - sx), v.dy * sy + ay * (1 - sy));
-
+    Offset xformOff(Offset v) => _mapBoxPoint(v, from, to);
     final verts = _paperLocalVertices(paper);
     final scaled = verts.map(xformOff).toList();
-    final scaledHoles = paper.localHoles
-        .map((h) => h.map(xformOff).toList())
-        .toList();
-    final scaledCuts = paper.cutSegments
-        .map((s) => (xformOff(s.$1), xformOff(s.$2)))
-        .toList();
+    final scaledHoles =
+        paper.localHoles.map((h) => h.map(xformOff).toList()).toList();
+    final scaledCuts =
+        paper.cutSegments.map((s) => (xformOff(s.$1), xformOff(s.$2))).toList();
 
-    // Shift paper position so the anchor stays in world space
-    final rad = paper.rotationDeg * math.pi / 180;
-    final cosA = math.cos(rad);
-    final sinA = math.sin(rad);
-    final dlx = ax * (1 - sx);
-    final dly = ay * (1 - sy);
-    final worldDx = dlx * cosA - dly * sinA;
-    final worldDy = dlx * sinA + dly * cosA;
-
-    // Re-center vertices around their new centroid so position stays canonical
     var cxLocal = 0.0, cyLocal = 0.0;
     for (final v in scaled) {
       cxLocal += v.dx;
@@ -2995,13 +3564,10 @@ class CraftingTestViewState extends State<CraftingTestView>
     }
     cxLocal /= scaled.length;
     cyLocal /= scaled.length;
-    final recentered = scaled
-        .map((v) => Offset(v.dx - cxLocal, v.dy - cyLocal))
-        .toList();
+    final recentered =
+        scaled.map((v) => Offset(v.dx - cxLocal, v.dy - cyLocal)).toList();
     final recenteredHoles = scaledHoles
-        .map(
-          (h) => h.map((v) => Offset(v.dx - cxLocal, v.dy - cyLocal)).toList(),
-        )
+        .map((h) => h.map((v) => Offset(v.dx - cxLocal, v.dy - cyLocal)).toList())
         .toList();
     final recenteredCuts = scaledCuts
         .map(
@@ -3012,36 +3578,432 @@ class CraftingTestViewState extends State<CraftingTestView>
         )
         .toList();
 
-    // World position of the new centroid
-    final newPosX =
-        paper.position.x + worldDx + cxLocal * cosA - cyLocal * sinA;
-    final newPosY =
-        paper.position.y + worldDy + cxLocal * sinA + cyLocal * cosA;
+    final rad = paper.rotationDeg * math.pi / 180;
+    final cosA = math.cos(rad);
+    final sinA = math.sin(rad);
+    final newPosX = paper.position.x + cxLocal * cosA - cyLocal * sinA;
+    final newPosY = paper.position.y + cxLocal * sinA + cyLocal * cosA;
 
     final idx = _placedPapers.indexOf(paper);
-    setState(() {
-      final replacement = PlacedPaper(
-        id: paper.id,
-        paperColor: paper.paperColor,
-        position: Vector3(newPosX, newPosY, paper.position.z),
-        rotationDeg: paper.rotationDeg,
-        sizeLevel: paper.sizeLevel,
-        localVertices: recentered,
-        localHoles: recenteredHoles,
-        groupId: paper.groupId,
-        materialId: paper.materialId,
-      );
-      replacement.cutSegments.addAll(recenteredCuts);
-      replacement.locked = paper.locked;
-      replacement.lockedBlueprintIndex = paper.lockedBlueprintIndex;
-      _placedPapers[idx] = replacement;
-      _stretchPaperId = replacement.id;
-    });
-    _stretchScaleX = 1.0;
-    _stretchScaleY = 1.0;
-    _stretchOriginalBounds = null;
-    _stretchAnchorLocal = Offset.zero;
+    final replacement = PlacedPaper(
+      id: paper.id,
+      paperColor: paper.paperColor,
+      position: Vector3(newPosX, newPosY, paper.position.z),
+      stackOrder: paper.stackOrder,
+      rotationDeg: paper.rotationDeg,
+      sizeLevel: paper.sizeLevel,
+      localVertices: recentered,
+      localHoles: recenteredHoles,
+      groupId: paper.groupId,
+      materialId: paper.materialId,
+    );
+    replacement.cutSegments.addAll(recenteredCuts);
+    replacement.locked = paper.locked;
+    replacement.lockedBlueprintIndex = paper.lockedBlueprintIndex;
+    replacement.opsLocked = paper.opsLocked;
+    _placedPapers[idx] = replacement;
+    _stretchPaperId = replacement.id;
+    _stretchStartLocal = _paperLocalBounds(replacement);
+    _stretchDisplayLocal = _stretchStartLocal;
+    _stretchHandleIndex = null;
+    _stopHandleFollow();
     _scheduleCheck();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Stencil tool
+  // ---------------------------------------------------------------------------
+
+  double get _stencilUnit => _minorGridSpacing;
+
+  void _enterStencilMode() {
+    _endTransform();
+    _craftingMode = CraftingMode.stencil;
+    _selectedPaperIds = {};
+    _isRotationGizmoActive = false;
+    _panModeSelectedPaperId = null;
+    _drawnCutLines.clear();
+    _resetCutStroke();
+    _paintedCells = {};
+    _lastPaintCell = null;
+    _resetStencilTransform();
+    _stencilSelected = true;
+  }
+
+  void _resetStencilTransform() {
+    _stencilPosition = _panOffset;
+    _applyStencilDefaultSize();
+    _stencilHandleIndex = null;
+    _stencilResizeStart = null;
+    _stencilDragging = false;
+    _stopHandleFollow();
+  }
+
+  void _applyStencilDefaultSize() {
+    switch (_stencilShape) {
+      case StencilShape.rectangle:
+        // 4 units wide × 2 units tall
+        _stencilHalfW = 2 * _stencilUnit;
+        _stencilHalfH = 1 * _stencilUnit;
+      case StencilShape.circle:
+        // 2×2 bounding box (diameter 2)
+        _stencilHalfW = _stencilUnit;
+        _stencilHalfH = _stencilUnit;
+    }
+  }
+
+  Rect _stencilWorldRect() => Rect.fromLTRB(
+        _stencilPosition.dx - _stencilHalfW,
+        _stencilPosition.dy - _stencilHalfH,
+        _stencilPosition.dx + _stencilHalfW,
+        _stencilPosition.dy + _stencilHalfH,
+      );
+
+  Offset _stencilLocalToWorld(Offset local) =>
+      Offset(_stencilPosition.dx + local.dx, _stencilPosition.dy + local.dy);
+
+  List<Offset> _stencilLocalPolygon() {
+    final hw = _stencilHalfW;
+    final hh = _stencilHalfH;
+    if (_stencilShape == StencilShape.circle) {
+      const n = 32;
+      return [
+        for (var i = 0; i < n; i++)
+          Offset(
+            hw * math.cos(2 * math.pi * i / n),
+            hh * math.sin(2 * math.pi * i / n),
+          ),
+      ];
+    }
+    return [
+      Offset(-hw, -hh),
+      Offset(hw, -hh),
+      Offset(hw, hh),
+      Offset(-hw, hh),
+    ];
+  }
+
+  List<Offset> _stencilWorldPolygon() =>
+      _stencilLocalPolygon().map(_stencilLocalToWorld).toList();
+
+  /// 0=top, 1=right, 2=bottom, 3=left, 4=TL, 5=TR, 6=BR, 7=BL (Y-up).
+  List<Offset> _stencilHandleWorldPositions() {
+    final hw = _stencilHalfW, hh = _stencilHalfH;
+    return [
+      _stencilLocalToWorld(Offset(0, hh)),
+      _stencilLocalToWorld(Offset(hw, 0)),
+      _stencilLocalToWorld(Offset(0, -hh)),
+      _stencilLocalToWorld(Offset(-hw, 0)),
+      _stencilLocalToWorld(Offset(-hw, hh)),
+      _stencilLocalToWorld(Offset(hw, hh)),
+      _stencilLocalToWorld(Offset(hw, -hh)),
+      _stencilLocalToWorld(Offset(-hw, -hh)),
+    ];
+  }
+
+  int? _hitTestStencilHandle(Offset screenPos, Size viewportSize) {
+    final handles = _stencilHandleWorldPositions();
+    const hitRadius = 20.0;
+    int? best;
+    var bestDist = hitRadius;
+    // Corners first so they win over nearby edge midpoints.
+    for (final i in const [4, 5, 6, 7, 0, 1, 2, 3]) {
+      final sp = _worldToScreen(
+        Vector3(handles[i].dx, handles[i].dy, _paperZ),
+        viewportSize,
+      );
+      final dist = (sp - screenPos).distance;
+      if (dist <= bestDist) {
+        bestDist = dist;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  bool _hitTestStencilBody(Offset screenPos, Size viewportSize) {
+    final worldPos = _screenToWorld(screenPos, viewportSize);
+    final local = Offset(
+      worldPos.x - _stencilPosition.dx,
+      worldPos.y - _stencilPosition.dy,
+    );
+    if (_stencilShape == StencilShape.circle) {
+      final nx = local.dx / math.max(_stencilHalfW, 1e-6);
+      final ny = local.dy / math.max(_stencilHalfH, 1e-6);
+      return nx * nx + ny * ny <= 1;
+    }
+    return local.dx.abs() <= _stencilHalfW && local.dy.abs() <= _stencilHalfH;
+  }
+
+  void _applyStencilRect(Rect r) {
+    _stencilPosition = Offset((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+    _stencilHalfW = r.width / 2;
+    _stencilHalfH = r.height / 2;
+  }
+
+  Rect _stencilTargetFromPointer(int handleIndex, Offset world) {
+    final start = _stencilResizeStart ?? _stencilWorldRect();
+    final raw = _resizeHandleBox(
+      start: start,
+      handleIndex: handleIndex,
+      pointer: world,
+      uniformCorners: _stencilShape == StencilShape.circle,
+      minSize: _stencilUnit * 0.25,
+    );
+    return _snapHandleBox(
+      raw,
+      handleIndex,
+      snapGridPoint: _snapPointToGrid,
+    );
+  }
+
+  static const _kStencilBlueprintSnapScale = 2.6;
+  static const _kStencilHoleScoreScale = 0.42;
+  static const _kStencilAxisAlign = 0.18;
+
+  Iterable<(Offset a, Offset b, bool isHole)> _blueprintSnapEdges() sync* {
+    for (final (ring, isHole) in _snapWorldLoops) {
+      for (var j = 0; j < ring.length; j++) {
+        yield (ring[j], ring[(j + 1) % ring.length], isHole);
+      }
+    }
+  }
+
+  Iterable<(Offset p, bool isHole)> _blueprintSnapVertices() sync* {
+    for (final (ring, isHole) in _snapWorldLoops) {
+      for (final p in ring) {
+        yield (p, isHole);
+      }
+    }
+  }
+
+  /// Snap an axis-aligned stencil edge to a nearby blueprint edge.
+  /// Hole edges beat exterior edges of similar distance.
+  ({double value, double score})? _snapStencilAxis({
+    required double value,
+    required bool isX,
+    required double spanMin,
+    required double spanMax,
+    Iterable<(Offset a, Offset b, bool isHole)>? edges,
+  }) {
+    if (!_snapBlueprint) return null;
+    final edgeList = edges ?? _blueprintSnapEdges();
+    final radius = _snapWorldRadius * _kStencilBlueprintSnapScale;
+    double bestScore = double.infinity;
+    double? best;
+    for (final (a, b, isHole) in edgeList) {
+      final edx = (b.dx - a.dx).abs();
+      final edy = (b.dy - a.dy).abs();
+      final isVertical = edx <= math.max(edy * _kStencilAxisAlign, 1e-6);
+      final isHorizontal = edy <= math.max(edx * _kStencilAxisAlign, 1e-6);
+      if (isX && !isVertical) continue;
+      if (!isX && !isHorizontal) continue;
+      final edgeMin = isX ? math.min(a.dy, b.dy) : math.min(a.dx, b.dx);
+      final edgeMax = isX ? math.max(a.dy, b.dy) : math.max(a.dx, b.dx);
+      if (spanMax + radius < edgeMin || edgeMax + radius < spanMin) continue;
+      final edgeVal = isX ? (a.dx + b.dx) / 2 : (a.dy + b.dy) / 2;
+      final dist = (edgeVal - value).abs();
+      if (dist > radius) continue;
+      final score = isHole ? dist * _kStencilHoleScoreScale : dist;
+      if (score < bestScore) {
+        bestScore = score;
+        best = edgeVal;
+      }
+    }
+    if (best == null) return null;
+    return (value: best, score: bestScore);
+  }
+
+  void _snapStencilAfterMove() {
+    final r = _stencilWorldRect();
+    double? dx;
+    double? dy;
+    var xScore = double.infinity;
+    var yScore = double.infinity;
+
+    void considerX(double from, double to, double score) {
+      if (score < xScore) {
+        xScore = score;
+        dx = to - from;
+      }
+    }
+
+    void considerY(double from, double to, double score) {
+      if (score < yScore) {
+        yScore = score;
+        dy = to - from;
+      }
+    }
+
+    for (final x in [r.left, r.right]) {
+      final s = _snapStencilAxis(
+        value: x,
+        isX: true,
+        spanMin: r.top,
+        spanMax: r.bottom,
+      );
+      if (s != null) considerX(x, s.value, s.score);
+    }
+    for (final y in [r.top, r.bottom]) {
+      final s = _snapStencilAxis(
+        value: y,
+        isX: false,
+        spanMin: r.left,
+        spanMax: r.right,
+      );
+      if (s != null) considerY(y, s.value, s.score);
+    }
+
+    if (_snapBlueprint) {
+      final vertRadius = _snapWorldRadius * _kStencilBlueprintSnapScale;
+      for (final corner in [
+        Offset(r.left, r.bottom),
+        Offset(r.right, r.bottom),
+        Offset(r.right, r.top),
+        Offset(r.left, r.top),
+      ]) {
+        for (final (p, isHole) in _blueprintSnapVertices()) {
+          final dist = (p - corner).distance;
+          if (dist > vertRadius) continue;
+          final score = isHole ? dist * _kStencilHoleScoreScale : dist;
+          considerX(corner.dx, p.dx, score);
+          considerY(corner.dy, p.dy, score);
+        }
+      }
+    }
+
+    if (dx == null && dy == null && _snapGrid) {
+      final snapped = _snapPointToGrid(_stencilPosition);
+      dx = snapped.dx - _stencilPosition.dx;
+      dy = snapped.dy - _stencilPosition.dy;
+    } else if (_snapGrid) {
+      if (dx == null) {
+        final snapped = _snapPointToGrid(_stencilPosition);
+        dx = snapped.dx - _stencilPosition.dx;
+      }
+      if (dy == null) {
+        final snapped = _snapPointToGrid(_stencilPosition);
+        dy = snapped.dy - _stencilPosition.dy;
+      }
+    }
+
+    if (dx != null || dy != null) {
+      _stencilPosition += Offset(dx ?? 0, dy ?? 0);
+    }
+  }
+
+
+  void _punchStencil() {
+    final holeWorld = _stencilWorldPolygon();
+    if (holeWorld.length < 3) return;
+    _pushUndo('Punch');
+    setState(() {
+      final toRemove = <int>[];
+      final toAdd = <PlacedPaper>[];
+      for (var i = 0; i < _placedPapers.length; i++) {
+        final paper = _placedPapers[i];
+        if (_isToolProtected(paper) || _isDiscardingPaper(paper.id)) continue;
+        final punched = _punchPaperWithHole(paper, holeWorld);
+        if (punched == null) continue;
+        toRemove.add(i);
+        toAdd.addAll(punched);
+      }
+      for (final idx in toRemove.reversed) {
+        _placedPapers.removeAt(idx);
+      }
+      _placedPapers.addAll(toAdd);
+      if (toRemove.isNotEmpty) {
+        _selectedPaperIds = {};
+      }
+    });
+    _scheduleCheck();
+  }
+
+  List<PlacedPaper>? _punchPaperWithHole(
+    PlacedPaper paper,
+    List<Offset> holeWorld,
+  ) {
+    final localHole = holeWorld
+        .map((p) => _worldToPaperLocal(Vector3(p.dx, p.dy, 0), paper))
+        .toList();
+    final exterior = _paperLocalVertices(paper);
+    final subject = Polygon2D(
+      Ring2D(exterior),
+      [for (final h in paper.localHoles) Ring2D(h)],
+    );
+    final punch = Polygon2D.simple(localHole);
+    final boundsA = _aabb(exterior);
+    final boundsB = _aabb(localHole);
+    if (boundsB.maxX < boundsA.minX ||
+        boundsB.minX > boundsA.maxX ||
+        boundsB.maxY < boundsA.minY ||
+        boundsB.minY > boundsA.maxY) {
+      return null;
+    }
+
+    final diffs = polygonDifference(subject, punch);
+    if (diffs.isEmpty) return const [];
+    if (diffs.length == 1 &&
+        diffs.first.holes.length == paper.localHoles.length &&
+        diffs.first.exterior.points.length == exterior.length) {
+      final stillInside = _pointInPolygon(
+        _polygonCentroid(localHole),
+        exterior,
+      );
+      if (!stillInside) return null;
+    }
+
+    final orders = _allocateSplitOrders(paper.stackOrder, diffs.length);
+    return [
+      for (var i = 0; i < diffs.length; i++)
+        _paperFromLocalCompound(
+          paper,
+          diffs[i].exterior.points,
+          [for (final h in diffs[i].holes) h.points],
+          stackOrder: orders[i],
+        ),
+    ];
+  }
+
+  PlacedPaper _paperFromLocalCompound(
+    PlacedPaper src,
+    List<Offset> exterior,
+    List<List<Offset>> holes, {
+    double? stackOrder,
+  }) {
+    final ext = _ensureWinding(exterior, ccw: true);
+    final centroid = _polygonCentroid(ext);
+    final shifted = ext.map((v) => v - centroid).toList();
+    final shiftedHoles = [
+      for (final h in holes)
+        _ensureWinding(h, ccw: false).map((v) => v - centroid).toList(),
+    ];
+    final rad = src.rotationDeg * math.pi / 180;
+    final cosA = math.cos(rad);
+    final sinA = math.sin(rad);
+    return PlacedPaper(
+      id: 'paper_${_nextPaperId++}',
+      paperColor: src.paperColor,
+      position: Vector3(
+        src.position.x + centroid.dx * cosA - centroid.dy * sinA,
+        src.position.y + centroid.dx * sinA + centroid.dy * cosA,
+        src.position.z,
+      ),
+      stackOrder: stackOrder ?? _allocateStackMajor(),
+      rotationDeg: src.rotationDeg,
+      sizeLevel: src.sizeLevel,
+      localVertices: shifted,
+      localHoles: shiftedHoles,
+      groupId: src.groupId,
+      materialId: src.materialId,
+    );
+  }
+
+  List<Offset> _ensureWinding(List<Offset> poly, {required bool ccw}) {
+    final area = _signedAreaOf(poly);
+    final isCcw = area > 0;
+    if (isCcw == ccw) return List<Offset>.from(poly);
+    return poly.reversed.toList();
   }
 
   // ---------------------------------------------------------------------------
@@ -3318,7 +4280,11 @@ class CraftingTestViewState extends State<CraftingTestView>
   /// True only when an existing paper fully encloses the grid cell.  Test
   /// points are inset slightly so they never land exactly on a polygon edge,
   /// avoiding ray-casting ambiguity for grid-aligned boundaries.
-  bool _isCellOccupiedByPaper(int col, int row) {
+  bool _isCellOccupiedByPaper(
+    int col,
+    int row, {
+    bool includeOpsLocked = true,
+  }) {
     final s = _activeGridSpacing;
     final inset = s * 0.01;
     final corners = [
@@ -3329,6 +4295,7 @@ class CraftingTestViewState extends State<CraftingTestView>
     ];
     for (final paper in _placedPapers) {
       if (paper.locked || _isDiscardingPaper(paper.id)) continue;
+      if (!includeOpsLocked && paper.opsLocked) continue;
       bool allInside = true;
       for (final c in corners) {
         final local = _worldToPaperLocal(Vector3(c.dx, c.dy, _paperZ), paper);
@@ -3358,7 +4325,7 @@ class CraftingTestViewState extends State<CraftingTestView>
       final center = _gridCellCenter(nc, nr, s);
       final pt = Vector3(center.dx, center.dy, _paperZ);
       for (final paper in papers) {
-        if (paper.locked) continue;
+        if (_isToolProtected(paper)) continue;
         final local = _worldToPaperLocal(pt, paper);
         if (_isPointInLocalPaper(local, paper)) return true;
       }
@@ -3504,29 +4471,135 @@ class CraftingTestViewState extends State<CraftingTestView>
   }
 
   // ---------------------------------------------------------------------------
+  // Paper stack order (draw / hit front-to-back)
+  // ---------------------------------------------------------------------------
+
+  double _allocateStackMajor() => (_nextStackMajor++).toDouble();
+
+  void _syncNextStackMajor() {
+    var maxMajor = 0;
+    for (final paper in _placedPapers) {
+      final major = paper.stackOrder.floor();
+      if (major > maxMajor) maxMajor = major;
+    }
+    _nextStackMajor = maxMajor + 1;
+  }
+
+  void _ensureStackOrders() {
+    for (var i = 0; i < _placedPapers.length; i++) {
+      if (_placedPapers[i].stackOrder <= 0) {
+        _placedPapers[i].stackOrder = (i + 1).toDouble();
+      }
+    }
+    _syncNextStackMajor();
+  }
+
+  String _formatStackOrder(double z) {
+    if ((z - z.roundToDouble()).abs() < 1e-12) return z.round().toString();
+    var s = z.toStringAsFixed(12);
+    s = s.replaceFirst(RegExp(r'0+$'), '');
+    s = s.replaceFirst(RegExp(r'\.$'), '');
+    return s;
+  }
+
+  double _childStackOrderAt(double parent, int childIndex) {
+    final prefix = _formatStackOrder(parent);
+    final key = prefix.contains('.') ? '$prefix$childIndex' : '$prefix.$childIndex';
+    return double.parse(key);
+  }
+
+  int _nextChildIndex(double parent, {Iterable<double> extra = const []}) {
+    final prefix = _formatStackOrder(parent);
+    final keys = [
+      ..._placedPapers.map((p) => _formatStackOrder(p.stackOrder)),
+      ...extra.map(_formatStackOrder),
+    ];
+    var maxDigit = 0;
+    for (final key in keys) {
+      if (prefix.contains('.')) {
+        if (key.length == prefix.length + 1 && key.startsWith(prefix)) {
+          final d = int.tryParse(key[key.length - 1]);
+          if (d != null && d > maxDigit) maxDigit = d;
+        }
+      } else {
+        final childPrefix = '$prefix.';
+        if (key.length == childPrefix.length + 1 && key.startsWith(childPrefix)) {
+          final d = int.tryParse(key[key.length - 1]);
+          if (d != null && d > maxDigit) maxDigit = d;
+        }
+      }
+    }
+    return maxDigit + 1;
+  }
+
+  List<double> _allocateSplitOrders(double parent, int count) {
+    if (count <= 0) return const [];
+    if (count == 1) return [parent];
+    final orders = <double>[parent];
+    var idx = _nextChildIndex(parent);
+    for (var i = 1; i < count; i++) {
+      if (idx > 9) {
+        var candidate = parent + 1e-6 * i;
+        while (orders.any((z) => (z - candidate).abs() < 1e-12) ||
+            _placedPapers.any((p) => (p.stackOrder - candidate).abs() < 1e-12)) {
+          candidate += 1e-6;
+        }
+        orders.add(candidate);
+      } else {
+        orders.add(_childStackOrderAt(parent, idx++));
+      }
+    }
+    return orders;
+  }
+
+  // ---------------------------------------------------------------------------
   // Paper hit testing
   // ---------------------------------------------------------------------------
 
   String? _hitTestPaper(Offset screenPos, Size viewportSize) {
     final worldPos = _screenToWorld(screenPos, viewportSize);
-    for (int i = _placedPapers.length - 1; i >= 0; i--) {
-      final paper = _placedPapers[i];
+    final hits = <PlacedPaper>[];
+    for (final paper in _placedPapers) {
       if (paper.locked || _isDiscardingPaper(paper.id)) continue;
       final localPt = _worldToPaperLocal(worldPos, paper);
-      if (_isPointInLocalPaper(localPt, paper)) return paper.id;
+      if (_isPointInLocalPaper(localPt, paper)) hits.add(paper);
     }
-    return null;
+    if (hits.isEmpty) return null;
+    hits.sort((a, b) => b.stackOrder.compareTo(a.stackOrder));
+
+    final sourceIds = _copyMemorySourceIds;
+    final resultIds = _copyMemoryResultIds;
+    if (sourceIds != null && resultIds != null && resultIds.isNotEmpty) {
+      final onCopy = hits.any((p) => resultIds.contains(p.id));
+      final onSource = hits.any((p) => sourceIds.contains(p.id));
+      if (onCopy || onSource) {
+        if (onCopy) {
+          return hits.firstWhere((p) => resultIds.contains(p.id)).id;
+        }
+        PlacedPaper? topCopy;
+        for (final paper in _placedPapers) {
+          if (!resultIds.contains(paper.id)) continue;
+          if (topCopy == null || paper.stackOrder > topCopy.stackOrder) {
+            topCopy = paper;
+          }
+        }
+        if (topCopy != null) return topCopy.id;
+      }
+    }
+    return hits.first.id;
   }
 
   /// Remove every paper and related selection / lock-fade state.
   void _wipeCanvasPapers() {
     _stopExtraPaperDiscard();
     _placedPapers.clear();
+    _nextStackMajor = 1;
     _selectedPaperIds = {};
     _clearCopyMemory();
     _panModeSelectedPaperId = null;
     _stretchPaperId = null;
-    _stretchHandleIndex = null;
+    _clearStretchBox();
+    _stopHandleFollow();
     _isRotationGizmoActive = false;
     _lockFadingPaperIds = {};
     _lockAnimatingPaperIds = {};
@@ -3557,7 +4630,8 @@ class CraftingTestViewState extends State<CraftingTestView>
           _placedPapers.where((p) => p.id == _stretchPaperId).firstOrNull;
       if (paper == null || paper.locked) {
         _stretchPaperId = null;
-        _stretchHandleIndex = null;
+        _clearStretchBox();
+        _stopHandleFollow();
       }
     }
   }
@@ -3634,7 +4708,7 @@ class CraftingTestViewState extends State<CraftingTestView>
   bool _tryEraseCell((int, int) cell) {
     if (_toolsBlocked) return false;
     if (_erasedCells.contains(cell) ||
-        !_isCellOccupiedByPaper(cell.$1, cell.$2)) {
+        !_isCellOccupiedByPaper(cell.$1, cell.$2, includeOpsLocked: false)) {
       return false;
     }
     _erasedCells.add(cell);
@@ -3657,6 +4731,7 @@ class CraftingTestViewState extends State<CraftingTestView>
       _placedPapers.clear();
       _placedPapers.addAll(snap.papers.map((s) => s.toPaper()));
       _nextPaperId = snap.nextPaperId;
+      _ensureStackOrders();
       _inventory.clear();
       _inventory.addAll(snap.inventory);
       _selectedPaperIds = {
@@ -3715,6 +4790,7 @@ class CraftingTestViewState extends State<CraftingTestView>
       id: 'paper_${_nextPaperId++}',
       paperColor: color,
       position: worldPos,
+      stackOrder: _allocateStackMajor(),
       materialId: materialId,
     );
     setState(() {
@@ -3757,6 +4833,7 @@ class CraftingTestViewState extends State<CraftingTestView>
       id: 'paper_${_nextPaperId++}',
       paperColor: PaperColor.values.first,
       position: worldPos,
+      stackOrder: _allocateStackMajor(),
       materialId: materialId,
     );
     setState(() {
@@ -3844,6 +4921,41 @@ class CraftingTestViewState extends State<CraftingTestView>
       }
     }
 
+    if (_stretchPaperId != null) {
+      final paper = _placedPapers
+          .where((p) => p.id == _stretchPaperId)
+          .firstOrNull;
+      if (paper != null) {
+        final handleIdx = _hitTestStretchHandle(
+          localPos,
+          viewportSize,
+          paper,
+        );
+        if (handleIdx != null) {
+          if (_stretchStartLocal != null && _stretchDisplayLocal != null) {
+            _bakeStretch();
+          }
+          final live = _placedPapers
+                  .where((p) => p.id == _stretchPaperId)
+                  .firstOrNull ??
+              paper;
+          _pushUndo('Transform');
+          final bounds = _paperLocalBounds(live);
+          setState(() {
+            _stretchHandleIndex = handleIdx;
+            _stretchStartLocal = bounds;
+            _stretchDisplayLocal = bounds;
+          });
+          _beginHandleFollow(bounds, (r) => _stretchDisplayLocal = r);
+          return;
+        }
+      }
+      final hitId = _hitTestPaper(localPos, viewportSize);
+      if (hitId == _stretchPaperId) return;
+      setState(() => _endTransform(deselect: true));
+      if (hitId == null) return;
+    }
+
     if (_craftingMode == CraftingMode.pan) {
       if (_panModeSelectedPaperId != null) {
         final hitId = _hitTestPaper(localPos, viewportSize);
@@ -3864,6 +4976,7 @@ class CraftingTestViewState extends State<CraftingTestView>
         _lineDrawStart = snapped.point;
         _lineDrawPreview = snapped.point;
         _cutStartVertexRefs = snapped.refs;
+        _cutSnapRay = snapped.ray;
         _cutHighlightEdges = [];
         _cutEdgeGlowController.value = 0;
       });
@@ -3997,54 +5110,30 @@ class CraftingTestViewState extends State<CraftingTestView>
       return;
     }
 
-    if (_craftingMode == CraftingMode.stretch) {
-      if (_stretchPaperId != null) {
-        final paper = _placedPapers
-            .where((p) => p.id == _stretchPaperId)
-            .firstOrNull;
-        if (paper != null) {
-          final handleIdx = _hitTestStretchHandle(
-            localPos,
-            viewportSize,
-            paper,
-          );
-          if (handleIdx != null) {
-            _pushUndo('Stretch');
-            final bounds = _paperLocalBounds(paper);
-            final worldPos = _screenToWorld(localPos, viewportSize);
-            setState(() {
-              _stretchHandleIndex = handleIdx;
-              _stretchHandleStartWorld = Offset(worldPos.x, worldPos.y);
-              _stretchOriginalBounds = bounds;
-              _stretchAnchorLocal = _stretchAnchorForHandle(handleIdx, bounds);
-              _stretchScaleX = 1.0;
-              _stretchScaleY = 1.0;
-            });
-            return;
-          }
-        }
-      }
-      final hitId = _hitTestPaper(localPos, viewportSize);
-      if (hitId != null) {
-        setState(() {
-          if (_stretchPaperId != null && _stretchPaperId != hitId) {
-            _applyStretch();
-          }
-          _stretchPaperId = hitId;
-          _stretchHandleIndex = null;
-          _stretchScaleX = 1.0;
-          _stretchScaleY = 1.0;
-          _stretchOriginalBounds = null;
-        });
-      } else {
-        if (_stretchPaperId != null) {
-          _applyStretch();
+    if (_craftingMode == CraftingMode.stencil) {
+      if (_stencilSelected) {
+        final handleIdx = _hitTestStencilHandle(localPos, viewportSize);
+        if (handleIdx != null) {
+          final start = _stencilWorldRect();
           setState(() {
-            _stretchPaperId = null;
-            _stretchHandleIndex = null;
+            _stencilHandleIndex = handleIdx;
+            _stencilResizeStart = start;
           });
+          _beginHandleFollow(start, _applyStencilRect);
+          return;
         }
       }
+      if (_hitTestStencilBody(localPos, viewportSize)) {
+        final worldPos = _screenToWorld(localPos, viewportSize);
+        setState(() {
+          _stencilSelected = true;
+          _stencilDragging = false;
+          _stencilDragStartWorld = Offset(worldPos.x, worldPos.y);
+          _stencilDragStartPos = _stencilPosition;
+        });
+        return;
+      }
+      setState(() => _stencilSelected = false);
       return;
     }
 
@@ -4063,90 +5152,41 @@ class CraftingTestViewState extends State<CraftingTestView>
     // further down; never fight the pinch handler.
     if (_toolsBlocked) return;
 
-    if (_craftingMode == CraftingMode.stretch &&
-        _stretchHandleIndex != null &&
-        _stretchHandleStartWorld != null &&
-        _stretchPaperId != null) {
+    if (_craftingMode == CraftingMode.stencil) {
+      final worldPos = _screenToWorld(localPos, viewportSize);
+      final wp = Offset(worldPos.x, worldPos.y);
+      if (_stencilHandleIndex != null) {
+        _setHandleFollowTarget(
+          _stencilTargetFromPointer(_stencilHandleIndex!, wp),
+        );
+        return;
+      }
+      if (_stencilDragStartWorld != null && _stencilDragStartPos != null) {
+        final delta = wp - _stencilDragStartWorld!;
+        if (delta.distance > 1e-4) {
+          setState(() {
+            _stencilDragging = true;
+            _stencilPosition = _stencilDragStartPos! + delta;
+            _snapStencilAfterMove();
+          });
+        }
+        return;
+      }
+    }
+
+    if (_stretchHandleIndex != null && _stretchPaperId != null) {
       final paper = _placedPapers
           .where((p) => p.id == _stretchPaperId)
           .firstOrNull;
       if (paper == null) return;
-      final bounds = _stretchOriginalBounds ?? _paperLocalBounds(paper);
       final worldPos = _screenToWorld(localPos, viewportSize);
-      final wp = Offset(worldPos.x, worldPos.y);
-
-      final rad = paper.rotationDeg * math.pi / 180;
-      final cosA = math.cos(rad);
-      final sinA = math.sin(rad);
-      final dx0 = wp.dx - paper.position.x;
-      final dy0 = wp.dy - paper.position.y;
-      final localX = dx0 * cosA + dy0 * sinA;
-      final localY = -dx0 * sinA + dy0 * cosA;
-
-      final hi = _stretchHandleIndex!;
-      final ax = _stretchAnchorLocal.dx;
-      final ay = _stretchAnchorLocal.dy;
-      double sx = _stretchScaleX;
-      double sy = _stretchScaleY;
-      const minScale = 0.2;
-      const maxScale = 1.5;
-
-      final stretchesX = hi == 1 || hi == 3 || hi >= 4;
-      final stretchesY = hi == 0 || hi == 2 || hi >= 4;
-
-      if (stretchesX && bounds.width.abs() > 1e-6) {
-        // The dragged edge in original local space
-        final handleX = (hi == 1 || hi == 5 || hi == 6)
-            ? bounds.right
-            : bounds.left;
-        final span = handleX - ax;
-        if (span.abs() > 1e-6) {
-          sx = ((localX - ax) / span).clamp(minScale, maxScale);
-          sx = _roundToStretchIncrement(sx);
-
-          // Blueprint edge snap
-          final stretchedEdge = _stretchLocal(handleX, ax, sx);
-          final worldEdgeX = paper.position.x + stretchedEdge * cosA;
-          final snapped = _snapStretchToBlueprintEdge(worldEdgeX, true, paper);
-          if (snapped != null) {
-            final localSnapped = (snapped - paper.position.x) / cosA;
-            final snapSx = ((localSnapped - ax) / span).clamp(
-              minScale,
-              maxScale,
-            );
-            sx = snapSx;
-          }
-        }
-      }
-
-      if (stretchesY && bounds.height.abs() > 1e-6) {
-        final handleY = (hi == 0 || hi == 4 || hi == 5)
-            ? bounds.bottom
-            : bounds.top;
-        final span = handleY - ay;
-        if (span.abs() > 1e-6) {
-          sy = ((localY - ay) / span).clamp(minScale, maxScale);
-          sy = _roundToStretchIncrement(sy);
-
-          // Blueprint edge snap
-          final stretchedEdge = _stretchLocal(handleY, ay, sy);
-          final worldEdgeY = paper.position.y + stretchedEdge * cosA;
-          final snapped = _snapStretchToBlueprintEdge(worldEdgeY, false, paper);
-          if (snapped != null) {
-            final localSnapped = (snapped - paper.position.y) / cosA;
-            final snapSy = ((localSnapped - ay) / span).clamp(
-              minScale,
-              maxScale,
-            );
-            sy = snapSy;
-          }
-        }
-      }
-
-      setState(() {
-        _stretchScaleX = sx;
-        _stretchScaleY = sy;
-      });
+      _setHandleFollowTarget(
+        _stretchTargetFromPointer(
+          paper,
+          _stretchHandleIndex!,
+          Offset(worldPos.x, worldPos.y),
+        ),
+      );
       return;
     }
 
@@ -4196,6 +5236,7 @@ class CraftingTestViewState extends State<CraftingTestView>
       );
       setState(() {
         _lineDrawPreview = snapped.point;
+        _cutSnapRay = snapped.ray;
         _updateCutHighlights(_lineDrawStart!, snapped.point);
       });
       return;
@@ -4421,15 +5462,46 @@ class CraftingTestViewState extends State<CraftingTestView>
     if (_craftingMode == CraftingMode.cutting) return;
     if (_toolsBlocked) return;
 
-    if (_craftingMode == CraftingMode.stretch) {
-      if (_stretchHandleIndex != null && _stretchPaperId != null) {
-        _applyStretch();
-        setState(() {
-          _stretchHandleIndex = null;
-          _stretchHandleStartWorld = null;
-          _stretchOriginalBounds = null;
-        });
+    if (_craftingMode == CraftingMode.stencil) {
+      setState(() {
+        if (_stencilHandleIndex != null) {
+          _stencilHandleIndex = null;
+          _stencilResizeStart = null;
+          _settleHandleFollow();
+        }
+        if (_stencilDragging && _stencilDragStartPos != null) {
+          _snapStencilAfterMove();
+        }
+        _stencilDragging = false;
+        _stencilDragStartWorld = null;
+        _stencilDragStartPos = null;
+      });
+      return;
+    }
+
+    if (_stretchHandleIndex != null && _stretchPaperId != null) {
+      _stretchHandleIndex = null;
+      final paper = _placedPapers
+          .where((p) => p.id == _stretchPaperId)
+          .firstOrNull;
+      final from = _stretchStartLocal;
+      final to = _handleFollowTarget ?? _stretchDisplayLocal;
+      if (paper != null &&
+          from != null &&
+          to != null &&
+          _stretchBoundsAreDegenerate(paper, from, to)) {
+        _setHandleFollowTarget(from);
+        _settleHandleFollow(
+          onSettled: () {
+            if (!mounted) return;
+            setState(() => _stretchDisplayLocal = from);
+          },
+        );
+        return;
       }
+      _settleHandleFollow(onSettled: () {
+        setState(_bakeStretch);
+      });
       return;
     }
 
@@ -4513,6 +5585,7 @@ class CraftingTestViewState extends State<CraftingTestView>
         Offset(worldPos.x, worldPos.y),
         fromVertexRefs: _cutStartVertexRefs,
       );
+      _cutSnapRay = snapped.ray;
       if ((_lineDrawStart! - snapped.point).distance > 1e-4) {
         _drawnCutLines.add((_lineDrawStart!, snapped.point));
         _updateCutHighlights(_lineDrawStart!, snapped.point);
@@ -4770,60 +5843,71 @@ class CraftingTestViewState extends State<CraftingTestView>
     Size viewportSize,
     bool fullyInside,
   ) {
-    final worldTL = _screenToWorld(
-      Offset(
-        math.min(startScreen.dx, endScreen.dx),
-        math.min(startScreen.dy, endScreen.dy),
-      ),
-      viewportSize,
-    );
-    final worldBR = _screenToWorld(
-      Offset(
-        math.max(startScreen.dx, endScreen.dx),
-        math.max(startScreen.dy, endScreen.dy),
-      ),
-      viewportSize,
-    );
+    final screenRect = Rect.fromPoints(startScreen, endScreen);
+    Offset worldOf(Offset sp) {
+      final w = _screenToWorld(sp, viewportSize);
+      return Offset(w.x, w.y);
+    }
 
-    final minX = math.min(worldTL.x, worldBR.x);
-    final maxX = math.max(worldTL.x, worldBR.x);
-    final minY = math.min(worldTL.y, worldBR.y);
-    final maxY = math.max(worldTL.y, worldBR.y);
+    final worldQuad = [
+      worldOf(screenRect.topLeft),
+      worldOf(screenRect.topRight),
+      worldOf(screenRect.bottomRight),
+      worldOf(screenRect.bottomLeft),
+    ];
+    final mqBox = _aabb(worldQuad);
+    final mqEdges = [
+      (worldQuad[0], worldQuad[1]),
+      (worldQuad[1], worldQuad[2]),
+      (worldQuad[2], worldQuad[3]),
+      (worldQuad[3], worldQuad[0]),
+    ];
 
     final result = <String>{};
     for (final paper in _placedPapers) {
       if (paper.locked) continue;
-      final corners = _paperWorldCorners(paper);
+      final poly = _paperWorldPolygon2D(paper);
+      if (poly.length < 3) continue;
+      final pBox = _aabb(poly);
+      if (!pBox.overlaps(mqBox)) continue;
+
       if (fullyInside) {
-        final allInside = corners.every(
-          (v) => v.x >= minX && v.x <= maxX && v.y >= minY && v.y <= maxY,
-        );
-        if (allInside) result.add(paper.id);
-      } else {
-        final anyInside = corners.any(
-          (v) => v.x >= minX && v.x <= maxX && v.y >= minY && v.y <= maxY,
-        );
-        if (anyInside) {
+        if (poly.every((v) => _pointInPolygon(v, worldQuad))) {
           result.add(paper.id);
-          continue;
         }
-        // Check if any marquee corner is inside the paper polygon
-        final marqueeCorners = [
-          Offset(minX, minY),
-          Offset(maxX, minY),
-          Offset(maxX, maxY),
-          Offset(minX, maxY),
-        ];
-        final xyCorners = corners.map((v) => Offset(v.x, v.y)).toList();
-        for (final mc in marqueeCorners) {
-          if (_pointInPolygon(mc, xyCorners)) {
-            result.add(paper.id);
-            break;
-          }
-        }
+        continue;
+      }
+
+      if (_marqueeIntersectsPaper(paper, poly, worldQuad, mqEdges)) {
+        result.add(paper.id);
       }
     }
     return result;
+  }
+
+  bool _marqueeIntersectsPaper(
+    PlacedPaper paper,
+    List<Offset> exterior,
+    List<Offset> worldQuad,
+    List<(Offset, Offset)> mqEdges,
+  ) {
+    for (final v in exterior) {
+      if (_pointInPolygon(v, worldQuad)) return true;
+    }
+    for (final c in worldQuad) {
+      final local = _worldToPaperLocal(Vector3(c.dx, c.dy, _paperZ), paper);
+      if (_isPointInLocalPaper(local, paper)) return true;
+    }
+    for (final ring in [exterior, ..._paperWorldHoles2D(paper)]) {
+      for (var i = 0; i < ring.length; i++) {
+        final a = ring[i];
+        final b = ring[(i + 1) % ring.length];
+        for (final (c, d) in mqEdges) {
+          if (segmentIntersection(a, b, c, d).hasIntersection) return true;
+        }
+      }
+    }
+    return false;
   }
 
   // ---------------------------------------------------------------------------
@@ -4870,9 +5954,14 @@ class CraftingTestViewState extends State<CraftingTestView>
   bool _isFittedPaper(PlacedPaper paper) =>
       paper.locked || paper.isBlueprintMatched;
 
+  /// Previous-step commit or current-step ops lock — skip punch / paint / cut.
+  bool _isToolProtected(PlacedPaper paper) =>
+      paper.locked || paper.opsLocked;
+
   void _clearCopyMemory() {
     _copyMemorySourceCentroid = null;
     _copyMemorySourceRotationDeg = 0;
+    _copyMemorySourceIds = null;
     _copyMemoryResultIds = null;
   }
 
@@ -4988,6 +6077,7 @@ class CraftingTestViewState extends State<CraftingTestView>
             rotated.dy + translation.dy,
             paper.position.z,
           ),
+          stackOrder: _allocateStackMajor(),
           rotationDeg: (paper.rotationDeg + rotationDeg) % 360,
           sizeLevel: paper.sizeLevel,
           localVertices: paper.localVertices != null
@@ -5008,6 +6098,7 @@ class CraftingTestViewState extends State<CraftingTestView>
       _placedPapers.addAll(newPapers);
       _copyMemorySourceCentroid = sourceCentroid;
       _copyMemorySourceRotationDeg = sourceRotation;
+      _copyMemorySourceIds = selected.map((p) => p.id).toSet();
       final resultIds = newPapers.map((p) => p.id).toSet();
       _copyMemoryResultIds = resultIds;
       _suppressCopyMemorySync = true;
@@ -5038,6 +6129,29 @@ class CraftingTestViewState extends State<CraftingTestView>
       side: RadialActionSide.right,
       onTap: _copySelectedPapers,
     );
+  }
+
+  RadialAction _opsLockAction(List<PlacedPaper> selected) {
+    final targets = selected.where((p) => !p.locked).toList();
+    final allLocked =
+        targets.isNotEmpty && targets.every((p) => p.opsLocked);
+    return RadialAction(
+      icon: allLocked ? Icons.lock_open : Icons.lock_outline,
+      label: allLocked ? 'Unlock' : 'Lock',
+      tint: const Color(0xFFBCAAA4),
+      side: RadialActionSide.topLeft,
+      onTap: () => _setSelectedOpsLocked(!allLocked),
+    );
+  }
+
+  void _setSelectedOpsLocked(bool locked) {
+    _pushUndo(locked ? 'Lock' : 'Unlock');
+    setState(() {
+      for (final paper in _placedPapers) {
+        if (!_selectedPaperIds.contains(paper.id) || paper.locked) continue;
+        paper.opsLocked = locked;
+      }
+    });
   }
 
   void _joinSelectedPapers() {
@@ -5113,6 +6227,7 @@ class CraftingTestViewState extends State<CraftingTestView>
           id: 'paper_${_nextPaperId++}',
           paperColor: dominantColor,
           position: Vector3(centroid.dx, centroid.dy, _paperZ),
+          stackOrder: _allocateStackMajor(),
           rotationDeg: 0,
           sizeLevel: 1,
           localVertices: shifted,
@@ -5186,60 +6301,60 @@ class CraftingTestViewState extends State<CraftingTestView>
             ..._buildPaperOverlays(viewportSize),
             if (_rotCopyGizmoActive && _rotCopyCenterWorld != null)
               _buildRotCopyGizmo(viewportSize),
-            // Main toolbar — bottom-left, above inventory + undo/redo.
-            FmSafePositioned(
-              bottom: 86,
-              left: 12,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (widget.onDismiss != null) ...[
-                    GestureDetector(
-                      onTap: widget.onDismiss,
-                      child: Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.6),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.3),
+            // Close / cut / check — bottom-left, above the centered column.
+            if (widget.onDismiss != null ||
+                (_craftingMode == CraftingMode.drawLine &&
+                    _drawnCutLines.isNotEmpty) ||
+                _selectedBlueprint != null)
+              FmSafePositioned(
+                bottom: _kBottomControlColumnClearance,
+                left: 12,
+                minimum: kFmScreenInset,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (widget.onDismiss != null) ...[
+                      GestureDetector(
+                        onTap: widget.onDismiss,
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.6),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.3),
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.close,
+                            color: Colors.white,
+                            size: 20,
                           ),
                         ),
-                        child: const Icon(
-                          Icons.close,
-                          color: Colors.white,
-                          size: 20,
-                        ),
                       ),
-                    ),
+                    ],
+                    if (_craftingMode == CraftingMode.drawLine &&
+                        _drawnCutLines.isNotEmpty) ...[
+                      if (widget.onDismiss != null) const SizedBox(width: 8),
+                      _buildCutButton(),
+                    ],
+                    if (_selectedBlueprint != null) ...[
+                      if (widget.onDismiss != null ||
+                          (_craftingMode == CraftingMode.drawLine &&
+                              _drawnCutLines.isNotEmpty))
+                        const SizedBox(width: 8),
+                      _buildCheckModeToggle(),
+                    ],
                   ],
-                  if (_craftingMode == CraftingMode.drawLine &&
-                      _drawnCutLines.isNotEmpty) ...[
-                    if (widget.onDismiss != null) const SizedBox(width: 8),
-                    _buildCutButton(),
-                  ],
-                  // Blueprint dropdown hidden — selection comes from
-                  // initialBlueprintSet / defaultBlueprintName (else none).
-                  if (_selectedBlueprint != null) ...[
-                    if (widget.onDismiss != null ||
-                        (_craftingMode == CraftingMode.drawLine &&
-                            _drawnCutLines.isNotEmpty))
-                      const SizedBox(width: 8),
-                    _buildUnionToggle(),
-                    const SizedBox(width: 8),
-                    _buildCheckModeToggle(),
-                    const SizedBox(width: 8),
-                    _buildFillAllButton(),
-                  ],
-                ],
+                ),
               ),
-            ),
-            // Tool modes — vertically centered on the left.
+            // Tool modes — vertically centered on the left, above the column.
             FmSafePositioned(
               left: 12,
               top: 0,
-              bottom: 0,
+              bottom: _kBottomControlColumnClearance,
+              minimum: kFmScreenInset,
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: _buildToolModeBar(),
@@ -5249,12 +6364,14 @@ class CraftingTestViewState extends State<CraftingTestView>
               FmSafePositioned(
                 right: 12,
                 top: 88,
+                minimum: kFmScreenInset,
                 child: _buildProgressBar(),
               ),
             FmSafePositioned(
               right: 12,
               top: 0,
-              bottom: 80,
+              bottom: _kBottomControlColumnClearance,
+              minimum: kFmScreenInset,
               child: Align(
                 alignment: Alignment.centerRight,
                 child: Column(
@@ -5271,20 +6388,16 @@ class CraftingTestViewState extends State<CraftingTestView>
             if (_craftingMode == CraftingMode.cutting)
               FmSafePositioned(
                 left: 16,
-                bottom: 90,
+                bottom: _kBottomControlColumnClearance,
+                minimum: kFmScreenInset,
                 child: _buildCutProgressBar(),
               ),
             FmSafePositioned(
               left: 0,
               right: 0,
-              bottom: 86,
-              child: _buildUndoRedoBar(),
-            ),
-            FmSafePositioned(
-              left: 0,
-              right: 0,
-              bottom: 16,
-              child: _buildInventoryBar(),
+              bottom: 0,
+              minimum: kFmScreenInset,
+              child: Center(child: _buildBottomControlColumn()),
             ),
           ],
         ),
@@ -5385,6 +6498,7 @@ class CraftingTestViewState extends State<CraftingTestView>
             onTap: isCutting
                 ? null
                 : () => setState(() {
+                    _endTransform();
                     _craftingMode = CraftingMode.pan;
                     _drawnCutLines.clear();
                     _resetCutStroke();
@@ -5403,6 +6517,7 @@ class CraftingTestViewState extends State<CraftingTestView>
             onTap: isCutting
                 ? null
                 : () => setState(() {
+                    _endTransform();
                     _craftingMode = CraftingMode.select;
                     _drawnCutLines.clear();
                     _resetCutStroke();
@@ -5533,34 +6648,45 @@ class CraftingTestViewState extends State<CraftingTestView>
           ),
           const SizedBox(height: 2),
           _ToolModeButton(
-            icon: Icons.open_in_full,
-            tooltip: 'Stretch',
-            isActive: _craftingMode == CraftingMode.stretch,
+            icon: Icons.crop_din,
+            tooltip: 'Stencil punch',
+            isActive: _craftingMode == CraftingMode.stencil,
             onTap: isCutting
                 ? null
                 : () => setState(() {
-                    if (_craftingMode == CraftingMode.stretch) {
+                    if (_craftingMode == CraftingMode.stencil) {
                       _craftingMode = CraftingMode.pan;
-                      _stretchPaperId = null;
-                      _stretchHandleIndex = null;
-                      _stretchScaleX = 1.0;
-                      _stretchScaleY = 1.0;
+                      _stencilSelected = false;
+                      _stencilHandleIndex = null;
+                      _stencilResizeStart = null;
+                      _stopHandleFollow();
                     } else {
-                      _craftingMode = CraftingMode.stretch;
-                      _selectedPaperIds = {};
-                      _isRotationGizmoActive = false;
-                      _panModeSelectedPaperId = null;
-                      _drawnCutLines.clear();
-                      _resetCutStroke();
-                      _paintedCells = {};
-                      _lastPaintCell = null;
-                      _stretchPaperId = null;
-                      _stretchHandleIndex = null;
-                      _stretchScaleX = 1.0;
-                      _stretchScaleY = 1.0;
+                      _enterStencilMode();
                     }
                   }),
           ),
+          if (_craftingMode == CraftingMode.stencil) ...[
+            const SizedBox(height: 4),
+            _ToolModeButton(
+              icon: Icons.rectangle_outlined,
+              tooltip: '2×4 rectangle',
+              isActive: _stencilShape == StencilShape.rectangle,
+              onTap: () => setState(() {
+                _stencilShape = StencilShape.rectangle;
+                _applyStencilDefaultSize();
+              }),
+            ),
+            const SizedBox(height: 2),
+            _ToolModeButton(
+              icon: Icons.circle_outlined,
+              tooltip: '2×2 circle',
+              isActive: _stencilShape == StencilShape.circle,
+              onTap: () => setState(() {
+                _stencilShape = StencilShape.circle;
+                _applyStencilDefaultSize();
+              }),
+            ),
+          ],
           const SizedBox(height: 6),
           Container(height: 1, width: 24, color: Colors.white24),
           const SizedBox(height: 6),
@@ -6101,9 +7227,11 @@ class CraftingTestViewState extends State<CraftingTestView>
           id: 'paper_${_nextPaperId++}',
           paperColor: colors[i % colors.length],
           position: Vector3(centroid.dx, centroid.dy, _paperZ),
+          stackOrder: _allocateStackMajor(),
           localVertices: localVerts,
         );
         paper.lockedBlueprintIndex = i;
+        paper.opsLocked = true;
         _placedPapers.add(paper);
         _filledBlueprintIndices.add(i);
       }
@@ -6270,6 +7398,7 @@ class CraftingTestViewState extends State<CraftingTestView>
                     lineDrawPreview: _lineDrawPreview,
                     cutHighlightEdges: _cutHighlightEdges,
                     cutHighlightGlow: _cutEdgeGlowController.value,
+                    cutSnapRay: _cutSnapRay,
                     craftingMode: _craftingMode,
                     activeToolpath: _activeToolpath,
                     cutAnimProgress: _craftingMode == CraftingMode.cutting
@@ -6295,12 +7424,20 @@ class CraftingTestViewState extends State<CraftingTestView>
                     alignGridAxisEnd: _alignGridSecondPreview,
                     alignGridHighlightPolyIndex: _alignGridHoveredPolyIndex,
                     stretchPaperId: _stretchPaperId,
-                    stretchScaleX: _stretchScaleX,
-                    stretchScaleY: _stretchScaleY,
                     stretchHandleIndex: _stretchHandleIndex,
-                    stretchOriginalBounds: _stretchOriginalBounds,
-                    stretchAnchorLocal: _stretchAnchorLocal,
+                    stretchStartBounds: _stretchStartLocal,
+                    stretchDisplayBounds: _stretchDisplayLocal,
                     gridRegionAssist: _gridRegionAssist,
+                    blueprintHoles: _blueprintUnionMode
+                        ? const []
+                        : _blueprintWorldHoles,
+                    stencilVisible: _craftingMode == CraftingMode.stencil,
+                    stencilShape: _stencilShape,
+                    stencilPosition: _stencilPosition,
+                    stencilHalfW: _stencilHalfW,
+                    stencilHalfH: _stencilHalfH,
+                    stencilSelected: _stencilSelected,
+                    stencilHandleIndex: _stencilHandleIndex,
                   ),
                   isComplex: true,
                   willChange: true,
@@ -6333,6 +7470,37 @@ class CraftingTestViewState extends State<CraftingTestView>
   };
 
   List<Widget> _buildPaperOverlays(Size viewportSize) {
+    if (_craftingMode == CraftingMode.stencil) {
+      if (!_stencilSelected ||
+          _stencilDragging ||
+          _stencilHandleIndex != null) {
+        return const [];
+      }
+      final screenCenter = _worldToScreen(
+        Vector3(_stencilPosition.dx, _stencilPosition.dy, _paperZ),
+        viewportSize,
+      );
+      return [
+        ObjectRadialMenu(
+          center: screenCenter,
+          title: _stencilShape == StencilShape.circle
+              ? 'Circle stencil'
+              : 'Rectangle stencil',
+          actions: [
+            RadialAction(
+              icon: Icons.adjust,
+              label: 'Punch',
+              tint: const Color(0xFFEF5350),
+              side: RadialActionSide.top,
+              onTap: _punchStencil,
+            ),
+          ],
+        ),
+      ];
+    }
+
+    if (_stretchPaperId != null) return const [];
+
     if (_selectedPaperIds.isEmpty || _isDragging || _isMarquee) {
       return const [];
     }
@@ -6414,6 +7582,7 @@ class CraftingTestViewState extends State<CraftingTestView>
               id: 'ghost_${paper.id}',
               paperColor: paper.paperColor,
               position: Vector3(reflected.dx, reflected.dy, paper.position.z),
+              stackOrder: paper.stackOrder,
               rotationDeg: newRot,
               sizeLevel: paper.sizeLevel,
               localVertices: newVerts,
@@ -6448,6 +7617,7 @@ class CraftingTestViewState extends State<CraftingTestView>
                 cy + dx * sinA + dy * cosA,
                 paper.position.z,
               ),
+              stackOrder: paper.stackOrder,
               rotationDeg: (paper.rotationDeg + _rotCopyAngleDeg) % 360,
               sizeLevel: paper.sizeLevel,
               localVertices: paper.localVertices != null
@@ -6588,14 +7758,6 @@ class CraftingTestViewState extends State<CraftingTestView>
               setState(() => _isRotationGizmoActive = true);
             },
           ),
-          RadialAction(
-            icon: paper.localVertices != null
-                ? Icons.delete_outline
-                : Icons.inventory_2,
-            label: paper.localVertices != null ? 'Discard' : 'Return',
-            tint: const Color(0xFF90A4AE),
-            onTap: () => _returnPaperToInventory(paper.id),
-          ),
           _invertSelectionAction(),
         ],
       );
@@ -6634,6 +7796,20 @@ class CraftingTestViewState extends State<CraftingTestView>
           setState(() => _isRotationGizmoActive = true);
         },
       ),
+      RadialAction(
+        icon: Icons.open_in_full,
+        label: 'xform',
+        tint: const Color(0xFF4FC3F7),
+        side: RadialActionSide.bottom,
+        onTap: () => _startTransform(paper),
+      ),
+      RadialAction(
+        icon: Icons.delete_outline,
+        label: 'Discard',
+        tint: const Color(0xFF90A4AE),
+        side: RadialActionSide.bottomLeft,
+        onTap: () => _returnPaperToInventory(paper.id),
+      ),
     ];
 
     if (_kPaperSizeControlsEnabled && !isCutPiece && paper.sizeLevel < 3) {
@@ -6663,16 +7839,9 @@ class CraftingTestViewState extends State<CraftingTestView>
       );
     }
 
-    actions.add(
-      RadialAction(
-        icon: isCutPiece ? Icons.delete_outline : Icons.inventory_2,
-        label: isCutPiece ? 'Discard' : 'Return',
-        tint: const Color(0xFF90A4AE),
-        onTap: () => _returnPaperToInventory(paper.id),
-      ),
-    );
     actions.add(_invertSelectionAction());
     actions.add(_copySelectionAction());
+    actions.add(_opsLockAction([paper]));
 
     return ObjectRadialMenu(
       center: screenCenter,
@@ -6785,11 +7954,13 @@ class CraftingTestViewState extends State<CraftingTestView>
         icon: Icons.delete_outline,
         label: 'Discard',
         tint: const Color(0xFF90A4AE),
+        side: RadialActionSide.bottomLeft,
         onTap: _discardSelectedPapers,
       ),
     );
     actions.add(_invertSelectionAction());
     actions.add(_copySelectionAction());
+    actions.add(_opsLockAction(selectedPapers));
 
     return ObjectRadialMenu(
       center: screenCenter,
@@ -7009,7 +8180,7 @@ class CraftingTestViewState extends State<CraftingTestView>
 
     for (var i = 0; i < _placedPapers.length; i++) {
       final paper = _placedPapers[i];
-      if (paper.locked) continue;
+      if (_isToolProtected(paper)) continue;
 
       final paperCells = _rasterizePaperToCells(paper);
       if (paperCells.isEmpty) continue;
@@ -7023,10 +8194,16 @@ class CraftingTestViewState extends State<CraftingTestView>
       if (remaining.isEmpty) continue;
 
       // Rebuild paper(s) from remaining cells.
-      final components = _connectedComponents(remaining);
-      for (final comp in components) {
+      final rebuilt = <({List<Offset> ext, List<List<Offset>> holes})>[];
+      for (final comp in _connectedComponents(remaining)) {
         final (ext, holes) = _boundaryPolygons(comp);
         if (ext.length < 3) continue;
+        rebuilt.add((ext: ext, holes: holes));
+      }
+      final orders = _allocateSplitOrders(paper.stackOrder, rebuilt.length);
+      for (var ri = 0; ri < rebuilt.length; ri++) {
+        final ext = rebuilt[ri].ext;
+        final holes = rebuilt[ri].holes;
         final centroid = _polygonCentroid(ext);
         final shifted = ext.map((v) => v - centroid).toList();
         final shiftedHoles = holes
@@ -7039,6 +8216,7 @@ class CraftingTestViewState extends State<CraftingTestView>
             id: 'paper_${_nextPaperId++}',
             paperColor: paper.paperColor,
             position: Vector3(centroid.dx, centroid.dy, paper.position.z),
+            stackOrder: orders[ri],
             rotationDeg: 0,
             sizeLevel: paper.sizeLevel,
             localVertices: shifted,
@@ -7106,7 +8284,7 @@ class CraftingTestViewState extends State<CraftingTestView>
 
       for (var i = 0; i < _placedPapers.length; i++) {
         final paper = _placedPapers[i];
-        if (paper.locked) continue;
+        if (_isToolProtected(paper)) continue;
         if (paper.isBlueprintMatched) continue;
 
         final paperCells = _rasterizePaperToCells(paper);
@@ -7145,6 +8323,7 @@ class CraftingTestViewState extends State<CraftingTestView>
             id: 'paper_${_nextPaperId++}',
             paperColor: _paintColor,
             position: Vector3(centroid.dx, centroid.dy, _paperZ),
+            stackOrder: _allocateStackMajor(),
             rotationDeg: 0,
             sizeLevel: 1,
             localVertices: shifted,
@@ -7226,6 +8405,7 @@ class CraftingTestViewState extends State<CraftingTestView>
           id: 'paper_${_nextPaperId++}',
           paperColor: _paintColor,
           position: Vector3(centroid.dx, centroid.dy, _paperZ),
+          stackOrder: _allocateStackMajor(),
           rotationDeg: 0,
           sizeLevel: 1,
           localVertices: shifted,
@@ -7263,7 +8443,7 @@ class CraftingTestViewState extends State<CraftingTestView>
 
       for (var pi = 0; pi < _placedPapers.length; pi++) {
         final paper = _placedPapers[pi];
-        if (paper.locked) continue;
+        if (_isToolProtected(paper)) continue;
 
         final rad = paper.rotationDeg * math.pi / 180;
         final cosA = math.cos(rad);
@@ -7292,20 +8472,20 @@ class CraftingTestViewState extends State<CraftingTestView>
           ...newSegments,
         ];
 
-        // Include hole boundaries in the planar graph.
-        final graphSegments = <(Offset, Offset)>[...allSegments];
-        for (final hole in paper.localHoles) {
-          for (var hi = 0; hi < hole.length; hi++) {
-            graphSegments.add((hole[hi], hole[(hi + 1) % hole.length]));
-          }
-        }
+        final pieces = splitPaperByCuts(
+          polygon,
+          allSegments,
+          holes: paper.localHoles,
+        );
+        final split = pieces.length > 1 ||
+            (pieces.length == 1 &&
+                pieces.first.$2.length != paper.localHoles.length);
 
-        final faces = splitPolygonByCuts(polygon, graphSegments);
-
-        if (faces.length > 1) {
+        if (split) {
           papersToRemove.add(pi);
-          final compound = _classifyCompoundFaces(faces);
-          for (final (exterior, holes) in compound) {
+          final orders = _allocateSplitOrders(paper.stackOrder, pieces.length);
+          for (var ci = 0; ci < pieces.length; ci++) {
+            final (exterior, holes) = pieces[ci];
             final centroid = _polygonCentroid(exterior);
             final shifted = exterior.map((v) => v - centroid).toList();
             final shiftedHoles = holes
@@ -7318,6 +8498,7 @@ class CraftingTestViewState extends State<CraftingTestView>
                 id: 'paper_${_nextPaperId++}',
                 paperColor: paper.paperColor,
                 position: Vector3(wcx, wcy, paper.position.z),
+                stackOrder: orders[ci],
                 rotationDeg: paper.rotationDeg,
                 sizeLevel: paper.sizeLevel,
                 localVertices: shifted,
@@ -7436,6 +8617,7 @@ class CraftingTestViewState extends State<CraftingTestView>
           id: 'paper_${_nextPaperId++}',
           paperColor: paper.paperColor,
           position: Vector3(reflected.dx, reflected.dy, paper.position.z),
+          stackOrder: _allocateStackMajor(),
           rotationDeg: newRot,
           sizeLevel: paper.sizeLevel,
           localVertices: newVerts,
@@ -7482,6 +8664,7 @@ class CraftingTestViewState extends State<CraftingTestView>
           id: 'paper_${_nextPaperId++}',
           paperColor: paper.paperColor,
           position: Vector3(newX, newY, paper.position.z),
+          stackOrder: _allocateStackMajor(),
           rotationDeg: newRot,
           sizeLevel: paper.sizeLevel,
           localVertices: paper.localVertices != null
@@ -7513,60 +8696,81 @@ class CraftingTestViewState extends State<CraftingTestView>
   // Inventory bar
   // ---------------------------------------------------------------------------
 
+  Widget _buildBottomControlColumn() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        if (_selectedBlueprint != null) ...[
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildUnionToggle(),
+              const SizedBox(width: 8),
+              _buildFillAllButton(),
+            ],
+          ),
+          const SizedBox(height: 8),
+        ],
+        _buildUndoRedoBar(),
+        const SizedBox(height: 8),
+        _buildInventoryBar(),
+      ],
+    );
+  }
+
   Widget _buildUndoRedoBar() {
-    return Center(
-      child: ListenableBuilder(
-        listenable: _history,
-        builder: (context, _) {
-          return Container(
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.7),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.white10),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.undo, size: 22),
-                  color: _history.canUndo ? Colors.white : Colors.white24,
-                  tooltip: 'Undo',
-                  onPressed: _history.canUndo ? _undo : null,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 40,
-                    minHeight: 40,
+    return ListenableBuilder(
+      listenable: _history,
+      builder: (context, _) {
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.7),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.white10),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.undo, size: 22),
+                color: _history.canUndo ? Colors.white : Colors.white24,
+                tooltip: 'Undo',
+                onPressed: _history.canUndo ? _undo : null,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(
+                  minWidth: 40,
+                  minHeight: 40,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  '${_history.operativeActionCount}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    height: 1,
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Text(
-                    '${_history.operativeActionCount}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      height: 1,
-                    ),
-                  ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.redo, size: 22),
+                color: _history.canRedo ? Colors.white : Colors.white24,
+                tooltip: 'Redo',
+                onPressed: _history.canRedo ? _redo : null,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(
+                  minWidth: 40,
+                  minHeight: 40,
                 ),
-                IconButton(
-                  icon: const Icon(Icons.redo, size: 22),
-                  color: _history.canRedo ? Colors.white : Colors.white24,
-                  tooltip: 'Redo',
-                  onPressed: _history.canRedo ? _redo : null,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 40,
-                    minHeight: 40,
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -7578,27 +8782,25 @@ class CraftingTestViewState extends State<CraftingTestView>
     if (_useStructureInventory) {
       return _buildMaterialInventoryBar();
     }
-    return Center(
-      child: Container(
-        height: 64,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.7),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white10),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (int i = 0; i < PaperColor.values.length; i++) ...[
-              if (i > 0) const SizedBox(width: 8),
-              _buildInventorySlot(
-                PaperColor.values[i],
-                _inventory[PaperColor.values[i]] ?? 0,
-              ),
-            ],
+    return Container(
+      height: 64,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.7),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (int i = 0; i < PaperColor.values.length; i++) ...[
+            if (i > 0) const SizedBox(width: 8),
+            _buildInventorySlot(
+              PaperColor.values[i],
+              _inventory[PaperColor.values[i]] ?? 0,
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -7606,45 +8808,41 @@ class CraftingTestViewState extends State<CraftingTestView>
   Widget _buildMaterialInventoryBar() {
     final contents = _structureInventory!.contents;
     if (contents.isEmpty) {
-      return Center(
-        child: Container(
-          height: 64,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.7),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white10),
-          ),
-          child: const Center(
-            child: Text(
-              'No materials',
-              style: TextStyle(color: Colors.white38, fontSize: 12),
-            ),
-          ),
-        ),
-      );
-    }
-    return Center(
-      child: Container(
+      return Container(
         height: 64,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
           color: Colors.black.withOpacity(0.7),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: Colors.white10),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (int i = 0; i < contents.entries.length; i++) ...[
-              if (i > 0) const SizedBox(width: 8),
-              _buildMaterialSlot(
-                contents.entries.elementAt(i).key,
-                contents.entries.elementAt(i).value,
-              ),
-            ],
-          ],
+        child: const Center(
+          child: Text(
+            'No materials',
+            style: TextStyle(color: Colors.white38, fontSize: 12),
+          ),
         ),
+      );
+    }
+    return Container(
+      height: 64,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.7),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (int i = 0; i < contents.entries.length; i++) ...[
+            if (i > 0) const SizedBox(width: 8),
+            _buildMaterialSlot(
+              contents.entries.elementAt(i).key,
+              contents.entries.elementAt(i).value,
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -7920,6 +9118,7 @@ class CraftingTestPainter extends CustomPainter {
     this.lineDrawPreview,
     this.cutHighlightEdges = const [],
     this.cutHighlightGlow = 0,
+    this.cutSnapRay,
     this.craftingMode = CraftingMode.select,
     this.activeToolpath = const [],
     this.cutAnimProgress = 0,
@@ -7943,12 +9142,18 @@ class CraftingTestPainter extends CustomPainter {
     this.alignGridAxisEnd,
     this.alignGridHighlightPolyIndex,
     this.stretchPaperId,
-    this.stretchScaleX = 1.0,
-    this.stretchScaleY = 1.0,
     this.stretchHandleIndex,
-    this.stretchOriginalBounds,
-    this.stretchAnchorLocal = Offset.zero,
+    this.stretchStartBounds,
+    this.stretchDisplayBounds,
     this.gridRegionAssist = true,
+    this.blueprintHoles = const [],
+    this.stencilVisible = false,
+    this.stencilShape = StencilShape.rectangle,
+    this.stencilPosition = Offset.zero,
+    this.stencilHalfW = 1,
+    this.stencilHalfH = 1,
+    this.stencilSelected = false,
+    this.stencilHandleIndex,
   });
 
   final Geometry geometry;
@@ -8000,6 +9205,7 @@ class CraftingTestPainter extends CustomPainter {
   final Offset? lineDrawPreview;
   final List<(Offset, Offset)> cutHighlightEdges;
   final double cutHighlightGlow;
+  final (Offset, Offset)? cutSnapRay;
   final CraftingMode craftingMode;
   final List<ToolpathSegment> activeToolpath;
   final double cutAnimProgress;
@@ -8029,12 +9235,18 @@ class CraftingTestPainter extends CustomPainter {
 
   // Stretch gizmo
   final String? stretchPaperId;
-  final double stretchScaleX;
-  final double stretchScaleY;
   final int? stretchHandleIndex;
-  final Rect? stretchOriginalBounds;
-  final Offset stretchAnchorLocal;
+  final Rect? stretchStartBounds;
+  final Rect? stretchDisplayBounds;
   final bool gridRegionAssist;
+  final List<List<List<Offset>>> blueprintHoles;
+  final bool stencilVisible;
+  final StencilShape stencilShape;
+  final Offset stencilPosition;
+  final double stencilHalfW;
+  final double stencilHalfH;
+  final bool stencilSelected;
+  final int? stencilHandleIndex;
 
   double get _effectiveGridSpacing =>
       activeGridSpacing ?? drawingPlaneSize / gridDivisions;
@@ -8129,6 +9341,7 @@ class CraftingTestPainter extends CustomPainter {
     }
 
     _drawCutHighlightEdges(canvas, size, viewProjection);
+    _drawCutSnapRay(canvas, size, viewProjection);
 
     // Draw cut lines / preview / toolpath
     _drawCutLines(canvas, size, viewProjection);
@@ -8140,8 +9353,12 @@ class CraftingTestPainter extends CustomPainter {
     }
 
     // Stretch gizmo
-    if (craftingMode == CraftingMode.stretch && stretchPaperId != null) {
+    if (stretchPaperId != null) {
       _drawStretchGizmo(canvas, size, viewProjection);
+    }
+
+    if (stencilVisible) {
+      _drawStencil(canvas, size, viewProjection);
     }
 
     // Friend mesh (only during cut animation)
@@ -8404,6 +9621,25 @@ class CraftingTestPainter extends CustomPainter {
           );
           if (pt == null) continue;
 
+          final stencilAlpha = wipeAlpha * dissolveAlpha * layerOpacity;
+          if (_worldInStencil(world)) {
+            _drawStencilGridX(canvas, pt, 0.95 * stencilAlpha);
+            continue;
+          }
+
+          if (_worldInOpsLockedPaper(world)) {
+            canvas.drawCircle(
+              pt,
+              dotRadius,
+              Paint()
+                ..style = PaintingStyle.fill
+                ..color = Colors.grey.shade600.withValues(
+                  alpha: 0.55 * stencilAlpha,
+                ),
+            );
+            continue;
+          }
+
           final isOrigin = i == 0 && j == 0;
           if (isOrigin) {
             originScreen = pt;
@@ -8465,21 +9701,34 @@ class CraftingTestPainter extends CustomPainter {
   }
 
   /// Color of interior dots for each blueprint polygon at [spacing].
-  List<(List<Offset> poly, Color color)> _blueprintGridFitColors(double spacing) {
-    final out = <(List<Offset>, Color)>[];
-    for (final poly in blueprintPolygons) {
+  List<(List<Offset> poly, List<List<Offset>> holes, Color color)>
+      _blueprintGridFitColors(double spacing) {
+    final out = <(List<Offset>, List<List<Offset>>, Color)>[];
+    for (var i = 0; i < blueprintPolygons.length; i++) {
+      final poly = blueprintPolygons[i];
       if (poly.length < 3) continue;
-      out.add((poly, _gridFitColorForPolygon(poly, spacing)));
+      final holes = i < blueprintHoles.length
+          ? blueprintHoles[i]
+          : const <List<Offset>>[];
+      out.add((poly, holes, _gridFitColorForPolygon(poly, spacing)));
     }
     return out;
   }
 
   Color? _interiorGridFitColor(
     Offset world,
-    List<(List<Offset>, Color)> fitColors,
+    List<(List<Offset>, List<List<Offset>>, Color)> fitColors,
   ) {
-    for (final (poly, color) in fitColors) {
-      if (_pointInPolygonPainter(world, poly)) return color;
+    for (final (poly, holes, color) in fitColors) {
+      if (!_pointInPolygonPainter(world, poly)) continue;
+      var inHole = false;
+      for (final hole in holes) {
+        if (hole.length >= 3 && _pointInPolygonPainter(world, hole)) {
+          inHole = true;
+          break;
+        }
+      }
+      if (!inHole) return color;
     }
     return null;
   }
@@ -8685,7 +9934,22 @@ class CraftingTestPainter extends CustomPainter {
           if (sp != null) screenPts.add(sp);
         }
         if (screenPts.length < 3) continue;
-        canvas.drawPath(Path()..addPolygon(screenPts, true), glowPaint);
+        final glowPath = Path()..addPolygon(screenPts, true);
+        if (i < blueprintHoles.length) {
+          for (final hole in blueprintHoles[i]) {
+            final holePts = <Offset>[];
+            for (final v in hole) {
+              final sp = _projectToScreen(
+                Vector3(v.dx, v.dy, 0.045),
+                viewProjection,
+                size,
+              );
+              if (sp != null) holePts.add(sp);
+            }
+            if (holePts.length >= 3) glowPath.addPolygon(holePts, true);
+          }
+        }
+        canvas.drawPath(glowPath, glowPaint);
       }
     }
 
@@ -8705,6 +9969,21 @@ class CraftingTestPainter extends CustomPainter {
         }
         if (screenPts.length < 3) continue;
         final path = Path()..addPolygon(screenPts, true);
+        if (i < blueprintHoles.length) {
+          for (final hole in blueprintHoles[i]) {
+            final holePts = <Offset>[];
+            for (final v in hole) {
+              final sp = _projectToScreen(
+                Vector3(v.dx, v.dy, 0.05),
+                viewProjection,
+                size,
+              );
+              if (sp != null) holePts.add(sp);
+            }
+            if (holePts.length >= 3) path.addPolygon(holePts, true);
+          }
+        }
+        path.fillType = PathFillType.evenOdd;
         final paint = filledBlueprintIndices.contains(i)
             ? filledPaint
             : defaultPaint;
@@ -8816,10 +10095,12 @@ class CraftingTestPainter extends CustomPainter {
 
   void _drawPapers(Canvas canvas, Size size, Matrix4 viewProjection) {
     // Locked first, then live, so committed geometry never covers new work.
+    // Within a layer, lower stackOrder is behind.
     for (final lockedLayer in const [true, false]) {
+    final layerPapers = papers.where((p) => p.locked == lockedLayer).toList()
+      ..sort((a, b) => a.stackOrder.compareTo(b.stackOrder));
     final paperPaths = <(Path, PlacedPaper)>[];
-    for (final paper in papers) {
-      if (paper.locked != lockedLayer) continue;
+    for (final paper in layerPapers) {
       final hs = _paperHalfSizeForLevel(paper.sizeLevel);
       final localVerts =
           paper.localVertices ??
@@ -8833,7 +10114,8 @@ class CraftingTestPainter extends CustomPainter {
       final cz = paper.position.z;
 
       final screenCorners = <Offset>[];
-      for (final o in localVerts) {
+      for (final raw in localVerts) {
+        final o = _stretchMappedLocal(paper, raw);
         final rx = o.dx * cosA - o.dy * sinA;
         final ry = o.dx * sinA + o.dy * cosA;
         final p = _projectToScreen(
@@ -8850,7 +10132,8 @@ class CraftingTestPainter extends CustomPainter {
       // Add hole sub-paths for compound papers.
       for (final hole in paper.localHoles) {
         final screenHole = <Offset>[];
-        for (final o in hole) {
+        for (final raw in hole) {
+          final o = _stretchMappedLocal(paper, raw);
           final rx = o.dx * cosA - o.dy * sinA;
           final ry = o.dx * sinA + o.dy * cosA;
           final p = _projectToScreen(
@@ -8886,7 +10169,11 @@ class CraftingTestPainter extends CustomPainter {
           ? 0.85 * discardT
           : fading
           ? 0.85 + (0.15 - 0.85) * lockFadeT.clamp(0.0, 1.0)
-          : (paper.locked ? 0.15 : 0.85);
+          : (paper.locked
+              ? 0.15
+              : paper.isOpsLocked
+              ? 0.75
+              : 0.85);
       final Color fillColor = baseColor.withValues(alpha: fillAlpha);
 
       canvas.drawPath(
@@ -9098,6 +10385,39 @@ class CraftingTestPainter extends CustomPainter {
       canvas.drawPath(path, fillPaint);
       canvas.drawPath(path, borderPaint);
     }
+  }
+
+  void _drawCutSnapRay(
+    Canvas canvas,
+    Size size,
+    Matrix4 viewProjection,
+  ) {
+    final ray = cutSnapRay;
+    if (ray == null) return;
+    final (extA, extB) = extendLineSegment(
+      ray.$1,
+      ray.$2,
+      drawingPlaneSize,
+    );
+    final a = _projectToScreen(
+      Vector3(extA.dx, extA.dy, 0.06),
+      viewProjection,
+      size,
+    );
+    final b = _projectToScreen(
+      Vector3(extB.dx, extB.dy, 0.06),
+      viewProjection,
+      size,
+    );
+    if (a == null || b == null) return;
+    canvas.drawLine(
+      a,
+      b,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.25
+        ..color = Colors.cyanAccent.withValues(alpha: 0.25),
+    );
   }
 
   void _drawCutHighlightEdges(
@@ -9878,30 +11198,191 @@ class CraftingTestPainter extends CustomPainter {
     canvas.drawCircle(p, 4, paint);
   }
 
-  double _stretchLocalPaint(double v, double anchor, double scale) {
-    return v * scale + anchor * (1 - scale);
+  Offset _stretchMappedLocal(PlacedPaper paper, Offset v) {
+    if (paper.id != stretchPaperId) return v;
+    final from = stretchStartBounds;
+    final to = stretchDisplayBounds;
+    if (from == null || to == null) return v;
+    final w = from.width.abs() < 1e-9 ? 1.0 : from.width;
+    final h = from.height.abs() < 1e-9 ? 1.0 : from.height;
+    return Offset(
+      to.left + (v.dx - from.left) / w * to.width,
+      to.top + (v.dy - from.top) / h * to.height,
+    );
+  }
+
+  Offset _stencilLocalToScreen(
+    Offset local,
+    Matrix4 viewProjection,
+    Size size,
+  ) {
+    return _projectToScreen(
+          Vector3(
+            stencilPosition.dx + local.dx,
+            stencilPosition.dy + local.dy,
+            1.05,
+          ),
+          viewProjection,
+          size,
+        ) ??
+        Offset.zero;
+  }
+
+  bool _worldInOpsLockedPaper(Offset world) {
+    for (final paper in papers) {
+      if (!paper.isOpsLocked) continue;
+      final hs = _paperHalfSizeForLevel(paper.sizeLevel);
+      final verts = paper.localVertices ??
+          [Offset(-hs, -hs), Offset(hs, -hs), Offset(hs, hs), Offset(-hs, hs)];
+      final rad = paper.rotationDeg * math.pi / 180;
+      final cosA = math.cos(rad);
+      final sinA = math.sin(rad);
+      final dx = world.dx - paper.position.x;
+      final dy = world.dy - paper.position.y;
+      final local = Offset(dx * cosA + dy * sinA, -dx * sinA + dy * cosA);
+      if (!_pointInPolygonPainter(local, verts)) continue;
+      var inHole = false;
+      for (final hole in paper.localHoles) {
+        if (hole.length >= 3 && _pointInPolygonPainter(local, hole)) {
+          inHole = true;
+          break;
+        }
+      }
+      if (!inHole) return true;
+    }
+    return false;
+  }
+
+  bool _worldInStencil(Offset world) {
+    if (!stencilVisible) return false;
+    final local = world - stencilPosition;
+    if (stencilShape == StencilShape.circle) {
+      final nx = local.dx / math.max(stencilHalfW, 1e-6);
+      final ny = local.dy / math.max(stencilHalfH, 1e-6);
+      return nx * nx + ny * ny <= 1;
+    }
+    return local.dx.abs() <= stencilHalfW && local.dy.abs() <= stencilHalfH;
+  }
+
+  void _drawStencilGridX(Canvas canvas, Offset pt, double opacity) {
+    const s = 3.2;
+    final paint = Paint()
+      ..color = const Color(0xFFE53935).withValues(alpha: opacity)
+      ..strokeWidth = 1.35
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(pt + const Offset(-s, -s), pt + const Offset(s, s), paint);
+    canvas.drawLine(pt + const Offset(-s, s), pt + const Offset(s, -s), paint);
+  }
+
+  void _drawStencil(Canvas canvas, Size size, Matrix4 viewProjection) {
+    final hw = stencilHalfW;
+    final hh = stencilHalfH;
+    final outline = <Offset>[];
+    if (stencilShape == StencilShape.circle) {
+      const n = 48;
+      for (var i = 0; i < n; i++) {
+        outline.add(
+          _stencilLocalToScreen(
+            Offset(
+              hw * math.cos(2 * math.pi * i / n),
+              hh * math.sin(2 * math.pi * i / n),
+            ),
+            viewProjection,
+            size,
+          ),
+        );
+      }
+    } else {
+      for (final p in [
+        Offset(-hw, -hh),
+        Offset(hw, -hh),
+        Offset(hw, hh),
+        Offset(-hw, hh),
+      ]) {
+        outline.add(_stencilLocalToScreen(p, viewProjection, size));
+      }
+    }
+    if (outline.length < 2) return;
+
+    final path = Path()..addPolygon(outline, true);
+    final dashPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0
+      ..color = const Color(0xFFE53935);
+    _drawDashedPath(canvas, path, 7, 5, dashPaint);
+
+    if (!stencilSelected) return;
+
+    final handles = [
+      _stencilLocalToScreen(Offset(0, hh), viewProjection, size),
+      _stencilLocalToScreen(Offset(hw, 0), viewProjection, size),
+      _stencilLocalToScreen(Offset(0, -hh), viewProjection, size),
+      _stencilLocalToScreen(Offset(-hw, 0), viewProjection, size),
+      _stencilLocalToScreen(Offset(-hw, hh), viewProjection, size),
+      _stencilLocalToScreen(Offset(hw, hh), viewProjection, size),
+      _stencilLocalToScreen(Offset(hw, -hh), viewProjection, size),
+      _stencilLocalToScreen(Offset(-hw, -hh), viewProjection, size),
+    ];
+    const handleSize = 6.0;
+    final handleFill = Paint()..color = const Color(0xFFE53935);
+    final handleStroke = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+    final activeFill = Paint()..color = Colors.yellowAccent;
+    for (var i = 0; i < handles.length; i++) {
+      final h = handles[i];
+      final isCorner = i >= 4;
+      final fill = stencilHandleIndex == i ? activeFill : handleFill;
+      final hs = isCorner ? handleSize : handleSize * 0.85;
+      final rect = Rect.fromCenter(center: h, width: hs * 2, height: hs * 2);
+      if (isCorner) {
+        canvas.drawRect(rect, fill);
+        canvas.drawRect(rect, handleStroke);
+      } else {
+        canvas.drawOval(rect, fill);
+        canvas.drawOval(rect, handleStroke);
+      }
+    }
+  }
+
+  static void _drawDashedPath(
+    Canvas canvas,
+    Path path,
+    double dashLen,
+    double gapLen,
+    Paint paint,
+  ) {
+    for (final metric in path.computeMetrics()) {
+      var distance = 0.0;
+      while (distance < metric.length) {
+        final end = math.min(distance + dashLen, metric.length);
+        canvas.drawPath(metric.extractPath(distance, end), paint);
+        distance = end + gapLen;
+      }
+    }
   }
 
   void _drawStretchGizmo(Canvas canvas, Size size, Matrix4 viewProjection) {
     final paper = papers.where((p) => p.id == stretchPaperId).firstOrNull;
     if (paper == null) return;
 
-    final bounds = stretchOriginalBounds ?? _paperLocalBoundsForPainter(paper);
+    final bounds =
+        stretchDisplayBounds ??
+        stretchStartBounds ??
+        _paperLocalBoundsForPainter(paper);
     final cx = paper.position.x;
     final cy = paper.position.y;
     final rad = paper.rotationDeg * math.pi / 180;
     final cosA = math.cos(rad);
     final sinA = math.sin(rad);
-    final ax = stretchAnchorLocal.dx;
-    final ay = stretchAnchorLocal.dy;
-    final sx = stretchScaleX;
-    final sy = stretchScaleY;
+    final start = stretchStartBounds ?? bounds;
+    final sx = start.width.abs() < 1e-9 ? 1.0 : bounds.width / start.width;
+    final sy = start.height.abs() < 1e-9 ? 1.0 : bounds.height / start.height;
 
     Offset toScreen(double lx, double ly) {
-      final slx = _stretchLocalPaint(lx, ax, sx);
-      final sly = _stretchLocalPaint(ly, ay, sy);
-      final wx = cx + slx * cosA - sly * sinA;
-      final wy = cy + slx * sinA + sly * cosA;
+      final wx = cx + lx * cosA - ly * sinA;
+      final wy = cy + lx * sinA + ly * cosA;
       return _projectToScreen(Vector3(wx, wy, 1.01), viewProjection, size) ??
           Offset.zero;
     }

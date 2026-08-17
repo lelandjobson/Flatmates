@@ -12,6 +12,7 @@ class CraftingPaperState {
     required this.positionX,
     required this.positionY,
     required this.positionZ,
+    required this.stackOrder,
     required this.rotationDeg,
     required this.sizeLevel,
     this.localVertices,
@@ -19,6 +20,7 @@ class CraftingPaperState {
     this.cutSegments = const [],
     this.locked = false,
     this.lockedBlueprintIndex,
+    this.opsLocked = false,
     this.materialId,
   });
 
@@ -27,6 +29,7 @@ class CraftingPaperState {
   final double positionX;
   final double positionY;
   final double positionZ;
+  final double stackOrder;
   final double rotationDeg;
   final int sizeLevel;
   final List<Offset>? localVertices;
@@ -34,6 +37,7 @@ class CraftingPaperState {
   final List<(Offset, Offset)> cutSegments;
   final bool locked;
   final int? lockedBlueprintIndex;
+  final bool opsLocked;
   final String? materialId;
 
   factory CraftingPaperState.fromPaper(PlacedPaper paper) {
@@ -43,6 +47,7 @@ class CraftingPaperState {
       positionX: paper.position.x,
       positionY: paper.position.y,
       positionZ: paper.position.z,
+      stackOrder: paper.stackOrder,
       rotationDeg: paper.rotationDeg,
       sizeLevel: paper.sizeLevel,
       localVertices: paper.localVertices != null
@@ -54,6 +59,7 @@ class CraftingPaperState {
       cutSegments: List<(Offset, Offset)>.from(paper.cutSegments),
       locked: paper.locked,
       lockedBlueprintIndex: paper.lockedBlueprintIndex,
+      opsLocked: paper.opsLocked,
       materialId: paper.materialId,
     );
   }
@@ -63,6 +69,7 @@ class CraftingPaperState {
       id: id,
       paperColor: paperColor,
       position: Vector3(positionX, positionY, positionZ),
+      stackOrder: stackOrder,
       rotationDeg: rotationDeg,
       sizeLevel: sizeLevel,
       localVertices: localVertices,
@@ -72,6 +79,7 @@ class CraftingPaperState {
     p.cutSegments.addAll(cutSegments);
     p.locked = locked;
     p.lockedBlueprintIndex = lockedBlueprintIndex;
+    p.opsLocked = opsLocked;
     return p;
   }
 }

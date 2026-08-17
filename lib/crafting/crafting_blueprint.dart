@@ -140,6 +140,12 @@ class TransformTreeNode {
   List<Offset> get unfoldedPolygon2D =>
       unfoldedVertices.map((v) => Offset(v.x, v.y)).toList();
 
+  /// Unfolded hole rings projected to 2D (dropping Z).
+  List<List<Offset>> get unfoldedHoles2D => [
+        for (final hole in unfoldedHoles)
+          [for (final v in hole) Offset(v.x, v.y)],
+      ];
+
   /// The folded polygon projected to 2D (dropping Z).
   List<Offset> get foldedPolygon2D =>
       foldedVertices.map((v) => Offset(v.x, v.y)).toList();
@@ -401,9 +407,42 @@ class CraftingBlueprint {
     return _islandPolygons(scale);
   }
 
+  /// Hole rings parallel to [unfoldedFillPolygons] (same length / order).
+  List<List<List<Offset>>> unfoldedFillHoles({double scale = 1.0}) {
+    if (isApplique) {
+      return [
+        for (final ring in appliqueSurfaces)
+          if (ring.length >= 3) const <List<Offset>>[],
+      ];
+    }
+    return partOverlayHoles(scale: scale);
+  }
+
   /// Part-fill polygons for overlaying under an applique step (same layout).
   List<List<Offset>> partOverlayPolygons({double scale = 1.0}) =>
       _islandPolygons(scale);
+
+  /// Hole rings parallel to [partOverlayPolygons] (same length / order).
+  List<List<List<Offset>>> partOverlayHoles({double scale = 1.0}) {
+    final out = <List<List<Offset>>>[];
+    for (final island in islands) {
+      for (final node in island.transformTree.nodes) {
+        if (node.unfoldedPolygon2D.length < 3) continue;
+        out.add([
+          for (final hole in node.unfoldedHoles2D)
+            if (hole.length >= 3)
+              [
+                for (final v in hole)
+                  Offset(
+                    (v.dx + island.originOffset.dx) * scale,
+                    (v.dy + island.originOffset.dy) * scale,
+                  ),
+              ],
+        ]);
+      }
+    }
+    return out;
+  }
 
   List<List<Offset>> _islandPolygons(double scale) {
     final out = <List<Offset>>[];

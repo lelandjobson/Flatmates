@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 /// Preferred compass slot for a [RadialAction] around the selection.
-enum RadialActionSide { top, right, bottom, left }
+enum RadialActionSide { top, right, bottom, left, topLeft, bottomLeft }
 
 class RadialAction {
   const RadialAction({
@@ -222,6 +222,10 @@ class _ObjectRadialMenuState extends State<ObjectRadialMenu>
         return math.pi / 2;
       case RadialActionSide.left:
         return math.pi;
+      case RadialActionSide.topLeft:
+        return -3 * math.pi / 4;
+      case RadialActionSide.bottomLeft:
+        return 3 * math.pi / 4;
     }
   }
 
