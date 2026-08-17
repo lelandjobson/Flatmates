@@ -1542,7 +1542,7 @@ class CraftingTestViewState extends State<CraftingTestView>
     );
 
     setState(() {
-      _craftingMode = CraftingMode.select;
+      _craftingMode = CraftingMode.pan;
       _drawnCutLines.clear();
       _resetCutStroke();
       _panModeSelectedPaperId = null;
