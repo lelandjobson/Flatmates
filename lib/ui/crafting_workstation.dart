@@ -46,7 +46,7 @@ const _kGridOriginDot = Color(0xFFFFFFFF);
 /// Friend walk animation during cut (disabled for now; logic preserved).
 const _kCutFriendAnimationEnabled = false;
 
-const _noOpUndoLabels = {'Select', 'Deselect'};
+const _noOpUndoLabels = {'Select', 'Deselect', 'Invert'};
 
 /// Target number of grid cells visible across the viewport short axis.
 const _targetCellsAcross = 32;
@@ -305,7 +305,6 @@ enum CraftingMode {
   magnet,
   mirror,
   rotationCopy,
-  translationCopy,
   erase,
   alignGrid,
   stretch,
@@ -342,6 +341,13 @@ List<ToolpathSegment> buildToolpath(List<(Offset, Offset)> lines) {
   if (len < 1e-6) return (a, b);
   final unit = dir / len;
   return (a - unit * extension, b + unit * extension);
+}
+
+class _BpVertexRef {
+  const _BpVertexRef(this.polyIndex, this.vertexIndex, this.point);
+  final int polyIndex;
+  final int vertexIndex;
+  final Offset point;
 }
 
 // ---------------------------------------------------------------------------
@@ -523,6 +529,9 @@ class CraftingTestViewState extends State<CraftingTestView>
   final List<(Offset, Offset)> _drawnCutLines = [];
   Offset? _lineDrawStart;
   Offset? _lineDrawPreview;
+  List<_BpVertexRef> _cutStartVertexRefs = const [];
+  List<(Offset, Offset)> _cutHighlightEdges = [];
+  late final AnimationController _cutEdgeGlowController;
   Offset? _panDragLastScreen;
 
   // Paint tool
@@ -597,12 +606,21 @@ class CraftingTestViewState extends State<CraftingTestView>
   bool _rotCopyGizmoActive = false;
   double _rotCopyAngleDeg = 0;
 
-  // Translation copy tool
-  Offset? _transCopyStartWorld;
-  Offset? _transCopyCurrentWorld;
+  // Selection copy: last source pose, reused while the new copies stay selected.
+  Offset? _copyMemorySourceCentroid;
+  double _copyMemorySourceRotationDeg = 0;
+  Set<String>? _copyMemoryResultIds;
+  bool _suppressCopyMemorySync = false;
 
   // Selection & interaction
-  Set<String> _selectedPaperIds = {};
+  Set<String> _selectedPaperIdsRaw = {};
+  Set<String> get _selectedPaperIds => _selectedPaperIdsRaw;
+  set _selectedPaperIds(Set<String> ids) {
+    _selectedPaperIdsRaw = ids;
+    if (!_suppressCopyMemorySync) {
+      _syncCopyMemoryWithSelection();
+    }
+  }
   bool _isRotationGizmoActive = false;
   String? _dragPaperId;
   Offset? _pointerDownPos;
@@ -958,8 +976,7 @@ class CraftingTestViewState extends State<CraftingTestView>
       _isMarquee = false;
       _marqueeStartScreen = null;
       _marqueeCurrentScreen = null;
-      _lineDrawStart = null;
-      _lineDrawPreview = null;
+      _resetCutStroke();
       // Pan tool one-finger camera drag — must clear or a later move applies a
       // huge stale delta against the pre-pinch finger position (pinch jitter).
       _panDragLastScreen = null;
@@ -972,8 +989,6 @@ class CraftingTestViewState extends State<CraftingTestView>
       _paintSelectionIds = {};
       _mirrorLineStart = null;
       _mirrorLinePreview = null;
-      _transCopyStartWorld = null;
-      _transCopyCurrentWorld = null;
       _alignGridPointerDown = null;
       _alignGridDidDrag = false;
       _alignGridHoveredPolyIndex = null;
@@ -1104,6 +1119,18 @@ class CraftingTestViewState extends State<CraftingTestView>
     _cutAnimController = AnimationController(vsync: this)
       ..addListener(_onCutAnimTick)
       ..addStatusListener(_onCutAnimStatus);
+
+    _cutEdgeGlowController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    )..addListener(() => setState(() {}));
+    _cutEdgeGlowController.addStatusListener((status) {
+      if (status == AnimationStatus.dismissed) {
+        if (_cutHighlightEdges.isNotEmpty) {
+          setState(() => _cutHighlightEdges = []);
+        }
+      }
+    });
 
     _marqueeDashController = AnimationController(
       vsync: this,
@@ -1261,6 +1288,7 @@ class CraftingTestViewState extends State<CraftingTestView>
     _dotWipeAnimation?.dispose();
     _checkTimer?.cancel();
     _cutAnimController.dispose();
+    _cutEdgeGlowController.dispose();
     _marqueeDashController.dispose();
     _lockAnimController.dispose();
     _lockFadeController.dispose();
@@ -1951,6 +1979,7 @@ class CraftingTestViewState extends State<CraftingTestView>
     _discardOrder = extras.map((p) => p.id).toList();
     _discardElapsedMs = 0;
     _selectedPaperIds.removeWhere(_isDiscardingPaper);
+    _syncCopyMemoryWithSelection();
     if (_panModeSelectedPaperId != null &&
         _isDiscardingPaper(_panModeSelectedPaperId!)) {
       _panModeSelectedPaperId = null;
@@ -2346,7 +2375,10 @@ class CraftingTestViewState extends State<CraftingTestView>
     }
 
     if (allIntersections.isEmpty) {
-      setState(() => _drawnCutLines.clear());
+      setState(() {
+        _drawnCutLines.clear();
+        _fadeCutHighlights();
+      });
       return;
     }
 
@@ -2419,6 +2451,7 @@ class CraftingTestViewState extends State<CraftingTestView>
         _drawnCutLines.clear();
         _activeToolpath = [];
         _toolpathTotalDist = 0;
+        _fadeCutHighlights();
         _craftingMode = CraftingMode.drawLine;
       });
       _scheduleCheck();
@@ -2433,8 +2466,7 @@ class CraftingTestViewState extends State<CraftingTestView>
       _drawnCutLines.clear();
       _activeToolpath = [];
       _toolpathTotalDist = 0;
-      _lineDrawStart = null;
-      _lineDrawPreview = null;
+      _resetCutStroke();
       _craftingMode = CraftingMode.drawLine;
     });
     _scheduleCheck();
@@ -2571,6 +2603,199 @@ class CraftingTestViewState extends State<CraftingTestView>
     final v = Vector3(worldPt.dx, worldPt.dy, 0);
     final snap = _computeSnap([v]);
     return Offset(worldPt.dx + snap.dx, worldPt.dy + snap.dy);
+  }
+
+  static const _kCutBlueprintSnapScale = 2.6;
+  static const _kCutAdjacentDistScale = 0.62;
+  static const _kCutParallelDot = 0.99; // ~8°; 180° counts as the same direction
+
+  /// Cut-line snap: blueprint vertices beat the grid whenever they are nearby.
+  /// If the stroke started on a blueprint vertex, adjacent vertices (the other
+  /// ends of edges that share that vertex) get a slight extra pull.
+  ({Offset point, List<_BpVertexRef> refs}) _snapCutPoint(
+    Offset worldPt, {
+    List<_BpVertexRef> fromVertexRefs = const [],
+  }) {
+    final gridRadius = _snapWorldRadius;
+    final bpRadius = gridRadius * _kCutBlueprintSnapScale;
+
+    _BpVertexRef? bestRef;
+    var bestScore = double.infinity;
+    if (_snapBlueprint && _blueprintWorldPolygons.isNotEmpty) {
+      for (var pi = 0; pi < _blueprintWorldPolygons.length; pi++) {
+        final poly = _blueprintWorldPolygons[pi];
+        for (var vi = 0; vi < poly.length; vi++) {
+          final dist = (poly[vi] - worldPt).distance;
+          if (dist > bpRadius) continue;
+          var score = dist;
+          if (fromVertexRefs.isNotEmpty &&
+              fromVertexRefs.any(
+                (start) => _isAdjacentBlueprintVertex(start, pi, vi),
+              )) {
+            score *= _kCutAdjacentDistScale;
+          }
+          if (score < bestScore) {
+            bestScore = score;
+            bestRef = _BpVertexRef(pi, vi, poly[vi]);
+          }
+        }
+      }
+    }
+    if (bestRef != null) {
+      return (
+        point: bestRef.point,
+        refs: _blueprintVertexRefsAt(bestRef.point),
+      );
+    }
+
+    if (_snapPaper) {
+      Offset? bestPaper;
+      var bestPaperDist = gridRadius;
+      for (final paper in _placedPapers) {
+        if (paper.locked) continue;
+        for (final corner in _paperWorldCorners(paper)) {
+          final pt = Offset(corner.x, corner.y);
+          final dist = (pt - worldPt).distance;
+          if (dist < bestPaperDist) {
+            bestPaperDist = dist;
+            bestPaper = pt;
+          }
+        }
+      }
+      if (bestPaper != null) {
+        return (point: bestPaper, refs: const []);
+      }
+    }
+
+    if (_snapGrid) {
+      return (point: _snapPointToGrid(worldPt), refs: const []);
+    }
+    return (point: worldPt, refs: const []);
+  }
+
+  List<_BpVertexRef> _blueprintVertexRefsAt(Offset point) {
+    const eps2 = 1e-8;
+    final refs = <_BpVertexRef>[];
+    for (var pi = 0; pi < _blueprintWorldPolygons.length; pi++) {
+      final poly = _blueprintWorldPolygons[pi];
+      for (var vi = 0; vi < poly.length; vi++) {
+        if ((poly[vi] - point).distanceSquared <= eps2) {
+          refs.add(_BpVertexRef(pi, vi, poly[vi]));
+        }
+      }
+    }
+    return refs;
+  }
+
+  bool _isAdjacentBlueprintVertex(
+    _BpVertexRef start,
+    int polyIndex,
+    int vertexIndex,
+  ) {
+    if (start.polyIndex != polyIndex) return false;
+    final n = _blueprintWorldPolygons[polyIndex].length;
+    if (n < 2) return false;
+    final d = (vertexIndex - start.vertexIndex).abs();
+    return d == 1 || d == n - 1;
+  }
+
+  void _resetCutStroke({bool fadeHighlights = true}) {
+    _lineDrawStart = null;
+    _lineDrawPreview = null;
+    _cutStartVertexRefs = const [];
+    if (fadeHighlights) {
+      _fadeCutHighlights();
+    }
+  }
+
+  void _fadeCutHighlights() {
+    if (_cutHighlightEdges.isEmpty) {
+      _cutEdgeGlowController.value = 0;
+      return;
+    }
+    if (_cutEdgeGlowController.value > 0) {
+      _cutEdgeGlowController.reverse();
+    }
+  }
+
+  void _updateCutHighlights(Offset start, Offset end) {
+    if ((end - start).distance < 1e-4) {
+      _cutHighlightEdges = [];
+      _cutEdgeGlowController.value = 0;
+      return;
+    }
+    _cutHighlightEdges = _parallelIntersectingBlueprintEdges(start, end);
+    if (_cutHighlightEdges.isEmpty) {
+      _cutEdgeGlowController.value = 0;
+      return;
+    }
+    _cutEdgeGlowController.value = 1;
+  }
+
+  /// Blueprint edges parallel to [start]-[end] (180° = same) that also
+  /// intersect or overlap the extended cut line.
+  List<(Offset, Offset)> _parallelIntersectingBlueprintEdges(
+    Offset start,
+    Offset end,
+  ) {
+    final cut = end - start;
+    final cutLen = cut.distance;
+    if (cutLen < 1e-6) return const [];
+    final cutUnit = cut / cutLen;
+    final (extA, extB) = extendLineSegment(start, end, _drawingPlaneSize);
+    final hits = <(Offset, Offset)>[];
+    for (final poly in _blueprintWorldPolygons) {
+      if (poly.length < 2) continue;
+      for (var i = 0; i < poly.length; i++) {
+        final a = poly[i];
+        final b = poly[(i + 1) % poly.length];
+        final edge = b - a;
+        final edgeLen = edge.distance;
+        if (edgeLen < 1e-6) continue;
+        final edgeUnit = edge / edgeLen;
+        final aligned = (cutUnit.dx * edgeUnit.dx + cutUnit.dy * edgeUnit.dy)
+            .abs();
+        if (aligned < _kCutParallelDot) continue;
+        if (!_edgeOverlapsCutLine(a, b, extA, extB)) continue;
+        hits.add((a, b));
+      }
+    }
+    return hits;
+  }
+
+  bool _edgeOverlapsCutLine(
+    Offset a,
+    Offset b,
+    Offset cutA,
+    Offset cutB,
+  ) {
+    final hit = segmentIntersection(cutA, cutB, a, b);
+    if (hit.type != IntersectionType.none) return true;
+    final tol = math.max(_snapWorldRadius * 0.3, 1e-4);
+    if (_distanceToLine(a, cutA, cutB) > tol) return false;
+    if (_distanceToLine(b, cutA, cutB) > tol) return false;
+    return _projectionsOverlap(a, b, cutA, cutB);
+  }
+
+  static double _distanceToLine(Offset p, Offset a, Offset b) {
+    final ab = b - a;
+    final len = ab.distance;
+    if (len < 1e-9) return (p - a).distance;
+    return ((p.dx - a.dx) * ab.dy - (p.dy - a.dy) * ab.dx).abs() / len;
+  }
+
+  static bool _projectionsOverlap(Offset a, Offset b, Offset c, Offset d) {
+    final axis = d - c;
+    final len2 = axis.dx * axis.dx + axis.dy * axis.dy;
+    if (len2 < 1e-12) return false;
+    double proj(Offset p) =>
+        ((p.dx - c.dx) * axis.dx + (p.dy - c.dy) * axis.dy) / len2;
+    final pa = proj(a), pb = proj(b), pc = 0.0, pd = 1.0;
+    final minE = math.min(pa, pb);
+    final maxE = math.max(pa, pb);
+    final minC = math.min(pc, pd);
+    final maxC = math.max(pc, pd);
+    return maxE >= minC - 1e-6 && minE <= maxC + 1e-6;
   }
 
   // ---------------------------------------------------------------------------
@@ -3298,6 +3523,7 @@ class CraftingTestViewState extends State<CraftingTestView>
     _stopExtraPaperDiscard();
     _placedPapers.clear();
     _selectedPaperIds = {};
+    _clearCopyMemory();
     _panModeSelectedPaperId = null;
     _stretchPaperId = null;
     _stretchHandleIndex = null;
@@ -3325,6 +3551,7 @@ class CraftingTestViewState extends State<CraftingTestView>
         _panModeSelectedPaperId = null;
       }
     }
+    _syncCopyMemoryWithSelection();
     if (_stretchPaperId != null) {
       final paper =
           _placedPapers.where((p) => p.id == _stretchPaperId).firstOrNull;
@@ -3436,6 +3663,7 @@ class CraftingTestViewState extends State<CraftingTestView>
         for (final id in snap.selectedPaperIds)
           if (_placedPapers.any((p) => p.id == id && !p.locked)) id,
       };
+      _clearCopyMemory();
       _isRotationGizmoActive = false;
     });
     _scheduleCheck();
@@ -3565,6 +3793,7 @@ class CraftingTestViewState extends State<CraftingTestView>
         _inventory[paper.paperColor] = (_inventory[paper.paperColor] ?? 0) + 1;
       }
       _selectedPaperIds.remove(paperId);
+      _syncCopyMemoryWithSelection();
       if (_selectedPaperIds.isEmpty) {
         _isRotationGizmoActive = false;
       }
@@ -3630,10 +3859,13 @@ class CraftingTestViewState extends State<CraftingTestView>
 
     if (_craftingMode == CraftingMode.drawLine) {
       final worldPos = _screenToWorld(localPos, viewportSize);
-      final snapped = _snapWorldPoint(Offset(worldPos.x, worldPos.y));
+      final snapped = _snapCutPoint(Offset(worldPos.x, worldPos.y));
       setState(() {
-        _lineDrawStart = snapped;
-        _lineDrawPreview = snapped;
+        _lineDrawStart = snapped.point;
+        _lineDrawPreview = snapped.point;
+        _cutStartVertexRefs = snapped.refs;
+        _cutHighlightEdges = [];
+        _cutEdgeGlowController.value = 0;
       });
       return;
     }
@@ -3687,32 +3919,6 @@ class CraftingTestViewState extends State<CraftingTestView>
           _rotCopyAngleDeg = 0;
         });
       }
-      return;
-    }
-
-    if (_craftingMode == CraftingMode.translationCopy) {
-      final hitId = _hitTestPaper(localPos, viewportSize);
-      if (hitId != null) {
-        _pushUndo('Select');
-        setState(() {
-          if (_selectedPaperIds.contains(hitId)) {
-            _selectedPaperIds = Set.from(_selectedPaperIds)..remove(hitId);
-          } else {
-            _selectedPaperIds = Set.from(_selectedPaperIds)..add(hitId);
-          }
-          _isRotationGizmoActive = false;
-          _transCopyStartWorld = null;
-          _transCopyCurrentWorld = null;
-        });
-        return;
-      }
-      if (_selectedPaperIds.isEmpty) return;
-      final worldPos = _screenToWorld(localPos, viewportSize);
-      final snapped = _snapWorldPoint(Offset(worldPos.x, worldPos.y));
-      setState(() {
-        _transCopyStartWorld = snapped;
-        _transCopyCurrentWorld = snapped;
-      });
       return;
     }
 
@@ -3984,8 +4190,14 @@ class CraftingTestViewState extends State<CraftingTestView>
 
     if (_craftingMode == CraftingMode.drawLine && _lineDrawStart != null) {
       final worldPos = _screenToWorld(localPos, viewportSize);
-      final snapped = _snapWorldPoint(Offset(worldPos.x, worldPos.y));
-      setState(() => _lineDrawPreview = snapped);
+      final snapped = _snapCutPoint(
+        Offset(worldPos.x, worldPos.y),
+        fromVertexRefs: _cutStartVertexRefs,
+      );
+      setState(() {
+        _lineDrawPreview = snapped.point;
+        _updateCutHighlights(_lineDrawStart!, snapped.point);
+      });
       return;
     }
 
@@ -3993,14 +4205,6 @@ class CraftingTestViewState extends State<CraftingTestView>
       final worldPos = _screenToWorld(localPos, viewportSize);
       final snapped = _snapWorldPoint(Offset(worldPos.x, worldPos.y));
       setState(() => _mirrorLinePreview = snapped);
-      return;
-    }
-
-    if (_craftingMode == CraftingMode.translationCopy &&
-        _transCopyStartWorld != null) {
-      final worldPos = _screenToWorld(localPos, viewportSize);
-      final snapped = _snapWorldPoint(Offset(worldPos.x, worldPos.y));
-      setState(() => _transCopyCurrentWorld = snapped);
       return;
     }
 
@@ -4303,41 +4507,23 @@ class CraftingTestViewState extends State<CraftingTestView>
       return;
     }
 
-    if (_craftingMode == CraftingMode.translationCopy &&
-        _transCopyStartWorld != null &&
-        _transCopyCurrentWorld != null) {
-      final delta = _transCopyCurrentWorld! - _transCopyStartWorld!;
-      final isTap = delta.distance <= 1e-4;
-      if (!isTap) {
-        _applyTranslationCopy(delta);
-      } else if (_selectedPaperIds.isNotEmpty) {
-        _pushUndo('Deselect');
-      }
-      setState(() {
-        _transCopyStartWorld = null;
-        _transCopyCurrentWorld = null;
-        if (isTap) _selectedPaperIds = {};
-      });
-      return;
-    }
-
     if (_craftingMode == CraftingMode.drawLine && _lineDrawStart != null) {
       final worldPos = _screenToWorld(localPos, viewportSize);
-      final snapped = _snapWorldPoint(Offset(worldPos.x, worldPos.y));
-      if ((_lineDrawStart! - snapped).distance > 1e-4) {
-        _drawnCutLines.add((_lineDrawStart!, snapped));
-        _lineDrawStart = null;
-        _lineDrawPreview = null;
+      final snapped = _snapCutPoint(
+        Offset(worldPos.x, worldPos.y),
+        fromVertexRefs: _cutStartVertexRefs,
+      );
+      if ((_lineDrawStart! - snapped.point).distance > 1e-4) {
+        _drawnCutLines.add((_lineDrawStart!, snapped.point));
+        _updateCutHighlights(_lineDrawStart!, snapped.point);
+        _resetCutStroke(fadeHighlights: false);
         if (_kCutFriendAnimationEnabled) {
           _startCutAnimation();
         } else {
           _executeCut();
         }
       } else {
-        setState(() {
-          _lineDrawStart = null;
-          _lineDrawPreview = null;
-        });
+        setState(_resetCutStroke);
       }
       return;
     }
@@ -4677,6 +4863,181 @@ class CraftingTestViewState extends State<CraftingTestView>
       _isRotationGizmoActive = false;
     });
     _scheduleCheck();
+  }
+
+  /// True for pieces fitted to a blueprint slot (green outline). Invert
+  /// skips these so leftover scrap can be discarded without touching them.
+  bool _isFittedPaper(PlacedPaper paper) =>
+      paper.locked || paper.isBlueprintMatched;
+
+  void _clearCopyMemory() {
+    _copyMemorySourceCentroid = null;
+    _copyMemorySourceRotationDeg = 0;
+    _copyMemoryResultIds = null;
+  }
+
+  void _syncCopyMemoryWithSelection() {
+    if (_copyMemoryResultIds == null) return;
+    if (_selectedPaperIds.isEmpty ||
+        _selectedPaperIds.length != _copyMemoryResultIds!.length ||
+        !_selectedPaperIds.containsAll(_copyMemoryResultIds!)) {
+      _clearCopyMemory();
+    }
+  }
+
+  Offset _centroidOfPapers(List<PlacedPaper> papers) {
+    if (papers.isEmpty) return Offset.zero;
+    var sx = 0.0, sy = 0.0;
+    for (final paper in papers) {
+      sx += paper.position.x;
+      sy += paper.position.y;
+    }
+    return Offset(sx / papers.length, sy / papers.length);
+  }
+
+  Offset _rotateAround(Offset point, Offset center, double deg) {
+    if (deg.abs() < 1e-10) return point;
+    final rad = deg * math.pi / 180;
+    final dx = point.dx - center.dx;
+    final dy = point.dy - center.dy;
+    final c = math.cos(rad);
+    final s = math.sin(rad);
+    return Offset(
+      center.dx + dx * c - dy * s,
+      center.dy + dx * s + dy * c,
+    );
+  }
+
+  double _signedDeltaDeg(double from, double to) {
+    var d = (to - from) % 360;
+    if (d > 180) d -= 360;
+    if (d < -180) d += 360;
+    return d;
+  }
+
+  /// Half the current dot-grid spacing: +X (right), −Y (down).
+  Offset get _defaultCopyTranslation {
+    final half = _activeGridSpacing * 0.5;
+    return Offset(half, -half);
+  }
+
+  /// Select every unfitted paper that is not in the current selection.
+  void _invertSelection() {
+    _pushUndo('Invert');
+    setState(() {
+      final inverted = <String>{
+        for (final paper in _placedPapers)
+          if (!_selectedPaperIds.contains(paper.id) &&
+              !_isFittedPaper(paper) &&
+              !_isDiscardingPaper(paper.id))
+            paper.id,
+      };
+      _selectedPaperIds = inverted;
+      _isRotationGizmoActive = false;
+      _panModeSelectedPaperId =
+          inverted.length == 1 ? inverted.single : null;
+    });
+  }
+
+  void _copySelectedPapers() {
+    final selected = _placedPapers
+        .where(
+          (p) =>
+              _selectedPaperIds.contains(p.id) &&
+              !p.locked &&
+              !_isDiscardingPaper(p.id),
+        )
+        .toList();
+    if (selected.isEmpty) return;
+
+    final useMemory = _copyMemoryResultIds != null &&
+        _copyMemorySourceCentroid != null &&
+        _selectedPaperIds.length == _copyMemoryResultIds!.length &&
+        _selectedPaperIds.containsAll(_copyMemoryResultIds!);
+
+    final Offset translation;
+    final double rotationDeg;
+    if (useMemory) {
+      final currentCentroid = _centroidOfPapers(selected);
+      translation = currentCentroid - _copyMemorySourceCentroid!;
+      rotationDeg = _signedDeltaDeg(
+        _copyMemorySourceRotationDeg,
+        selected.first.rotationDeg,
+      );
+    } else {
+      translation = _defaultCopyTranslation;
+      rotationDeg = 0;
+    }
+
+    final sourceCentroid = _centroidOfPapers(selected);
+    final sourceRotation = selected.first.rotationDeg;
+
+    final newPapers = <PlacedPaper>[];
+    for (final paper in selected) {
+      final rotated = _rotateAround(
+        Offset(paper.position.x, paper.position.y),
+        sourceCentroid,
+        rotationDeg,
+      );
+      newPapers.add(
+        PlacedPaper(
+          id: 'paper_${_nextPaperId++}',
+          paperColor: paper.paperColor,
+          position: Vector3(
+            rotated.dx + translation.dx,
+            rotated.dy + translation.dy,
+            paper.position.z,
+          ),
+          rotationDeg: (paper.rotationDeg + rotationDeg) % 360,
+          sizeLevel: paper.sizeLevel,
+          localVertices: paper.localVertices != null
+              ? List<Offset>.from(paper.localVertices!)
+              : null,
+          localHoles: paper.localHoles
+              .map((h) => List<Offset>.from(h))
+              .toList(),
+          materialId: paper.materialId,
+        ),
+      );
+    }
+
+    if (newPapers.isEmpty) return;
+
+    _pushUndo('Copy');
+    setState(() {
+      _placedPapers.addAll(newPapers);
+      _copyMemorySourceCentroid = sourceCentroid;
+      _copyMemorySourceRotationDeg = sourceRotation;
+      final resultIds = newPapers.map((p) => p.id).toSet();
+      _copyMemoryResultIds = resultIds;
+      _suppressCopyMemorySync = true;
+      _selectedPaperIds = Set<String>.from(resultIds);
+      _suppressCopyMemorySync = false;
+      _isRotationGizmoActive = false;
+      _panModeSelectedPaperId =
+          newPapers.length == 1 ? newPapers.single.id : null;
+    });
+    _scheduleCheck();
+  }
+
+  RadialAction _invertSelectionAction() {
+    return RadialAction(
+      icon: Icons.flip,
+      label: 'Invert',
+      tint: const Color(0xFF80CBC4),
+      side: RadialActionSide.left,
+      onTap: _invertSelection,
+    );
+  }
+
+  RadialAction _copySelectionAction() {
+    return RadialAction(
+      icon: Icons.copy,
+      label: 'Copy',
+      tint: const Color(0xFF64B5F6),
+      side: RadialActionSide.right,
+      onTap: _copySelectedPapers,
+    );
   }
 
   void _joinSelectedPapers() {
@@ -5026,8 +5387,7 @@ class CraftingTestViewState extends State<CraftingTestView>
                 : () => setState(() {
                     _craftingMode = CraftingMode.pan;
                     _drawnCutLines.clear();
-                    _lineDrawStart = null;
-                    _lineDrawPreview = null;
+                    _resetCutStroke();
                     _panModeSelectedPaperId = null;
                     _paintedCells = {};
                     _lastPaintCell = null;
@@ -5045,8 +5405,7 @@ class CraftingTestViewState extends State<CraftingTestView>
                 : () => setState(() {
                     _craftingMode = CraftingMode.select;
                     _drawnCutLines.clear();
-                    _lineDrawStart = null;
-                    _lineDrawPreview = null;
+                    _resetCutStroke();
                     _panModeSelectedPaperId = null;
                     _paintedCells = {};
                     _lastPaintCell = null;
@@ -5065,8 +5424,7 @@ class CraftingTestViewState extends State<CraftingTestView>
                     if (_craftingMode == CraftingMode.drawLine) {
                       _craftingMode = CraftingMode.pan;
                       _drawnCutLines.clear();
-                      _lineDrawStart = null;
-                      _lineDrawPreview = null;
+                      _resetCutStroke();
                     } else {
                       _craftingMode = CraftingMode.drawLine;
                       _selectedPaperIds = {};
@@ -5095,8 +5453,7 @@ class CraftingTestViewState extends State<CraftingTestView>
                       _isRotationGizmoActive = false;
                       _panModeSelectedPaperId = null;
                       _drawnCutLines.clear();
-                      _lineDrawStart = null;
-                      _lineDrawPreview = null;
+                      _resetCutStroke();
                     }
                   }),
           ),
@@ -5118,8 +5475,7 @@ class CraftingTestViewState extends State<CraftingTestView>
                       _isRotationGizmoActive = false;
                       _panModeSelectedPaperId = null;
                       _drawnCutLines.clear();
-                      _lineDrawStart = null;
-                      _lineDrawPreview = null;
+                      _resetCutStroke();
                       _paintedCells = {};
                       _lastPaintCell = null;
                     }
@@ -5144,8 +5500,7 @@ class CraftingTestViewState extends State<CraftingTestView>
                       _isRotationGizmoActive = false;
                       _panModeSelectedPaperId = null;
                       _drawnCutLines.clear();
-                      _lineDrawStart = null;
-                      _lineDrawPreview = null;
+                      _resetCutStroke();
                       _paintedCells = {};
                       _lastPaintCell = null;
                       _erasedCells = {};
@@ -5169,8 +5524,7 @@ class CraftingTestViewState extends State<CraftingTestView>
                       _isRotationGizmoActive = false;
                       _panModeSelectedPaperId = null;
                       _drawnCutLines.clear();
-                      _lineDrawStart = null;
-                      _lineDrawPreview = null;
+                      _resetCutStroke();
                       _paintedCells = {};
                       _lastPaintCell = null;
                       _clearMagnetState();
@@ -5197,8 +5551,7 @@ class CraftingTestViewState extends State<CraftingTestView>
                       _isRotationGizmoActive = false;
                       _panModeSelectedPaperId = null;
                       _drawnCutLines.clear();
-                      _lineDrawStart = null;
-                      _lineDrawPreview = null;
+                      _resetCutStroke();
                       _paintedCells = {};
                       _lastPaintCell = null;
                       _stretchPaperId = null;
@@ -5227,8 +5580,7 @@ class CraftingTestViewState extends State<CraftingTestView>
                       _mirrorLineStart = null;
                       _mirrorLinePreview = null;
                       _drawnCutLines.clear();
-                      _lineDrawStart = null;
-                      _lineDrawPreview = null;
+                      _resetCutStroke();
                       _panModeSelectedPaperId = null;
                       _paintedCells = {};
                       _lastPaintCell = null;
@@ -5253,33 +5605,7 @@ class CraftingTestViewState extends State<CraftingTestView>
                       _rotCopyGizmoActive = false;
                       _rotCopyAngleDeg = 0;
                       _drawnCutLines.clear();
-                      _lineDrawStart = null;
-                      _lineDrawPreview = null;
-                      _panModeSelectedPaperId = null;
-                      _paintedCells = {};
-                      _lastPaintCell = null;
-                    }
-                  }),
-          ),
-          const SizedBox(height: 2),
-          _ToolModeButton(
-            icon: Icons.control_point_duplicate,
-            tooltip: 'Translation copy',
-            isActive: _craftingMode == CraftingMode.translationCopy,
-            onTap: isCutting
-                ? null
-                : () => setState(() {
-                    if (_craftingMode == CraftingMode.translationCopy) {
-                      _craftingMode = CraftingMode.select;
-                      _transCopyStartWorld = null;
-                      _transCopyCurrentWorld = null;
-                    } else {
-                      _craftingMode = CraftingMode.translationCopy;
-                      _transCopyStartWorld = null;
-                      _transCopyCurrentWorld = null;
-                      _drawnCutLines.clear();
-                      _lineDrawStart = null;
-                      _lineDrawPreview = null;
+                      _resetCutStroke();
                       _panModeSelectedPaperId = null;
                       _paintedCells = {};
                       _lastPaintCell = null;
@@ -5942,6 +6268,8 @@ class CraftingTestViewState extends State<CraftingTestView>
                     drawnCutLines: _drawnCutLines,
                     lineDrawStart: _lineDrawStart,
                     lineDrawPreview: _lineDrawPreview,
+                    cutHighlightEdges: _cutHighlightEdges,
+                    cutHighlightGlow: _cutEdgeGlowController.value,
                     craftingMode: _craftingMode,
                     activeToolpath: _activeToolpath,
                     cutAnimProgress: _craftingMode == CraftingMode.cutting
@@ -5955,11 +6283,6 @@ class CraftingTestViewState extends State<CraftingTestView>
                     mirrorLinePreview: _mirrorLinePreview,
                     ghostPapers: _computeGhostPapers(),
                     rotCopyCenterWorld: _rotCopyCenterWorld,
-                    transCopyArrow:
-                        _transCopyStartWorld != null &&
-                            _transCopyCurrentWorld != null
-                        ? (_transCopyStartWorld!, _transCopyCurrentWorld!)
-                        : null,
                     gridDivisions: _gridDivisions,
                     gridLodFrom: _gridLodFrom,
                     gridLodTo: _gridLodTo,
@@ -6007,7 +6330,6 @@ class CraftingTestViewState extends State<CraftingTestView>
   static const _copyToolModes = {
     CraftingMode.mirror,
     CraftingMode.rotationCopy,
-    CraftingMode.translationCopy,
   };
 
   List<Widget> _buildPaperOverlays(Size viewportSize) {
@@ -6127,38 +6449,6 @@ class CraftingTestViewState extends State<CraftingTestView>
                 paper.position.z,
               ),
               rotationDeg: (paper.rotationDeg + _rotCopyAngleDeg) % 360,
-              sizeLevel: paper.sizeLevel,
-              localVertices: paper.localVertices != null
-                  ? List<Offset>.from(paper.localVertices!)
-                  : null,
-              localHoles: paper.localHoles
-                  .map((h) => List<Offset>.from(h))
-                  .toList(),
-            );
-          })
-          .toList();
-    }
-
-    // Translation copy preview
-    if (_craftingMode == CraftingMode.translationCopy &&
-        _transCopyStartWorld != null &&
-        _transCopyCurrentWorld != null &&
-        _selectedPaperIds.isNotEmpty) {
-      final delta = _transCopyCurrentWorld! - _transCopyStartWorld!;
-      if (delta.distance < 1e-4) return const [];
-
-      return _placedPapers
-          .where((p) => _selectedPaperIds.contains(p.id) && !p.locked)
-          .map((paper) {
-            return PlacedPaper(
-              id: 'ghost_${paper.id}',
-              paperColor: paper.paperColor,
-              position: Vector3(
-                paper.position.x + delta.dx,
-                paper.position.y + delta.dy,
-                paper.position.z,
-              ),
-              rotationDeg: paper.rotationDeg,
               sizeLevel: paper.sizeLevel,
               localVertices: paper.localVertices != null
                   ? List<Offset>.from(paper.localVertices!)
@@ -6306,6 +6596,7 @@ class CraftingTestViewState extends State<CraftingTestView>
             tint: const Color(0xFF90A4AE),
             onTap: () => _returnPaperToInventory(paper.id),
           ),
+          _invertSelectionAction(),
         ],
       );
     }
@@ -6380,6 +6671,8 @@ class CraftingTestViewState extends State<CraftingTestView>
         onTap: () => _returnPaperToInventory(paper.id),
       ),
     );
+    actions.add(_invertSelectionAction());
+    actions.add(_copySelectionAction());
 
     return ObjectRadialMenu(
       center: screenCenter,
@@ -6495,6 +6788,8 @@ class CraftingTestViewState extends State<CraftingTestView>
         onTap: _discardSelectedPapers,
       ),
     );
+    actions.add(_invertSelectionAction());
+    actions.add(_copySelectionAction());
 
     return ObjectRadialMenu(
       center: screenCenter,
@@ -6759,6 +7054,7 @@ class CraftingTestViewState extends State<CraftingTestView>
           _selectedPaperIds.remove(_placedPapers[idx].id);
           _placedPapers.removeAt(idx);
         }
+        _syncCopyMemoryWithSelection();
         _placedPapers.addAll(papersToAdd);
         _isRotationGizmoActive = false;
       });
@@ -7213,47 +7509,6 @@ class CraftingTestViewState extends State<CraftingTestView>
     }
   }
 
-  void _applyTranslationCopy(Offset delta) {
-    if (_selectedPaperIds.isEmpty) return;
-
-    final newPapers = <PlacedPaper>[];
-    for (final paper in _placedPapers) {
-      if (!_selectedPaperIds.contains(paper.id)) continue;
-      if (paper.locked) continue;
-
-      newPapers.add(
-        PlacedPaper(
-          id: 'paper_${_nextPaperId++}',
-          paperColor: paper.paperColor,
-          position: Vector3(
-            paper.position.x + delta.dx,
-            paper.position.y + delta.dy,
-            paper.position.z,
-          ),
-          rotationDeg: paper.rotationDeg,
-          sizeLevel: paper.sizeLevel,
-          localVertices: paper.localVertices != null
-              ? List<Offset>.from(paper.localVertices!)
-              : null,
-          localHoles: paper.localHoles
-              .map((h) => List<Offset>.from(h))
-              .toList(),
-        ),
-      );
-    }
-
-    if (newPapers.isNotEmpty) {
-      _pushUndo('Translation copy');
-      setState(() {
-        _placedPapers.addAll(newPapers);
-        _selectedPaperIds = newPapers.map((p) => p.id).toSet();
-        _isRotationGizmoActive = false;
-        _craftingMode = CraftingMode.select;
-      });
-      _scheduleCheck();
-    }
-  }
-
   // ---------------------------------------------------------------------------
   // Inventory bar
   // ---------------------------------------------------------------------------
@@ -7663,6 +7918,8 @@ class CraftingTestPainter extends CustomPainter {
     this.drawnCutLines = const [],
     this.lineDrawStart,
     this.lineDrawPreview,
+    this.cutHighlightEdges = const [],
+    this.cutHighlightGlow = 0,
     this.craftingMode = CraftingMode.select,
     this.activeToolpath = const [],
     this.cutAnimProgress = 0,
@@ -7673,7 +7930,6 @@ class CraftingTestPainter extends CustomPainter {
     this.mirrorLinePreview,
     this.ghostPapers = const [],
     this.rotCopyCenterWorld,
-    this.transCopyArrow,
     this.erasedCells = const {},
     this.gridDivisions = 32,
     this.gridLodFrom = 0,
@@ -7742,6 +7998,8 @@ class CraftingTestPainter extends CustomPainter {
   final List<(Offset, Offset)> drawnCutLines;
   final Offset? lineDrawStart;
   final Offset? lineDrawPreview;
+  final List<(Offset, Offset)> cutHighlightEdges;
+  final double cutHighlightGlow;
   final CraftingMode craftingMode;
   final List<ToolpathSegment> activeToolpath;
   final double cutAnimProgress;
@@ -7754,7 +8012,6 @@ class CraftingTestPainter extends CustomPainter {
   final Offset? mirrorLinePreview;
   final List<PlacedPaper> ghostPapers;
   final Offset? rotCopyCenterWorld;
-  final (Offset, Offset)? transCopyArrow;
   final Set<(int, int)> erasedCells;
   final int gridDivisions;
   final int gridLodFrom;
@@ -7871,10 +8128,7 @@ class CraftingTestPainter extends CustomPainter {
       _drawRotCopyCenter(canvas, size, viewProjection);
     }
 
-    // Translation copy arrow
-    if (transCopyArrow != null) {
-      _drawTransCopyArrow(canvas, size, viewProjection);
-    }
+    _drawCutHighlightEdges(canvas, size, viewProjection);
 
     // Draw cut lines / preview / toolpath
     _drawCutLines(canvas, size, viewProjection);
@@ -8846,6 +9100,42 @@ class CraftingTestPainter extends CustomPainter {
     }
   }
 
+  void _drawCutHighlightEdges(
+    Canvas canvas,
+    Size size,
+    Matrix4 viewProjection,
+  ) {
+    if (cutHighlightEdges.isEmpty || cutHighlightGlow <= 0.01) return;
+    final t = cutHighlightGlow.clamp(0.0, 1.0);
+    final glowPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 5.5
+      ..strokeCap = StrokeCap.round
+      ..color = Colors.cyanAccent.withValues(alpha: 0.55 * t)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
+    final corePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..strokeCap = StrokeCap.round
+      ..color = Colors.cyanAccent.withValues(alpha: 0.95 * t);
+
+    for (final edge in cutHighlightEdges) {
+      final a = _projectToScreen(
+        Vector3(edge.$1.dx, edge.$1.dy, 0.08),
+        viewProjection,
+        size,
+      );
+      final b = _projectToScreen(
+        Vector3(edge.$2.dx, edge.$2.dy, 0.08),
+        viewProjection,
+        size,
+      );
+      if (a == null || b == null) continue;
+      canvas.drawLine(a, b, glowPaint);
+      canvas.drawLine(a, b, corePaint);
+    }
+  }
+
   void _drawCutLines(Canvas canvas, Size size, Matrix4 viewProjection) {
     if (drawnCutLines.isEmpty) return;
 
@@ -9586,42 +9876,6 @@ class CraftingTestPainter extends CustomPainter {
       paint,
     );
     canvas.drawCircle(p, 4, paint);
-  }
-
-  void _drawTransCopyArrow(Canvas canvas, Size size, Matrix4 viewProjection) {
-    final a = _projectToScreen(
-      Vector3(transCopyArrow!.$1.dx, transCopyArrow!.$1.dy, 0.1),
-      viewProjection,
-      size,
-    );
-    final b = _projectToScreen(
-      Vector3(transCopyArrow!.$2.dx, transCopyArrow!.$2.dy, 0.1),
-      viewProjection,
-      size,
-    );
-    if (a == null || b == null) return;
-
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0
-      ..color = const Color(0xFF44BBFF);
-
-    canvas.drawLine(a, b, paint);
-
-    final dir = b - a;
-    final len = dir.distance;
-    if (len < 8) return;
-    final unit = dir / len;
-    final perp = Offset(-unit.dy, unit.dx);
-    const arrowSize = 8.0;
-    final tip1 = b - unit * arrowSize + perp * arrowSize * 0.5;
-    final tip2 = b - unit * arrowSize - perp * arrowSize * 0.5;
-    final arrowPath = Path()
-      ..moveTo(b.dx, b.dy)
-      ..lineTo(tip1.dx, tip1.dy)
-      ..moveTo(b.dx, b.dy)
-      ..lineTo(tip2.dx, tip2.dy);
-    canvas.drawPath(arrowPath, paint);
   }
 
   double _stretchLocalPaint(double v, double anchor, double scale) {
