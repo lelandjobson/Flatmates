@@ -51,9 +51,18 @@ class OrbitCameraController extends ChangeNotifier {
   double _theta = 0;
   double _phi = 0;
   Size _viewportSize = Size.zero;
+  Vector3? _panMin;
+  Vector3? _panMax;
 
   void setViewportSize(Size size) {
     _viewportSize = size;
+  }
+
+  /// Keep the look-at inside this world AABB. Null clears the lock.
+  void setPanBounds(Vector3? min, Vector3? max) {
+    _panMin = min == null ? null : Vector3.copy(min);
+    _panMax = max == null ? null : Vector3.copy(max);
+    _clampTargetToPanBounds();
   }
 
   Vector3 get target => Vector3.copy(_target);
@@ -180,15 +189,36 @@ class OrbitCameraController extends ChangeNotifier {
     final worldPerPixel = _worldUnitsPerPixel();
     var translation = (planeRight * (-delta.dx * worldPerPixel)) +
         (planeUp * (delta.dy * worldPerPixel));
-    if (constrainPan) {
+    if (constrainPan && _panMin == null) {
       translation = _constrainPanTranslation(translation);
     }
 
-    _target.add(translation);
+    var next = _target + translation;
+    next = _clampedToPanBounds(next);
+    translation = next - _target;
+
+    _target.setFrom(next);
     camera.position.add(translation);
     camera.setTarget(_target);
     _updateSphericalFromCamera();
     notifyListeners();
+  }
+
+  Vector3 _clampedToPanBounds(Vector3 point) {
+    final min = _panMin;
+    final max = _panMax;
+    if (min == null || max == null) return point;
+    return Vector3(
+      point.x.clamp(min.x, max.x),
+      point.y.clamp(min.y, max.y),
+      point.z.clamp(min.z, max.z),
+    );
+  }
+
+  void _clampTargetToPanBounds() {
+    final next = _clampedToPanBounds(_target);
+    if ((next - _target).length2 < 1e-12) return;
+    setTargetKeepingOrbit(next);
   }
 
   void zoomByScale(double scaleChange) {

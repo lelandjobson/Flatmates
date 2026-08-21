@@ -14,6 +14,7 @@ class Mesh extends Transformable {
     Vector3? rotation,
     Vector3? scale,
     this.highlightOnClick = false,
+    this.visible = true,
   })  : _geometry = geometry,
         _material = material,
         _highlightColor = null,
@@ -22,6 +23,7 @@ class Mesh extends Transformable {
   final String id;
   final String name;
   final bool highlightOnClick;
+  bool visible;
 
   Geometry _geometry;
   Geometry get geometry => _geometry;

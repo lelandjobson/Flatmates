@@ -29,21 +29,21 @@ import '../ui/fm_slider.dart';
 
 enum _MapToolbarTab { tools, assets }
 
-/// Rudimentary 3D map test: perlin ground plane + assembly-style craft meshes.
+/// 3D map benchmark: perlin ground plane + assembly-style craft meshes.
 ///
 /// World scale matches OBJ authorship: [IsoProjection.worldUnitsPerTile] (10)
 /// model units = 1 tile. Camera is a locked down-looking perspective on a
 /// diagonal; occupants stream in through a tile octree.
-class Test3dMapView extends StatefulWidget {
-  const Test3dMapView({super.key, this.craftName = 'house_foo'});
+class Map3dBenchView extends StatefulWidget {
+  const Map3dBenchView({super.key, this.craftName = 'house_foo'});
 
   final String craftName;
 
   @override
-  State<Test3dMapView> createState() => _Test3dMapViewState();
+  State<Map3dBenchView> createState() => _Map3dBenchViewState();
 }
 
-class _Test3dMapViewState extends State<Test3dMapView>
+class _Map3dBenchViewState extends State<Map3dBenchView>
     with TickerProviderStateMixin {
   static const _tilesSide = 16;
 
@@ -85,7 +85,7 @@ class _Test3dMapViewState extends State<Test3dMapView>
 
     final half = _mapHalf;
     _camera = Camera(
-      name: 'test-3d-map-cam',
+      name: 'map-3d-bench-cam',
       position: Vector3(0, half, 0),
       target: Vector3.zero(),
       projection: ProjectionType.perspective,

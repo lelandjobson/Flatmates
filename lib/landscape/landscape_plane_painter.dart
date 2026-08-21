@@ -21,6 +21,12 @@ class LandscapePlanePainter extends CustomPainter {
     this.hoverWx,
     this.hoverWy,
     this.hoverBrushSize = 1,
+    this.visibleTiles,
+    this.clipMinX,
+    this.clipMaxX,
+    this.clipMinZ,
+    this.clipMaxZ,
+    this.hideGround = false,
   }) : super(repaint: listenable);
 
   final Camera camera;
@@ -32,6 +38,18 @@ class LandscapePlanePainter extends CustomPainter {
   final int? hoverWx;
   final int? hoverWy;
   final int hoverBrushSize;
+
+  /// When set, only these tiles (and their grid lines) are drawn.
+  final Set<(int, int)>? visibleTiles;
+
+  /// Optional world-space XZ crop. Quads are clipped to this rectangle.
+  final double? clipMinX;
+  final double? clipMaxX;
+  final double? clipMinZ;
+  final double? clipMaxZ;
+
+  /// When true, the ground plane is omitted (crop floor is above Y=0).
+  final bool hideGround;
 
   static final Paint _imagePaint = Paint()
     ..isAntiAlias = false
@@ -70,7 +88,7 @@ class LandscapePlanePainter extends CustomPainter {
 
     _drawTessellatedPlane(canvas, mvp, size, half, img);
     _drawTileGrid(canvas, mvp, size, half);
-    _drawHoverPixel(canvas, mvp, size, half);
+    if (!hideGround) _drawHoverPixel(canvas, mvp, size, half);
   }
 
   void _drawHoverPixel(Canvas canvas, Matrix4 mvp, Size size, double half) {
@@ -114,6 +132,12 @@ class LandscapePlanePainter extends CustomPainter {
     double half,
     ui.Image img,
   ) {
+    if (hideGround) return;
+    final visible = visibleTiles;
+    if (visible != null) {
+      _drawVisibleTiles(canvas, mvp, size, half, img, visible);
+      return;
+    }
     // Enough subdivisions to keep affine UV error invisible while orbiting.
     // Prefer at least 2 segments per tile, capped for performance.
     final segments = math
@@ -192,27 +216,142 @@ class LandscapePlanePainter extends CustomPainter {
     _imagePaint.shader = null;
   }
 
+  void _drawVisibleTiles(
+    Canvas canvas,
+    Matrix4 mvp,
+    Size size,
+    double half,
+    ui.Image img,
+    Set<(int, int)> visible,
+  ) {
+    if (visible.isEmpty) return;
+    final tileWorld = worldSize / tilesSide;
+    final tw = img.width.toDouble();
+    final th = img.height.toDouble();
+    const segs = 4;
+    final positions = <Offset>[];
+    final texCoords = <Offset>[];
+    final cMinX = clipMinX;
+    final cMaxX = clipMaxX;
+    final cMinZ = clipMinZ;
+    final cMaxZ = clipMaxZ;
+
+    Offset? project(double x, double z) =>
+        _projectToScreen(Vector3(x, 0, z), mvp, size);
+
+    for (final (tx, ty) in visible) {
+      if (tx < 0 || ty < 0 || tx >= tilesSide || ty >= tilesSide) continue;
+      var x0 = -half + tx * tileWorld;
+      var z0 = -half + ty * tileWorld;
+      var x1 = x0 + tileWorld;
+      var z1 = z0 + tileWorld;
+      if (cMinX != null) x0 = math.max(x0, cMinX);
+      if (cMaxX != null) x1 = math.min(x1, cMaxX);
+      if (cMinZ != null) z0 = math.max(z0, cMinZ);
+      if (cMaxZ != null) z1 = math.min(z1, cMaxZ);
+      if (x1 - x0 < 1e-6 || z1 - z0 < 1e-6) continue;
+      final u0 = (x0 + half) / worldSize;
+      final v0 = (z0 + half) / worldSize;
+      final u1 = (x1 + half) / worldSize;
+      final v1 = (z1 + half) / worldSize;
+      for (var jz = 0; jz < segs; jz++) {
+        final fv0 = jz / segs;
+        final fv1 = (jz + 1) / segs;
+        for (var ix = 0; ix < segs; ix++) {
+          final fu0 = ix / segs;
+          final fu1 = (ix + 1) / segs;
+          final px0 = x0 + fu0 * (x1 - x0);
+          final px1 = x0 + fu1 * (x1 - x0);
+          final pz0 = z0 + fv0 * (z1 - z0);
+          final pz1 = z0 + fv1 * (z1 - z0);
+          final p00 = project(px0, pz0);
+          final p10 = project(px1, pz0);
+          final p11 = project(px1, pz1);
+          final p01 = project(px0, pz1);
+          if (p00 == null || p10 == null || p11 == null || p01 == null) {
+            continue;
+          }
+          final t00 = Offset((u0 + fu0 * (u1 - u0)) * tw, (v0 + fv0 * (v1 - v0)) * th);
+          final t10 = Offset((u0 + fu1 * (u1 - u0)) * tw, (v0 + fv0 * (v1 - v0)) * th);
+          final t11 = Offset((u0 + fu1 * (u1 - u0)) * tw, (v0 + fv1 * (v1 - v0)) * th);
+          final t01 = Offset((u0 + fu0 * (u1 - u0)) * tw, (v0 + fv1 * (v1 - v0)) * th);
+          positions
+            ..add(p00)
+            ..add(p10)
+            ..add(p11)
+            ..add(p00)
+            ..add(p11)
+            ..add(p01);
+          texCoords
+            ..add(t00)
+            ..add(t10)
+            ..add(t11)
+            ..add(t00)
+            ..add(t11)
+            ..add(t01);
+        }
+      }
+    }
+    if (positions.isEmpty) return;
+    final shader = ui.ImageShader(
+      img,
+      TileMode.clamp,
+      TileMode.clamp,
+      Matrix4.identity().storage,
+    );
+    _imagePaint.shader = shader;
+    canvas.drawVertices(
+      ui.Vertices(
+        VertexMode.triangles,
+        positions,
+        textureCoordinates: texCoords,
+      ),
+      BlendMode.srcOver,
+      _imagePaint,
+    );
+    _imagePaint.shader = null;
+  }
+
   void _drawTileGrid(Canvas canvas, Matrix4 mvp, Size size, double half) {
+    if (hideGround) return;
     final n = tilesSide.clamp(1, 512);
     final tileWorld = pixelsPerTile.toDouble().clamp(1.0, worldSize);
+    final visible = visibleTiles;
     final path = Path();
+
+    void line(Vector3 a, Vector3 b) {
+      final pa = _projectToScreen(a, mvp, size);
+      final pb = _projectToScreen(b, mvp, size);
+      if (pa == null || pb == null) return;
+      path.moveTo(pa.dx, pa.dy);
+      path.lineTo(pb.dx, pb.dy);
+    }
+
+    if (visible != null) {
+      for (final (tx, ty) in visible) {
+        var x0 = -half + tx * tileWorld;
+        var z0 = -half + ty * tileWorld;
+        var x1 = x0 + tileWorld;
+        var z1 = z0 + tileWorld;
+        if (clipMinX != null) x0 = math.max(x0, clipMinX!);
+        if (clipMaxX != null) x1 = math.min(x1, clipMaxX!);
+        if (clipMinZ != null) z0 = math.max(z0, clipMinZ!);
+        if (clipMaxZ != null) z1 = math.min(z1, clipMaxZ!);
+        if (x1 - x0 < 1e-6 || z1 - z0 < 1e-6) continue;
+        line(Vector3(x0, 0, z0), Vector3(x1, 0, z0));
+        line(Vector3(x1, 0, z0), Vector3(x1, 0, z1));
+        line(Vector3(x1, 0, z1), Vector3(x0, 0, z1));
+        line(Vector3(x0, 0, z1), Vector3(x0, 0, z0));
+      }
+      canvas.drawPath(path, _gridPaint);
+      return;
+    }
 
     for (var i = 0; i <= n; i++) {
       final x = -half + i * tileWorld;
-      final a = _projectToScreen(Vector3(x, 0, -half), mvp, size);
-      final b = _projectToScreen(Vector3(x, 0, half), mvp, size);
-      if (a != null && b != null) {
-        path.moveTo(a.dx, a.dy);
-        path.lineTo(b.dx, b.dy);
-      }
-
+      line(Vector3(x, 0, -half), Vector3(x, 0, half));
       final z = -half + i * tileWorld;
-      final c = _projectToScreen(Vector3(-half, 0, z), mvp, size);
-      final d = _projectToScreen(Vector3(half, 0, z), mvp, size);
-      if (c != null && d != null) {
-        path.moveTo(c.dx, c.dy);
-        path.lineTo(d.dx, d.dy);
-      }
+      line(Vector3(-half, 0, z), Vector3(half, 0, z));
     }
 
     canvas.drawPath(path, _gridPaint);
@@ -267,6 +406,12 @@ class LandscapePlanePainter extends CustomPainter {
         oldDelegate.hoverWx != hoverWx ||
         oldDelegate.hoverWy != hoverWy ||
         oldDelegate.hoverBrushSize != hoverBrushSize ||
+        oldDelegate.visibleTiles != visibleTiles ||
+        oldDelegate.clipMinX != clipMinX ||
+        oldDelegate.clipMaxX != clipMaxX ||
+        oldDelegate.clipMinZ != clipMinZ ||
+        oldDelegate.clipMaxZ != clipMaxZ ||
+        oldDelegate.hideGround != hideGround ||
         oldDelegate.camera != camera ||
         oldDelegate.listenable != listenable;
   }

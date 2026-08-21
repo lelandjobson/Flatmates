@@ -13,7 +13,8 @@ import '../screens/book_view.dart';
 import '../screens/craft_assembly_view.dart';
 import '../screens/craft_model_preview_view.dart';
 import '../screens/landscape_tiles_debug_view.dart';
-import '../screens/test_3d_map_view.dart';
+import '../screens/game_view.dart';
+import '../screens/map_3d_bench_view.dart';
 
 /// Swap between '/dev-routes' and '/' to start at the dev menu or title screen.
 const kInitialLocation = '/dev-routes';
@@ -25,6 +26,11 @@ final router = GoRouter(
       path: '/dev-routes',
       name: 'dev_routes',
       builder: (context, state) => const DevRoutesScreen(),
+    ),
+    GoRoute(
+      path: '/gameview',
+      name: 'gameview',
+      builder: (context, state) => const GameView(),
     ),
     GoRoute(
       path: '/',
@@ -87,9 +93,9 @@ final router = GoRouter(
       builder: (context, state) => const LandscapeTilesDebugView(),
     ),
     GoRoute(
-      path: '/test-3d-map',
-      name: 'test_3d_map',
-      builder: (context, state) => const Test3dMapView(),
+      path: '/3d-map-bench',
+      name: '3d_map_bench_view',
+      builder: (context, state) => const Map3dBenchView(),
     ),
   ],
 );

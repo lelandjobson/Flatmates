@@ -649,8 +649,8 @@ class _ControlsPanel extends StatelessWidget {
                     onChanged(params.copyWith(tilesSide: v.round())),
               ),
               _labeledSlider(
-                label: 'Pixels/tile ${params.pixelsPerTile}',
-                value: params.pixelsPerTile.toDouble(),
+                label: 'Subtiles/tile ${params.subtilesPerTile}',
+                value: params.subtilesPerTile.toDouble(),
                 min: 1,
                 max: LandscapeGenParams.maxPixelsPerTile.toDouble(),
                 onChanged: (v) =>

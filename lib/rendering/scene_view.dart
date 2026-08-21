@@ -64,6 +64,7 @@ class ScenePainter extends CustomPainter {
     final allMeshes = _scene.meshes;
 
     for (final mesh in allMeshes) {
+      if (!mesh.visible) continue;
       final isDoubleSided = mesh.material.doubleSided;
       final world = mesh.transformMatrix;
 

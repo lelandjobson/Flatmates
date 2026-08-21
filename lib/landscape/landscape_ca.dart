@@ -35,7 +35,7 @@ class LandscapeCA {
 
     for (var y = 0; y < side; y++) {
       for (var x = 0; x < side; x++) {
-        if (!grid.isEmpty(x, y)) continue;
+        if (!grid.isEmpty(x, y) || grid.isVoid(x, y)) continue;
 
         counts.fillRange(0, counts.length, 0);
         var any = false;

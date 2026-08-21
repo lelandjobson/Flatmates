@@ -8,8 +8,8 @@ import 'package:vector_math/vector_math_64.dart';
 
 import 'camera.dart';
 
-/// Locked down-looking perspective camera: diagonal yaw, fixed pitch, XZ pan,
-/// ladder zoom with rubber-band overshoot and spring snap. No orbit.
+/// Locked down-looking perspective camera: diagonal yaw, fixed pitch, XZ pan.
+/// Zoom is either a ladder that springs to stops, or smooth between min/max.
 class MapLookCameraController extends ChangeNotifier {
   MapLookCameraController({
     required this.camera,
@@ -19,21 +19,32 @@ class MapLookCameraController extends ChangeNotifier {
     this.minDistance = 24,
     this.maxDistance = 400,
     int zoomStepCount = 3,
+    this.ladderZoom = true,
     this.pitch = defaultPitch,
-    this.yaw = defaultYaw,
+    double yaw = defaultYaw,
     this.zoomSensitivity = 0.0025,
     Vector3? boundsMin,
     Vector3? boundsMax,
   })  : zoomStepCount = math.max(2, zoomStepCount),
         _lookAt = Vector3(lookAt?.x ?? 0, 0, lookAt?.z ?? 0),
         _boundsMin = boundsMin,
-        _boundsMax = boundsMax {
-    _steps = _buildSteps();
-    final start = distance ?? _steps[_steps.length ~/ 2];
-    _distance = nearestStepDistance(start);
+        _boundsMax = boundsMax,
+        _yaw = yaw {
+    _steps = ladderZoom ? _buildSteps() : const [];
+    final start = distance ??
+        (ladderZoom
+            ? _steps[_steps.length ~/ 2]
+            : math.sqrt(minDistance * maxDistance));
+    _distance = ladderZoom
+        ? nearestStepDistance(start)
+        : start.clamp(minDistance, maxDistance);
     _targetDistance = _distance;
     _zoomAnim = AnimationController.unbounded(vsync: vsync)
       ..addListener(_onZoomTick);
+    _yawAnim = AnimationController(
+      vsync: vsync,
+      duration: const Duration(milliseconds: 280),
+    )..addListener(_onYawTick);
     _applyPose(notify: false);
   }
 
@@ -57,18 +68,26 @@ class MapLookCameraController extends ChangeNotifier {
 
   /// Ladder stops between [minDistance] and [maxDistance], inclusive. ≥ 2.
   final int zoomStepCount;
+
+  /// When false, pinch/scroll zoom is continuous and only clamps to min/max.
+  final bool ladderZoom;
   final double pitch;
-  final double yaw;
   final double zoomSensitivity;
+
+  double _yaw;
+  double get yaw => _yaw;
 
   final Vector3 _lookAt;
   final Vector3? _boundsMin;
   final Vector3? _boundsMax;
 
   late final AnimationController _zoomAnim;
+  late final AnimationController _yawAnim;
   late final List<double> _steps;
   late double _distance;
   late double _targetDistance;
+  double _yawFrom = 0;
+  double _yawTo = 0;
   Size _viewportSize = Size.zero;
   bool _gestureZooming = false;
   Timer? _scrollSnap;
@@ -81,6 +100,12 @@ class MapLookCameraController extends ChangeNotifier {
   int get nearestStepIndex => _nearestStepIndex(_distance);
 
   String get zoomLabel {
+    if (!ladderZoom) {
+      final span = maxDistance - minDistance;
+      if (span.abs() < 1e-6) return '100%';
+      final t = ((_distance - minDistance) / span).clamp(0.0, 1.0);
+      return '${(t * 100).round()}%';
+    }
     final i = nearestStepIndex;
     if (zoomStepCount == 3) return _kStepLabels3[i];
     return '${i + 1}/$zoomStepCount';
@@ -88,6 +113,25 @@ class MapLookCameraController extends ChangeNotifier {
 
   void setViewportSize(Size size) {
     _viewportSize = size;
+  }
+
+  /// Orbit 90° clockwise around the look-at, as seen from above.
+  void rotateClockwise() => _animateYaw(-math.pi / 2);
+
+  /// Orbit 90° counter-clockwise around the look-at, as seen from above.
+  void rotateCounterClockwise() => _animateYaw(math.pi / 2);
+
+  void _animateYaw(double delta) {
+    _yawAnim.stop();
+    _yawFrom = _yaw;
+    _yawTo = _yaw + delta;
+    _yawAnim.forward(from: 0);
+  }
+
+  void _onYawTick() {
+    final t = Curves.easeInOut.transform(_yawAnim.value);
+    _yaw = _yawFrom + (_yawTo - _yawFrom) * t;
+    _applyPose();
   }
 
   /// Screen-pixel drag moves the look-at on the ground plane (Y = 0).
@@ -115,6 +159,27 @@ class MapLookCameraController extends ChangeNotifier {
     _applyPose();
   }
 
+  void restorePose({
+    required Vector3 lookAt,
+    required double distance,
+    required double yaw,
+  }) {
+    _lookAt.setValues(lookAt.x, 0, lookAt.z);
+    _distance = distance.clamp(minDistance, maxDistance);
+    _targetDistance = _distance;
+    _yaw = yaw;
+    _clampLookAt();
+    _applyPose();
+  }
+
+  void pauseForHandoff() {
+    _scrollSnap?.cancel();
+    _scrollSnap = null;
+    _gestureZooming = false;
+    if (_zoomAnim.isAnimating) _zoomAnim.stop();
+    if (_yawAnim.isAnimating) _yawAnim.stop();
+  }
+
   /// Start a live pinch/scroll zoom. Distance can pass min/max with resistance.
   void beginZoom() {
     _scrollSnap?.cancel();
@@ -137,12 +202,15 @@ class MapLookCameraController extends ChangeNotifier {
     _setLiveDistance(_distance / scaleChange);
   }
 
-  /// Spring to the nearest ladder step (or min/max if past the ends).
+  /// End a pinch/scroll zoom. Ladder mode springs to the nearest stop;
+  /// smooth mode only springs back if the gesture overshot min/max.
   void endZoom() {
     _scrollSnap?.cancel();
     _scrollSnap = null;
     _gestureZooming = false;
-    final target = nearestStepDistance(_distance);
+    final target = ladderZoom
+        ? nearestStepDistance(_distance)
+        : _distance.clamp(minDistance, maxDistance);
     if ((target - _distance).abs() < 1e-4) {
       _distance = target;
       _targetDistance = target;
@@ -289,6 +357,9 @@ class MapLookCameraController extends ChangeNotifier {
     _scrollSnap?.cancel();
     _zoomAnim
       ..removeListener(_onZoomTick)
+      ..dispose();
+    _yawAnim
+      ..removeListener(_onYawTick)
       ..dispose();
     super.dispose();
   }

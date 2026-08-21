@@ -65,6 +65,11 @@ class LandscapeGenParams {
 
   final int seed;
   final int tilesSide;
+
+  /// Subtiles (material cells) along one tile edge. Also the atlas texel
+  /// count per tile before sharpness upscale.
+  int get subtilesPerTile => pixelsPerTile;
+
   final int pixelsPerTile;
   final int sharpness;
   final double colorSigma;

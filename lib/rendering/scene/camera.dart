@@ -1,8 +1,18 @@
 import 'dart:math' as math;
+import 'dart:ui' show Offset, Size;
 
 import 'package:vector_math/vector_math_64.dart';
 
 import '../../geometry/transformable.dart';
+
+class CameraRay {
+  const CameraRay({required this.origin, required this.direction});
+
+  final Vector3 origin;
+  final Vector3 direction;
+
+  Vector3 pointAt(double t) => origin + direction * t;
+}
 
 enum ProjectionType { perspective, orthographic }
 
@@ -75,6 +85,81 @@ class Camera extends Transformable {
         final fovRadians = fovDegrees * math.pi / 180;
         return makePerspectiveMatrix(fovRadians, aspect, near, far);
     }
+  }
+
+  Matrix4 viewProjectionMatrix(Size viewport) {
+    final aspect = viewport.width <= 0 || viewport.height <= 0
+        ? 1.0
+        : viewport.width / viewport.height;
+    return projectionMatrix(aspect) * viewMatrix;
+  }
+
+  /// World point to Flutter screen space, or null if behind the camera.
+  Offset? projectToScreen(Vector3 worldPos, Size viewport) {
+    if (viewport.width <= 0 || viewport.height <= 0) return null;
+    final clip = Vector4(worldPos.x, worldPos.y, worldPos.z, 1);
+    viewProjectionMatrix(viewport).transform(clip);
+    if (!clip.storage.every((v) => v.isFinite) || clip.w < 1e-3) return null;
+    final ndcX = clip.x / clip.w;
+    final ndcY = clip.y / clip.w;
+    if (!ndcX.isFinite || !ndcY.isFinite) return null;
+    return Offset(
+      (ndcX * 0.5 + 0.5) * viewport.width,
+      (1 - (ndcY * 0.5 + 0.5)) * viewport.height,
+    );
+  }
+
+  /// Screen pixel to a world-space ray, or null if the viewport / matrix is degenerate.
+  CameraRay? unprojectRay(Offset screen, Size viewport) {
+    if (viewport.width <= 0 || viewport.height <= 0) return null;
+    final inverted = Matrix4.copy(viewProjectionMatrix(viewport));
+    if (inverted.invert().abs() < 1e-10) return null;
+
+    final ndcX = (screen.dx / viewport.width) * 2 - 1;
+    final ndcY = 1 - (screen.dy / viewport.height) * 2;
+    final nearPoint = _unproject(inverted, ndcX, ndcY, -1);
+    final farPoint = _unproject(inverted, ndcX, ndcY, 1);
+    if (nearPoint == null || farPoint == null) return null;
+    final direction = farPoint - nearPoint;
+    if (direction.length2 < 1e-12) return null;
+    direction.normalize();
+    return CameraRay(origin: Vector3.copy(position), direction: direction);
+  }
+
+  /// Intersect [unprojectRay] with the Y = 0 ground plane.
+  Vector3? intersectGround(Offset screen, Size viewport) {
+    final ray = unprojectRay(screen, viewport);
+    if (ray == null || ray.direction.y.abs() < 1e-8) return null;
+    final t = -ray.origin.y / ray.direction.y;
+    if (t < 0) return null;
+    return ray.pointAt(t);
+  }
+
+  /// Intersect [ray] with the plane through [point] with [normal].
+  static Vector3? intersectPlane({
+    required CameraRay ray,
+    required Vector3 point,
+    required Vector3 normal,
+  }) {
+    final denom = ray.direction.dot(normal);
+    if (denom.abs() < 1e-8) return null;
+    final t = (point - ray.origin).dot(normal) / denom;
+    if (t < 0) return null;
+    return ray.pointAt(t);
+  }
+
+  static Vector3? _unproject(
+    Matrix4 invMvp,
+    double ndcX,
+    double ndcY,
+    double ndcZ,
+  ) {
+    final clip = Vector4(ndcX, ndcY, ndcZ, 1);
+    invMvp.transform(clip);
+    if (!clip.storage.every((v) => v.isFinite) || clip.w.abs() < 1e-8) {
+      return null;
+    }
+    return Vector3(clip.x / clip.w, clip.y / clip.w, clip.z / clip.w);
   }
 }
 
