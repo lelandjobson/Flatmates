@@ -56,6 +56,51 @@ class VolumeStore {
 
   bool isOccupied(int tx, int ty) => occupant(tx, ty) != null;
 
+  Volume? volumeById(int id) {
+    for (final volume in visibleVolumes) {
+      if (volume.id == id) return volume;
+    }
+    return null;
+  }
+
+  /// Shift every cell of [volume] by [dtx],[dty] if destinations are free.
+  ///
+  /// Destinations must be in bounds, not occupied by another volume, and not
+  /// rejected by [blocked] (typically path tiles). Cells of [volume] may
+  /// overlap their own current footprint.
+  bool tryTranslate(
+    Volume volume,
+    int dtx,
+    int dty, {
+    bool Function(int tx, int ty)? blocked,
+  }) {
+    if (dtx == 0 && dty == 0) return false;
+    if (isEditing) return false;
+    if (!volumes.contains(volume)) return false;
+
+    final destinations = <(int, int)>[];
+    for (final cell in volume.cells) {
+      final ntx = cell.tx + dtx;
+      final nty = cell.ty + dty;
+      if (!grid.inBounds(ntx, nty)) return false;
+      final occ = occupant(ntx, nty);
+      if (occ != null && occ != volume.id) return false;
+      if (blocked?.call(ntx, nty) ?? false) return false;
+      destinations.add((ntx, nty));
+    }
+
+    for (var i = 0; i < volume.cells.length; i++) {
+      final old = volume.cells[i];
+      volume.cells[i] = VolumeCell(
+        tx: destinations[i].$1,
+        ty: destinations[i].$2,
+        box: old.box,
+        accessibleSides: old.accessibleSides,
+      );
+    }
+    return true;
+  }
+
   bool startNew(int tx, int ty) {
     if (!grid.inBounds(tx, ty) || isOccupied(tx, ty) || isEditing) return false;
     final cell = VolumeCell(tx: tx, ty: ty, box: BoxPrimitive());
@@ -158,6 +203,19 @@ class VolumeStore {
       }
     }
     return out;
+  }
+
+  /// Remove the committed cell at [tx],[ty]. No-op while a draft is open.
+  bool removeCellAt(int tx, int ty) {
+    if (isEditing) return false;
+    for (final volume in List<Volume>.from(volumes)) {
+      final cell = volume.cellAt(tx, ty);
+      if (cell == null) continue;
+      volume.cells.remove(cell);
+      if (volume.cells.isEmpty) volumes.remove(volume);
+      return true;
+    }
+    return false;
   }
 
   void _clearDraft() {

@@ -3,10 +3,13 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
 
+import 'rendering/game_shader_warm_up.dart';
 import 'router/app_router.dart';
 import 'ui/fm_theme.dart';
 
 void main() {
+  // Must be set before runApp initializes PaintingBinding.
+  PaintingBinding.shaderWarmUp = const GameViewShaderWarmUp();
   runApp(
     MultiProvider(
       providers: [

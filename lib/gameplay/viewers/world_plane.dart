@@ -157,6 +157,15 @@ class WorldPlane {
 enum VolumeFace { posX, negX, posY, negY, posZ, negZ }
 
 extension VolumeFaceX on VolumeFace {
+  Vector3 get worldNormal => switch (this) {
+        VolumeFace.posX => Vector3(1, 0, 0),
+        VolumeFace.negX => Vector3(-1, 0, 0),
+        VolumeFace.posY => Vector3(0, 1, 0),
+        VolumeFace.negY => Vector3(0, -1, 0),
+        VolumeFace.posZ => Vector3(0, 0, 1),
+        VolumeFace.negZ => Vector3(0, 0, -1),
+      };
+
   (Vector3 origin, Vector3 normal) originAndNormal(Vector3 min, Vector3 max) {
     final midX = (min.x + max.x) * 0.5;
     final midY = (min.y + max.y) * 0.5;

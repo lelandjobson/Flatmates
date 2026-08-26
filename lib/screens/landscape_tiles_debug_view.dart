@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:vector_math/vector_math_64.dart' hide Colors;
 
 import '../landscape/landscape_ca.dart';
@@ -10,6 +11,7 @@ import '../landscape/landscape_generator.dart';
 import '../landscape/landscape_grid.dart';
 import '../landscape/landscape_material.dart';
 import '../landscape/landscape_plane_painter.dart';
+import '../theme/world_theme.dart';
 import '../landscape/landscape_raycast.dart';
 import '../rendering/scene/camera.dart';
 import '../rendering/scene/camera_controller.dart';
@@ -103,6 +105,46 @@ class _LandscapeTilesDebugViewState extends State<LandscapeTilesDebugView> {
     _scheduleFullBake();
   }
 
+  static String _formatHsl(HSLColor c) {
+    return 'HSL(${c.hue.toStringAsFixed(1)}, '
+        '${c.saturation.toStringAsFixed(3)}, '
+        '${c.lightness.toStringAsFixed(3)}, a=${c.alpha.toStringAsFixed(3)})';
+  }
+
+  Future<void> _dumpSettings() async {
+    final p = _params;
+    final buf = StringBuffer()
+      ..writeln('=== Landscape tiles debug settings ===')
+      ..writeln('seed: ${p.seed}')
+      ..writeln('tilesSide: ${p.tilesSide}')
+      ..writeln('pixelsPerTile: ${p.pixelsPerTile}')
+      ..writeln('sharpness: ${p.sharpness}')
+      ..writeln('colorSigma: ${p.colorSigma.toStringAsFixed(3)}')
+      ..writeln('noiseFrequency: ${p.noiseFrequency.toStringAsFixed(3)}')
+      ..writeln()
+      ..writeln('weights:');
+    for (final m in [
+      ...kLandscapeTerrainFlow,
+      ...kLandscapeForage,
+    ]) {
+      buf.writeln('  ${m.name}: ${p.weights[m]!.toStringAsFixed(1)}');
+    }
+    buf
+      ..writeln()
+      ..writeln('gradients:');
+    for (final m in LandscapeMaterial.values) {
+      final g = p.gradients[m]!;
+      buf.writeln(
+        '  ${m.name}: ${_formatHsl(g.start)} → ${_formatHsl(g.end)}',
+      );
+    }
+    final text = buf.toString();
+    debugPrint(text);
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    setState(() => _status = 'Settings copied to clipboard');
+  }
+
   void _scheduleFullBake({bool immediate = false}) {
     _debounce?.cancel();
     if (immediate) {
@@ -126,7 +168,10 @@ class _LandscapeTilesDebugViewState extends State<LandscapeTilesDebugView> {
     try {
       final generator = LandscapeGenerator(params);
       final grid = LandscapeGrid.fromGenerator(generator);
-      final image = await generator.bakeAtlasFromGrid(grid);
+      final image = await generator.bakeAtlasFromGrid(
+        grid,
+        theme: WorldTheme.paperDiorama,
+      );
       if (!mounted || genId != _bakeGen) {
         image.dispose();
         return;
@@ -157,7 +202,10 @@ class _LandscapeTilesDebugViewState extends State<LandscapeTilesDebugView> {
     if (grid == null || generator == null) return;
     final genId = ++_bakeGen;
     try {
-      final image = await generator.bakeAtlasFromGrid(grid);
+      final image = await generator.bakeAtlasFromGrid(
+        grid,
+        theme: WorldTheme.paperDiorama,
+      );
       if (!mounted || genId != _bakeGen) {
         image.dispose();
         return;
@@ -371,6 +419,7 @@ class _LandscapeTilesDebugViewState extends State<LandscapeTilesDebugView> {
                   hoverWx: _canErase ? _hoverWx : null,
                   hoverWy: _canErase ? _hoverWy : null,
                   hoverBrushSize: _eraserSize,
+                  backgroundColor: WorldTheme.paperDiorama.background,
                 ),
                 isComplex: true,
                 willChange: true,
@@ -400,6 +449,7 @@ class _LandscapeTilesDebugViewState extends State<LandscapeTilesDebugView> {
             _expandedMaterial = _expandedMaterial == m ? null : m;
           }),
           onChanged: _updateParams,
+          onDumpSettings: _dumpSettings,
         ),
       ],
     );
@@ -595,12 +645,14 @@ class _ControlsPanel extends StatelessWidget {
     required this.expandedMaterial,
     required this.onExpandMaterial,
     required this.onChanged,
+    required this.onDumpSettings,
   });
 
   final LandscapeGenParams params;
   final LandscapeMaterial? expandedMaterial;
   final ValueChanged<LandscapeMaterial> onExpandMaterial;
   final ValueChanged<LandscapeGenParams> onChanged;
+  final VoidCallback onDumpSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -631,6 +683,28 @@ class _ControlsPanel extends StatelessWidget {
               Text(
                 _limitsHint(params),
                 style: const TextStyle(color: Colors.white54, fontSize: 10),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: GestureDetector(
+                  onTap: onDumpSettings,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white10,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.white24),
+                    ),
+                    child: const Text(
+                      'Copy settings',
+                      style: TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ),
+                ),
               ),
               const SizedBox(height: 12),
               _labeledSlider(
@@ -680,24 +754,30 @@ class _ControlsPanel extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Spawn weights',
+                'Terrain flow  water → dirt → grass → rock',
                 style: TextStyle(color: Colors.white70, fontSize: 12),
               ),
+              const SizedBox(height: 4),
+              const Text(
+                'One noise field. Weights are coverage along that continuum.',
+                style: TextStyle(color: Colors.white38, fontSize: 10),
+              ),
               const SizedBox(height: 6),
-              for (final m in LandscapeMaterial.values) ...[
-                _labeledSlider(
-                  label: '${m.label} ${params.weights[m]!.toStringAsFixed(0)}',
-                  value: params.weights[m]!,
-                  min: 0,
-                  max: 40,
-                  onChanged: (v) {
-                    final next = Map<LandscapeMaterial, double>.from(
-                      params.weights,
-                    )..[m] = v;
-                    onChanged(params.copyWith(weights: next));
-                  },
-                ),
-              ],
+              for (final m in kLandscapeTerrainFlow)
+                _weightSlider(params, m, onChanged),
+              const SizedBox(height: 8),
+              const Text(
+                'Forage patches',
+                style: TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'A second noise field stamped over the ground.',
+                style: TextStyle(color: Colors.white38, fontSize: 10),
+              ),
+              const SizedBox(height: 6),
+              for (final m in kLandscapeForage)
+                _weightSlider(params, m, onChanged),
               const SizedBox(height: 8),
               const Text(
                 'Color gradients',
@@ -729,6 +809,24 @@ class _ControlsPanel extends StatelessWidget {
     return 'World $world×$world px. Int overflow is not the limiter '
         '(64-bit). Prefer world < ~10k for noise precision; atlas edge '
         'clamped to ${LandscapeGenParams.maxAtlasEdge}.';
+  }
+
+  Widget _weightSlider(
+    LandscapeGenParams params,
+    LandscapeMaterial material,
+    ValueChanged<LandscapeGenParams> onChanged,
+  ) {
+    return _labeledSlider(
+      label: '${material.label} ${params.weights[material]!.toStringAsFixed(0)}',
+      value: params.weights[material]!,
+      min: 0,
+      max: 40,
+      onChanged: (v) {
+        final next = Map<LandscapeMaterial, double>.from(params.weights)
+          ..[material] = v;
+        onChanged(params.copyWith(weights: next));
+      },
+    );
   }
 
   Widget _labeledSlider({

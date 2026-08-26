@@ -124,6 +124,15 @@ class PathStore {
     return changed;
   }
 
+  bool removeTile(int tx, int ty) {
+    if (!tiles.remove((tx, ty))) return false;
+    edges.removeWhere(
+      (edge) =>
+          (edge.x0 == tx && edge.y0 == ty) || (edge.x1 == tx && edge.y1 == ty),
+    );
+    return true;
+  }
+
   void restore({
     required Set<(int, int)> tiles,
     required Set<PathEdge> edges,

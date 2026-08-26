@@ -1,5 +1,7 @@
 import 'package:flatmates/crafting/placed_paper.dart';
 import 'package:flatmates/gameplay/paint/face_paint_store.dart';
+import 'package:flatmates/gameplay/viewers/world_plane.dart';
+import 'package:flatmates/gameplay/volumes/volume.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -25,5 +27,26 @@ void main() {
     expect(canvas.fill(2, 2, PaperColor.green), isTrue);
     expect(canvas.colorAt(2, 2), PaperColor.green);
     expect(canvas.colorAt(2, 1), PaperColor.yellow);
+  });
+
+  test('pixelCorners wind so the geometric normal faces outward', () {
+    const grid = VolumeGrid(tilesSide: 16, tileSize: 10);
+    final cell = VolumeCell(tx: 1, ty: 2, box: BoxPrimitive());
+    for (final face in VolumeFace.values) {
+      final corners = FacePaintStore.pixelCorners(
+        u: 1,
+        v: 1,
+        grid: grid,
+        cell: cell,
+        face: face,
+      );
+      final n = (corners[1] - corners[0]).cross(corners[2] - corners[0])
+        ..normalize();
+      expect(
+        n.dot(face.worldNormal),
+        greaterThan(0.9),
+        reason: '$face winding points inward',
+      );
+    }
   });
 }

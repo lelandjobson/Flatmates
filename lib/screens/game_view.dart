@@ -4,16 +4,31 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:vector_math/vector_math_64.dart' hide Colors;
 
+import '../debug/perf_debug.dart';
+import '../debug/scene_paint_stats.dart';
 import '../crafting/placed_paper.dart';
 import '../gameplay/landscape_cover.dart';
+import '../gameplay/friends/friend_instance.dart';
+import '../gameplay/friends/friend_instance_store.dart';
+import '../gameplay/friends/friend_mesh_sync.dart';
 import '../gameplay/game_history.dart';
+import '../gameplay/gizmo/gizmo_resolver.dart';
+import '../gameplay/gizmo/gizmo_target.dart';
 import '../gameplay/graph/connection_graph.dart';
+import '../gameplay/recording/game_recording.dart';
+import '../gameplay/recording/game_recording_io.dart';
+import '../gameplay/eraser/eraser_filter.dart';
+import '../gameplay/eraser/world_eraser.dart';
 import '../gameplay/paths/path_mesh.dart';
 import '../gameplay/paths/path_store.dart';
+import '../gameplay/walls/wall_mesh.dart';
+import '../gameplay/walls/wall_regions.dart';
+import '../gameplay/walls/wall_store.dart';
+import '../gameplay/day_night/day_night_lighting.dart';
 import '../gameplay/paint/face_paint_store.dart';
+import '../gameplay/paint/ground_shadow_model.dart';
 import '../gameplay/picking/volume_face_picker.dart';
 import '../gameplay/viewers/face_turn.dart';
 import '../gameplay/viewers/focus_crop.dart';
@@ -24,11 +39,13 @@ import '../gameplay/volumes/volume.dart';
 import '../gameplay/volumes/volume_box_mesh.dart';
 import '../gameplay/volumes/volume_store.dart';
 import '../gameplay/volumes/volume_tool_3d.dart';
+import '../user/friend_provider.dart';
 import '../gestures/gesture_system.dart';
 import '../landscape/landscape_generator.dart';
 import '../landscape/landscape_grid.dart';
 import '../landscape/landscape_material.dart';
 import '../landscape/landscape_plane_painter.dart';
+import '../theme/world_theme.dart';
 import '../rendering/lights.dart';
 import '../rendering/map/map_aabb.dart';
 import '../rendering/map/map_octree.dart';
@@ -38,16 +55,29 @@ import '../rendering/scene/camera_controller.dart';
 import '../rendering/scene/map_look_camera_controller.dart';
 import '../rendering/scene/plane_look_camera_controller.dart';
 import '../rendering/scene/scene.dart';
+import '../rendering/scene/scene_hit_tester.dart';
 import '../rendering/scene_view.dart';
 import '../ui/fm_dev_back_button.dart';
 import '../ui/fm_safe_area.dart';
 import '../ui/fm_screen.dart';
 import '../ui/game/connection_graph_overlay.dart';
 import '../ui/game/crop_box_gizmo.dart';
+import '../ui/game/day_advance_overlay.dart';
+import '../ui/game/day_cycle_hud.dart';
+import '../ui/game/dev_tools_button.dart';
+import '../ui/game/dev_tools_panel.dart';
+import '../ui/game/frame_stats_hud.dart';
+import '../ui/game/eraser_brush_overlay.dart';
+import '../ui/game/friend_eye_overlay.dart';
+import '../ui/game/eraser_filter_panel.dart';
 import '../ui/game/game_tool_sidebar.dart';
+import '../ui/game/wall_region_overlay.dart';
+import '../ui/game/gizmo_bounds_overlay.dart';
 import '../ui/game/plane_subtile_grid_overlay.dart';
+import '../ui/game/scene_transform_gizmo.dart';
 import '../ui/game/tool_3d_work_area.dart';
 import '../ui/game/volume_door_overlay.dart';
+import '../ui/game/volume_ground_shadow_overlay.dart';
 import '../ui/game/volume_face_paint_overlay.dart';
 import '../ui/game/volume_grow_overlay.dart';
 import '../ui/game/volume_transform_gizmo.dart';
@@ -74,11 +104,15 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     ),
   );
   late final PathStore _paths = PathStore(grid: _volumes.grid);
+  late final WallStore _walls = WallStore(grid: _volumes.grid);
+  final _friends = FriendInstanceStore();
 
   late final Camera _camera;
   late final MapLookCameraController _look;
   late final Scene _scene;
   late final LandscapeGenParams _params;
+  final WorldTheme _theme = WorldTheme.paperDiorama;
+  late GroundShadowModel _groundShadow;
   late final MapOctree _octree;
   late final MapSceneStreamer _streamer;
 
@@ -90,6 +124,8 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
 
   bool _volumesTool = false;
   bool _pathsTool = false;
+  bool _wallsTool = false;
+  bool _worldEraserTool = false;
   bool _selectTool = false;
   bool _paintTool = false;
   bool _fillTool = false;
@@ -101,7 +137,9 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   ConnectionGraph _graph = ConnectionGraph.empty;
 
   GameViewerKind _viewer = GameViewerKind.map3d;
-  SceneLayerMask get _layers => SceneLayerMask.forViewer(_viewer);
+  final _perf = PerfDebugSettings();
+  SceneLayerMask get _layers =>
+      SceneLayerMask.forViewer(_viewer).hiding(_perf.hiddenLayers);
   bool get _isPlane2d => _viewer == GameViewerKind.plane2d;
   bool get _isFocus3d => _viewer == GameViewerKind.focus3d;
   FocusRegion? _focusRegion;
@@ -132,6 +170,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   LandscapeGrid? _grid;
   Timer? _paintDebounce;
   (int, int)? _paintLastCell;
+  bool _recordingBusy = false;
 
   int _mouseButtons = 0;
   Size _viewportSize = Size.zero;
@@ -141,6 +180,12 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   bool _toolDidMove = false;
   bool _handleDragging = false;
   (int, int)? _pathStrokeLast;
+  Vector3? _wallStrokeLast;
+  Vector3? _eraserCursor;
+  List<WallRegion> _wallRegions = const [];
+  GameSnapshot? _wallSessionBefore;
+  bool _wallSessionPushed = false;
+  final _eraserFilter = EraserFilter();
 
   bool _isMultiTouch = false;
   bool _panZoomActive = false;
@@ -148,6 +193,23 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   bool _toolsSuppressedUntilPointersUp = false;
   int _pointerCount = 0;
   double _pinchSpanScale = 1;
+
+  bool _devToolsOpen = false;
+  bool _gizmoMode = false;
+  int _dayNumber = 1;
+  bool _isNight = false;
+  double _dayNightProgress = 0;
+  NightSwatch _nightSwatch = NightSwatch.invertedTwilight;
+  bool _dayNightBusy = false;
+  bool _advancingDay = false;
+  int _advanceToDay = 2;
+  late final AnimationController _sunsetAnim;
+  GizmoTarget? _gizmoSelected;
+  GizmoTarget? _gizmoDownTarget;
+  Vector3? _gizmoGroundStart;
+  Vector3? _gizmoFriendStartPos;
+  SceneGizmoAxis? _gizmoAxis;
+  GameSnapshot? _gizmoVolumeBefore;
 
   VolumeHandle? _dragHandle;
   BoxPrimitive? _dragBoxSnapshot;
@@ -162,6 +224,9 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   double get _mapHalf => _worldSize * 0.5;
 
   bool get _editing => _volumes.isEditing;
+
+  bool get _showGizmos =>
+      _gizmoMode && _viewer == GameViewerKind.map3d && !_editing;
 
   bool get _toolsBlocked =>
       _toolsSuppressedUntilPointersUp ||
@@ -200,15 +265,26 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     if (_toolsBlocked) return;
     _toolDidMove = false;
     _pathStrokeLast = _pathsTool ? _tileAt(pos) : null;
+    _wallStrokeLast = _wallsTool
+        ? _camera.intersectGround(pos, _viewportSize)
+        : null;
+    if (_worldEraserTool) {
+      _eraserCursor = _camera.intersectGround(pos, _viewportSize);
+    }
+    if (_showGizmos) {
+      _gizmoDownTarget = _hitGizmoTarget(pos);
+      _gizmoGroundStart = _camera.intersectGround(pos, _viewportSize);
+    }
   }
 
   GameSnapshot _capture(String label) => GameSnapshot.capture(
-        volumes: _volumes,
-        paths: _paths,
-        landscape: _grid,
-        facePaint: _facePaint,
-        label: label,
-      );
+    volumes: _volumes,
+    paths: _paths,
+    walls: _walls,
+    landscape: _grid,
+    facePaint: _facePaint,
+    label: label,
+  );
 
   bool _commitAction(String label, bool Function() apply) {
     final before = _capture(label);
@@ -235,9 +311,26 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     _strokePushed = false;
   }
 
+  void _endWallSession() {
+    _wallSessionBefore = null;
+    _wallSessionPushed = false;
+  }
+
+  void _ensureWallSession() {
+    _wallSessionBefore ??= _capture('paint walls');
+  }
+
+  void _recordWallSessionMutation() {
+    final before = _wallSessionBefore;
+    if (before == null || _wallSessionPushed) return;
+    _history.pushSnapshot(before);
+    _wallSessionPushed = true;
+  }
+
   void _undo() {
     if (_handleDragging) return;
     _endStrokeHistory();
+    _endWallSession();
     final snap = _history.undo(_capture('current'));
     if (snap == null) return;
     _applySnapshot(snap);
@@ -246,6 +339,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   void _redo() {
     if (_handleDragging) return;
     _endStrokeHistory();
+    _endWallSession();
     final snap = _history.redo(_capture('current'));
     if (snap == null) return;
     _applySnapshot(snap);
@@ -255,11 +349,23 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     snap.applyTo(
       volumes: _volumes,
       paths: _paths,
+      walls: _walls,
       landscape: _grid,
       facePaint: _facePaint,
     );
     _syncWorld();
     _schedulePaintRebake();
+    final selected = _gizmoSelected;
+    if (selected is VolumeGizmoTarget) {
+      final volume = _volumes.volumeById(selected.volume.id);
+      _gizmoSelected = volume == null
+          ? null
+          : VolumeGizmoTarget(
+              volume: volume,
+              store: _volumes,
+              blocked: _paths.contains,
+            );
+    }
     final face = _focusedFace;
     if (_isPlane2d && face != null) {
       final stillThere = _volumes.visibleVolumes.any(
@@ -273,13 +379,90 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     setState(() {});
   }
 
+  Future<void> _populateRecording() async {
+    if (_baking || _recordingBusy) return;
+    if (_editing) {
+      _volumes.cancelDraft();
+      _syncWorld();
+    }
+    final before = _capture('populate recording');
+    setState(() {
+      _recordingBusy = true;
+      _status = 'Loading recording…';
+    });
+    try {
+      final recording = await GameRecordingIo.loadDefault();
+      if (!mounted) return;
+      recording.applyTo(
+        volumes: _volumes,
+        paths: _paths,
+        walls: _walls,
+        facePaint: _facePaint,
+        friends: _friends,
+        landscape: _grid,
+        generator: _landscapeGen,
+      );
+      _history.pushSnapshot(before);
+      _syncWorld();
+      _schedulePaintRebake();
+      final face = _focusedFace;
+      if ((_isPlane2d || _isFocus3d) && face != null) {
+        final stillThere = _volumes.visibleVolumes.any(
+          (v) => v.id == face.volumeId && v.cellAt(face.tx, face.ty) != null,
+        );
+        if (!stillThere) {
+          _returnToMap3d();
+          _status = 'Populated $kDefaultGameRecordingPath';
+          return;
+        }
+      }
+      _status = 'Populated $kDefaultGameRecordingPath';
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _status = 'Populate failed: $e');
+    } finally {
+      if (mounted) setState(() => _recordingBusy = false);
+    }
+  }
+
+  Future<void> _saveRecording() async {
+    if (_recordingBusy || !_history.canUndo) return;
+    setState(() {
+      _recordingBusy = true;
+      _status = 'Saving recording…';
+    });
+    try {
+      final recording = GameRecording.capture(
+        volumes: _volumes,
+        paths: _paths,
+        walls: _walls,
+        facePaint: _facePaint,
+        friends: _friends,
+        landscape: _grid,
+      );
+      final path = await GameRecordingIo.saveDefault(recording);
+      if (!mounted) return;
+      setState(() => _status = 'Recorded to $path');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _status = 'Record failed: $e');
+    } finally {
+      if (mounted) setState(() => _recordingBusy = false);
+    }
+  }
+
   /// Second finger / trackpad pinch: camera only; tools stay dead until lift.
   void _enterPinchExclusiveMode() {
     _lockToolsForMultiTouch();
     _pinchEpisode = true;
     _cancelPendingToolDown();
     _pathStrokeLast = null;
+    _wallStrokeLast = null;
     _toolDidMove = false;
+    if (_handleDragging && (_gizmoSelected != null || _gizmoAxis != null)) {
+      _endGizmoDrag();
+      return;
+    }
     if (_handleDragging) _onHandleDragEnd();
     if (_cropDragHandle != null) _onCropDragEnd();
     _endStrokeHistory();
@@ -296,7 +479,16 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    _params = const LandscapeGenParams(tilesSide: _tilesSide).clamped();
+    _params = LandscapeGenParams(
+      tilesSide: _tilesSide,
+      colorSigma: WorldTheme.paperDiorama.colorSigma,
+      gradients: WorldTheme.paperDiorama.gradients,
+    ).clamped();
+    _groundShadow = GroundShadowModel(
+      lightX: _theme.shade.lightX,
+      lightY: _theme.shade.lightY,
+      lightZ: _theme.shade.lightZ,
+    );
 
     final half = _mapHalf;
     _camera = Camera(
@@ -338,10 +530,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       ..addListener(_onSceneChanged);
 
     _octree = MapOctree(
-      bounds: MapAabb(
-        Vector3(-half, 0, -half),
-        Vector3(half, 24, half),
-      ),
+      bounds: MapAabb(Vector3(-half, 0, -half), Vector3(half, 24, half)),
       minLeafSize: _tileWorld,
     );
     _streamer = MapSceneStreamer(
@@ -355,11 +544,82 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
 
     _bakeLandscape();
     _refreshStatus();
-    _viewerAnim = AnimationController(
+    _viewerAnim =
+        AnimationController(
+            vsync: this,
+            duration: const Duration(milliseconds: 750),
+          )
+          ..addListener(_onViewerAnimTick)
+          ..addStatusListener(_onViewerAnimStatus);
+    _sunsetAnim = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 750),
-    )..addListener(_onViewerAnimTick)
-      ..addStatusListener(_onViewerAnimStatus);
+      duration: const Duration(milliseconds: 1000),
+    )..addListener(_onSunsetTick);
+  }
+
+  DayNightLighting get _lighting => DayNightLighting.lerp(
+    DayNightLighting.day(_theme),
+    _nightSwatch.lighting,
+    _dayNightProgress,
+  );
+
+  void _onSunsetTick() {
+    _dayNightProgress = _sunsetAnim.value;
+    _applyDayNightLighting();
+    if (mounted) setState(() {});
+  }
+
+  void _applyDayNightLighting() {
+    final lit = _lighting;
+    _groundShadow = lit.shadow;
+    _scene.globalIllumination = lit.globalIllumination;
+    _scene.setLights(lit.lights);
+  }
+
+  Future<void> _endDayOrNight() async {
+    if (_dayNightBusy || _advancingDay) return;
+    if (!_isNight) {
+      setState(() => _dayNightBusy = true);
+      await _sunsetAnim.forward(from: _dayNightProgress);
+      if (!mounted) return;
+      setState(() {
+        _isNight = true;
+        _dayNightProgress = 1;
+        _dayNightBusy = false;
+      });
+      _applyDayNightLighting();
+      return;
+    }
+    setState(() {
+      _advanceToDay = _dayNumber + 1;
+      _advancingDay = true;
+    });
+  }
+
+  void _onAdvanceReadyForDay() {
+    _isNight = false;
+    _dayNumber = _advanceToDay;
+    _dayNightProgress = 0;
+    _sunsetAnim.value = 0;
+    _applyDayNightLighting();
+    if (mounted) setState(() {});
+  }
+
+  void _onAdvanceFinished() {
+    if (mounted) setState(() => _advancingDay = false);
+  }
+
+  void _setDayNightProgress(double t) {
+    _sunsetAnim.stop();
+    _dayNightProgress = t.clamp(0.0, 1.0);
+    _applyDayNightLighting();
+    setState(() {});
+  }
+
+  void _setNightSwatch(NightSwatch swatch) {
+    _nightSwatch = swatch;
+    _applyDayNightLighting();
+    setState(() {});
   }
 
   @override
@@ -367,6 +627,9 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     _paintDebounce?.cancel();
     _pendingFocusTimer?.cancel();
     _history.dispose();
+    _sunsetAnim
+      ..removeListener(_onSunsetTick)
+      ..dispose();
     _viewerAnim
       ..removeListener(_onViewerAnimTick)
       ..removeStatusListener(_onViewerAnimStatus)
@@ -382,6 +645,8 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       ..dispose();
     _scene.removeListener(_onSceneChanged);
     _atlas?.dispose();
+    PerfDebugSettings.resetEngineFlags();
+    PaintStatsProbe.reset();
     super.dispose();
   }
 
@@ -405,9 +670,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       tileSize: _tileWorld,
       tilesSide: _tilesSide,
     );
-    unawaited(
-      _streamer.sync(lookTx: tx, lookTy: ty, drawRadius: _cullRadius),
-    );
+    unawaited(_streamer.sync(lookTx: tx, lookTy: ty, drawRadius: _cullRadius));
   }
 
   void _refreshStatus() {
@@ -417,14 +680,23 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       tileSize: _tileWorld,
       tilesSide: _tilesSide,
     );
-    _status = '${_viewer.name} · Tile ($tx, $ty) · ${_look.zoomLabel} · '
+    _status =
+        '${_viewer.name} · Tile ($tx, $ty) · ${_look.zoomLabel} · '
         'cull ±$_cullRadius · '
         'drawn ${_streamer.drawnCount}/${_streamer.placedCount}';
   }
 
   void _syncWorld() {
-    syncVolumeMeshes(_scene, _volumes);
-    syncPathMeshes(_scene, _paths, _volumes);
+    syncVolumeMeshes(
+      _scene,
+      _volumes,
+      committed: _theme.volume,
+      draftColor: _theme.volumeDraft,
+    );
+    syncPathMeshes(_scene, _paths, _volumes, color: _theme.path);
+    syncWallMeshes(_scene, _walls, color: _theme.wall);
+    syncFriendMeshes(_scene, _friends, tileSize: _tileWorld);
+    _wallRegions = computeEnclosedRegions(_walls);
     _graph = ConnectionGraph.build(volumes: _volumes, paths: _paths);
     _facePaint.prune(_volumes);
     _applyLayerVisibility();
@@ -448,13 +720,20 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   void _applyLayerVisibility() {
     final showVol = _layers.shows(SceneLayer.volumes);
     final showPath = _layers.shows(SceneLayer.paths);
+    final showWall = _layers.shows(SceneLayer.walls);
     for (final mesh in _scene.meshes) {
       if (mesh.id.startsWith('volume_')) {
-        mesh.visible = showVol && _meshVisibleInFocus(mesh.id, prefix: 'volume');
+        mesh.visible =
+            showVol && _meshVisibleInFocus(mesh.id, prefix: 'volume');
       } else if (mesh.id.startsWith('path_')) {
         mesh.visible = showPath && _meshVisibleInFocus(mesh.id, prefix: 'path');
+      } else if (mesh.id.startsWith('wall_')) {
+        mesh.visible = showWall && _wallMeshVisible(mesh.id);
+      } else if (mesh.id.startsWith('friend_')) {
+        mesh.visible = _layers.shows(SceneLayer.friends);
       } else {
-        mesh.visible = _focusRegion == null && _layers.shows(SceneLayer.streamerCrafts);
+        mesh.visible =
+            _focusRegion == null && _layers.shows(SceneLayer.streamerCrafts);
       }
     }
   }
@@ -548,6 +827,18 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
 
   bool _pathBlocked(int tx, int ty) => _volumes.isOccupied(tx, ty);
 
+  bool _wallMeshVisible(String id) {
+    final edge = wallEdgeFromMeshId(id);
+    if (edge == null) return _focusRegion == null;
+    for (final tile in tilesTouchingWall(edge)) {
+      if (_volumes.grid.inBounds(tile.$1, tile.$2) &&
+          _focusTileVisible(tile.$1, tile.$2)) {
+        return true;
+      }
+    }
+    return _focusRegion == null;
+  }
+
   (int, int)? _tileAt(Offset local) {
     final hit = _camera.intersectGround(local, _viewportSize);
     if (hit == null) return null;
@@ -564,7 +855,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       _landscapeGen = generator;
       final grid = LandscapeGrid.fromGenerator(generator);
       _grid = grid;
-      final image = await generator.bakeAtlasFromGrid(grid);
+      final image = await generator.bakeAtlasFromGrid(grid, theme: _theme);
       if (!mounted) {
         image.dispose();
         return;
@@ -600,7 +891,10 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       _volumesTool = !_volumesTool;
       if (_volumesTool) {
         _pathsTool = false;
+        _wallsTool = false;
+        _worldEraserTool = false;
         _selectTool = false;
+        _endWallSession();
       }
     });
   }
@@ -615,7 +909,49 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       _pathsTool = !_pathsTool;
       if (_pathsTool) {
         _volumesTool = false;
+        _wallsTool = false;
+        _worldEraserTool = false;
         _selectTool = false;
+        _endWallSession();
+      }
+    });
+  }
+
+  void _toggleWalls() {
+    _pendingFocusTimer?.cancel();
+    setState(() {
+      if (_editing) {
+        _volumes.cancelDraft();
+        _syncWorld();
+      }
+      _wallsTool = !_wallsTool;
+      if (_wallsTool) {
+        _volumesTool = false;
+        _pathsTool = false;
+        _worldEraserTool = false;
+        _selectTool = false;
+      } else {
+        _endWallSession();
+      }
+    });
+  }
+
+  void _toggleWorldEraser() {
+    _pendingFocusTimer?.cancel();
+    setState(() {
+      if (_editing) {
+        _volumes.cancelDraft();
+        _syncWorld();
+      }
+      _worldEraserTool = !_worldEraserTool;
+      if (_worldEraserTool) {
+        _volumesTool = false;
+        _pathsTool = false;
+        _wallsTool = false;
+        _selectTool = false;
+        _endWallSession();
+      } else {
+        _eraserCursor = null;
       }
     });
   }
@@ -635,6 +971,9 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       if (_selectTool) {
         _volumesTool = false;
         _pathsTool = false;
+        _wallsTool = false;
+        _endWallSession();
+        _worldEraserTool = false;
       }
     });
   }
@@ -688,10 +1027,10 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   }
 
   Vector3 _lerpVec(Vector3 a, Vector3 b, double t) => Vector3(
-        a.x + (b.x - a.x) * t,
-        a.y + (b.y - a.y) * t,
-        a.z + (b.z - a.z) * t,
-      );
+    a.x + (b.x - a.x) * t,
+    a.y + (b.y - a.y) * t,
+    a.z + (b.z - a.z) * t,
+  );
 
   void _onViewerAnimTick() {
     final fromP = _camFromPos;
@@ -778,10 +1117,8 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     _planeLook
       ?..removeListener(_onCameraChanged)
       ..dispose();
-    final planeLook = PlaneLookCameraController(
-      camera: _camera,
-      plane: plane,
-    )..setViewportSize(_viewportSize);
+    final planeLook = PlaneLookCameraController(camera: _camera, plane: plane)
+      ..setViewportSize(_viewportSize);
     _camToPos = Vector3.copy(_camera.position);
     _camToTarget = Vector3.copy(_camera.target);
     _camToUp = Vector3.copy(_camera.up);
@@ -797,6 +1134,9 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     _selectTool = false;
     _volumesTool = false;
     _pathsTool = false;
+    _wallsTool = false;
+    _worldEraserTool = false;
+    _endWallSession();
     _paintLastCell = null;
     setState(() {});
     _viewerAnim.forward(from: 0);
@@ -977,6 +1317,9 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     _selectTool = false;
     _volumesTool = false;
     _pathsTool = false;
+    _wallsTool = false;
+    _worldEraserTool = false;
+    _endWallSession();
     _applyLayerVisibility();
     setState(() {});
     _viewerAnim.forward(from: 0);
@@ -1020,7 +1363,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     final grid = _grid;
     if (gen == null || grid == null) return;
     try {
-      final image = await gen.bakeAtlasFromGrid(grid);
+      final image = await gen.bakeAtlasFromGrid(grid, theme: _theme);
       if (!mounted) {
         image.dispose();
         return;
@@ -1215,7 +1558,8 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     final lastP = _lastClickPos;
     _lastClickTime = now;
     _lastClickPos = local;
-    final isDouble = lastT != null &&
+    final isDouble =
+        lastT != null &&
         lastP != null &&
         now.difference(lastT).inMilliseconds < 400 &&
         (local - lastP).distanceSquared < 100;
@@ -1285,13 +1629,244 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     );
   }
 
+  void _placeCubeboy() {
+    final lookTile = _volumes.grid.tileAtWorld(_look.lookAt);
+    final tx = lookTile?.$1 ?? _tilesSide ~/ 2;
+    final ty = lookTile?.$2 ?? _tilesSide ~/ 2;
+    final center = _volumes.grid.tileCenter(tx, ty);
+    center.y = FriendMeshLayout.sitOnGroundY(tileSize: _tileWorld);
+    final instance = FriendInstance(
+      id: MockFriendProvider.generateGuid(),
+      friend: kCubeboyFriend,
+      position: center,
+    );
+    _friends.add(instance);
+    syncFriendMeshes(_scene, _friends, tileSize: _tileWorld);
+    _applyLayerVisibility();
+    if (_showGizmos) {
+      _gizmoSelected = FriendGizmoTarget(instance, tileSize: _tileWorld);
+    }
+    setState(() {});
+  }
+
+  void _setGizmoMode(bool enabled) {
+    setState(() {
+      _gizmoMode = enabled;
+      if (!enabled) _clearGizmoSelection();
+    });
+  }
+
+  void _onPerfChanged() {
+    _perf.applyEngineFlags();
+    _applyLayerVisibility();
+    setState(() {});
+  }
+
+  void _clearGizmoSelection() {
+    _applyVolumePreview(null, Vector3.zero());
+    if (_gizmoSelected is VolumeGizmoTarget) {
+      (_gizmoSelected as VolumeGizmoTarget).resetDrag();
+    }
+    _gizmoSelected = null;
+    _gizmoDownTarget = null;
+    _gizmoGroundStart = null;
+    _gizmoFriendStartPos = null;
+    _gizmoAxis = null;
+    _gizmoVolumeBefore = null;
+  }
+
+  GizmoTarget? _hitGizmoTarget(Offset local) {
+    final tester = SceneHitTester(
+      scene: _scene,
+      camera: _camera,
+      viewportSize: _viewportSize,
+    );
+    for (final hit in tester.hitTestAll(local)) {
+      final mesh = _scene.meshById(hit.meshId);
+      if (mesh != null && !mesh.visible) continue;
+      final target = resolveGizmoTarget(
+        meshId: hit.meshId,
+        friends: _friends,
+        volumes: _volumes,
+        tileSize: _tileWorld,
+        pathBlocked: _paths.contains,
+      );
+      if (target != null) return target;
+    }
+    return null;
+  }
+
+  void _applyVolumePreview(int? volumeId, Vector3 offset) {
+    for (final mesh in _scene.meshes) {
+      final parsed = parseVolumeMeshIdParts(mesh.id);
+      if (parsed == null) continue;
+      if (volumeId != null && parsed.volumeId != volumeId) continue;
+      mesh.setPosition(volumeId == null ? Vector3.zero() : offset);
+    }
+    _scene.markNeedsPaint();
+  }
+
+  void _syncGizmoMeshes() {
+    syncFriendMeshes(_scene, _friends, tileSize: _tileWorld);
+    final selected = _gizmoSelected;
+    if (selected is VolumeGizmoTarget) {
+      _applyVolumePreview(selected.volume.id, selected.previewOffset);
+    }
+    _applyLayerVisibility();
+  }
+
+  void _onGizmoTap(Offset local) {
+    final target = _hitGizmoTarget(local);
+    setState(() {
+      if (target == null) {
+        _clearGizmoSelection();
+      } else {
+        _gizmoSelected = target;
+      }
+    });
+  }
+
+  void _beginGizmoGroundDrag() {
+    final target = _gizmoDownTarget;
+    if (target == null) return;
+    _gizmoSelected = target;
+    _handleDragging = true;
+    if (target is FriendGizmoTarget) {
+      _gizmoFriendStartPos = Vector3.copy(target.instance.position);
+    } else if (target is VolumeGizmoTarget) {
+      target.resetDrag();
+      _gizmoVolumeBefore = _capture('move volume');
+    }
+  }
+
+  void _updateGizmoGroundDrag(Offset local) {
+    final target = _gizmoSelected;
+    final start = _gizmoGroundStart;
+    final ground = _camera.intersectGround(local, _viewportSize);
+    if (target == null || start == null || ground == null) return;
+    final delta = Vector3(ground.x - start.x, 0, ground.z - start.z);
+    if (target is FriendGizmoTarget) {
+      final origin = _gizmoFriendStartPos;
+      if (origin == null) return;
+      target.setPosition(origin + delta);
+    } else if (target is VolumeGizmoTarget) {
+      final (dtx, dty) = target.applyTotalDelta(delta);
+      if (dtx != 0 || dty != 0) {
+        _facePaint.remapVolumeTiles(target.volume.id, dtx, dty);
+        _syncWorld();
+      }
+    }
+    _syncGizmoMeshes();
+    setState(() {});
+  }
+
+  void _endGizmoDrag() {
+    final selected = _gizmoSelected;
+    final before = _gizmoVolumeBefore;
+    if (selected is VolumeGizmoTarget) {
+      if (before != null &&
+          (selected.committedDtx != 0 || selected.committedDty != 0)) {
+        _history.pushSnapshot(before);
+      }
+      selected.resetDrag();
+      _syncWorld();
+    }
+    _handleDragging = false;
+    _gizmoAxis = null;
+    _gizmoDownTarget = null;
+    _gizmoGroundStart = null;
+    _gizmoFriendStartPos = null;
+    _gizmoVolumeBefore = null;
+    _dragStartHit = null;
+    _dragPlanePoint = null;
+    setState(() {});
+  }
+
+  void _onGizmoHandleStart(SceneGizmoAxis axis, Offset global) {
+    if (_toolsBlocked || !_showGizmos) return;
+    final target = _gizmoSelected;
+    if (target == null) return;
+    final local = _toLocal(global);
+    final center = target.worldCenter;
+    final planePoint = center + axis.direction * kSceneGizmoStemOut;
+    final ray = _camera.unprojectRay(local, _viewportSize);
+    if (ray == null) return;
+    var planeN = axis.direction.cross(_camera.forward.cross(axis.direction));
+    if (planeN.length2 < 1e-8) {
+      planeN = Vector3.copy(_camera.up);
+    }
+    planeN.normalize();
+    final startHit = Camera.intersectPlane(
+      ray: ray,
+      point: planePoint,
+      normal: planeN,
+    );
+    if (startHit == null) return;
+    _handleDragging = true;
+    _gizmoAxis = axis;
+    _dragPlanePoint = planePoint;
+    _dragStartHit = startHit;
+    if (target is FriendGizmoTarget) {
+      _gizmoFriendStartPos = Vector3.copy(target.instance.position);
+    } else if (target is VolumeGizmoTarget) {
+      target.resetDrag();
+      _gizmoVolumeBefore = _capture('move volume');
+    }
+  }
+
+  void _onGizmoHandleUpdate(SceneGizmoAxis axis, Offset global) {
+    final target = _gizmoSelected;
+    final startHit = _dragStartHit;
+    final planePoint = _dragPlanePoint;
+    if (target == null || startHit == null || planePoint == null) return;
+    if (_gizmoAxis != null && axis != _gizmoAxis) return;
+    final delta = sceneAxisDragDelta(
+      camera: _camera,
+      viewport: _viewportSize,
+      screen: _toLocal(global),
+      axis: axis.direction,
+      planePoint: planePoint,
+      startHit: startHit,
+    );
+    if (delta == null) return;
+    final worldDelta = axis.direction * delta;
+    if (target is FriendGizmoTarget) {
+      final origin = _gizmoFriendStartPos;
+      if (origin == null) return;
+      target.setPosition(origin + worldDelta);
+    } else if (target is VolumeGizmoTarget) {
+      final (dtx, dty) = target.applyTotalDelta(worldDelta);
+      if (dtx != 0 || dty != 0) {
+        _facePaint.remapVolumeTiles(target.volume.id, dtx, dty);
+        _syncWorld();
+      }
+    }
+    _syncGizmoMeshes();
+    setState(() {});
+  }
+
   void _onTileTap(Offset local) {
     if (_toolsBlocked || _editing || _handleDragging) return;
+    if (_showGizmos) {
+      _onGizmoTap(local);
+      return;
+    }
     if (_selectTool && _viewer == GameViewerKind.map3d) {
       _onSelectClick(local);
       return;
     }
     if (_isPlane2d) return;
+    if (_wallsTool) {
+      final hit = _camera.intersectGround(local, _viewportSize);
+      if (hit == null) return;
+      _ensureWallSession();
+      if (_walls.toggleAtMidpoint(hit)) {
+        _recordWallSessionMutation();
+        _syncWorld();
+        setState(() {});
+      }
+      return;
+    }
     final tile = _tileAt(local);
     if (tile == null) return;
     final (tx, ty) = tile;
@@ -1304,6 +1879,22 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       _commitAction(
         'place path',
         () => _paths.addIsland(tx, ty, blocked: _pathBlocked),
+      );
+      return;
+    }
+    if (_worldEraserTool) {
+      final hit = _camera.intersectGround(local, _viewportSize);
+      if (hit == null) return;
+      _commitAction(
+        'erase',
+        () => eraseWorld(
+          world: hit,
+          radius: _eraserFilter.worldRadius(_tileWorld),
+          filter: _eraserFilter,
+          walls: _walls,
+          paths: _paths,
+          volumes: _volumes,
+        ),
       );
     }
   }
@@ -1321,6 +1912,40 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       setState(() {});
     }
     _pathStrokeLast = tile;
+  }
+
+  void _paintWallTo(Offset local) {
+    if (_toolsBlocked) return;
+    final hit = _camera.intersectGround(local, _viewportSize);
+    if (hit == null) return;
+    final last = _wallStrokeLast ?? hit;
+    _ensureWallSession();
+    if (_walls.paintStroke(last, hit)) {
+      _recordWallSessionMutation();
+      _syncWorld();
+      setState(() {});
+    }
+    _wallStrokeLast = hit;
+  }
+
+  void _eraseWorldTo(Offset local) {
+    if (_toolsBlocked) return;
+    final hit = _camera.intersectGround(local, _viewportSize);
+    if (hit == null) return;
+    _eraserCursor = hit;
+    _ensureStrokeHistory('erase');
+    if (eraseWorld(
+      world: hit,
+      radius: _eraserFilter.worldRadius(_tileWorld),
+      filter: _eraserFilter,
+      walls: _walls,
+      paths: _paths,
+      volumes: _volumes,
+    )) {
+      _recordStrokeIfNeeded();
+      _syncWorld();
+    }
+    setState(() {});
   }
 
   void _onGrow(VolumeGrowCandidate candidate) {
@@ -1388,7 +2013,10 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     final startHit = _dragStartHit;
     final planePoint = _dragPlanePoint;
     if (_toolsBlocked) return;
-    if (cell == null || snapshot == null || startHit == null || planePoint == null) {
+    if (cell == null ||
+        snapshot == null ||
+        startHit == null ||
+        planePoint == null) {
       return;
     }
     if (_dragHandle != null && handle != _dragHandle) return;
@@ -1540,6 +2168,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     _maybeUnlockToolsAfterPointersUp();
     if (suppress) {
       _pathStrokeLast = null;
+      _wallStrokeLast = null;
       _endStrokeHistory();
       return;
     }
@@ -1554,9 +2183,20 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     if (!_panZoomActive) _maybeUnlockToolsAfterPointersUp();
   }
 
+  void _onPointerHover(PointerHoverEvent event) {
+    if (!_worldEraserTool || _isPlane2d || _toolsBlocked) return;
+    _eraserCursor = _camera.intersectGround(event.localPosition, _viewportSize);
+    setState(() {});
+  }
+
   void _onToolPointerMove(PointerMoveEvent event) {
     if (_handleDragging) return;
     _toolDidMove = true;
+    if (_showGizmos && _gizmoDownTarget != null) {
+      _beginGizmoGroundDrag();
+      _updateGizmoGroundDrag(event.localPosition);
+      return;
+    }
     if (_isPlane2d &&
         (_paintTool || _eraseTool) &&
         (event.kind != PointerDeviceKind.mouse ||
@@ -1564,13 +2204,39 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       _strokePaint(event.localPosition);
       return;
     }
-    final pathPainting = !_isPlane2d &&
+    final pathPainting =
+        !_isPlane2d &&
         _pathsTool &&
         (event.kind != PointerDeviceKind.mouse ||
             (_mouseButtons & kPrimaryButton) != 0);
     if (pathPainting) {
       _paintPathTo(event.localPosition);
       return;
+    }
+    final wallPainting =
+        !_isPlane2d &&
+        _wallsTool &&
+        (event.kind != PointerDeviceKind.mouse ||
+            (_mouseButtons & kPrimaryButton) != 0);
+    if (wallPainting) {
+      _paintWallTo(event.localPosition);
+      return;
+    }
+    final worldErasing =
+        !_isPlane2d &&
+        _worldEraserTool &&
+        (event.kind != PointerDeviceKind.mouse ||
+            (_mouseButtons & kPrimaryButton) != 0);
+    if (worldErasing) {
+      _eraseWorldTo(event.localPosition);
+      return;
+    }
+    if (!_isPlane2d && _worldEraserTool) {
+      _eraserCursor = _camera.intersectGround(
+        event.localPosition,
+        _viewportSize,
+      );
+      setState(() {});
     }
     final mouse = event.kind == PointerDeviceKind.mouse;
     final secondary = (_mouseButtons & kSecondaryButton) != 0;
@@ -1588,8 +2254,16 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   }
 
   void _onToolPointerUp(Offset local) {
+    if (_handleDragging && (_gizmoSelected != null || _gizmoAxis != null)) {
+      _endGizmoDrag();
+      _toolDidMove = false;
+      _pathStrokeLast = null;
+      _wallStrokeLast = null;
+      return;
+    }
     final moved = _toolDidMove;
     _pathStrokeLast = null;
+    _wallStrokeLast = null;
     _toolDidMove = false;
     if (_isPlane2d && (_paintTool || _eraseTool)) {
       if (!moved) _strokePaint(local);
@@ -1609,7 +2283,8 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   }
 
   void _onLookGesture(GestureState state) {
-    final isTwoFinger = state.pointerCount >= 2 ||
+    final isTwoFinger =
+        state.pointerCount >= 2 ||
         (state.type == GestureType.twoFingerDrag && state.pointers.isEmpty);
 
     final orbit = _orbit;
@@ -1625,8 +2300,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
         final span = state.spanScale <= 1e-6 ? 1.0 : state.spanScale;
         final scaleChange = span / _pinchSpanScale;
         _pinchSpanScale = span;
-        if (scaleChange < 1 &&
-            orbit.radius / scaleChange > orbit.maxDistance) {
+        if (scaleChange < 1 && orbit.radius / scaleChange > orbit.maxDistance) {
           _returnToMap3d();
           return;
         }
@@ -1701,21 +2375,50 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     return FmScreen(
-      backgroundColor: const Color(0xFF101418),
+      backgroundColor: _lighting.background,
       overlays: [
         const FmDevBackButton(),
+        FmSafePositioned(
+          top: 8,
+          left: 0,
+          right: 0,
+          child: Center(
+            child: DayCycleHud(
+              dayNumber: _dayNumber,
+              isNight: _isNight,
+              busy: _dayNightBusy || _advancingDay,
+              onEndPhase: _endDayOrNight,
+            ),
+          ),
+        ),
         _StatusChip(
           status: _error ?? _status,
           busy: _baking,
           isError: _error != null,
         ),
-        const _FpsChip(),
+        FrameStatsHud(expanded: _perf.showDetails),
+        if (_perf.showOverlay)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 48,
+            height: 90,
+            child: IgnorePointer(child: PerformanceOverlay.allEnabled()),
+          ),
         FmSafePositioned(
           top: 48,
           left: 12,
-          child: GameLayerSidebar(
-            graphActive: _graphVisible,
-            onToggleGraph: _toggleGraph,
+          child: ListenableBuilder(
+            listenable: _history,
+            builder: (context, _) {
+              return GameLayerSidebar(
+                graphActive: _graphVisible,
+                onToggleGraph: _toggleGraph,
+                onPopulateRecording: _populateRecording,
+                onSaveRecording: _saveRecording,
+                canSaveRecording: _history.canUndo,
+              );
+            },
           ),
         ),
         if (_isPlane2d) ...[
@@ -1736,6 +2439,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
               onToggleErase: _toggleErase,
               paintColor: _paintColor,
               onPaintColor: (c) => setState(() => _paintColor = c),
+              resolvePaper: _theme.paper,
               telephoto: _planeLook?.telephoto ?? false,
               onToggleTelephoto: () {
                 final look = _planeLook;
@@ -1757,7 +2461,8 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
             child: GameFocus3dSidebar(
               cropActive: _cropTool,
               onToggleCrop: _toggleCropTool,
-              showReset: _focusCrop != null &&
+              showReset:
+                  _focusCrop != null &&
                   _focusCropBounds != null &&
                   !_focusCrop!.sameAs(_focusCropBounds!),
               onReset: _resetFocusCrop,
@@ -1772,6 +2477,10 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
               onToggleVolumes: _toggleVolumes,
               pathsActive: _pathsTool,
               onTogglePaths: _togglePaths,
+              wallsActive: _wallsTool,
+              onToggleWalls: _toggleWalls,
+              eraserActive: _worldEraserTool,
+              onToggleEraser: _toggleWorldEraser,
               selectActive: _selectTool,
               onToggleSelect: _toggleSelect,
               onIsolate: _isolateLookAt,
@@ -1779,6 +2488,15 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
               onVolumeShape: () {},
             ),
           ),
+          if (_worldEraserTool)
+            FmSafePositioned(
+              top: 48,
+              right: 64,
+              child: EraserFilterPanel(
+                filter: _eraserFilter,
+                onChanged: () => setState(() {}),
+              ),
+            ),
           FmSafePositioned(
             bottom: 12,
             left: 12,
@@ -1796,6 +2514,30 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
             ),
           ),
         ],
+        if (_devToolsOpen)
+          FmSafePositioned(
+            bottom: 84,
+            right: 12,
+            child: DevToolsPanel(
+              showGizmos: _gizmoMode,
+              onShowGizmosChanged: _setGizmoMode,
+              onPlaceCubeboy: _placeCubeboy,
+              nightSwatchId: _nightSwatch.id,
+              onNightSwatchChanged: _setNightSwatch,
+              dayNightProgress: _dayNightProgress,
+              onDayNightProgressChanged: _setDayNightProgress,
+              perf: _perf,
+              onPerfChanged: _onPerfChanged,
+            ),
+          ),
+        FmSafePositioned(
+          bottom: 56,
+          right: 12,
+          child: DevToolsButton(
+            active: _devToolsOpen,
+            onPressed: () => setState(() => _devToolsOpen = !_devToolsOpen),
+          ),
+        ),
         FmSafePositioned(
           bottom: 12,
           left: 0,
@@ -1814,6 +2556,14 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
             ),
           ),
         ),
+        if (_advancingDay)
+          Positioned.fill(
+            child: DayAdvanceOverlay(
+              nextDay: _advanceToDay,
+              onReadyForDay: _onAdvanceReadyForDay,
+              onFinished: _onAdvanceFinished,
+            ),
+          ),
       ],
       background: _buildViewport(),
     );
@@ -1833,6 +2583,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
             behavior: HitTestBehavior.opaque,
             onPointerDown: _onPointerDown,
             onPointerMove: _onPointerMove,
+            onPointerHover: _onPointerHover,
             onPointerUp: _onPointerUp,
             onPointerCancel: _onPointerCancel,
             onPointerPanZoomStart: (_) {
@@ -1858,8 +2609,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                   final factor = math.exp(
                     signal.scrollDelta.dy * orbit.zoomSensitivity,
                   );
-                  if (factor > 1 &&
-                      orbit.radius * factor > orbit.maxDistance) {
+                  if (factor > 1 && orbit.radius * factor > orbit.maxDistance) {
                     _returnToMap3d();
                   } else {
                     orbit.zoomByScroll(signal.scrollDelta.dy);
@@ -1881,16 +2631,37 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                       worldSize: _worldSize,
                       tilesSide: _tilesSide,
                       pixelsPerTile: _volumes.grid.subtilesPerTile,
+                      backgroundColor: _lighting.background,
+                      modulateColor: _dayNightProgress <= 0
+                          ? null
+                          : Color.lerp(
+                              Colors.white,
+                              _lighting.background,
+                              _dayNightProgress * 0.42,
+                            ),
                       visibleTiles: _focusVisibleTiles(),
                       clipMinX: _focusCrop?.worldMin(_volumes.grid).x,
                       clipMaxX: _focusCrop?.worldMax(_volumes.grid).x,
                       clipMinZ: _focusCrop?.worldMin(_volumes.grid).z,
                       clipMaxZ: _focusCrop?.worldMax(_volumes.grid).z,
-                      hideGround: _focusCrop != null && !_focusCrop!.includesGround,
+                      hideGround:
+                          _focusCrop != null && !_focusCrop!.includesGround,
                     ),
                     isComplex: true,
                     willChange: true,
                     child: const SizedBox.expand(),
+                  ),
+                if (_layers.shows(SceneLayer.landscape) &&
+                    !(_focusCrop != null && !_focusCrop!.includesGround))
+                  Positioned.fill(
+                    child: VolumeGroundShadowOverlay(
+                      volumes: _volumes,
+                      camera: _camera,
+                      viewport: _viewportSize,
+                      model: _groundShadow,
+                      listenable: _scene,
+                      tileVisible: _focusTileVisible,
+                    ),
                   ),
                 SizedBox.expand(
                   child: SceneView(
@@ -1900,6 +2671,17 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                     ),
                   ),
                 ),
+                if (_layers.shows(SceneLayer.friends))
+                  Positioned.fill(
+                    child: FriendEyeOverlay(
+                      friends: _friends,
+                      camera: _camera,
+                      viewport: _viewportSize,
+                      tileSize: _tileWorld,
+                      subtilesPerTile: _volumes.grid.subtilesPerTile,
+                      listenable: _scene,
+                    ),
+                  ),
                 if (_layers.shows(SceneLayer.volumes))
                   Positioned.fill(
                     child: VolumeFacePaintOverlay(
@@ -1909,6 +2691,9 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                       viewport: _viewportSize,
                       listenable: _scene,
                       tileVisible: _focusTileVisible,
+                      shade: _lighting.shade,
+                      grain: _theme.grain,
+                      theme: _theme,
                     ),
                   ),
                 if (_layers.shows(SceneLayer.volumes))
@@ -1931,8 +2716,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                       listenable: _scene,
                     ),
                   ),
-                if (_graphVisible &&
-                    _layers.shows(SceneLayer.connectionGraph))
+                if (_graphVisible && _layers.shows(SceneLayer.connectionGraph))
                   Positioned.fill(
                     child: ConnectionGraphOverlay(
                       graph: _graph,
@@ -1941,6 +2725,67 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                       viewport: _viewportSize,
                       listenable: _scene,
                       tileVisible: _focusTileVisible,
+                    ),
+                  ),
+                if (_layers.shows(SceneLayer.worldBorder))
+                  Positioned.fill(
+                    child: WorldBorderOverlay(
+                      store: _walls,
+                      camera: _camera,
+                      viewport: _viewportSize,
+                      listenable: _scene,
+                    ),
+                  ),
+                if (_layers.shows(SceneLayer.walls))
+                  Positioned.fill(
+                    child: WallRegionOverlay(
+                      regions: _wallRegions,
+                      store: _walls,
+                      camera: _camera,
+                      viewport: _viewportSize,
+                      listenable: _scene,
+                      tileVisible: _focusTileVisible,
+                    ),
+                  ),
+                if (_lighting.wash.a > 0)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: ColoredBox(color: _lighting.wash),
+                    ),
+                  ),
+                if (_worldEraserTool && !_isPlane2d)
+                  Positioned.fill(
+                    child: EraserBrushOverlay(
+                      worldCenter: _eraserCursor,
+                      radius: _eraserFilter.worldRadius(_tileWorld),
+                      camera: _camera,
+                      viewport: _viewportSize,
+                      listenable: _scene,
+                    ),
+                  ),
+                if (_showGizmos && _gizmoSelected != null)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: GizmoBoundsOverlay(
+                        target: _gizmoSelected!,
+                        camera: _camera,
+                        viewport: _viewportSize,
+                        listenable: _scene,
+                      ),
+                    ),
+                  ),
+                if (_showGizmos && _gizmoSelected != null)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      ignoring: _toolsBlocked,
+                      child: SceneTransformGizmo(
+                        target: _gizmoSelected!,
+                        camera: _camera,
+                        viewport: _viewportSize,
+                        onDragStart: _onGizmoHandleStart,
+                        onDragUpdate: _onGizmoHandleUpdate,
+                        onDragEnd: _endGizmoDrag,
+                      ),
                     ),
                   ),
                 if (!_isPlane2d &&
@@ -2050,7 +2895,7 @@ class _StatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FmSafePositioned(
-      top: 12,
+      top: 44,
       left: 88,
       right: 96,
       child: IgnorePointer(
@@ -2060,90 +2905,11 @@ class _StatusChip extends StatelessWidget {
             color: isError
                 ? Colors.redAccent
                 : busy
-                    ? Colors.amberAccent
-                    : Colors.white70,
+                ? Colors.amberAccent
+                : Colors.white70,
             fontSize: 12,
           ),
           overflow: TextOverflow.ellipsis,
-        ),
-      ),
-    );
-  }
-}
-
-/// Live frame-rate from [FrameTiming]s, independent of map setState.
-class _FpsChip extends StatefulWidget {
-  const _FpsChip();
-
-  @override
-  State<_FpsChip> createState() => _FpsChipState();
-}
-
-class _FpsChipState extends State<_FpsChip> {
-  double _fps = 0;
-  int _samples = 0;
-  double _accumMs = 0;
-  DateTime _lastUi = DateTime.fromMillisecondsSinceEpoch(0);
-
-  @override
-  void initState() {
-    super.initState();
-    SchedulerBinding.instance.addTimingsCallback(_onTimings);
-  }
-
-  @override
-  void dispose() {
-    SchedulerBinding.instance.removeTimingsCallback(_onTimings);
-    super.dispose();
-  }
-
-  void _onTimings(List<FrameTiming> timings) {
-    for (final t in timings) {
-      final ms = t.totalSpan.inMicroseconds / 1000.0;
-      if (ms <= 0) continue;
-      _accumMs += ms;
-      _samples++;
-    }
-    if (_samples < 4) return;
-    final now = DateTime.now();
-    if (now.difference(_lastUi) < const Duration(milliseconds: 250)) return;
-    final fps = 1000.0 * _samples / _accumMs;
-    _samples = 0;
-    _accumMs = 0;
-    _lastUi = now;
-    if (!mounted) return;
-    setState(() => _fps = fps);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final fps = _fps;
-    final color = fps >= 55
-        ? Colors.lightGreenAccent
-        : fps >= 30
-            ? Colors.amberAccent
-            : Colors.redAccent;
-    return FmSafePositioned(
-      top: 12,
-      right: 12,
-      child: IgnorePointer(
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.72),
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: Colors.white24),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            child: Text(
-              fps <= 0 ? '— fps' : '${fps.toStringAsFixed(0)} fps',
-              style: TextStyle(
-                color: color,
-                fontSize: 12,
-                fontFeatures: const [ui.FontFeature.tabularFigures()],
-              ),
-            ),
-          ),
         ),
       ),
     );

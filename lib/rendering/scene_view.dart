@@ -1,7 +1,10 @@
+import 'dart:developer';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:vector_math/vector_math_64.dart' hide Colors;
+
+import '../debug/scene_paint_stats.dart';
 
 import '../geometry/geometry.dart';
 import 'lights.dart';
@@ -41,10 +44,37 @@ class ScenePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    final sw = Stopwatch()..start();
+    Timeline.startSync('ScenePainter');
+    var meshes = 0;
+    var visibleMeshes = 0;
+    var faces = 0;
+    var drawCalls = 0;
+    try {
+      final counts = _paintScene(canvas, size);
+      meshes = counts.$1;
+      visibleMeshes = counts.$2;
+      faces = counts.$3;
+      drawCalls = counts.$4;
+    } finally {
+      Timeline.finishSync();
+      PaintStatsProbe.scene = ScenePaintStats(
+        source: 'scene',
+        meshes: meshes,
+        visibleMeshes: visibleMeshes,
+        faces: faces,
+        drawCalls: drawCalls,
+        paintMs: sw.elapsedMicroseconds / 1000.0,
+      );
+    }
+  }
+
+  /// Returns `(meshes, visibleMeshes, faces, drawCalls)`.
+  (int, int, int, int) _paintScene(Canvas canvas, Size size) {
     final camera = _scene.camera;
     if (camera == null) {
       _drawPlaceholder(canvas, size);
-      return;
+      return (0, 0, 0, 0);
     }
 
     canvas.clipRect(Offset.zero & size);
@@ -62,9 +92,12 @@ class ScenePainter extends CustomPainter {
     final wireframeEdges = <_ProjectedLine>[];
 
     final allMeshes = _scene.meshes;
+    var visibleMeshes = 0;
+    var drawCalls = 0;
 
     for (final mesh in allMeshes) {
       if (!mesh.visible) continue;
+      visibleMeshes++;
       final isDoubleSided = mesh.material.doubleSided;
       final world = mesh.transformMatrix;
 
@@ -150,6 +183,7 @@ class ScenePainter extends CustomPainter {
             ..color = face.color.withOpacity(0.7),
         );
         canvas.drawPath(path, wirePaint);
+        drawCalls += 2;
         continue;
       }
 
@@ -161,6 +195,7 @@ class ScenePainter extends CustomPainter {
           ..color = face.color,
       );
       canvas.drawPath(path, fillPaint);
+      drawCalls++;
 
       // Edge stroke.
       if (face.edgeColor != null) {
@@ -173,6 +208,7 @@ class ScenePainter extends CustomPainter {
             ..color = face.edgeColor!.withOpacity(0.8),
         );
         canvas.drawPath(path, coloredStroke);
+        drawCalls++;
       } else if (!face.strokeEdges) {
         // Fill only.
       } else if (face.isTessellated) {
@@ -185,9 +221,11 @@ class ScenePainter extends CustomPainter {
               ..color = face.color,
           );
           canvas.drawPath(path, seamPaint);
+          drawCalls++;
         }
       } else {
         canvas.drawPath(path, strokePaint);
+        drawCalls++;
       }
     }
 
@@ -195,6 +233,7 @@ class ScenePainter extends CustomPainter {
     if (wireframeEdges.isNotEmpty) {
       for (final edge in wireframeEdges) {
         canvas.drawLine(edge.start, edge.end, strokePaint);
+        drawCalls++;
       }
     }
 
@@ -207,8 +246,11 @@ class ScenePainter extends CustomPainter {
       for (final normal in normalsToDraw) {
         canvas.drawLine(normal.start, normal.end, normalPaint);
         _drawArrowHead(canvas, normal.start, normal.end, normalPaint);
+        drawCalls += 2;
       }
     }
+
+    return (allMeshes.length, visibleMeshes, facesToDraw.length, drawCalls);
   }
 
   /// Collect projected faces from a geometry into [facesToDraw].

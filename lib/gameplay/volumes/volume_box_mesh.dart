@@ -5,12 +5,10 @@ import '../../geometry/geometry.dart';
 import '../../geometry/geometries.dart';
 import '../../rendering/mesh.dart';
 import '../../rendering/scene/scene.dart';
+import '../../theme/world_theme.dart';
 import 'volume.dart';
 import 'volume_door.dart';
 import 'volume_store.dart';
-
-const _kCommittedColor = Color(0xFFF5F5F5);
-const _kDraftColor = Color(0xFFFFD54F);
 
 String volumeMeshId(int volumeId, int tx, int ty) => 'volume_${volumeId}_${tx}_$ty';
 
@@ -165,7 +163,12 @@ Geometry volumeBoxGeometry({
 }
 
 /// Syncs wireframe box meshes on [scene] to match [store].
-void syncVolumeMeshes(Scene scene, VolumeStore store) {
+void syncVolumeMeshes(
+  Scene scene,
+  VolumeStore store, {
+  Color? committed,
+  Color? draftColor,
+}) {
   final wanted = <String>{};
   final draft = store.draftVolume;
 
@@ -186,7 +189,9 @@ void syncVolumeMeshes(Scene scene, VolumeStore store) {
         doors: doors,
         subtileSize: store.grid.subtileSize,
       );
-      final color = isDraftCell ? _kDraftColor : _kCommittedColor;
+      final color = isDraftCell
+          ? (draftColor ?? WorldTheme.paperDiorama.volumeDraft)
+          : (committed ?? WorldTheme.paperDiorama.volume);
       final existing = scene.meshById(id);
       if (existing == null) {
         scene.addMesh(

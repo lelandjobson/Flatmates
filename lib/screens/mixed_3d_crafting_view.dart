@@ -25,6 +25,7 @@ import '../ui/crafting_workstation.dart';
 import '../ui/fm_dev_back_button.dart';
 import '../ui/fm_safe_area.dart';
 import '../ui/fm_screen.dart';
+import '../theme/world_theme.dart';
 import '../ui/fm_theme.dart';
 import '../utils/math_utils.dart';
 
@@ -823,7 +824,7 @@ class _Mixed3dCraftingViewState extends State<Mixed3dCraftingView>
       if (polyIdx == null) continue;
       final meshFace = polyToMeshFace[polyIdx] ?? polyIdx;
       if (meshFace < 0 || meshFace >= faceCount) continue;
-      colors[meshFace] = paper.paperColor.color;
+      colors[meshFace] = paper.paperColor.resolve();
     }
 
     _craftedFaceColors = colors;

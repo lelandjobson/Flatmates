@@ -5,6 +5,8 @@ import 'paint/face_paint_store.dart';
 import 'paths/path_store.dart';
 import 'volumes/volume.dart';
 import 'volumes/volume_store.dart';
+import 'walls/wall_edge.dart';
+import 'walls/wall_store.dart';
 
 /// Immutable snapshot of gameplay world state (volumes, paths, landscape, paint).
 class GameSnapshot {
@@ -17,6 +19,7 @@ class GameSnapshot {
     required this.nextVolumeId,
     required this.pathTiles,
     required this.pathEdges,
+    required this.wallEdges,
     required this.landscape,
     required this.facePaint,
     required this.label,
@@ -32,6 +35,7 @@ class GameSnapshot {
   final int nextVolumeId;
   final Set<(int, int)> pathTiles;
   final Set<PathEdge> pathEdges;
+  final Set<WallEdge> wallEdges;
   final LandscapeGrid? landscape;
   final FacePaintStore facePaint;
   final String label;
@@ -50,6 +54,7 @@ class GameSnapshot {
       nextVolumeId: nextVolumeId,
       pathTiles: pathTiles,
       pathEdges: pathEdges,
+      wallEdges: wallEdges,
       landscape: landscape,
       facePaint: facePaint,
       label: label,
@@ -62,6 +67,7 @@ class GameSnapshot {
   factory GameSnapshot.capture({
     required VolumeStore volumes,
     required PathStore paths,
+    required WallStore walls,
     required LandscapeGrid? landscape,
     required FacePaintStore facePaint,
     required String label,
@@ -93,6 +99,7 @@ class GameSnapshot {
       nextVolumeId: volumes.nextId,
       pathTiles: Set<(int, int)>.from(paths.tiles),
       pathEdges: Set<PathEdge>.from(paths.edges),
+      wallEdges: Set<WallEdge>.from(walls.edges),
       landscape: landscape?.copy(),
       facePaint: facePaint.copy(),
       label: label,
@@ -103,6 +110,7 @@ class GameSnapshot {
   void applyTo({
     required VolumeStore volumes,
     required PathStore paths,
+    required WallStore walls,
     required LandscapeGrid? landscape,
     required FacePaintStore facePaint,
   }) {
@@ -135,6 +143,7 @@ class GameSnapshot {
       tiles: Set<(int, int)>.from(pathTiles),
       edges: Set<PathEdge>.from(pathEdges),
     );
+    walls.restore(Set<WallEdge>.from(wallEdges));
     if (landscape != null && this.landscape != null) {
       landscape.restoreFrom(this.landscape!);
     }

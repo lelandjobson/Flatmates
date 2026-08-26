@@ -96,6 +96,13 @@ class Scene extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setLights(Iterable<DirectionalLight> lights) {
+    _lights
+      ..clear()
+      ..addAll(lights);
+    notifyListeners();
+  }
+
   // ---------------------------------------------------------------------------
   // Render groups
   // ---------------------------------------------------------------------------

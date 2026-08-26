@@ -10,6 +10,10 @@ class GameToolSidebar extends StatelessWidget {
     required this.onToggleVolumes,
     required this.pathsActive,
     required this.onTogglePaths,
+    required this.wallsActive,
+    required this.onToggleWalls,
+    required this.eraserActive,
+    required this.onToggleEraser,
     required this.selectActive,
     required this.onToggleSelect,
     required this.onIsolate,
@@ -21,6 +25,10 @@ class GameToolSidebar extends StatelessWidget {
   final VoidCallback onToggleVolumes;
   final bool pathsActive;
   final VoidCallback onTogglePaths;
+  final bool wallsActive;
+  final VoidCallback onToggleWalls;
+  final bool eraserActive;
+  final VoidCallback onToggleEraser;
   final bool selectActive;
   final VoidCallback onToggleSelect;
   final VoidCallback onIsolate;
@@ -58,6 +66,20 @@ class GameToolSidebar extends StatelessWidget {
           active: pathsActive,
           onTap: onTogglePaths,
         ),
+        const SizedBox(height: 2),
+        _ToolBtn(
+          icon: Icons.fence,
+          tooltip: 'Walls',
+          active: wallsActive,
+          onTap: onToggleWalls,
+        ),
+        const SizedBox(height: 2),
+        _ToolBtn(
+          icon: Icons.auto_fix_off,
+          tooltip: 'Eraser',
+          active: eraserActive,
+          onTap: onToggleEraser,
+        ),
         if (showShapeButton) ...[
           const SizedBox(height: 2),
           _ToolBtn(
@@ -85,6 +107,7 @@ class GamePlane2dSidebar extends StatelessWidget {
     required this.onPaintColor,
     required this.telephoto,
     required this.onToggleTelephoto,
+    this.resolvePaper,
   });
 
   final bool paintActive;
@@ -97,6 +120,7 @@ class GamePlane2dSidebar extends StatelessWidget {
   final ValueChanged<PaperColor> onPaintColor;
   final bool telephoto;
   final VoidCallback onToggleTelephoto;
+  final Color Function(PaperColor)? resolvePaper;
 
   @override
   Widget build(BuildContext context) {
@@ -126,7 +150,7 @@ class GamePlane2dSidebar extends StatelessWidget {
           for (final color in PaperColor.values) ...[
             const SizedBox(height: 2),
             _ColorDot(
-              color: color.color,
+              color: resolvePaper?.call(color) ?? color.color,
               selected: paintColor == color,
               onTap: () => onPaintColor(color),
             ),
@@ -192,10 +216,16 @@ class GameLayerSidebar extends StatelessWidget {
     super.key,
     required this.graphActive,
     required this.onToggleGraph,
+    this.onPopulateRecording,
+    this.onSaveRecording,
+    this.canSaveRecording = false,
   });
 
   final bool graphActive;
   final VoidCallback onToggleGraph;
+  final VoidCallback? onPopulateRecording;
+  final VoidCallback? onSaveRecording;
+  final bool canSaveRecording;
 
   @override
   Widget build(BuildContext context) {
@@ -214,6 +244,26 @@ class GameLayerSidebar extends StatelessWidget {
             active: graphActive,
             onTap: onToggleGraph,
           ),
+          if (onPopulateRecording != null) ...[
+            const SizedBox(height: 2),
+            _ToolBtn(
+              icon: Icons.holiday_village,
+              tooltip: 'Populate recording',
+              active: false,
+              onTap: onPopulateRecording,
+            ),
+          ],
+          if (onSaveRecording != null) ...[
+            const SizedBox(height: 2),
+            _ToolBtn(
+              icon: Icons.save_alt,
+              tooltip: canSaveRecording
+                  ? 'Save recording'
+                  : 'Save recording (no changes)',
+              active: false,
+              onTap: canSaveRecording ? onSaveRecording : null,
+            ),
+          ],
         ],
       ),
     );
@@ -450,7 +500,11 @@ class _ToolBtn extends StatelessWidget {
             height: 36,
             child: Icon(
               icon,
-              color: active ? Colors.white : Colors.white70,
+              color: onTap == null
+                  ? Colors.white24
+                  : active
+                      ? Colors.white
+                      : Colors.white70,
               size: 20,
             ),
           ),

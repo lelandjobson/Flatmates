@@ -41,6 +41,20 @@ class FaceCanvas {
       : cells = Int8List(width * height)
           ..fillRange(0, width * height, kEmpty);
 
+  FaceCanvas.fromCells({
+    required this.width,
+    required this.height,
+    required List<int> cells,
+  }) : cells = Int8List.fromList(cells) {
+    if (this.cells.length != width * height) {
+      throw ArgumentError.value(
+        cells.length,
+        'cells.length',
+        'expected ${width * height}',
+      );
+    }
+  }
+
   static const int kEmpty = -1;
   static const int kVoid = -2;
 
@@ -132,6 +146,8 @@ class FaceCanvas {
 }
 
 class FacePaintStore {
+  FacePaintStore();
+
   final Map<FacePaintKey, FaceCanvas> _canvases = {};
 
   Map<FacePaintKey, FaceCanvas> get canvases => Map.unmodifiable(_canvases);
@@ -209,9 +225,9 @@ class FacePaintStore {
           final y = max.y;
           return [
             Vector3(x0, y, z0) + lift,
-            Vector3(x0 + s, y, z0) + lift,
-            Vector3(x0 + s, y, z0 + s) + lift,
             Vector3(x0, y, z0 + s) + lift,
+            Vector3(x0 + s, y, z0 + s) + lift,
+            Vector3(x0 + s, y, z0) + lift,
           ];
         }
       case VolumeFace.negY:
@@ -233,9 +249,9 @@ class FacePaintStore {
           final x = max.x;
           return [
             Vector3(x, y0, z0) + lift,
-            Vector3(x, y0, z0 + s) + lift,
-            Vector3(x, y0 + s, z0 + s) + lift,
             Vector3(x, y0 + s, z0) + lift,
+            Vector3(x, y0 + s, z0 + s) + lift,
+            Vector3(x, y0, z0 + s) + lift,
           ];
         }
       case VolumeFace.negX:
@@ -269,9 +285,9 @@ class FacePaintStore {
           final z = min.z;
           return [
             Vector3(x0, y0, z) + lift,
-            Vector3(x0 + s, y0, z) + lift,
-            Vector3(x0 + s, y0 + s, z) + lift,
             Vector3(x0, y0 + s, z) + lift,
+            Vector3(x0 + s, y0 + s, z) + lift,
+            Vector3(x0 + s, y0, z) + lift,
           ];
         }
     }
@@ -329,6 +345,27 @@ class FacePaintStore {
     }
   }
 
+  /// Move paint keys for [volumeId] by [dtx],[dty] after a volume translate.
+  void remapVolumeTiles(int volumeId, int dtx, int dty) {
+    if (dtx == 0 && dty == 0) return;
+    final next = <FacePaintKey, FaceCanvas>{};
+    for (final entry in _canvases.entries) {
+      if (entry.key.volumeId != volumeId) {
+        next[entry.key] = entry.value;
+        continue;
+      }
+      next[FacePaintKey(
+        volumeId: volumeId,
+        tx: entry.key.tx + dtx,
+        ty: entry.key.ty + dty,
+        face: entry.key.face,
+      )] = entry.value;
+    }
+    _canvases
+      ..clear()
+      ..addAll(next);
+  }
+
   void prune(VolumeStore store) {
     _canvases.removeWhere((key, _) {
       Volume? volume;
@@ -346,6 +383,14 @@ class FacePaintStore {
   FacePaintStore copy() {
     final next = FacePaintStore();
     for (final entry in _canvases.entries) {
+      next._canvases[entry.key] = entry.value.copy();
+    }
+    return next;
+  }
+
+  factory FacePaintStore.fromCanvases(Map<FacePaintKey, FaceCanvas> canvases) {
+    final next = FacePaintStore();
+    for (final entry in canvases.entries) {
       next._canvases[entry.key] = entry.value.copy();
     }
     return next;

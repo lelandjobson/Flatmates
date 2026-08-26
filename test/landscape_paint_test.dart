@@ -3,6 +3,7 @@ import 'package:flatmates/landscape/landscape_ca.dart';
 import 'package:flatmates/landscape/landscape_generator.dart';
 import 'package:flatmates/landscape/landscape_grid.dart';
 import 'package:flatmates/landscape/landscape_material.dart';
+import 'package:flatmates/theme/world_theme.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -15,13 +16,13 @@ void main() {
     expect(g.paint(2, 3, PaperColor.pink), isFalse);
     expect(
       g.colorAt(2, 3, const LandscapeGenParams()),
-      PaperColor.pink.color,
+      WorldTheme.paperDiorama.paper(PaperColor.pink),
     );
     expect(g.erase(2, 3), isTrue);
     expect(g.isEmpty(2, 3), isTrue);
     expect(
       g.colorAt(2, 3, const LandscapeGenParams()),
-      kLandscapeEmptyColor,
+      WorldTheme.paperDiorama.background,
     );
   });
 
@@ -34,12 +35,27 @@ void main() {
     }
     g.paint(2, 2, PaperColor.yellow);
     expect(g.fill(1, 1, PaperColor.pink), isTrue);
-    expect(g.colorAt(1, 1, const LandscapeGenParams()), PaperColor.pink.color);
-    expect(g.colorAt(3, 3, const LandscapeGenParams()), PaperColor.pink.color);
-    expect(g.colorAt(2, 2, const LandscapeGenParams()), PaperColor.yellow.color);
+    expect(
+      g.colorAt(1, 1, const LandscapeGenParams()),
+      WorldTheme.paperDiorama.paper(PaperColor.pink),
+    );
+    expect(
+      g.colorAt(3, 3, const LandscapeGenParams()),
+      WorldTheme.paperDiorama.paper(PaperColor.pink),
+    );
+    expect(
+      g.colorAt(2, 2, const LandscapeGenParams()),
+      WorldTheme.paperDiorama.paper(PaperColor.yellow),
+    );
     expect(g.fill(2, 2, PaperColor.green), isTrue);
-    expect(g.colorAt(2, 2, const LandscapeGenParams()), PaperColor.green.color);
-    expect(g.colorAt(1, 1, const LandscapeGenParams()), PaperColor.pink.color);
+    expect(
+      g.colorAt(2, 2, const LandscapeGenParams()),
+      WorldTheme.paperDiorama.paper(PaperColor.green),
+    );
+    expect(
+      g.colorAt(1, 1, const LandscapeGenParams()),
+      WorldTheme.paperDiorama.paper(PaperColor.pink),
+    );
   });
 
   test('void is not empty and CA will not refill it', () {
@@ -53,7 +69,7 @@ void main() {
     expect(g.erase(4, 4), isFalse);
     expect(
       g.colorAt(4, 4, const LandscapeGenParams()),
-      kLandscapeEmptyColor,
+      WorldTheme.paperDiorama.background,
     );
     expect(LandscapeCA(gen).step(g), greaterThan(0));
     expect(g.isVoid(4, 4), isTrue);

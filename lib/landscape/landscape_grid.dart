@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../crafting/placed_paper.dart';
+import '../theme/world_theme.dart';
 import 'landscape_generator.dart';
 import 'landscape_material.dart';
 
@@ -217,14 +218,20 @@ class LandscapeGrid {
     colorT[i] = t;
   }
 
-  Color colorAt(int x, int y, LandscapeGenParams params) {
+  Color colorAt(
+    int x,
+    int y,
+    LandscapeGenParams params, {
+    WorldTheme? theme,
+  }) {
+    final look = theme ?? WorldTheme.paperDiorama;
     final i = index(x, y);
     final paintId = paintIds[i];
     if (paintId >= 0 && paintId < PaperColor.values.length) {
-      return PaperColor.values[paintId].color;
+      return look.paper(PaperColor.values[paintId]);
     }
     final id = materials[i];
-    if (id < 0) return kLandscapeEmptyColor;
+    if (id < 0) return look.background;
     final material = LandscapeMaterial.values[id];
     return params.gradients[material]!.sample(colorT[index(x, y)]);
   }

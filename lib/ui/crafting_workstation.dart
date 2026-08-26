@@ -24,6 +24,7 @@ import '../geometry/prefabs/prefab_factory.dart';
 import '../rendering/iso/friend_expression.dart';
 import '../rendering/lights.dart';
 import '../rendering/scene/camera.dart' as scene_camera;
+import '../theme/world_theme.dart';
 import '../tiles/tiles.dart';
 import '../gestures/gesture_system.dart';
 import 'fm_haptics.dart';
@@ -4851,7 +4852,7 @@ class CraftingTestViewState extends State<CraftingTestView>
     if (paper.materialId != null) {
       return _materialRegistry.colorFor(paper.materialId!);
     }
-    return paper.paperColor.color;
+    return paper.paperColor.resolve();
   }
 
   void _returnPaperToInventory(String paperId) {

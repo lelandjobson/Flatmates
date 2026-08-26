@@ -1,9 +1,11 @@
+import 'dart:developer';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:vector_math/vector_math_64.dart' hide Colors;
 
+import '../debug/scene_paint_stats.dart';
 import '../rendering/scene/camera.dart';
 
 /// Draws a landscape atlas as a textured ground plane (XZ, Y=0) through [camera].
@@ -27,6 +29,8 @@ class LandscapePlanePainter extends CustomPainter {
     this.clipMinZ,
     this.clipMaxZ,
     this.hideGround = false,
+    this.backgroundColor = const Color(0xFF101418),
+    this.modulateColor,
   }) : super(repaint: listenable);
 
   final Camera camera;
@@ -51,11 +55,20 @@ class LandscapePlanePainter extends CustomPainter {
   /// When true, the ground plane is omitted (crop floor is above Y=0).
   final bool hideGround;
 
+  final Color backgroundColor;
+
+  /// Optional multiply tint (day → night). Applied on the textured draw so
+  /// Impeller does not need a [ColorFiltered] saveLayer around the plane.
+  final Color? modulateColor;
+
+  static ui.Image? _atlasImage;
+  static ui.ImageShader? _atlasShader;
+
   static final Paint _imagePaint = Paint()
     ..isAntiAlias = false
     ..filterQuality = FilterQuality.none;
 
-  static final Paint _bgPaint = Paint()..color = const Color(0xFF101418);
+  static final Paint _bgPaint = Paint();
 
   static final Paint _gridPaint = Paint()
     ..color = const Color(0x55FFFFFF)
@@ -75,20 +88,61 @@ class LandscapePlanePainter extends CustomPainter {
     ..style = PaintingStyle.stroke
     ..isAntiAlias = true;
 
+  ColorFilter? get _modulateFilter {
+    final color = modulateColor;
+    if (color == null || color == const Color(0xFFFFFFFF)) return null;
+    return ColorFilter.mode(color, BlendMode.modulate);
+  }
+
+  static ui.ImageShader _shaderFor(ui.Image img) {
+    final cached = _atlasShader;
+    if (identical(_atlasImage, img) && cached != null) return cached;
+    cached?.dispose();
+    _atlasImage = img;
+    return _atlasShader = ui.ImageShader(
+      img,
+      TileMode.clamp,
+      TileMode.clamp,
+      Matrix4.identity().storage,
+    );
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.drawRect(Offset.zero & size, _bgPaint);
+    final sw = Stopwatch()..start();
+    Timeline.startSync('LandscapePlane');
+    final filter = _modulateFilter;
+    _bgPaint.colorFilter = filter;
+    _imagePaint.colorFilter = filter;
+    _gridPaint.colorFilter = filter;
+    _borderPaint.colorFilter = filter;
+    _hoverPaint.colorFilter = filter;
+    try {
+      canvas.drawRect(Offset.zero & size, _bgPaint..color = backgroundColor);
 
-    final img = image;
-    if (img == null || worldSize <= 0) return;
+      final img = image;
+      if (img == null || worldSize <= 0) return;
 
-    final aspect = size.width / size.height;
-    final mvp = camera.projectionMatrix(aspect) * camera.viewMatrix;
-    final half = worldSize * 0.5;
+      final aspect = size.width / size.height;
+      final mvp = camera.projectionMatrix(aspect) * camera.viewMatrix;
+      final half = worldSize * 0.5;
 
-    _drawTessellatedPlane(canvas, mvp, size, half, img);
-    _drawTileGrid(canvas, mvp, size, half);
-    if (!hideGround) _drawHoverPixel(canvas, mvp, size, half);
+      _drawTessellatedPlane(canvas, mvp, size, half, img);
+      _drawTileGrid(canvas, mvp, size, half);
+      if (!hideGround) _drawHoverPixel(canvas, mvp, size, half);
+    } finally {
+      _bgPaint.colorFilter = null;
+      _imagePaint.colorFilter = null;
+      _imagePaint.shader = null;
+      _gridPaint.colorFilter = null;
+      _borderPaint.colorFilter = null;
+      _hoverPaint.colorFilter = null;
+      Timeline.finishSync();
+      PaintStatsProbe.landscape = ScenePaintStats(
+        source: 'landscape',
+        paintMs: sw.elapsedMicroseconds / 1000.0,
+      );
+    }
   }
 
   void _drawHoverPixel(Canvas canvas, Matrix4 mvp, Size size, double half) {
@@ -140,9 +194,7 @@ class LandscapePlanePainter extends CustomPainter {
     }
     // Enough subdivisions to keep affine UV error invisible while orbiting.
     // Prefer at least 2 segments per tile, capped for performance.
-    final segments = math
-        .max(tilesSide * 2, 24)
-        .clamp(1, 64);
+    final segments = math.max(tilesSide * 2, 24).clamp(1, 64);
 
     final tw = img.width.toDouble();
     final th = img.height.toDouble();
@@ -197,13 +249,7 @@ class LandscapePlanePainter extends CustomPainter {
 
     if (positions.isEmpty) return;
 
-    final shader = ui.ImageShader(
-      img,
-      TileMode.clamp,
-      TileMode.clamp,
-      Matrix4.identity().storage,
-    );
-    _imagePaint.shader = shader;
+    _imagePaint.shader = _shaderFor(img);
     canvas.drawVertices(
       ui.Vertices(
         VertexMode.triangles,
@@ -213,7 +259,6 @@ class LandscapePlanePainter extends CustomPainter {
       BlendMode.srcOver,
       _imagePaint,
     );
-    _imagePaint.shader = null;
   }
 
   void _drawVisibleTiles(
@@ -271,10 +316,22 @@ class LandscapePlanePainter extends CustomPainter {
           if (p00 == null || p10 == null || p11 == null || p01 == null) {
             continue;
           }
-          final t00 = Offset((u0 + fu0 * (u1 - u0)) * tw, (v0 + fv0 * (v1 - v0)) * th);
-          final t10 = Offset((u0 + fu1 * (u1 - u0)) * tw, (v0 + fv0 * (v1 - v0)) * th);
-          final t11 = Offset((u0 + fu1 * (u1 - u0)) * tw, (v0 + fv1 * (v1 - v0)) * th);
-          final t01 = Offset((u0 + fu0 * (u1 - u0)) * tw, (v0 + fv1 * (v1 - v0)) * th);
+          final t00 = Offset(
+            (u0 + fu0 * (u1 - u0)) * tw,
+            (v0 + fv0 * (v1 - v0)) * th,
+          );
+          final t10 = Offset(
+            (u0 + fu1 * (u1 - u0)) * tw,
+            (v0 + fv0 * (v1 - v0)) * th,
+          );
+          final t11 = Offset(
+            (u0 + fu1 * (u1 - u0)) * tw,
+            (v0 + fv1 * (v1 - v0)) * th,
+          );
+          final t01 = Offset(
+            (u0 + fu0 * (u1 - u0)) * tw,
+            (v0 + fv1 * (v1 - v0)) * th,
+          );
           positions
             ..add(p00)
             ..add(p10)
@@ -293,13 +350,7 @@ class LandscapePlanePainter extends CustomPainter {
       }
     }
     if (positions.isEmpty) return;
-    final shader = ui.ImageShader(
-      img,
-      TileMode.clamp,
-      TileMode.clamp,
-      Matrix4.identity().storage,
-    );
-    _imagePaint.shader = shader;
+    _imagePaint.shader = _shaderFor(img);
     canvas.drawVertices(
       ui.Vertices(
         VertexMode.triangles,
@@ -309,7 +360,6 @@ class LandscapePlanePainter extends CustomPainter {
       BlendMode.srcOver,
       _imagePaint,
     );
-    _imagePaint.shader = null;
   }
 
   void _drawTileGrid(Canvas canvas, Matrix4 mvp, Size size, double half) {
@@ -412,6 +462,8 @@ class LandscapePlanePainter extends CustomPainter {
         oldDelegate.clipMinZ != clipMinZ ||
         oldDelegate.clipMaxZ != clipMaxZ ||
         oldDelegate.hideGround != hideGround ||
+        oldDelegate.backgroundColor != backgroundColor ||
+        oldDelegate.modulateColor != modulateColor ||
         oldDelegate.camera != camera ||
         oldDelegate.listenable != listenable;
   }

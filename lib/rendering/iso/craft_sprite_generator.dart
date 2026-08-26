@@ -8,6 +8,7 @@ import '../../crafting/completed_craft.dart';
 import '../../crafting/crafting_blueprint.dart';
 import '../../crafting/crafting_material.dart';
 import '../../data/crafting_state.dart';
+import '../../theme/world_theme.dart';
 import '../../geometry/geometry_algorithms.dart' show convexHull;
 import '../../rendering/scene/camera.dart' as scene_camera show Camera, ProjectionType;
 import 'iso_projection.dart';
@@ -396,7 +397,7 @@ class CraftSpriteGenerator {
     if (paper.materialId != null) {
       return _registry.colorFor(paper.materialId!);
     }
-    return paper.paperColor.color;
+    return paper.paperColor.resolve();
   }
 
   Color _dominantColor(CompletedCraft craft) {

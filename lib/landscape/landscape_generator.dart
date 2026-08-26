@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../rendering/iso/perlin_noise.dart';
+import '../theme/world_theme.dart';
 import 'landscape_grid.dart';
 import 'landscape_material.dart';
 
@@ -13,42 +14,161 @@ import 'landscape_material.dart';
 class LandscapeGenerator {
   LandscapeGenerator(this.params)
       : _noise = PerlinNoise(seed: params.seed),
-        _cdf = _buildCdf(params.normalizedWeights());
+        _terrainCdf = _cdfFor(kLandscapeTerrainFlow, params.weights),
+        _forageCdf = _cdfFor(kLandscapeForage, params.weights),
+        _forageShare = _groupShare(kLandscapeForage, params.weights) {
+    final freq = params.noiseFrequency;
+    _terrainThresholds = _probeQuantiles(
+      cdf: _terrainCdf,
+      ox: 0,
+      oy: 0,
+      freq: freq,
+    );
+    _forageThreshold = _probeShareThreshold(
+      share: _forageShare,
+      ox: 81.3,
+      oy: -44.7,
+      freq: freq * 2.15,
+    );
+    _foragePickThresholds = _probeQuantiles(
+      cdf: _forageCdf,
+      ox: 203.1,
+      oy: 97.4,
+      freq: freq * 1.35,
+    );
+  }
 
   final LandscapeGenParams params;
   final PerlinNoise _noise;
-  final List<double> _cdf;
+  final List<double> _terrainCdf;
+  final List<double> _forageCdf;
+  final double _forageShare;
+  late final List<double> _terrainThresholds;
+  late final double _forageThreshold;
+  late final List<double> _foragePickThresholds;
 
-  static List<double> _buildCdf(List<double> weights) {
-    final cdf = List<double>.filled(weights.length, 0);
+  /// Weighted slice of [group]. Empty when every member weight is 0.
+  static List<double> _cdfFor(
+    List<LandscapeMaterial> group,
+    Map<LandscapeMaterial, double> weights,
+  ) {
+    final raw = [
+      for (final m in group) (weights[m] ?? 0).clamp(0.0, 1000.0),
+    ];
+    final sum = raw.fold<double>(0, (a, b) => a + b);
+    if (sum <= 0) return const [];
     var acc = 0.0;
-    for (var i = 0; i < weights.length; i++) {
-      acc += weights[i];
-      cdf[i] = acc;
+    return [
+      for (final w in raw) acc += w / sum,
+    ];
+  }
+
+  static double _groupShare(
+    List<LandscapeMaterial> group,
+    Map<LandscapeMaterial, double> weights,
+  ) {
+    var groupSum = 0.0;
+    var total = 0.0;
+    for (final m in LandscapeMaterial.values) {
+      final w = (weights[m] ?? 0).clamp(0.0, 1000.0);
+      total += w;
+      if (group.contains(m)) groupSum += w;
     }
-    if (cdf.isNotEmpty) cdf[cdf.length - 1] = 1.0;
-    return cdf;
+    if (total <= 0) return 0;
+    return groupSum / total;
+  }
+
+  static const int _probeCount = 1024;
+
+  List<double> _probeField({
+    required double ox,
+    required double oy,
+    required double freq,
+  }) {
+    final samples = List<double>.filled(_probeCount, 0);
+    for (var i = 0; i < _probeCount; i++) {
+      final wx = (_hash01(params.seed, i, 1, 3, 5) * 4096).floor();
+      final wy = (_hash01(params.seed, i, 7, 11, 13) * 4096).floor();
+      samples[i] = _field(wx, wy, ox: ox, oy: oy, freq: freq);
+    }
+    samples.sort();
+    return samples;
+  }
+
+  /// Raw-field cut points so each CDF bin matches its weight as coverage.
+  List<double> _probeQuantiles({
+    required List<double> cdf,
+    required double ox,
+    required double oy,
+    required double freq,
+  }) {
+    if (cdf.isEmpty) return const [];
+    final samples = _probeField(ox: ox, oy: oy, freq: freq);
+    return [
+      for (final t in cdf)
+        samples[((t.clamp(0.0, 1.0)) * (_probeCount - 1)).round()],
+    ];
+  }
+
+  double _probeShareThreshold({
+    required double share,
+    required double ox,
+    required double oy,
+    required double freq,
+  }) {
+    if (share <= 0) return double.infinity;
+    final samples = _probeField(ox: ox, oy: oy, freq: freq);
+    final t = (1.0 - share).clamp(0.0, 1.0);
+    return samples[(t * (_probeCount - 1)).round()];
+  }
+
+  double _field(
+    int wx,
+    int wy, {
+    required double ox,
+    required double oy,
+    required double freq,
+  }) {
+    final x = wx + ox;
+    final y = wy + oy;
+    final warpX = _noise.noise2(x * freq * 0.5, y * freq * 0.5) * 4.0;
+    final warpY =
+        _noise.noise2(x * freq * 0.5 + 17.3, y * freq * 0.5 - 9.1) * 4.0;
+    return _noise.fbm2(
+      (x + warpX) * freq,
+      (y + warpY) * freq,
+      octaves: 4,
+    );
+  }
+
+  LandscapeMaterial? _pickAt(
+    List<LandscapeMaterial> group,
+    List<double> thresholds,
+    double value,
+  ) {
+    if (thresholds.isEmpty) return null;
+    for (var i = 0; i < thresholds.length; i++) {
+      if (value <= thresholds[i]) return group[i];
+    }
+    return group.last;
   }
 
   LandscapeMaterial materialAt(int wx, int wy) {
     final freq = params.noiseFrequency;
-    final warpX = _noise.noise2(wx * freq * 0.5, wy * freq * 0.5) * 4.0;
-    final warpY =
-        _noise.noise2(wx * freq * 0.5 + 17.3, wy * freq * 0.5 - 9.1) * 4.0;
-    final n = _noise.fbm2(
-      (wx + warpX) * freq,
-      (wy + warpY) * freq,
-      octaves: 4,
-    );
-    final t = ((n + 1) * 0.5).clamp(0.0, 1.0);
-    return _materialFromUnit(t);
-  }
 
-  LandscapeMaterial _materialFromUnit(double t) {
-    for (var i = 0; i < _cdf.length; i++) {
-      if (t <= _cdf[i]) return LandscapeMaterial.values[i];
+    // Forage patches live on their own field so they don't steal the
+    // water→dirt→grass→rock continuum.
+    if (_forageCdf.isNotEmpty && _forageShare > 0) {
+      final forage = _field(wx, wy, ox: 81.3, oy: -44.7, freq: freq * 2.15);
+      if (forage > _forageThreshold) {
+        final which = _field(wx, wy, ox: 203.1, oy: 97.4, freq: freq * 1.35);
+        return _pickAt(kLandscapeForage, _foragePickThresholds, which)!;
+      }
     }
-    return LandscapeMaterial.values.last;
+
+    final ground = _field(wx, wy, ox: 0, oy: 0, freq: freq);
+    return _pickAt(kLandscapeTerrainFlow, _terrainThresholds, ground) ??
+        LandscapeMaterial.grass;
   }
 
   Color colorAt(int wx, int wy) {
@@ -89,13 +209,16 @@ class LandscapeGenerator {
   }
 
   /// Procedural fill then atlas bake.
-  Future<ui.Image> bakeAtlas() async {
+  Future<ui.Image> bakeAtlas({WorldTheme? theme}) async {
     final grid = LandscapeGrid.fromGenerator(this);
-    return bakeAtlasFromGrid(grid);
+    return bakeAtlasFromGrid(grid, theme: theme);
   }
 
-  /// Bake [grid] to an RGBA atlas (empty → background black), with sharpness.
-  Future<ui.Image> bakeAtlasFromGrid(LandscapeGrid grid) async {
+  /// Bake [grid] to an RGBA atlas (empty → theme background), with sharpness.
+  Future<ui.Image> bakeAtlasFromGrid(
+    LandscapeGrid grid, {
+    WorldTheme? theme,
+  }) async {
     final p = params.clamped();
     final side = grid.side;
     final sharp = p.sharpness;
@@ -103,7 +226,7 @@ class LandscapeGenerator {
 
     for (var y = 0; y < side; y++) {
       for (var x = 0; x < side; x++) {
-        base[y * side + x] = packRgba(grid.colorAt(x, y, p));
+        base[y * side + x] = packRgba(grid.colorAt(x, y, p, theme: theme));
       }
     }
 

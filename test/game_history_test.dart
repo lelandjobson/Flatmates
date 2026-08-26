@@ -3,6 +3,8 @@ import 'package:flatmates/gameplay/paint/face_paint_store.dart';
 import 'package:flatmates/gameplay/paths/path_store.dart';
 import 'package:flatmates/gameplay/volumes/volume.dart';
 import 'package:flatmates/gameplay/volumes/volume_store.dart';
+import 'package:flatmates/gameplay/walls/wall_edge.dart';
+import 'package:flatmates/gameplay/walls/wall_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -10,11 +12,13 @@ void main() {
     VolumeStore volumes,
     PathStore paths,
     FacePaintStore paint, {
+    WallStore? walls,
     String label = 'test',
   }) {
     return GameSnapshot.capture(
       volumes: volumes,
       paths: paths,
+      walls: walls ?? WallStore(grid: volumes.grid),
       landscape: null,
       facePaint: paint,
       label: label,
@@ -25,11 +29,13 @@ void main() {
     GameSnapshot snap,
     VolumeStore volumes,
     PathStore paths,
-    FacePaintStore paint,
-  ) {
+    FacePaintStore paint, {
+    WallStore? walls,
+  }) {
     snap.applyTo(
       volumes: volumes,
       paths: paths,
+      walls: walls ?? WallStore(grid: volumes.grid),
       landscape: null,
       facePaint: paint,
     );
@@ -108,6 +114,36 @@ void main() {
     expect(volumes.volumes.single.cells, hasLength(1));
     expect(volumes.volumes.single.cells.single.tx, 3);
     expect(volumes.volumes.single.cells.single.ty, 3);
+  });
+
+  test('undo and redo restore a painted wall', () {
+    final volumes = VolumeStore();
+    final paths = PathStore(grid: volumes.grid);
+    final walls = WallStore(grid: volumes.grid);
+    final paint = FacePaintStore();
+    final history = GameHistory();
+
+    final before = capture(volumes, paths, paint, walls: walls);
+    expect(walls.add(WallEdge(2, 3, 3, 3)), isTrue);
+    history.pushSnapshot(before);
+
+    apply(
+      history.undo(capture(volumes, paths, paint, walls: walls))!,
+      volumes,
+      paths,
+      paint,
+      walls: walls,
+    );
+    expect(walls.contains(WallEdge(2, 3, 3, 3)), isFalse);
+
+    apply(
+      history.redo(capture(volumes, paths, paint, walls: walls))!,
+      volumes,
+      paths,
+      paint,
+      walls: walls,
+    );
+    expect(walls.contains(WallEdge(2, 3, 3, 3)), isTrue);
   });
 
   test('snapshot clones are independent of later live mutations', () {
