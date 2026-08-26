@@ -3,6 +3,10 @@ import 'package:vector_math/vector_math_64.dart' hide Colors;
 
 import '../../geometry/prefabs/prefab_factory.dart';
 import '../../user/friend_provider.dart';
+import '../flatmates/flatmate_movement.dart';
+
+/// GameView scene object: a placed friend that walks tile routes.
+typedef Flatmate = FriendInstance;
 
 /// Cubeboy template used by GameView debug placement.
 const kCubeboyFriend = Friend(
@@ -13,7 +17,7 @@ const kCubeboyFriend = Friend(
   color: Colors.lightGreenAccent,
 );
 
-/// A 3D friend placed in GameView. Not part of the iso / [FriendManager] path.
+/// A 3D [Flatmate] placed in GameView. Not part of the iso / [FriendManager] path.
 class FriendInstance {
   FriendInstance({
     required this.id,
@@ -26,6 +30,7 @@ class FriendInstance {
   final Friend friend;
   final Vector3 position;
   double yaw;
+  final FlatmateMovement movement = FlatmateMovement();
 
   FriendInstance clone() => FriendInstance(
         id: id,

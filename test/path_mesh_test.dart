@@ -1,4 +1,7 @@
 import 'package:flatmates/gameplay/paths/path_mesh.dart';
+import 'package:flatmates/gameplay/paths/path_store.dart';
+import 'package:flatmates/gameplay/volumes/volume_store.dart';
+import 'package:flatmates/rendering/scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math_64.dart';
 
@@ -19,5 +22,15 @@ void main() {
     final b = geom.vertices[face[2]] - geom.vertices[face[0]];
     final normal = a.cross(b);
     expect(normal.y, greaterThan(0));
+  });
+
+  test('path meshes skip seam strokes and request a surface grid', () {
+    final scene = Scene();
+    final volumes = VolumeStore();
+    final paths = PathStore(grid: volumes.grid)..addIsland(1, 1);
+    syncPathMeshes(scene, paths, volumes);
+    final mesh = scene.meshes.singleWhere((m) => m.id.startsWith('path_'));
+    expect(mesh.material.strokeEdges, isFalse);
+    expect(mesh.material.surfaceGrid, isTrue);
   });
 }

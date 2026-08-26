@@ -75,6 +75,8 @@ void main() {
     expect(regions, hasLength(2));
     final tiles = enclosedTilesOf(regions);
     expect(tiles, {(1, 1), (5, 6)});
+    expect(wallRegionContaining(regions, 5, 6)?.tiles, {(5, 6)});
+    expect(wallRegionContaining(regions, 2, 2), isNull);
   });
 
   test('two rooms that share a wall are distinct inner faces', () {

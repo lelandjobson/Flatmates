@@ -109,6 +109,44 @@ class LandscapeGrid {
     return changed;
   }
 
+  /// Flood 4-connected pixels that share [x],[y]'s landscape material.
+  ///
+  /// Stops at a different material, void, or when [allow] rejects a pixel.
+  /// Used to fill one like-material pocket inside a walled region.
+  bool fillConnectedMaterial(
+    int x,
+    int y,
+    PaperColor color, {
+    bool Function(int x, int y)? allow,
+  }) {
+    if (!inBounds(x, y) || isVoid(x, y)) return false;
+    if (allow != null && !allow(x, y)) return false;
+    final seed = materials[index(x, y)];
+
+    bool same(int cx, int cy) {
+      if (!inBounds(cx, cy) || isVoid(cx, cy)) return false;
+      if (allow != null && !allow(cx, cy)) return false;
+      return materials[index(cx, cy)] == seed;
+    }
+
+    var changed = false;
+    final stack = <(int, int)>[(x, y)];
+    final seen = <int>{};
+    while (stack.isNotEmpty) {
+      final (cx, cy) = stack.removeLast();
+      if (!same(cx, cy)) continue;
+      final i = index(cx, cy);
+      if (!seen.add(i)) continue;
+      if (paint(cx, cy, color)) changed = true;
+      stack
+        ..add((cx + 1, cy))
+        ..add((cx - 1, cy))
+        ..add((cx, cy + 1))
+        ..add((cx, cy - 1));
+    }
+    return changed;
+  }
+
   LandscapeMaterial? materialAt(int x, int y) {
     final id = materials[index(x, y)];
     if (id < 0) return null;

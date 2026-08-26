@@ -16,8 +16,8 @@ class MapLookCameraController extends ChangeNotifier {
     required TickerProvider vsync,
     Vector3? lookAt,
     double? distance,
-    this.minDistance = 24,
-    this.maxDistance = 400,
+    double minDistance = 24,
+    double maxDistance = 400,
     int zoomStepCount = 3,
     this.ladderZoom = true,
     this.pitch = defaultPitch,
@@ -29,6 +29,8 @@ class MapLookCameraController extends ChangeNotifier {
         _lookAt = Vector3(lookAt?.x ?? 0, 0, lookAt?.z ?? 0),
         _boundsMin = boundsMin,
         _boundsMax = boundsMax,
+        _minDistance = minDistance,
+        _maxDistance = math.max(maxDistance, minDistance + 1),
         _yaw = yaw {
     _steps = ladderZoom ? _buildSteps() : const [];
     final start = distance ??
@@ -63,8 +65,10 @@ class MapLookCameraController extends ChangeNotifier {
   static const _kStepLabels3 = ['close', 'medium', 'far'];
 
   final Camera camera;
-  final double minDistance;
-  final double maxDistance;
+  double _minDistance;
+  double _maxDistance;
+  double get minDistance => _minDistance;
+  double get maxDistance => _maxDistance;
 
   /// Ladder stops between [minDistance] and [maxDistance], inclusive. ≥ 2.
   final int zoomStepCount;
@@ -83,7 +87,7 @@ class MapLookCameraController extends ChangeNotifier {
 
   late final AnimationController _zoomAnim;
   late final AnimationController _yawAnim;
-  late final List<double> _steps;
+  late List<double> _steps;
   late double _distance;
   late double _targetDistance;
   double _yawFrom = 0;
@@ -284,13 +288,25 @@ class MapLookCameraController extends ChangeNotifier {
     _applyPose();
   }
 
+  /// Live-update the nearest zoom. Clamps the current distance and pose.
+  void setMinDistance(double value) {
+    _minDistance = value.clamp(8.0, _maxDistance - 1);
+    _distance = _distance.clamp(_minDistance, _maxDistance);
+    _targetDistance = _targetDistance.clamp(_minDistance, _maxDistance);
+    if (ladderZoom) _steps = _buildSteps();
+    _applyPose();
+  }
+
   /// Allow passing min/max, with increasing resistance (assembly-style).
+  ///
+  /// Close-side overshoot is a fraction of [minDistance], not the full zoom
+  /// span — otherwise a wide far-range lets the camera pass through the
+  /// look-at and invert the projection.
   double _rubberBand(double proposed) {
     if (proposed >= minDistance && proposed <= maxDistance) return proposed;
-    final span = math.max(maxDistance - minDistance, 1.0);
-    final soft = span * 0.15;
-    final hard = span * 0.4;
     if (proposed < minDistance) {
+      final soft = minDistance * 0.06;
+      final hard = minDistance * 0.14;
       final extra = minDistance - proposed;
       if (extra >= hard) return minDistance - hard;
       if (extra <= soft) return proposed;
@@ -298,6 +314,9 @@ class MapLookCameraController extends ChangeNotifier {
       final resisted = soft + (hard - soft) * (1 - (1 - t) * (1 - t));
       return minDistance - resisted;
     }
+    final span = math.max(maxDistance - minDistance, 1.0);
+    final soft = span * 0.15;
+    final hard = span * 0.4;
     final extra = proposed - maxDistance;
     if (extra >= hard) return maxDistance + hard;
     if (extra <= soft) return proposed;

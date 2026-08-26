@@ -15,6 +15,10 @@ class DevToolsPanel extends StatelessWidget {
     required this.onNightSwatchChanged,
     required this.dayNightProgress,
     required this.onDayNightProgressChanged,
+    this.closeZoom,
+    this.onCloseZoomChanged,
+    this.closeZoomMin = 20,
+    this.closeZoomMax = 80,
     required this.perf,
     required this.onPerfChanged,
   });
@@ -26,6 +30,10 @@ class DevToolsPanel extends StatelessWidget {
   final ValueChanged<NightSwatch> onNightSwatchChanged;
   final double dayNightProgress;
   final ValueChanged<double> onDayNightProgressChanged;
+  final double? closeZoom;
+  final ValueChanged<double>? onCloseZoomChanged;
+  final double closeZoomMin;
+  final double closeZoomMax;
   final PerfDebugSettings perf;
   final VoidCallback onPerfChanged;
 
@@ -40,7 +48,7 @@ class DevToolsPanel extends StatelessWidget {
       child: SizedBox(
         width: 248,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 420),
+          constraints: const BoxConstraints(maxHeight: 500),
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
             child: Column(
@@ -146,30 +154,39 @@ class DevToolsPanel extends StatelessWidget {
                   'Day → night  ${dayNightProgress.toStringAsFixed(2)}',
                   style: const TextStyle(color: Colors.white70, fontSize: 11),
                 ),
-                SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 2,
-                    thumbShape: const RoundSliderThumbShape(
-                      enabledThumbRadius: 7,
-                    ),
-                    overlayShape: const RoundSliderOverlayShape(
-                      overlayRadius: 14,
-                    ),
-                    activeTrackColor: Colors.white70,
-                    inactiveTrackColor: Colors.white24,
-                    thumbColor: Colors.white,
-                  ),
-                  child: Slider(
-                    min: 0,
-                    max: 1,
-                    value: dayNightProgress.clamp(0.0, 1.0),
-                    onChanged: onDayNightProgressChanged,
-                  ),
+                _DevSlider(
+                  value: dayNightProgress.clamp(0.0, 1.0),
+                  min: 0,
+                  max: 1,
+                  onChanged: onDayNightProgressChanged,
                 ),
+                if (closeZoom != null && onCloseZoomChanged != null) ...[
+                  const SizedBox(height: 8),
+                  const _CategoryHeader('Camera'),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Close zoom  ${closeZoom!.round()}',
+                    style: const TextStyle(color: Colors.white70, fontSize: 11),
+                  ),
+                  _DevSlider(
+                    value: closeZoom!.clamp(closeZoomMin, closeZoomMax),
+                    min: closeZoomMin,
+                    max: closeZoomMax,
+                    onChanged: onCloseZoomChanged!,
+                  ),
+                  Text(
+                    'Nearest look distance. Too close flips the projection.',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.45),
+                      fontSize: 10,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 6),
                 const _TabChip(label: 'Assets', selected: true),
                 const SizedBox(height: 10),
-                const _CategoryHeader('Friends'),
+                const _CategoryHeader('Flatmates'),
                 const SizedBox(height: 4),
                 _AssetButton(label: 'Cubeboy', onTap: onPlaceCubeboy),
                 const SizedBox(height: 10),
@@ -180,6 +197,40 @@ class DevToolsPanel extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _DevSlider extends StatelessWidget {
+  const _DevSlider({
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.onChanged,
+  });
+
+  final double value;
+  final double min;
+  final double max;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SliderTheme(
+      data: SliderTheme.of(context).copyWith(
+        trackHeight: 2,
+        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+        overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+        activeTrackColor: Colors.white70,
+        inactiveTrackColor: Colors.white24,
+        thumbColor: Colors.white,
+      ),
+      child: Slider(
+        min: min,
+        max: max,
+        value: value,
+        onChanged: onChanged,
       ),
     );
   }

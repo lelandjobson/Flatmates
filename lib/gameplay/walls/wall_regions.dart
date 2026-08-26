@@ -100,6 +100,18 @@ Set<(int, int)> enclosedTilesOf(Iterable<WallRegion> regions) {
   return {for (final region in regions) ...region.tiles};
 }
 
+/// Enclosed region that contains tile ([tx], [ty]), if any.
+WallRegion? wallRegionContaining(
+  Iterable<WallRegion> regions,
+  int tx,
+  int ty,
+) {
+  for (final region in regions) {
+    if (region.tiles.contains((tx, ty))) return region;
+  }
+  return null;
+}
+
 /// Perimeter segments of [tiles] in vertex space (unit grid edges).
 List<WallEdge> tileSetOutline(Set<(int, int)> tiles) {
   final outline = <WallEdge>[];

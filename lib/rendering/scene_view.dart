@@ -1,5 +1,6 @@
 import 'dart:developer';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:vector_math/vector_math_64.dart' hide Colors;
@@ -10,22 +11,29 @@ import '../geometry/geometry.dart';
 import 'lights.dart';
 import 'mesh.dart';
 import 'scene/camera.dart';
+import 'scene/grid_motif.dart';
 import 'scene/scene.dart';
 
 class SceneView extends StatelessWidget {
   const SceneView({
     super.key,
     required this.scene,
+    this.gridMotif,
     this.debugOptions = const SceneDebugOptions(),
   });
 
   final Scene scene;
+  final GridMotif? gridMotif;
   final SceneDebugOptions debugOptions;
 
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
-      painter: ScenePainter(scene: scene, debugOptions: debugOptions),
+      painter: ScenePainter(
+        scene: scene,
+        gridMotif: gridMotif,
+        debugOptions: debugOptions,
+      ),
       isComplex: true,
       willChange: true,
     );
@@ -35,11 +43,13 @@ class SceneView extends StatelessWidget {
 class ScenePainter extends CustomPainter {
   ScenePainter({
     required Scene scene,
+    this.gridMotif,
     this.debugOptions = const SceneDebugOptions(),
   }) : _scene = scene,
        super(repaint: scene);
 
   final Scene _scene;
+  final GridMotif? gridMotif;
   final SceneDebugOptions debugOptions;
 
   @override
@@ -127,6 +137,7 @@ class ScenePainter extends CustomPainter {
         isTessellated: isTessellated,
         facesToDraw: facesToDraw,
         normalsToDraw: normalsToDraw,
+        gridMotif: gridMotif,
       );
 
       // --- Wireframe pass for tessellated meshes: use original geometry ---
@@ -161,8 +172,32 @@ class ScenePainter extends CustomPainter {
 
     // Pool for colored edge strokes (wireframe & non-opaque materials).
     final edgePool = <Color, Paint>{};
+    final motif = gridMotif;
+    final gridPaint = Paint()
+      ..isAntiAlias = false
+      ..filterQuality = FilterQuality.none;
+    if (motif != null) gridPaint.shader = motif.shader;
+    final gridPositions = <Offset>[];
+    final gridUvs = <Offset>[];
+
+    void flushGrid() {
+      if (motif == null || gridPositions.isEmpty) return;
+      canvas.drawVertices(
+        ui.Vertices(
+          VertexMode.triangles,
+          gridPositions,
+          textureCoordinates: gridUvs,
+        ),
+        BlendMode.srcOver,
+        gridPaint,
+      );
+      drawCalls++;
+      gridPositions.clear();
+      gridUvs.clear();
+    }
 
     for (final face in facesToDraw) {
+      if (face.gridPositions == null) flushGrid();
       final path = Path()..addPolygon(face.points, true);
 
       if (face.isWireframe) {
@@ -227,7 +262,16 @@ class ScenePainter extends CustomPainter {
         canvas.drawPath(path, strokePaint);
         drawCalls++;
       }
+
+      final gp = face.gridPositions;
+      final gu = face.gridUvs;
+      if (gp != null && gu != null && gp.isNotEmpty) {
+        gridPositions.addAll(gp);
+        gridUvs.addAll(gu);
+      }
     }
+    flushGrid();
+    gridPaint.shader = null;
 
     // Draw wireframe for tessellated meshes from their original edges.
     if (wireframeEdges.isNotEmpty) {
@@ -266,6 +310,7 @@ class ScenePainter extends CustomPainter {
     required bool isTessellated,
     required List<_ProjectedFace> facesToDraw,
     required List<_ProjectedNormal> normalsToDraw,
+    GridMotif? gridMotif,
   }) {
     final faces = geometry.faces;
 
@@ -357,6 +402,43 @@ class ScenePainter extends CustomPainter {
                       )
                     : litColor));
 
+      List<Offset>? motifPositions;
+      List<Offset>? motifUvs;
+      final motif = gridMotif;
+      if (mesh.material.surfaceGrid && motif != null && worldVertices.isNotEmpty) {
+        var minX = worldVertices.first.x;
+        var maxX = minX;
+        var minZ = worldVertices.first.z;
+        var maxZ = minZ;
+        for (final v in worldVertices) {
+          if (v.x < minX) minX = v.x;
+          if (v.x > maxX) maxX = v.x;
+          if (v.z < minZ) minZ = v.z;
+          if (v.z > maxZ) maxZ = v.z;
+        }
+        final y = faceCenter.y;
+        motifPositions = <Offset>[];
+        motifUvs = <Offset>[];
+        GridMotif.projectCells(
+          minX: minX,
+          maxX: maxX,
+          minZ: minZ,
+          maxZ: maxZ,
+          y: y,
+          worldSize: motif.worldSize,
+          imageWidth: motif.image.width.toDouble(),
+          imageHeight: motif.image.height.toDouble(),
+          project: (x, py, z) =>
+              _projectToScreen(Vector3(x, py, z), viewProjection, size),
+          positions: motifPositions,
+          texCoords: motifUvs,
+        );
+        if (motifPositions.isEmpty) {
+          motifPositions = null;
+          motifUvs = null;
+        }
+      }
+
       facesToDraw.add(
         _ProjectedFace(
           points: points,
@@ -369,6 +451,8 @@ class ScenePainter extends CustomPainter {
           edgeColor: materialOpacity < 1.0 && mesh.material.strokeEdges
               ? baseColor
               : null,
+          gridPositions: motifPositions,
+          gridUvs: motifUvs,
         ),
       );
     }
@@ -441,7 +525,9 @@ class ScenePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant ScenePainter oldDelegate) =>
-      oldDelegate._scene != _scene || oldDelegate.debugOptions != debugOptions;
+      oldDelegate._scene != _scene ||
+      oldDelegate.debugOptions != debugOptions ||
+      oldDelegate.gridMotif != gridMotif;
 
   void _drawPlaceholder(Canvas canvas, Size size) {
     final textPainter = TextPainter(
@@ -470,6 +556,8 @@ class _ProjectedFace {
     this.opacity = 1.0,
     this.strokeEdges = true,
     this.edgeColor,
+    this.gridPositions,
+    this.gridUvs,
   });
 
   final List<Offset> points;
@@ -492,6 +580,10 @@ class _ProjectedFace {
   /// When non-null, edges are drawn in this colour instead of the default
   /// white stroke.  Used for non-opaque and wireframe faces.
   final Color? edgeColor;
+
+  /// World-locked [GridMotif] triangles, drawn after this face's fill.
+  final List<Offset>? gridPositions;
+  final List<Offset>? gridUvs;
 }
 
 class _ProjectedNormal {

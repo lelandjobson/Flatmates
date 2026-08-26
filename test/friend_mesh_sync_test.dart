@@ -64,6 +64,13 @@ void main() {
     expect(scaled.eyeRadiusX, closeTo(8 * 2 / 120, 1e-9));
   });
 
+  test('yaw +X puts the face on +X, matching body rotateY', () {
+    final forward = Vector3(0, 0, 1);
+    final turned = FriendMeshLayout.rotateYaw(forward, 1.5707963267948966);
+    expect(turned.x, closeTo(1, 1e-9));
+    expect(turned.z, closeTo(0, 1e-9));
+  });
+
   test('sync removes meshes for deleted friends', () {
     final scene = Scene();
     final store = FriendInstanceStore();

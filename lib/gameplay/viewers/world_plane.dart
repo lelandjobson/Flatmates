@@ -83,6 +83,18 @@ class WorldPlane {
     return Vector3(a, b, origin.z);
   }
 
+  /// Whole-subtile index of [world] on this plane's lattice.
+  (int i, int j) latticeIndex(Vector3 world) {
+    final (a, b) = worldLatticeCoords(world);
+    final s = subtileSize;
+    if (s <= 1e-8) return (0, 0);
+    return ((a / s).floor(), (b / s).floor());
+  }
+
+  /// World point at the center of lattice cell ([i], [j]).
+  Vector3 latticeCellCenter(int i, int j) =>
+      latticePoint((i + 0.5) * subtileSize, (j + 0.5) * subtileSize);
+
   (double a, double b) worldLatticeCoords(Vector3 world) {
     final nx = normal.x.abs();
     final ny = normal.y.abs();

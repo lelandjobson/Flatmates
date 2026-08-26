@@ -33,4 +33,20 @@ void main() {
     expect(b.latticePoint(3, -2).x, closeTo(a.latticePoint(3, -2).x, 1e-9));
     expect(b.latticePoint(3, -2).z, closeTo(a.latticePoint(3, -2).z, 1e-9));
   });
+
+  test('lattice index and cell center round-trip on a vertical face', () {
+    final plane = WorldPlane(
+      origin: Vector3(4, 3, 0),
+      normal: Vector3(1, 0, 0),
+      subtileSize: 2,
+    );
+    final world = Vector3(4, 5.1, -3.2);
+    final (i, j) = plane.latticeIndex(world);
+    expect(i, 2);
+    expect(j, -2);
+    final center = plane.latticeCellCenter(i, j);
+    expect(center.x, closeTo(4, 1e-9));
+    expect(center.y, closeTo(5, 1e-9));
+    expect(center.z, closeTo(-3, 1e-9));
+  });
 }

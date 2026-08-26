@@ -110,6 +110,7 @@ class MaterialModel {
     this.wireframe = false,
     this.opacity = 1.0,
     this.strokeEdges = true,
+    this.surfaceGrid = false,
     List<Color>? perFaceColors,
     this.exactPerFaceColors = false,
   }) : _perFaceColors = perFaceColors;
@@ -120,6 +121,7 @@ class MaterialModel {
       wireframe = false,
       opacity = 1.0,
       strokeEdges = true,
+      surfaceGrid = false,
       exactPerFaceColors = false,
       _perFaceColors = _defaultRainbowPalette;
 
@@ -130,6 +132,7 @@ class MaterialModel {
       wireframe = false,
       opacity = kGhostMaterialOpacity,
       strokeEdges = true,
+      surfaceGrid = false,
       exactPerFaceColors = false,
       _perFaceColors = null;
 
@@ -146,6 +149,9 @@ class MaterialModel {
 
   /// When false, faces are filled only — no per-face edge strokes.
   final bool strokeEdges;
+
+  /// When true, the fill is stamped with a world-locked [GridMotif].
+  final bool surfaceGrid;
   final List<Color>? _perFaceColors;
   List<Color>? get perFaceColors => _perFaceColors;
 

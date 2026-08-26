@@ -77,13 +77,14 @@ class FriendMeshLayout {
     );
   }
 
+  /// Same convention as [Transformable] `Matrix4.rotateY`.
   static Vector3 rotateYaw(Vector3 local, double yaw) {
     final c = math.cos(yaw);
     final s = math.sin(yaw);
     return Vector3(
-      local.x * c - local.z * s,
+      local.x * c + local.z * s,
       local.y,
-      local.x * s + local.z * c,
+      -local.x * s + local.z * c,
     );
   }
 

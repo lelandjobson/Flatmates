@@ -24,7 +24,7 @@ class FriendGizmoTarget implements GizmoTarget {
   String get id => 'friend:${instance.id}';
 
   @override
-  bool get allowsVertical => true;
+  bool get allowsVertical => false;
 
   @override
   Vector3 get worldCenter => Vector3.copy(instance.position);

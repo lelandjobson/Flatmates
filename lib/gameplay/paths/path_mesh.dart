@@ -72,6 +72,8 @@ void syncPathMeshes(
         color: pathColor,
         wireframe: false,
         doubleSided: true,
+        strokeEdges: false,
+        surfaceGrid: true,
       );
       final existing = scene.meshById(id);
       if (existing == null) {

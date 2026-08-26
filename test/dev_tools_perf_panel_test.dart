@@ -40,6 +40,8 @@ void main() {
             onNightSwatchChanged: (_) {},
             dayNightProgress: 0,
             onDayNightProgressChanged: (_) {},
+            closeZoom: 42,
+            onCloseZoomChanged: (_) {},
             perf: perf,
             onPerfChanged: () => changed++,
           ),
@@ -67,6 +69,9 @@ void main() {
     expect(perf.hiddenLayers, contains(SceneLayer.landscape));
     await tester.tap(find.text('land'));
     expect(perf.hiddenLayers, isNot(contains(SceneLayer.landscape)));
+
+    expect(find.text('Camera'), findsOneWidget);
+    expect(find.text('Close zoom  42'), findsOneWidget);
   });
 
   testWidgets('frame hud starts collapsed on a dash fps', (tester) async {

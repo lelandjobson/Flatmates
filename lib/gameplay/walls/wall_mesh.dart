@@ -5,42 +5,54 @@ import '../../geometry/geometry.dart';
 import '../../rendering/mesh.dart';
 import '../../rendering/scene/scene.dart';
 import '../../theme/world_theme.dart';
-import '../volumes/volume_box_mesh.dart';
 import 'wall_edge.dart';
 import 'wall_store.dart';
 
 /// Short fence: about one-fifth of a full volume height.
 const kFenceHeight = 1.25;
 
-/// Thickness across the edge, in world units.
-const kFenceThickness = 0.38;
-
 String wallMeshId(WallEdge edge) =>
     'wall_${edge.x0}_${edge.y0}_${edge.x1}_${edge.y1}';
 
+/// Degenerate AABB of the fence plane (zero thickness across the edge).
 (Vector3 min, Vector3 max) wallWorldAabb(WallStore store, WallEdge edge) {
   final a = store.vertexWorld(edge.x0, edge.y0);
   final b = store.vertexWorld(edge.x1, edge.y1);
-  final half = kFenceThickness * 0.5;
   if (edge.isHorizontal) {
     final z = a.z;
     final minX = a.x < b.x ? a.x : b.x;
     final maxX = a.x < b.x ? b.x : a.x;
-    return (
-      Vector3(minX, 0, z - half),
-      Vector3(maxX, kFenceHeight, z + half),
-    );
+    return (Vector3(minX, 0, z), Vector3(maxX, kFenceHeight, z));
   }
   final x = a.x;
   final minZ = a.z < b.z ? a.z : b.z;
   final maxZ = a.z < b.z ? b.z : a.z;
-  return (
-    Vector3(x - half, 0, minZ),
-    Vector3(x + half, kFenceHeight, maxZ),
+  return (Vector3(x, 0, minZ), Vector3(x, kFenceHeight, maxZ));
+}
+
+/// One vertical quad along [edge]. Drawn double-sided so corners meet on a
+/// shared vertex instead of overlapping boxes.
+Geometry wallFaceGeometry({
+  required Vector3 a,
+  required Vector3 b,
+  required String id,
+}) {
+  return Geometry(
+    id: id,
+    name: 'WallFace',
+    vertices: [
+      Vector3(a.x, 0, a.z),
+      Vector3(b.x, 0, b.z),
+      Vector3(b.x, kFenceHeight, b.z),
+      Vector3(a.x, kFenceHeight, a.z),
+    ],
+    faces: const [
+      [0, 1, 2, 3],
+    ],
   );
 }
 
-/// Syncs short fence boxes on [scene] to match [store].
+/// Syncs fence planes on [scene] to match [store].
 void syncWallMeshes(
   Scene scene,
   WallStore store, {
@@ -51,8 +63,9 @@ void syncWallMeshes(
   for (final edge in store.edges) {
     final id = wallMeshId(edge);
     wanted.add(id);
-    final (min, max) = wallWorldAabb(store, edge);
-    final geometry = volumeBoxGeometry(min: min, max: max, id: id);
+    final a = store.vertexWorld(edge.x0, edge.y0);
+    final b = store.vertexWorld(edge.x1, edge.y1);
+    final geometry = wallFaceGeometry(a: a, b: b, id: id);
     final material = MaterialModel(
       color: wallColor,
       wireframe: false,

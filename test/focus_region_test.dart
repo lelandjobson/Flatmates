@@ -2,6 +2,7 @@ import 'package:flatmates/gameplay/paths/path_store.dart';
 import 'package:flatmates/gameplay/viewers/focus_region.dart';
 import 'package:flatmates/gameplay/volumes/volume.dart';
 import 'package:flatmates/gameplay/volumes/volume_store.dart';
+import 'package:flatmates/gameplay/walls/wall_regions.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -41,6 +42,99 @@ void main() {
     expect(region.contains(4, 3), isTrue);
     expect(region.contains(0, 2), isFalse);
     expect(region.contains(5, 2), isFalse);
+  });
+
+  test('C-shaped volume isolates a padded rectangle that fills the mouth', () {
+    final volume = Volume(
+      id: 1,
+      cells: [
+        VolumeCell(tx: 2, ty: 1, box: BoxPrimitive()),
+        VolumeCell(tx: 3, ty: 1, box: BoxPrimitive()),
+        VolumeCell(tx: 4, ty: 1, box: BoxPrimitive()),
+        VolumeCell(tx: 2, ty: 2, box: BoxPrimitive()),
+        VolumeCell(tx: 2, ty: 3, box: BoxPrimitive()),
+        VolumeCell(tx: 3, ty: 3, box: BoxPrimitive()),
+        VolumeCell(tx: 4, ty: 3, box: BoxPrimitive()),
+      ],
+    );
+    final region = FocusRegion.aroundVolume(grid: grid, volume: volume);
+    expect(region.minTx, 1);
+    expect(region.minTy, 0);
+    expect(region.maxTx, 5);
+    expect(region.maxTy, 4);
+    expect(region.contains(3, 2), isTrue);
+    expect(region.contains(4, 2), isTrue);
+    expect(region.contains(0, 1), isFalse);
+  });
+
+  test('wall region click isolates the region bbox plus one tile', () {
+    final yard = WallRegion({(2, 2), (3, 2), (2, 3), (3, 3)});
+    final region = isolateFocusRegion(
+      grid: grid,
+      tx: 3,
+      ty: 2,
+      wallRegions: [yard],
+    );
+    expect(region.minTx, 1);
+    expect(region.minTy, 1);
+    expect(region.maxTx, 4);
+    expect(region.maxTy, 4);
+    expect(region.contains(4, 4), isTrue);
+    expect(region.contains(0, 2), isFalse);
+  });
+
+  test('C-shaped wall region still isolates a rectangle', () {
+    final mouth = WallRegion({
+      (2, 1),
+      (3, 1),
+      (4, 1),
+      (2, 2),
+      (2, 3),
+      (3, 3),
+      (4, 3),
+    });
+    final region = isolateFocusRegion(
+      grid: grid,
+      tx: 4,
+      ty: 1,
+      wallRegions: [mouth],
+    );
+    expect(region.contains(3, 2), isTrue);
+    expect(region.contains(4, 2), isTrue);
+    expect(region.minTx, 1);
+    expect(region.maxTx, 5);
+    expect(region.minTy, 0);
+    expect(region.maxTy, 4);
+  });
+
+  test('bare tile click stays a clamped 3x3', () {
+    final region = isolateFocusRegion(grid: grid, tx: 4, ty: 5);
+    expect(region.tiles.length, 9);
+    expect(region.contains(3, 4), isTrue);
+    expect(region.contains(2, 5), isFalse);
+  });
+
+  test('volume click wins over a wall region on the same tile', () {
+    final volume = Volume(
+      id: 1,
+      cells: [
+        VolumeCell(tx: 2, ty: 2, box: BoxPrimitive()),
+        VolumeCell(tx: 3, ty: 2, box: BoxPrimitive()),
+      ],
+    );
+    final yard = WallRegion({(1, 1), (2, 1), (3, 1), (1, 2), (2, 2), (3, 2)});
+    final region = isolateFocusRegion(
+      grid: grid,
+      tx: 2,
+      ty: 2,
+      volume: volume,
+      wallRegions: [yard],
+    );
+    expect(region.minTx, 1);
+    expect(region.maxTx, 4);
+    expect(region.minTy, 1);
+    expect(region.maxTy, 3);
+    expect(region.contains(0, 0), isFalse);
   });
 
   test('content AABB covers focused tiles', () {
