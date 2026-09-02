@@ -28,6 +28,7 @@ List<SelectionActionSpec> inferSelectionActions({
   switch (hit.kind) {
     case SelectableKind.tile:
     case SelectableKind.region:
+    case SelectableKind.path:
       return const [
         SelectionActionSpec(
           id: SelectionActionId.isolate,
@@ -77,3 +78,6 @@ List<SelectionActionSpec> inferSelectionActions({
       ];
   }
 }
+
+/// Volume mass / face isolate opens the roof-off interior viewer, not crop isolate.
+bool isolateOpensVolumeInterior(SelectableHit hit) => hit.volumeId != null;

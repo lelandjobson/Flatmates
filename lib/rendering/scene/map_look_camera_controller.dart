@@ -8,8 +8,9 @@ import 'package:vector_math/vector_math_64.dart';
 
 import 'camera.dart';
 
-/// Locked down-looking perspective camera: diagonal yaw, fixed pitch, XZ pan.
+/// Locked down-looking perspective camera: diagonal yaw, look-at pitch, XZ pan.
 /// Zoom is either a ladder that springs to stops, or smooth between min/max.
+/// Two-finger vertical drag can peek pitch around the look-at, then spring back.
 class MapLookCameraController extends ChangeNotifier {
   MapLookCameraController({
     required this.camera,
@@ -20,7 +21,10 @@ class MapLookCameraController extends ChangeNotifier {
     double maxDistance = 400,
     int zoomStepCount = 3,
     this.ladderZoom = true,
-    this.pitch = defaultPitch,
+    double pitch = defaultPitch,
+    this.minPitch = defaultMinPitch,
+    this.maxPitch = defaultMaxPitch,
+    this.pitchPeekSensitivity = defaultPitchPeekSensitivity,
     double yaw = defaultYaw,
     this.zoomSensitivity = 0.0025,
     Vector3? boundsMin,
@@ -31,6 +35,8 @@ class MapLookCameraController extends ChangeNotifier {
         _boundsMax = boundsMax,
         _minDistance = minDistance,
         _maxDistance = math.max(maxDistance, minDistance + 1),
+        restPitch = pitch,
+        _pitch = pitch,
         _yaw = yaw {
     _steps = ladderZoom ? _buildSteps() : const [];
     final start = distance ??
@@ -51,11 +57,21 @@ class MapLookCameraController extends ChangeNotifier {
       vsync: vsync,
       duration: const Duration(milliseconds: 280),
     )..addListener(_onLookAtTick);
+    _pitchAnim = AnimationController.unbounded(vsync: vsync)
+      ..addListener(_onPitchTick);
     _applyPose(notify: false);
   }
 
   /// Pitch down from horizontal (radians). ~52° looks down along a diagonal.
   static const double defaultPitch = 52 * math.pi / 180;
+
+  /// Lowest peek: still above the horizon so the camera stays off the ground.
+  static const double defaultMinPitch = 16 * math.pi / 180;
+
+  /// Highest peek: just shy of a true top-down so the view never inverts.
+  static const double defaultMaxPitch = 86 * math.pi / 180;
+
+  static const double defaultPitchPeekSensitivity = 0.0035;
 
   /// Yaw so the camera looks along +X/+Z.
   static const double defaultYaw = math.pi / 4;
@@ -64,6 +80,12 @@ class MapLookCameraController extends ChangeNotifier {
     mass: 1,
     stiffness: 90,
     damping: 14,
+  );
+
+  static const SpringDescription pitchSpring = SpringDescription(
+    mass: 1,
+    stiffness: 80,
+    damping: 13,
   );
 
   static const _kStepLabels3 = ['close', 'medium', 'far'];
@@ -79,11 +101,15 @@ class MapLookCameraController extends ChangeNotifier {
 
   /// When false, pinch/scroll zoom is continuous and only clamps to min/max.
   final bool ladderZoom;
-  final double pitch;
+  final double restPitch;
+  final double minPitch;
+  final double maxPitch;
+  final double pitchPeekSensitivity;
   final double zoomSensitivity;
 
   double _yaw;
   double get yaw => _yaw;
+  double get pitch => _pitch;
 
   final Vector3 _lookAt;
   final Vector3? _boundsMin;
@@ -92,6 +118,7 @@ class MapLookCameraController extends ChangeNotifier {
   late final AnimationController _zoomAnim;
   late final AnimationController _yawAnim;
   late final AnimationController _lookAtAnim;
+  late final AnimationController _pitchAnim;
   Vector3? _lookAtFrom;
   Vector3? _lookAtTo;
   late List<double> _steps;
@@ -99,6 +126,9 @@ class MapLookCameraController extends ChangeNotifier {
   late double _targetDistance;
   double _yawFrom = 0;
   double _yawTo = 0;
+  double _pitch;
+  double _pitchEffort = 0;
+  bool _pitchPeeking = false;
   Size _viewportSize = Size.zero;
   bool _gestureZooming = false;
   Timer? _scrollSnap;
@@ -193,6 +223,50 @@ class MapLookCameraController extends ChangeNotifier {
     _applyPose();
   }
 
+  bool get isPitchPeeking => _pitchPeeking;
+
+  /// Two-finger vertical drag: orbit pitch around [lookAt] at a fixed
+  /// distance. Screen Y is down-positive; dragging down raises the camera
+  /// (more top-down).
+  void peekPitchByDeltaY(double dy) {
+    if (dy == 0) return;
+    if (!_pitchPeeking) beginPitchPeek();
+    _pitchEffort += dy * pitchPeekSensitivity;
+    _pitch = mapLookPitchFromEffort(
+      rest: restPitch,
+      min: minPitch,
+      max: maxPitch,
+      effort: _pitchEffort,
+    );
+    _applyPose();
+  }
+
+  void beginPitchPeek() {
+    if (_pitchAnim.isAnimating) _pitchAnim.stop();
+    _pitchPeeking = true;
+    _pitchEffort = lookPitchEffortFromPitch(
+      rest: restPitch,
+      min: minPitch,
+      max: maxPitch,
+      pitch: _pitch,
+    );
+  }
+
+  /// Release the peek and spring pitch back to [restPitch].
+  void endPitchPeek() {
+    _pitchPeeking = false;
+    _pitchEffort = 0;
+    if ((_pitch - restPitch).abs() < 1e-4) {
+      _pitch = restPitch;
+      _applyPose();
+      return;
+    }
+    final velocity = _pitchAnim.isAnimating ? _pitchAnim.velocity : 0.0;
+    _pitchAnim
+      ..stop()
+      ..animateWith(SpringSimulation(pitchSpring, _pitch, restPitch, velocity));
+  }
+
   void restorePose({
     required Vector3 lookAt,
     required double distance,
@@ -202,6 +276,10 @@ class MapLookCameraController extends ChangeNotifier {
     _distance = distance.clamp(minDistance, maxDistance);
     _targetDistance = _distance;
     _yaw = yaw;
+    _pitch = restPitch;
+    _pitchEffort = 0;
+    _pitchPeeking = false;
+    if (_pitchAnim.isAnimating) _pitchAnim.stop();
     _clampLookAt();
     _applyPose();
   }
@@ -213,6 +291,10 @@ class MapLookCameraController extends ChangeNotifier {
     if (_zoomAnim.isAnimating) _zoomAnim.stop();
     if (_yawAnim.isAnimating) _yawAnim.stop();
     if (_lookAtAnim.isAnimating) _lookAtAnim.stop();
+    if (_pitchAnim.isAnimating) _pitchAnim.stop();
+    _pitchPeeking = false;
+    _pitchEffort = 0;
+    _pitch = restPitch;
   }
 
   /// Start a live pinch/scroll zoom. Distance can pass min/max with resistance.
@@ -370,6 +452,11 @@ class MapLookCameraController extends ChangeNotifier {
     _applyPose();
   }
 
+  void _onPitchTick() {
+    _pitch = _pitchAnim.value;
+    _applyPose();
+  }
+
   void _clampLookAt() {
     final min = _boundsMin;
     final max = _boundsMax;
@@ -414,6 +501,48 @@ class MapLookCameraController extends ChangeNotifier {
     _lookAtAnim
       ..removeListener(_onLookAtTick)
       ..dispose();
+    _pitchAnim
+      ..removeListener(_onPitchTick)
+      ..dispose();
     super.dispose();
   }
+}
+
+/// Maps unbounded drag [effort] (radians of requested offset from [rest])
+/// toward [min]/[max] with a tanh squash so the limits are only approached.
+double mapLookPitchFromEffort({
+  required double rest,
+  required double min,
+  required double max,
+  required double effort,
+}) {
+  final hi = math.max(max - rest, 1e-6);
+  final lo = math.min(min - rest, -1e-6);
+  if (effort >= 0) return rest + hi * _tanh(effort / hi);
+  return rest + lo * _tanh(effort / lo);
+}
+
+/// Inverse of [mapLookPitchFromEffort] so a mid-spring grab stays continuous.
+double lookPitchEffortFromPitch({
+  required double rest,
+  required double min,
+  required double max,
+  required double pitch,
+}) {
+  final delta = pitch - rest;
+  if (delta >= 0) {
+    final hi = math.max(max - rest, 1e-6);
+    final t = (delta / hi).clamp(-0.999, 0.999);
+    return hi * _atanh(t);
+  }
+  final lo = math.min(min - rest, -1e-6);
+  final t = (delta / lo).clamp(-0.999, 0.999);
+  return lo * _atanh(t);
+}
+
+double _atanh(double x) => 0.5 * math.log((1 + x) / (1 - x));
+
+double _tanh(double x) {
+  final e = math.exp(2 * x);
+  return (e - 1) / (e + 1);
 }

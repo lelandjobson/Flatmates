@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:vector_math/vector_math_64.dart' hide Colors;
 
+import '../../gameplay/picking/focus_sticker.dart';
 import '../../gameplay/volumes/volume.dart';
 import '../../gameplay/volumes/volume_program.dart';
 import '../../gameplay/volumes/volume_store.dart';
@@ -16,6 +17,11 @@ class VolumeProgramOverlay extends StatelessWidget {
     required this.viewport,
     this.listenable,
     this.volumeId,
+    this.selectedId,
+    this.selectedInvalid = false,
+    this.draftCorners,
+    this.draftInvalid = false,
+    this.draftKind,
   });
 
   final VolumeProgramStore programs;
@@ -24,6 +30,11 @@ class VolumeProgramOverlay extends StatelessWidget {
   final Size viewport;
   final Listenable? listenable;
   final int? volumeId;
+  final int? selectedId;
+  final bool selectedInvalid;
+  final List<Vector3>? draftCorners;
+  final bool draftInvalid;
+  final VolumeProgramKind? draftKind;
 
   @override
   Widget build(BuildContext context) {
@@ -47,6 +58,11 @@ class VolumeProgramOverlay extends StatelessWidget {
           camera: camera,
           viewport: viewport,
           volumeId: volumeId,
+          selectedId: selectedId,
+          selectedInvalid: selectedInvalid,
+          draftCorners: draftCorners,
+          draftInvalid: draftInvalid,
+          draftKind: draftKind,
         ),
       ),
     );
@@ -60,6 +76,11 @@ class _ProgramPainter extends CustomPainter {
     required this.camera,
     required this.viewport,
     this.volumeId,
+    this.selectedId,
+    this.selectedInvalid = false,
+    this.draftCorners,
+    this.draftInvalid = false,
+    this.draftKind,
   });
 
   final VolumeProgramStore programs;
@@ -67,11 +88,17 @@ class _ProgramPainter extends CustomPainter {
   final Camera camera;
   final Size viewport;
   final int? volumeId;
+  final int? selectedId;
+  final bool selectedInvalid;
+  final List<Vector3>? draftCorners;
+  final bool draftInvalid;
+  final VolumeProgramKind? draftKind;
 
   @override
   void paint(Canvas canvas, Size size) {
     for (final stamp in programs.stamps) {
       if (volumeId != null && stamp.volumeId != volumeId) continue;
+      if (draftCorners != null && stamp.id == selectedId) continue;
       VolumeCell? cell;
       for (final volume in volumes.visibleVolumes) {
         if (volume.id != stamp.volumeId) continue;
@@ -100,7 +127,10 @@ class _ProgramPainter extends CustomPainter {
         pts.add(p);
       }
       if (pts.length < 4) continue;
-      final fill = Color(stamp.kind.paperArgb);
+      final invalid = stamp.id == selectedId && selectedInvalid;
+      final fill = invalid
+          ? kFocusStickerInvalid.withValues(alpha: 0.72)
+          : Color(stamp.kind.paperArgb);
       canvas.drawPath(
         Path()..addPolygon(pts, true),
         Paint()..color = fill,
@@ -133,6 +163,41 @@ class _ProgramPainter extends CustomPainter {
         canvas,
         Offset(cx - painter.width * 0.5, cy - painter.height * 0.5),
       );
+      if (stamp.id == selectedId) {
+        canvas.drawPath(
+          Path()..addPolygon(pts, true),
+          Paint()
+            ..color = invalid ? kFocusStickerInvalid : Colors.white
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2.4,
+        );
+      }
+    }
+    final draft = draftCorners;
+    if (draft != null && draft.length >= 4) {
+      final pts = <Offset>[];
+      for (final c in draft) {
+        final p = camera.projectToScreen(c, viewport);
+        if (p == null) {
+          pts.clear();
+          break;
+        }
+        pts.add(p);
+      }
+      if (pts.length >= 4) {
+        final fill = draftInvalid
+            ? kFocusStickerInvalid.withValues(alpha: 0.72)
+            : Color((draftKind ?? VolumeProgramKind.bedroom).paperArgb)
+                .withValues(alpha: 0.72);
+        canvas.drawPath(Path()..addPolygon(pts, true), Paint()..color = fill);
+        canvas.drawPath(
+          Path()..addPolygon(pts, true),
+          Paint()
+            ..color = draftInvalid ? kFocusStickerInvalid : Colors.white
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2.4,
+        );
+      }
     }
   }
 

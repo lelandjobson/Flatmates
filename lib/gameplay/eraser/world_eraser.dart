@@ -6,6 +6,26 @@ import '../volumes/volume_store.dart';
 import '../walls/wall_store.dart';
 import 'eraser_filter.dart';
 
+/// Delete enabled objects whose footprint overlaps the tile at [tx],[ty].
+bool eraseAtTile({
+  required VolumeGrid grid,
+  required int tx,
+  required int ty,
+  required EraserFilter filter,
+  required WallStore walls,
+  required PathStore paths,
+  required VolumeStore volumes,
+}) {
+  if (!grid.inBounds(tx, ty)) return false;
+  var changed = false;
+  if (filter.paths && paths.removeTile(tx, ty)) changed = true;
+  if (filter.walls && walls.removeEdgesTouchingTile(tx, ty)) changed = true;
+  if (filter.volumes && !volumes.isEditing) {
+    if (volumes.removeCellAt(tx, ty)) changed = true;
+  }
+  return changed;
+}
+
 /// Delete enabled gameplay objects whose ground footprint meets the brush.
 bool eraseWorld({
   required Vector3 world,

@@ -126,4 +126,52 @@ void main() {
       isNull,
     );
   });
+
+  test('move relocates a stamp and rejects overlap', () {
+    final cell = VolumeCell(
+      tx: 0,
+      ty: 0,
+      box: BoxPrimitive(widthSubtiles: 14, depthSubtiles: 14),
+    );
+    final volume = Volume(id: 1, cells: [cell]);
+    final programs = VolumeProgramStore();
+    final first = programs.place(
+      volume: volume,
+      cell: cell,
+      originU: 0,
+      originV: 0,
+      kind: VolumeProgramKind.bedroom,
+    )!;
+    expect(
+      programs.place(
+        volume: volume,
+        cell: cell,
+        originU: 8,
+        originV: 0,
+        kind: VolumeProgramKind.common,
+      ),
+      isNotNull,
+    );
+    expect(
+      programs.move(
+        id: first.id,
+        volume: volume,
+        cell: cell,
+        originU: 7,
+        originV: 0,
+      ),
+      isNull,
+    );
+    expect(
+      programs.move(
+        id: first.id,
+        volume: volume,
+        cell: cell,
+        originU: 0,
+        originV: 6,
+      ),
+      isNotNull,
+    );
+    expect(programs.stamps.singleWhere((s) => s.id == first.id).originV, 6);
+  });
 }

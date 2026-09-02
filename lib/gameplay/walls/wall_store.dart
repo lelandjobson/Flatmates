@@ -39,34 +39,50 @@ class WallStore {
     return true;
   }
 
-  bool add(WallEdge edge) {
+  /// When [insteadOfAdd] returns true, the edge is not stored.
+  bool add(
+    WallEdge edge, {
+    bool Function(WallEdge edge)? insteadOfAdd,
+  }) {
     if (!edge.isUnitOrtho) return false;
     if (!_edgeInBounds(edge)) return false;
+    if (insteadOfAdd?.call(edge) ?? false) return true;
     return edges.add(edge);
   }
 
   bool remove(WallEdge edge) => edges.remove(edge);
 
   /// Add the edge whose midpoint is nearest [world], if close enough.
-  WallEdge? addAtMidpoint(Vector3 world) {
+  WallEdge? addAtMidpoint(
+    Vector3 world, {
+    bool Function(WallEdge edge)? insteadOfAdd,
+  }) {
     final edge = hitEdgeAtMidpoint(world);
     if (edge == null) return null;
-    return add(edge) ? edge : null;
+    return add(edge, insteadOfAdd: insteadOfAdd) ? edge : null;
   }
 
   /// Tap: add if missing, remove if present. Drag should use [paintStroke].
-  bool toggleAtMidpoint(Vector3 world) {
+  bool toggleAtMidpoint(
+    Vector3 world, {
+    bool Function(WallEdge edge)? insteadOfAdd,
+  }) {
     final edge = hitEdgeAtMidpoint(world);
     if (edge == null) return false;
     if (contains(edge)) return remove(edge);
-    return add(edge);
+    return add(edge, insteadOfAdd: insteadOfAdd);
   }
 
   /// Paint midpoints the stroke passes near. Adds only; never removes.
-  bool paintStroke(Vector3 from, Vector3 to, {WallKind kind = WallKind.fence}) {
+  bool paintStroke(
+    Vector3 from,
+    Vector3 to, {
+    WallKind kind = WallKind.fence,
+    bool Function(WallEdge edge)? insteadOfAdd,
+  }) {
     var changed = false;
     for (final edge in edgesAlong(from, to, kind: kind)) {
-      if (add(edge)) changed = true;
+      if (add(edge, insteadOfAdd: insteadOfAdd)) changed = true;
     }
     return changed;
   }
@@ -79,6 +95,25 @@ class WallStore {
     }
     var changed = false;
     for (final edge in hit) {
+      if (edges.remove(edge)) changed = true;
+    }
+    return changed;
+  }
+
+  /// The four boundary edges of tile [tx],[ty] that currently have a wall.
+  List<WallEdge> edgesTouchingTile(int tx, int ty) {
+    final candidates = [
+      WallEdge(tx, ty, tx + 1, ty),
+      WallEdge(tx, ty, tx, ty + 1),
+      WallEdge(tx + 1, ty, tx + 1, ty + 1),
+      WallEdge(tx, ty + 1, tx + 1, ty + 1),
+    ];
+    return [for (final edge in candidates) if (contains(edge)) edge];
+  }
+
+  bool removeEdgesTouchingTile(int tx, int ty) {
+    var changed = false;
+    for (final edge in edgesTouchingTile(tx, ty)) {
       if (edges.remove(edge)) changed = true;
     }
     return changed;

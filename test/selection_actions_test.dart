@@ -15,12 +15,13 @@ void main() {
     ).map((a) => a.id).toList();
   }
 
-  test('tile and region only expose isolate', () {
+  test('tile, region, and path only expose isolate', () {
     expect(ids(SelectableHit.tile(2, 3)), [SelectionActionId.isolate]);
     expect(
       ids(SelectableHit.region(WallRegion({(1, 1), (1, 2)}), tx: 1, ty: 1)),
       [SelectionActionId.isolate],
     );
+    expect(ids(SelectableHit.path(4, 5)), [SelectionActionId.isolate]);
   });
 
   test('volume exposes isolate, optional program, and delete', () {
@@ -46,6 +47,31 @@ void main() {
       ),
       [SelectionActionId.isolate, SelectionActionId.focusFace],
     );
+  });
+
+  test('volume isolate opens interior view instead of crop isolate', () {
+    final volume = Volume(
+      id: 1,
+      cells: [VolumeCell(tx: 2, ty: 2, box: BoxPrimitive())],
+    );
+    expect(
+      isolateOpensVolumeInterior(
+        SelectableHit.volume(1, cell: volume.cells.first),
+      ),
+      isTrue,
+    );
+    expect(
+      isolateOpensVolumeInterior(
+        SelectableHit.volumeFace(
+          1,
+          face: VolumeFace.posY,
+          cell: volume.cells.first,
+        ),
+      ),
+      isTrue,
+    );
+    expect(isolateOpensVolumeInterior(SelectableHit.tile(2, 3)), isFalse);
+    expect(isolateOpensVolumeInterior(SelectableHit.path(4, 5)), isFalse);
   });
 
   test('friend exposes focus only', () {

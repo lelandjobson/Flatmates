@@ -33,6 +33,17 @@ class WallEdge {
 
   bool get isUnitOrtho => isHorizontal || isVertical;
 
+  /// The two tiles that share this edge, if it sits on a tile boundary.
+  ((int tx, int ty), (int tx, int ty))? get separatedTiles {
+    if (isVertical) {
+      return ((x0 - 1, y0), (x0, y0));
+    }
+    if (isHorizontal) {
+      return ((x0, y0 - 1), (x0, y0));
+    }
+    return null;
+  }
+
   /// Equality is geometric so a later wall type can replace this segment.
   @override
   bool operator ==(Object other) =>

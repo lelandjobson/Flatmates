@@ -7,6 +7,7 @@ import '../../crafting/placed_paper.dart';
 import '../viewers/world_plane.dart';
 import '../volumes/volume.dart';
 import '../volumes/volume_door.dart';
+import '../volumes/volume_solid.dart';
 import '../volumes/volume_store.dart';
 
 @immutable
@@ -401,7 +402,9 @@ class FacePaintStore {
         }
       }
       if (volume == null) return true;
-      return volume.cellAt(key.tx, key.ty) == null;
+      if (volume.cellAt(key.tx, key.ty) == null) return true;
+      final solid = resolveVolumeSolid(volume, store.grid);
+      return solid.isFaceFullyInternal(key.tx, key.ty, key.face);
     });
   }
 

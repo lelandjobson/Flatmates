@@ -6,7 +6,11 @@ import '../../gameplay/friends/friend_mesh_sync.dart';
 import '../../gameplay/picking/selectable.dart';
 import '../../gameplay/viewers/world_plane.dart';
 import '../../gameplay/volumes/volume.dart';
+import '../../gameplay/volumes/volume_solid.dart';
 import '../../gameplay/volumes/volume_store.dart';
+import '../../gameplay/walls/wall_edge.dart';
+import '../../gameplay/walls/wall_mesh.dart';
+import '../../gameplay/walls/wall_store.dart';
 import '../../rendering/scene/camera.dart';
 import 'selection_highlight_style.dart';
 
@@ -19,12 +23,16 @@ class SelectionHighlightOverlay extends StatefulWidget {
     required this.friends,
     required this.camera,
     required this.viewport,
+    this.extraHits = const [],
+    this.wallEdges = const [],
     this.style = SelectionHighlightStyle.standard,
     this.listenable,
     this.tileSize = 8,
   });
 
   final SelectableHit? hit;
+  final List<SelectableHit> extraHits;
+  final List<WallEdge> wallEdges;
   final VolumeStore volumes;
   final FriendInstanceStore friends;
   final Camera camera;
@@ -51,16 +59,23 @@ class _SelectionHighlightOverlayState extends State<SelectionHighlightOverlay>
       duration: widget.style.fadeDuration,
     );
     _shown = widget.hit;
-    if (_shown != null) _fade.value = 1;
+    if (_hasTarget) _fade.value = 1;
   }
+
+  bool get _hasTarget =>
+      widget.hit != null ||
+      widget.extraHits.isNotEmpty ||
+      widget.wallEdges.isNotEmpty;
 
   @override
   void didUpdateWidget(covariant SelectionHighlightOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
     _fade.duration = widget.style.fadeDuration;
-    if (!(widget.hit?.sameAs(_shown) ?? _shown == null)) {
+    if (!(widget.hit?.sameAs(_shown) ?? _shown == null) ||
+        widget.extraHits.length != oldWidget.extraHits.length ||
+        widget.wallEdges.length != oldWidget.wallEdges.length) {
       _shown = widget.hit;
-      if (_shown == null) {
+      if (!_hasTarget) {
         _fade.reverse();
       } else {
         _fade.forward(from: 0);
@@ -89,6 +104,8 @@ class _SelectionHighlightOverlayState extends State<SelectionHighlightOverlay>
           size: widget.viewport,
           painter: _HighlightPainter(
             hit: _shown ?? widget.hit,
+            extraHits: widget.extraHits,
+            wallEdges: widget.wallEdges,
             volumes: widget.volumes,
             friends: widget.friends,
             camera: widget.camera,
@@ -105,6 +122,8 @@ class _SelectionHighlightOverlayState extends State<SelectionHighlightOverlay>
 class _HighlightPainter extends CustomPainter {
   _HighlightPainter({
     required this.hit,
+    required this.extraHits,
+    required this.wallEdges,
     required this.volumes,
     required this.friends,
     required this.camera,
@@ -114,6 +133,8 @@ class _HighlightPainter extends CustomPainter {
   });
 
   final SelectableHit? hit;
+  final List<SelectableHit> extraHits;
+  final List<WallEdge> wallEdges;
   final VolumeStore volumes;
   final FriendInstanceStore friends;
   final Camera camera;
@@ -123,8 +144,11 @@ class _HighlightPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final target = hit;
-    if (target == null) return;
+    final targets = <SelectableHit>[
+      if (hit != null) hit!,
+      ...extraHits,
+    ];
+    if (targets.isEmpty && wallEdges.isEmpty) return;
     final fill = Paint()
       ..color = style.fill
       ..style = PaintingStyle.fill;
@@ -135,12 +159,32 @@ class _HighlightPainter extends CustomPainter {
       ..strokeJoin = StrokeJoin.round
       ..strokeCap = StrokeCap.round;
 
-    for (final quad in _quadsFor(target)) {
-      final path = _projectQuad(quad);
+    for (final target in targets) {
+      for (final quad in _quadsFor(target)) {
+        final path = _projectQuad(quad);
+        if (path == null) continue;
+        canvas.drawPath(path, fill);
+        canvas.drawPath(path, stroke);
+      }
+    }
+    for (final edge in wallEdges) {
+      final path = _projectQuad(_wallQuad(edge));
       if (path == null) continue;
       canvas.drawPath(path, fill);
       canvas.drawPath(path, stroke);
     }
+  }
+
+  List<Vector3> _wallQuad(WallEdge edge) {
+    final dummy = WallStore(grid: volumes.grid);
+    final a = dummy.vertexWorld(edge.x0, edge.y0);
+    final b = dummy.vertexWorld(edge.x1, edge.y1);
+    return [
+      Vector3(a.x, 0, a.z),
+      Vector3(b.x, 0, b.z),
+      Vector3(b.x, kFenceHeight, b.z),
+      Vector3(a.x, kFenceHeight, a.z),
+    ];
   }
 
   Path? _projectQuad(List<Vector3> world) {
@@ -164,6 +208,7 @@ class _HighlightPainter extends CustomPainter {
   List<List<Vector3>> _quadsFor(SelectableHit target) {
     switch (target.kind) {
       case SelectableKind.tile:
+      case SelectableKind.path:
         final tx = target.tx;
         final ty = target.ty;
         if (tx == null || ty == null) return const [];
@@ -209,15 +254,8 @@ class _HighlightPainter extends CustomPainter {
   }
 
   bool _internalFace(Volume volume, VolumeCell cell, VolumeFace face) {
-    final handle = switch (face) {
-      VolumeFace.posX => VolumeHandle.posX,
-      VolumeFace.negX => VolumeHandle.negX,
-      VolumeFace.posZ => VolumeHandle.posZ,
-      VolumeFace.negZ => VolumeHandle.negZ,
-      VolumeFace.posY || VolumeFace.negY => null,
-    };
-    if (handle == null) return false;
-    return volume.hasNeighborOn(cell, handle);
+    final solid = resolveVolumeSolid(volume, volumes.grid);
+    return solid.isFaceFullyInternal(cell.tx, cell.ty, face);
   }
 
   List<Vector3> _tileQuad(VolumeGrid grid, int tx, int ty) {

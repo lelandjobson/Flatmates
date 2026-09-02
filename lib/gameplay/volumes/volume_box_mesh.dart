@@ -8,7 +8,10 @@ import '../../rendering/scene/scene.dart';
 import '../../theme/world_theme.dart';
 import 'volume.dart';
 import 'volume_door.dart';
+import 'volume_solid.dart';
 import 'volume_store.dart';
+
+const kInteriorGroundMeshId = 'interior_ground';
 
 String volumeMeshId(int volumeId, int tx, int ty) => 'volume_${volumeId}_${tx}_$ty';
 
@@ -176,33 +179,29 @@ void syncVolumeMeshes(
   Color? committed,
   Color? draftColor,
   Set<int> hideCeilingVolumeIds = const {},
+  Set<int> inwardWallsOnlyVolumeIds = const {},
 }) {
   final wanted = <String>{};
   final draft = store.draftVolume;
 
   for (final volume in store.visibleVolumes) {
+    final solid = resolveVolumeSolid(volume, store.grid);
+    final hideCeiling = hideCeilingVolumeIds.contains(volume.id);
+    final inwardOnly = inwardWallsOnlyVolumeIds.contains(volume.id);
     final isDraftVolume = identical(volume, draft);
     for (final cell in volume.cells) {
       final id = volumeMeshId(volume.id, cell.tx, cell.ty);
       wanted.add(id);
-      final min = cell.box.worldMin(store.grid, cell.tx, cell.ty);
-      final max = cell.box.worldMax(store.grid, cell.tx, cell.ty);
       final doors = exteriorDoors(volume, cell).toList();
-      final omitHandles = {
-        for (final handle in VolumeHandle.values)
-          if (volume.hasNeighborOn(cell, handle)) handle,
-      };
-      var geometry = volumeBoxGeometry(
-        min: min,
-        max: max,
+      final geometry = volumeSolidCellGeometry(
+        cell: cell,
+        solid: solid,
+        grid: store.grid,
         id: id,
         doors: doors,
-        subtileSize: store.grid.subtileSize,
-        omitHandles: omitHandles,
+        hideCeiling: hideCeiling,
+        inwardWallsOnly: inwardOnly,
       );
-      if (hideCeilingVolumeIds.contains(volume.id)) {
-        geometry = _withoutCeiling(geometry, id);
-      }
       final highlightDraftCell =
           store.isEditing &&
           isDraftVolume &&
@@ -212,26 +211,23 @@ void syncVolumeMeshes(
           ? (draftColor ?? WorldTheme.paperDiorama.volumeDraft)
           : (committed ?? WorldTheme.paperDiorama.volume);
       final existing = scene.meshById(id);
+      final material = MaterialModel(
+        color: color,
+        wireframe: true,
+        doubleSided: !inwardOnly,
+      );
       if (existing == null) {
         scene.addMesh(
           Mesh(
             id: id,
             name: 'Volume',
             geometry: geometry,
-            material: MaterialModel(
-              color: color,
-              wireframe: true,
-              doubleSided: true,
-            ),
+            material: material,
           ),
         );
       } else {
         existing.geometry = geometry;
-        existing.material = MaterialModel(
-          color: color,
-          wireframe: true,
-          doubleSided: true,
-        );
+        existing.material = material;
       }
     }
   }
@@ -244,27 +240,203 @@ void syncVolumeMeshes(
   scene.markNeedsPaint();
 }
 
-Geometry _withoutCeiling(Geometry geometry, String id) {
-  if (geometry.vertices.length < 8) return geometry;
-  var maxY = geometry.vertices.first.y;
-  for (final v in geometry.vertices) {
-    if (v.y > maxY) maxY = v.y;
+/// Near-black ground used while a volume is in interior view.
+void syncInteriorGround(
+  Scene scene, {
+  required bool enabled,
+  required VolumeGrid grid,
+}) {
+  if (!enabled) {
+    scene.removeMeshById(kInteriorGroundMeshId);
+    scene.markNeedsPaint();
+    return;
   }
+  final half = grid.mapHalf * 4;
+  final geometry = Geometry(
+    id: kInteriorGroundMeshId,
+    name: 'InteriorGround',
+    vertices: [
+      Vector3(-half, -0.02, -half),
+      Vector3(half, -0.02, -half),
+      Vector3(half, -0.02, half),
+      Vector3(-half, -0.02, half),
+    ],
+    faces: const [
+      [0, 1, 2, 3],
+    ],
+  );
+  final material = const MaterialModel(
+    color: Color(0xFF050508),
+    doubleSided: true,
+    wireframe: false,
+    strokeEdges: false,
+  );
+  final existing = scene.meshById(kInteriorGroundMeshId);
+  if (existing == null) {
+    scene.addMesh(
+      Mesh(
+        id: kInteriorGroundMeshId,
+        name: 'InteriorGround',
+        geometry: geometry,
+        material: material,
+      ),
+    );
+  } else {
+    existing.geometry = geometry;
+    existing.material = material;
+  }
+  scene.markNeedsPaint();
+}
+
+Geometry volumeSolidCellGeometry({
+  required VolumeCell cell,
+  required VolumeSolid solid,
+  required VolumeGrid grid,
+  required String id,
+  List<VolumeDoor> doors = const [],
+  bool hideCeiling = false,
+  bool inwardWallsOnly = false,
+}) {
+  final min = cell.box.worldMin(grid, cell.tx, cell.ty);
+  final max = cell.box.worldMax(grid, cell.tx, cell.ty);
+  final s = grid.subtileSize;
+  final omitHandles = <VolumeHandle>{
+    for (final handle in VolumeHandle.values)
+      if (solid.isHandleFullyInternal(cell.tx, cell.ty, handle) ||
+          (hideCeiling && handle == VolumeHandle.posY))
+        handle,
+  };
+
+  final completeDoors = [
+    for (final door in doors)
+      if (solid.surfaceAt(cell.tx, cell.ty, door.side.handle)?.isComplete ??
+          false)
+        door,
+  ];
+  final allComplete = VolumeHandle.values.every((handle) {
+    if (omitHandles.contains(handle)) return true;
+    if (handle == VolumeHandle.posY && hideCeiling) return true;
+    return solid.surfaceAt(cell.tx, cell.ty, handle)?.isComplete ?? false;
+  });
+  if (allComplete && !inwardWallsOnly) {
+    return volumeBoxGeometry(
+      min: min,
+      max: max,
+      id: id,
+      doors: completeDoors,
+      subtileSize: s,
+      omitHandles: omitHandles,
+    );
+  }
+
+  final vertices = <Vector3>[];
   final faces = <List<int>>[];
-  for (final face in geometry.faces) {
-    var onCeiling = true;
-    for (final i in face) {
-      if ((geometry.vertices[i].y - maxY).abs() > 1e-4) {
-        onCeiling = false;
-        break;
-      }
-    }
-    if (!onCeiling) faces.add(face);
+
+  void addQuad(List<Vector3> pts, {required bool inward}) {
+    final ordered = inward ? pts.reversed.toList() : pts;
+    final i = vertices.length;
+    vertices.addAll(ordered);
+    faces.add([i, i + 1, i + 2, i + 3]);
   }
+
+  addQuad([
+    Vector3(min.x, min.y, min.z),
+    Vector3(max.x, min.y, min.z),
+    Vector3(max.x, min.y, max.z),
+    Vector3(min.x, min.y, max.z),
+  ], inward: false);
+
+  for (final handle in VolumeHandle.values) {
+    if (omitHandles.contains(handle)) continue;
+    final surface = solid.surfaceAt(cell.tx, cell.ty, handle);
+    if (surface == null) continue;
+    final door = completeDoors
+        .where((d) => d.side.handle == handle)
+        .firstOrNull;
+    if (door != null && surface.isComplete && !inwardWallsOnly) {
+      final holed = volumeBoxGeometry(
+        min: min,
+        max: max,
+        id: '${id}_door',
+        doors: [door],
+        subtileSize: s,
+        omitHandles: {
+          for (final other in VolumeHandle.values)
+            if (other != handle) other,
+        },
+      );
+      final base = vertices.length;
+      vertices.addAll(holed.vertices);
+      for (final face in holed.faces) {
+        faces.add([for (final i in face) i + base]);
+      }
+      continue;
+    }
+    final inward = inwardWallsOnly && surface.kind == VolumeSurfaceKind.wall;
+    for (final fragment in surface.fragments) {
+      addQuad(
+        _fragmentWorldQuad(
+          min: min,
+          max: max,
+          handle: handle,
+          fragment: fragment,
+          subtileSize: s,
+        ),
+        inward: inward,
+      );
+    }
+  }
+
   return Geometry(
     id: id,
-    name: geometry.name,
-    vertices: geometry.vertices,
+    name: 'VolumeBox',
+    vertices: vertices,
     faces: faces,
   );
+}
+
+List<Vector3> _fragmentWorldQuad({
+  required Vector3 min,
+  required Vector3 max,
+  required VolumeHandle handle,
+  required VolumeFaceRect fragment,
+  required double subtileSize,
+}) {
+  final s = subtileSize;
+  final u0 = fragment.u0 * s;
+  final u1 = fragment.u1 * s;
+  final v0 = fragment.v0 * s;
+  final v1 = fragment.v1 * s;
+  return switch (handle) {
+    VolumeHandle.posX => [
+        Vector3(max.x, min.y + v0, min.z + u0),
+        Vector3(max.x, min.y + v1, min.z + u0),
+        Vector3(max.x, min.y + v1, min.z + u1),
+        Vector3(max.x, min.y + v0, min.z + u1),
+      ],
+    VolumeHandle.negX => [
+        Vector3(min.x, min.y + v0, min.z + u0),
+        Vector3(min.x, min.y + v0, min.z + u1),
+        Vector3(min.x, min.y + v1, min.z + u1),
+        Vector3(min.x, min.y + v1, min.z + u0),
+      ],
+    VolumeHandle.posZ => [
+        Vector3(min.x + u0, min.y + v0, max.z),
+        Vector3(min.x + u1, min.y + v0, max.z),
+        Vector3(min.x + u1, min.y + v1, max.z),
+        Vector3(min.x + u0, min.y + v1, max.z),
+      ],
+    VolumeHandle.negZ => [
+        Vector3(min.x + u0, min.y + v0, min.z),
+        Vector3(min.x + u0, min.y + v1, min.z),
+        Vector3(min.x + u1, min.y + v1, min.z),
+        Vector3(min.x + u1, min.y + v0, min.z),
+      ],
+    VolumeHandle.posY => [
+        Vector3(min.x + u0, max.y, min.z + v0),
+        Vector3(min.x + u0, max.y, min.z + v1),
+        Vector3(min.x + u1, max.y, min.z + v1),
+        Vector3(min.x + u1, max.y, min.z + v0),
+      ],
+  };
 }

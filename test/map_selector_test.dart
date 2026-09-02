@@ -1,7 +1,9 @@
 import 'package:flatmates/gameplay/friends/friend_instance_store.dart';
+import 'package:flatmates/gameplay/paths/path_store.dart';
 import 'package:flatmates/gameplay/picking/map_selector.dart';
 import 'package:flatmates/gameplay/picking/selectable.dart';
 import 'package:flatmates/gameplay/volumes/volume_store.dart';
+import 'package:flatmates/gameplay/walls/wall_regions.dart';
 import 'package:flatmates/rendering/scene/camera.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -73,5 +75,41 @@ void main() {
     );
     expect(hit, isNotNull);
     expect(hit!.kind, SelectableKind.tile);
+  });
+
+  test('path tiles are preferred over regions', () {
+    camera = Camera(
+      name: 'path',
+      position: Vector3(-32, 30, -16),
+      target: Vector3(-32, 0, -32),
+      fovDegrees: 50,
+    );
+    final ground = const MapSelector().pick(
+      screen: center,
+      viewport: viewport,
+      camera: camera,
+      distance: 40,
+      volumes: volumes,
+      friends: friends,
+      regions: const [],
+    );
+    expect(ground, isNotNull);
+    final tx = ground!.tx!;
+    final ty = ground.ty!;
+    final paths = PathStore(grid: volumes.grid)..addIsland(tx, ty);
+    final hit = const MapSelector().pick(
+      screen: center,
+      viewport: viewport,
+      camera: camera,
+      distance: 40,
+      volumes: volumes,
+      friends: friends,
+      regions: [WallRegion({(tx, ty)})],
+      paths: paths,
+    );
+    expect(hit, isNotNull);
+    expect(hit!.kind, SelectableKind.path);
+    expect(hit.tx, tx);
+    expect(hit.ty, ty);
   });
 }

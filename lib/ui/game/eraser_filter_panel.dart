@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../gameplay/eraser/eraser_filter.dart';
 
-/// Checkboxes and radius slider for the map eraser. Separate from the tool strip.
-class EraserFilterPanel extends StatelessWidget {
+/// Delete-tool options: all features on a tile, with a filter caret.
+class EraserFilterPanel extends StatefulWidget {
   const EraserFilterPanel({
     super.key,
     required this.filter,
@@ -14,9 +14,18 @@ class EraserFilterPanel extends StatelessWidget {
   final VoidCallback onChanged;
 
   @override
+  State<EraserFilterPanel> createState() => _EraserFilterPanelState();
+}
+
+class _EraserFilterPanelState extends State<EraserFilterPanel> {
+  bool _kindsOpen = false;
+
+  EraserFilter get filter => widget.filter;
+
+  @override
   Widget build(BuildContext context) {
     return Container(
-      width: 176,
+      width: 200,
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.7),
         borderRadius: BorderRadius.circular(10),
@@ -37,56 +46,67 @@ class EraserFilterPanel extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           _FilterCheck(
-            label: 'Walls',
-            value: filter.walls,
+            label: 'Erase all features on a tile',
+            value: filter.eraseAllOnTile,
             onChanged: (v) {
-              filter.walls = v;
-              onChanged();
+              filter.eraseAllOnTile = v;
+              widget.onChanged();
             },
           ),
-          _FilterCheck(
-            label: 'Paths',
-            value: filter.paths,
-            onChanged: (v) {
-              filter.paths = v;
-              onChanged();
-            },
-          ),
-          _FilterCheck(
-            label: 'Volumes',
-            value: filter.volumes,
-            onChanged: (v) {
-              filter.volumes = v;
-              onChanged();
-            },
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Radius  ${filter.radiusTiles.toStringAsFixed(2)}',
-            style: const TextStyle(color: Colors.white70, fontSize: 11),
-          ),
-          SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackHeight: 2,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-              activeTrackColor: Colors.white70,
-              inactiveTrackColor: Colors.white24,
-              thumbColor: Colors.white,
-            ),
-            child: Slider(
-              min: EraserFilter.minRadiusTiles,
-              max: EraserFilter.maxRadiusTiles,
-              value: filter.radiusTiles.clamp(
-                EraserFilter.minRadiusTiles,
-                EraserFilter.maxRadiusTiles,
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => setState(() => _kindsOpen = !_kindsOpen),
+            child: SizedBox(
+              height: 28,
+              child: Row(
+                children: [
+                  Icon(
+                    _kindsOpen ? Icons.expand_more : Icons.chevron_right,
+                    color: Colors.white70,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 4),
+                  const Text(
+                    'Filter kinds',
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ],
               ),
-              onChanged: (v) {
-                filter.radiusTiles = v;
-                onChanged();
-              },
             ),
           ),
+          if (_kindsOpen) ...[
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: Column(
+                children: [
+                  _FilterCheck(
+                    label: 'Walls',
+                    value: filter.walls,
+                    onChanged: (v) {
+                      filter.walls = v;
+                      widget.onChanged();
+                    },
+                  ),
+                  _FilterCheck(
+                    label: 'Paths',
+                    value: filter.paths,
+                    onChanged: (v) {
+                      filter.paths = v;
+                      widget.onChanged();
+                    },
+                  ),
+                  _FilterCheck(
+                    label: 'Volumes',
+                    value: filter.volumes,
+                    onChanged: (v) {
+                      filter.volumes = v;
+                      widget.onChanged();
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -129,9 +149,11 @@ class _FilterCheck extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
           ),
         ],
       ),

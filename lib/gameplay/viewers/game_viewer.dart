@@ -1,4 +1,4 @@
-enum GameViewerKind { map3d, plane2d, focus3d }
+enum GameViewerKind { map3d, plane2d, focus3d, volumeInterior }
 
 enum SceneLayer {
   landscape,
@@ -42,9 +42,16 @@ class SceneLayerMask {
 
   static const focus3d = all;
 
+  static const volumeInterior = SceneLayerMask({
+    SceneLayer.volumes,
+    SceneLayer.walls,
+    SceneLayer.volumeTools,
+  });
+
   static SceneLayerMask forViewer(GameViewerKind kind) => switch (kind) {
     GameViewerKind.map3d => map3d,
     GameViewerKind.plane2d => plane2d,
     GameViewerKind.focus3d => focus3d,
+    GameViewerKind.volumeInterior => volumeInterior,
   };
 }

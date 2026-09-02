@@ -4,6 +4,7 @@ import 'package:vector_math/vector_math_64.dart';
 import '../../rendering/scene/camera.dart';
 import '../friends/friend_instance_store.dart';
 import '../friends/friend_mesh_sync.dart';
+import '../paths/path_store.dart';
 import '../volumes/volume_store.dart';
 import '../walls/wall_regions.dart';
 import 'selectable.dart';
@@ -23,6 +24,7 @@ class MapSelector {
     required VolumeStore volumes,
     required FriendInstanceStore friends,
     required Iterable<WallRegion> regions,
+    PathStore? paths,
     double faceMaxDistance = kSelectVolumeFacesBelowDistance,
     double tileSize = 8,
   }) {
@@ -63,6 +65,9 @@ class MapSelector {
     if (ground == null) return null;
     final tile = volumes.grid.tileAtWorld(ground);
     if (tile == null) return null;
+    if (paths != null && paths.contains(tile.$1, tile.$2)) {
+      return SelectableHit.path(tile.$1, tile.$2, worldPoint: ground);
+    }
     final region = wallRegionContaining(regions, tile.$1, tile.$2);
     if (region != null) {
       return SelectableHit.region(

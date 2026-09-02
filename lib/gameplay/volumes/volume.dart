@@ -1,5 +1,7 @@
 import 'package:vector_math/vector_math_64.dart';
 
+import 'volume_solid.dart';
+
 /// Cardinal sides of a volume (no top/bottom).
 enum VolumeSide { north, east, south, west }
 
@@ -346,12 +348,13 @@ class Volume {
         cells: [for (final cell in cells) cell.clone()],
       );
 
-  /// Push-pull faces that are not shared with another cell of this mass.
-  List<VolumeFacet> exteriorFacets() {
+  /// Push-pull faces that still have exterior area on the resolved solid.
+  List<VolumeFacet> exteriorFacets([VolumeGrid grid = const VolumeGrid()]) {
+    final solid = resolveVolumeSolid(this, grid);
     final out = <VolumeFacet>[];
     for (final cell in cells) {
       for (final handle in VolumeHandle.values) {
-        if (hasNeighborOn(cell, handle)) continue;
+        if (solid.isHandleFullyInternal(cell.tx, cell.ty, handle)) continue;
         out.add(VolumeFacet(cell: cell, handle: handle));
       }
     }

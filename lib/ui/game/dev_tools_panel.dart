@@ -19,6 +19,8 @@ class DevToolsPanel extends StatelessWidget {
     this.onCloseZoomChanged,
     this.closeZoomMin = 20,
     this.closeZoomMax = 80,
+    this.springyLookPeek = true,
+    this.onSpringyLookPeekChanged,
     required this.perf,
     required this.onPerfChanged,
   });
@@ -34,6 +36,8 @@ class DevToolsPanel extends StatelessWidget {
   final ValueChanged<double>? onCloseZoomChanged;
   final double closeZoomMin;
   final double closeZoomMax;
+  final bool springyLookPeek;
+  final ValueChanged<bool>? onSpringyLookPeekChanged;
   final PerfDebugSettings perf;
   final VoidCallback onPerfChanged;
 
@@ -176,6 +180,28 @@ class DevToolsPanel extends StatelessWidget {
                   ),
                   Text(
                     'Nearest look distance. Too close flips the projection.',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.45),
+                      fontSize: 10,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+                if (onSpringyLookPeekChanged != null) ...[
+                  if (closeZoom == null || onCloseZoomChanged == null) ...[
+                    const SizedBox(height: 8),
+                    const _CategoryHeader('Camera'),
+                    const SizedBox(height: 4),
+                  ],
+                  _CheckRow(
+                    label: 'Springy look peek',
+                    value: springyLookPeek,
+                    onChanged: onSpringyLookPeekChanged!,
+                  ),
+                  Text(
+                    'Experimental. Two-finger vertical drag orbits pitch '
+                    'around the look-at, then springs back. Limits ease in '
+                    'so the camera never goes through the ground or past top-down.',
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.45),
                       fontSize: 10,

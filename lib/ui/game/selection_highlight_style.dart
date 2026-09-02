@@ -11,6 +11,11 @@ class SelectionHighlightStyle {
 
   static const SelectionHighlightStyle standard = SelectionHighlightStyle();
 
+  static const SelectionHighlightStyle delete = SelectionHighlightStyle(
+    fill: Color(0x55E53935),
+    outline: Color(0xF0EF5350),
+  );
+
   final Color fill;
   final Color outline;
   final double outlineWidth;

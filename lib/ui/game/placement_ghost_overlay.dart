@@ -7,7 +7,7 @@ import '../../gameplay/walls/wall_mesh.dart';
 import '../../gameplay/walls/wall_store.dart';
 import '../../rendering/scene/camera.dart';
 
-enum PlacementGhostKind { volume, path, wall }
+enum PlacementGhostKind { volume, path, wall, delete, pathSplit }
 
 /// Translucent preview of the item that a click at the crosshair would place.
 class PlacementGhostOverlay extends StatelessWidget {
@@ -151,6 +151,7 @@ class _GhostPainter extends CustomPainter {
           ],
         ];
       case PlacementGhostKind.path:
+      case PlacementGhostKind.delete:
         final t = tile;
         if (t == null) return const [];
         final origin = grid.tileOrigin(t.$1, t.$2);
@@ -176,6 +177,32 @@ class _GhostPainter extends CustomPainter {
             Vector3(b.x, 0, b.z),
             Vector3(b.x, kFenceHeight, b.z),
             Vector3(a.x, kFenceHeight, a.z),
+          ],
+        ];
+      case PlacementGhostKind.pathSplit:
+        final edge = wallEdge;
+        if (edge == null) return const [];
+        final dummy = WallStore(grid: grid);
+        final a = dummy.vertexWorld(edge.x0, edge.y0);
+        final b = dummy.vertexWorld(edge.x1, edge.y1);
+        const y = 0.08;
+        const half = 0.18;
+        if (edge.isVertical) {
+          return [
+            [
+              Vector3(a.x - half, y, a.z),
+              Vector3(a.x + half, y, a.z),
+              Vector3(b.x + half, y, b.z),
+              Vector3(b.x - half, y, b.z),
+            ],
+          ];
+        }
+        return [
+          [
+            Vector3(a.x, y, a.z - half),
+            Vector3(b.x, y, b.z - half),
+            Vector3(b.x, y, b.z + half),
+            Vector3(a.x, y, a.z + half),
           ],
         ];
     }

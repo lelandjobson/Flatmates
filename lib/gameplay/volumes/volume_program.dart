@@ -219,6 +219,38 @@ class VolumeProgramStore {
     return stamps.length < before;
   }
 
+  ProgramStamp? move({
+    required int id,
+    required Volume volume,
+    required VolumeCell cell,
+    required int originU,
+    required int originV,
+  }) {
+    final index = stamps.indexWhere((s) => s.id == id);
+    if (index < 0) return null;
+    if (!canPlace(
+      volume: volume,
+      cell: cell,
+      originU: originU,
+      originV: originV,
+      ignoreStampId: id,
+    )) {
+      return null;
+    }
+    final prev = stamps[index];
+    final next = ProgramStamp(
+      id: prev.id,
+      volumeId: volume.id,
+      tx: cell.tx,
+      ty: cell.ty,
+      originU: originU,
+      originV: originV,
+      kind: prev.kind,
+    );
+    stamps[index] = next;
+    return next;
+  }
+
   void remapVolumeTiles(int volumeId, int dtx, int dty) {
     if (dtx == 0 && dty == 0) return;
     for (var i = 0; i < stamps.length; i++) {
@@ -257,7 +289,9 @@ class VolumeProgramStore {
     stamps.removeWhere((s) {
       final volume = store.volumeById(s.volumeId);
       if (volume == null) return true;
-      return volume.cellAt(s.tx, s.ty) == null;
+      final cell = volume.cellAt(s.tx, s.ty);
+      if (cell == null) return true;
+      return !s.fits(cell.box);
     });
   }
 

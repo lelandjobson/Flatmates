@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:vector_math/vector_math_64.dart' hide Colors;
 
+import '../../gameplay/picking/focus_sticker.dart';
+import '../../gameplay/volumes/volume.dart';
 import '../../gameplay/volumes/volume_door.dart';
 import '../../gameplay/volumes/volume_store.dart';
 import '../../rendering/scene/camera.dart';
@@ -16,6 +19,13 @@ class VolumeDoorOverlay extends StatelessWidget {
     required this.viewport,
     this.listenable,
     this.tileVisible,
+    this.selectedVolumeId,
+    this.selectedTx,
+    this.selectedTy,
+    this.selectedSide,
+    this.selectedInvalid = false,
+    this.draftCorners,
+    this.draftInvalid = false,
   });
 
   final VolumeStore volumes;
@@ -23,6 +33,13 @@ class VolumeDoorOverlay extends StatelessWidget {
   final Size viewport;
   final Listenable? listenable;
   final bool Function(int tx, int ty)? tileVisible;
+  final int? selectedVolumeId;
+  final int? selectedTx;
+  final int? selectedTy;
+  final VolumeSide? selectedSide;
+  final bool selectedInvalid;
+  final List<Vector3>? draftCorners;
+  final bool draftInvalid;
 
   @override
   Widget build(BuildContext context) {
@@ -45,6 +62,13 @@ class VolumeDoorOverlay extends StatelessWidget {
           camera: camera,
           viewport: viewport,
           tileVisible: tileVisible,
+          selectedVolumeId: selectedVolumeId,
+          selectedTx: selectedTx,
+          selectedTy: selectedTy,
+          selectedSide: selectedSide,
+          selectedInvalid: selectedInvalid,
+          draftCorners: draftCorners,
+          draftInvalid: draftInvalid,
         ),
       ),
     );
@@ -57,12 +81,26 @@ class _DoorOutlinePainter extends CustomPainter {
     required this.camera,
     required this.viewport,
     this.tileVisible,
+    this.selectedVolumeId,
+    this.selectedTx,
+    this.selectedTy,
+    this.selectedSide,
+    this.selectedInvalid = false,
+    this.draftCorners,
+    this.draftInvalid = false,
   });
 
   final VolumeStore volumes;
   final Camera camera;
   final Size viewport;
   final bool Function(int tx, int ty)? tileVisible;
+  final int? selectedVolumeId;
+  final int? selectedTx;
+  final int? selectedTy;
+  final VolumeSide? selectedSide;
+  final bool selectedInvalid;
+  final List<Vector3>? draftCorners;
+  final bool draftInvalid;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -76,28 +114,67 @@ class _DoorOutlinePainter extends CustomPainter {
         final visible = tileVisible;
         if (visible != null && !visible(cell.tx, cell.ty)) continue;
         for (final door in exteriorDoors(volume, cell)) {
-          final corners = doorWorldCorners(
+          final pts = _project(doorWorldCorners(
             grid: volumes.grid,
             tx: cell.tx,
             ty: cell.ty,
             box: cell.box,
             door: door,
-          );
-          final pts = <Offset>[];
-          var ok = true;
-          for (final c in corners) {
-            final p = camera.projectToScreen(c, viewport);
-            if (p == null) {
-              ok = false;
-              break;
-            }
-            pts.add(p);
+          ));
+          if (pts == null) continue;
+          final selected = volume.id == selectedVolumeId &&
+              cell.tx == selectedTx &&
+              cell.ty == selectedTy &&
+              door.side == selectedSide;
+          if (selected && draftCorners != null) continue;
+          if (selected && selectedInvalid) {
+            canvas.drawPath(
+              Path()..addPolygon(pts, true),
+              Paint()..color = kFocusStickerInvalid.withValues(alpha: 0.55),
+            );
           }
-          if (!ok || pts.length < 3) continue;
-          canvas.drawPath(Path()..addPolygon(pts, true), paint);
+          canvas.drawPath(
+            Path()..addPolygon(pts, true),
+            selected
+                ? (Paint()
+                  ..color = selectedInvalid ? kFocusStickerInvalid : Colors.white
+                  ..strokeWidth = _kDoorStroke
+                  ..style = PaintingStyle.stroke)
+                : paint,
+          );
         }
       }
     }
+    final draft = draftCorners;
+    if (draft != null) {
+      final pts = _project(draft);
+      if (pts != null) {
+        canvas.drawPath(
+          Path()..addPolygon(pts, true),
+          Paint()
+            ..color = (draftInvalid ? kFocusStickerInvalid : const Color(0xFFF7F7F2))
+                .withValues(alpha: 0.7),
+        );
+        canvas.drawPath(
+          Path()..addPolygon(pts, true),
+          Paint()
+            ..color = draftInvalid ? kFocusStickerInvalid : Colors.white
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = _kDoorStroke,
+        );
+      }
+    }
+  }
+
+  List<Offset>? _project(List<Vector3> corners) {
+    final pts = <Offset>[];
+    for (final c in corners) {
+      final p = camera.projectToScreen(c, viewport);
+      if (p == null) return null;
+      pts.add(p);
+    }
+    if (pts.length < 3) return null;
+    return pts;
   }
 
   @override

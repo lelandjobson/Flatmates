@@ -1,4 +1,6 @@
 import '../volumes/volume.dart';
+import '../walls/wall_edge.dart';
+import '../walls/wall_store.dart';
 
 /// Undirected ortho edge between two path tiles.
 class PathEdge {
@@ -23,6 +25,14 @@ class PathEdge {
     final dx = (x1 - x0).abs();
     final dy = (y1 - y0).abs();
     return (dx == 1 && dy == 0) || (dx == 0 && dy == 1);
+  }
+
+  /// The tile-boundary wall that would sit on this connection.
+  WallEdge get crossingWall {
+    if (x1 == x0 + 1 && y1 == y0) {
+      return WallEdge(x1, y0, x1, y0 + 1);
+    }
+    return WallEdge(x0, y1, x0 + 1, y1);
   }
 
   @override
@@ -71,13 +81,58 @@ class PathStore {
     return tiles.add((tx, ty));
   }
 
+  /// Place a path tile and join it to every 4-adjacent path.
+  bool placeAndJoin(
+    int tx,
+    int ty, {
+    bool Function(int tx, int ty)? blocked,
+    WallStore? walls,
+  }) {
+    if (!grid.inBounds(tx, ty)) return false;
+    if (blocked?.call(tx, ty) ?? false) return false;
+    var changed = tiles.add((tx, ty));
+    for (final side in VolumeSide.values) {
+      final (dx, dy) = side.tileDelta;
+      final nx = tx + dx;
+      final ny = ty + dy;
+      if (!contains(nx, ny)) continue;
+      if (connect(tx, ty, nx, ny, blocked: blocked, walls: walls)) {
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  /// Drop the connection only; tiles stay.
+  bool disconnect(int ax, int ay, int bx, int by) =>
+      edges.remove(PathEdge(ax, ay, bx, by));
+
+  /// True when [wall] lies on a live path connection.
+  bool connectionAcross(WallEdge? wall) {
+    if (wall == null) return false;
+    final pair = wall.separatedTiles;
+    if (pair == null) return false;
+    final a = pair.$1;
+    final b = pair.$2;
+    return hasEdge(a.$1, a.$2, b.$1, b.$2);
+  }
+
+  bool severAcross(WallEdge wall) {
+    final pair = wall.separatedTiles;
+    if (pair == null) return false;
+    return disconnect(pair.$1.$1, pair.$1.$2, pair.$2.$1, pair.$2.$2);
+  }
+
   /// Ensure both tiles exist and add an ortho [out_out] edge.
+  ///
+  /// A wall on that boundary is removed so a path never crosses a wall.
   bool connect(
     int ax,
     int ay,
     int bx,
     int by, {
     bool Function(int tx, int ty)? blocked,
+    WallStore? walls,
   }) {
     final edge = PathEdge(ax, ay, bx, by);
     if (!edge.isOrtho) return false;
@@ -86,7 +141,9 @@ class PathStore {
     if (blocked?.call(bx, by) ?? false) return false;
     tiles.add((ax, ay));
     tiles.add((bx, by));
-    return edges.add(edge);
+    var changed = edges.add(edge);
+    if (walls != null && walls.remove(edge.crossingWall)) changed = true;
+    return changed;
   }
 
   /// Walk from [from] to [to], connecting each ortho step (diagonal → L).
@@ -94,6 +151,7 @@ class PathStore {
     (int, int) from,
     (int, int) to, {
     bool Function(int tx, int ty)? blocked,
+    WallStore? walls,
   }) {
     if (blocked?.call(from.$1, from.$2) ?? false) return false;
     var changed = addIsland(from.$1, from.$2, blocked: blocked);
@@ -108,14 +166,18 @@ class PathStore {
       if (x != x1) {
         final nx = x + sx;
         if (!grid.inBounds(nx, y) || (blocked?.call(nx, y) ?? false)) break;
-        if (connect(x, y, nx, y, blocked: blocked)) changed = true;
+        if (connect(x, y, nx, y, blocked: blocked, walls: walls)) {
+          changed = true;
+        }
         x = nx;
         stepped = true;
       }
       if (y != y1) {
         final ny = y + sy;
         if (!grid.inBounds(x, ny) || (blocked?.call(x, ny) ?? false)) break;
-        if (connect(x, y, x, ny, blocked: blocked)) changed = true;
+        if (connect(x, y, x, ny, blocked: blocked, walls: walls)) {
+          changed = true;
+        }
         y = ny;
         stepped = true;
       }

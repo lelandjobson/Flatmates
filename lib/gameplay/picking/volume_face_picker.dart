@@ -4,6 +4,7 @@ import 'package:vector_math/vector_math_64.dart';
 import '../../rendering/scene/camera.dart';
 import '../viewers/world_plane.dart';
 import '../volumes/volume.dart';
+import '../volumes/volume_solid.dart';
 import '../volumes/volume_store.dart';
 
 class VolumeFaceHit {
@@ -48,7 +49,11 @@ class VolumeFacePicker {
             VolumeFace.negZ => VolumeHandle.negZ,
             VolumeFace.posY || VolumeFace.negY => null,
           };
-          if (handle != null && volume.hasNeighborOn(cell, handle)) continue;
+          if (handle != null &&
+              resolveVolumeSolid(volume, store.grid)
+                  .isHandleFullyInternal(cell.tx, cell.ty, handle)) {
+            continue;
+          }
           final (origin, normal) = face.originAndNormal(min, max);
           final denom = ray.direction.dot(normal);
           if (denom.abs() < 1e-8) continue;

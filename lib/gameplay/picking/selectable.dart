@@ -7,7 +7,7 @@ import '../walls/wall_regions.dart';
 /// Camera distance at or below which a volume hit selects a face, not the mass.
 const double kSelectVolumeFacesBelowDistance = 80;
 
-enum SelectableKind { tile, region, friend, volume, volumeFace }
+enum SelectableKind { tile, region, friend, volume, volumeFace, path }
 
 /// One pick of a map entity under a screen ray.
 class SelectableHit {
@@ -68,6 +68,14 @@ class SelectableHit {
         worldPoint: worldPoint,
       );
 
+  factory SelectableHit.path(int tx, int ty, {Vector3? worldPoint}) =>
+      SelectableHit(
+        kind: SelectableKind.path,
+        tx: tx,
+        ty: ty,
+        worldPoint: worldPoint,
+      );
+
   factory SelectableHit.volumeFace(
     int volumeId, {
     required VolumeFace face,
@@ -94,7 +102,7 @@ class SelectableHit {
   final WallRegion? region;
   final Vector3? worldPoint;
 
-  /// Volumes, faces, regions, and friends — not bare tiles.
+  /// Volumes, faces, regions, paths, and friends — not bare tiles.
   bool get isCreatedObject => kind != SelectableKind.tile;
 
   String get debugLabel {
@@ -107,6 +115,8 @@ class SelectableHit {
         return 'friend ${friendId ?? '?'}';
       case SelectableKind.volume:
         return 'volume v${volumeId ?? '?'}';
+      case SelectableKind.path:
+        return 'path (${tx ?? '?'},${ty ?? '?'})';
       case SelectableKind.volumeFace:
         return 'volumeFace v${volumeId ?? '?'} ${face?.name ?? '?'}';
     }
@@ -119,6 +129,7 @@ class SelectableHit {
       SelectableKind.region =>
         region != null && other.region != null && region == other.region,
       SelectableKind.friend => friendId == other.friendId,
+      SelectableKind.path => tx == other.tx && ty == other.ty,
       SelectableKind.volume => volumeId == other.volumeId,
       SelectableKind.volumeFace =>
         volumeId == other.volumeId &&

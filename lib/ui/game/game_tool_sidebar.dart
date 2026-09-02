@@ -256,6 +256,7 @@ class GameLayerSidebar extends StatelessWidget {
     super.key,
     required this.graphActive,
     required this.onToggleGraph,
+    this.onIsolate,
     this.onPopulateRecording,
     this.onSaveRecording,
     this.canSaveRecording = false,
@@ -263,6 +264,7 @@ class GameLayerSidebar extends StatelessWidget {
 
   final bool graphActive;
   final VoidCallback onToggleGraph;
+  final VoidCallback? onIsolate;
   final VoidCallback? onPopulateRecording;
   final VoidCallback? onSaveRecording;
   final bool canSaveRecording;
@@ -278,6 +280,15 @@ class GameLayerSidebar extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (onIsolate != null) ...[
+            _ToolBtn(
+              icon: Icons.filter_center_focus,
+              tooltip: 'Isolate 3D',
+              active: false,
+              onTap: onIsolate,
+            ),
+            const SizedBox(height: 2),
+          ],
           _ToolBtn(
             icon: Icons.hub,
             tooltip: 'Connection graph',
@@ -306,6 +317,32 @@ class GameLayerSidebar extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Interior-view toggle for the outward shell of a focused volume.
+class GameVolumeInteriorSidebar extends StatelessWidget {
+  const GameVolumeInteriorSidebar({
+    super.key,
+    required this.showExterior,
+    required this.onToggleExterior,
+  });
+
+  final bool showExterior;
+  final VoidCallback onToggleExterior;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ToolStrip(
+      children: [
+        _ToolBtn(
+          icon: showExterior ? Icons.visibility : Icons.visibility_off,
+          tooltip: showExterior ? 'Hide exterior' : 'Show exterior',
+          active: showExterior,
+          onTap: onToggleExterior,
+        ),
+      ],
     );
   }
 }

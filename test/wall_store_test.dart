@@ -1,3 +1,4 @@
+import 'package:flatmates/gameplay/paths/path_store.dart';
 import 'package:flatmates/gameplay/walls/wall_edge.dart';
 import 'package:flatmates/gameplay/walls/wall_store.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -60,5 +61,19 @@ void main() {
     expect(store.add(WallEdge(3, 2, 3, 3)), isTrue);
     expect(store.separatesTiles((2, 2), (3, 2)), isTrue);
     expect(store.separatesTiles((2, 2), (2, 3)), isFalse);
+  });
+
+  test('adding a wall across a path severs the connection and stores no wall', () {
+    final paths = PathStore()
+      ..placeAndJoin(2, 2)
+      ..placeAndJoin(3, 2);
+    expect(paths.hasEdge(2, 2, 3, 2), isTrue);
+    final walls = WallStore();
+    final edge = WallEdge(3, 2, 3, 3);
+    expect(walls.add(edge, insteadOfAdd: paths.severAcross), isTrue);
+    expect(walls.contains(edge), isFalse);
+    expect(paths.hasEdge(2, 2, 3, 2), isFalse);
+    expect(paths.contains(2, 2), isTrue);
+    expect(paths.contains(3, 2), isTrue);
   });
 }
