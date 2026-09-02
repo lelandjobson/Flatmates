@@ -4,6 +4,7 @@ import '../landscape/landscape_grid.dart';
 import 'paint/face_paint_store.dart';
 import 'paths/path_store.dart';
 import 'volumes/volume.dart';
+import 'volumes/volume_program.dart';
 import 'volumes/volume_store.dart';
 import 'walls/wall_edge.dart';
 import 'walls/wall_store.dart';
@@ -23,6 +24,10 @@ class GameSnapshot {
     required this.landscape,
     required this.facePaint,
     required this.label,
+    this.programs,
+    this.sessionTouchedIds = const {},
+    this.sessionBaseline,
+    this.sessionNextId,
     this.noOp = false,
     this.restoresOperativeOnRedo = false,
   });
@@ -38,6 +43,10 @@ class GameSnapshot {
   final Set<WallEdge> wallEdges;
   final LandscapeGrid? landscape;
   final FacePaintStore facePaint;
+  final VolumeProgramStore? programs;
+  final Set<int> sessionTouchedIds;
+  final List<Volume>? sessionBaseline;
+  final int? sessionNextId;
   final String label;
   final bool noOp;
   final bool restoresOperativeOnRedo;
@@ -57,6 +66,10 @@ class GameSnapshot {
       wallEdges: wallEdges,
       landscape: landscape,
       facePaint: facePaint,
+      programs: programs,
+      sessionTouchedIds: sessionTouchedIds,
+      sessionBaseline: sessionBaseline,
+      sessionNextId: sessionNextId,
       label: label,
       noOp: noOp,
       restoresOperativeOnRedo:
@@ -71,6 +84,7 @@ class GameSnapshot {
     required LandscapeGrid? landscape,
     required FacePaintStore facePaint,
     required String label,
+    VolumeProgramStore? programs,
     bool noOp = false,
   }) {
     final cloned = <Volume>[
@@ -102,6 +116,12 @@ class GameSnapshot {
       wallEdges: Set<WallEdge>.from(walls.edges),
       landscape: landscape?.copy(),
       facePaint: facePaint.copy(),
+      programs: programs?.copy(),
+      sessionTouchedIds: Set<int>.from(volumes.sessionTouchedIds),
+      sessionBaseline: volumes.sessionBaseline == null
+          ? null
+          : [for (final volume in volumes.sessionBaseline!) volume.clone()],
+      sessionNextId: volumes.sessionNextId,
       label: label,
       noOp: noOp,
     );
@@ -113,6 +133,7 @@ class GameSnapshot {
     required WallStore walls,
     required LandscapeGrid? landscape,
     required FacePaintStore facePaint,
+    VolumeProgramStore? programs,
   }) {
     final clonedVolumes = [for (final volume in this.volumes) volume.clone()];
     Volume? draft;
@@ -138,6 +159,11 @@ class GameSnapshot {
       draftIsGrow: draftIsGrow,
       phase: phase,
       nextId: nextVolumeId,
+      sessionTouchedIds: Set<int>.from(sessionTouchedIds),
+      sessionBaseline: sessionBaseline == null
+          ? null
+          : [for (final volume in sessionBaseline!) volume.clone()],
+      sessionNextId: sessionNextId,
     );
     paths.restore(
       tiles: Set<(int, int)>.from(pathTiles),
@@ -148,6 +174,9 @@ class GameSnapshot {
       landscape.restoreFrom(this.landscape!);
     }
     facePaint.restoreFrom(this.facePaint);
+    if (programs != null && this.programs != null) {
+      programs.restoreFrom(this.programs!);
+    }
   }
 }
 

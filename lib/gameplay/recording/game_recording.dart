@@ -6,6 +6,7 @@ import '../../landscape/landscape_grid.dart';
 import '../friends/friend_instance.dart';
 import '../friends/friend_instance_store.dart';
 import '../friends/friend_mesh_sync.dart';
+import '../vision/map_vision.dart';
 import '../paint/face_paint_store.dart';
 import '../paths/path_store.dart';
 import '../viewers/world_plane.dart';
@@ -260,6 +261,74 @@ class GameRecording {
         (9, 51, 2),
       ],
       landscapeErase: const [],
+    ).shifted(
+      dtx: MapVisionConfig.game.startingOriginTx,
+      dty: MapVisionConfig.game.startingOriginTy,
+    );
+  }
+
+  /// Move tile-space content by [dtx],[dty]. Friend world positions stay put
+  /// so a centered map expansion keeps them in the starting village.
+  GameRecording shifted({
+    required int dtx,
+    required int dty,
+    int pixelsPerTile = VolumeGrid.defaultSubtilesPerTile,
+  }) {
+    if (dtx == 0 && dty == 0) return this;
+    final dxp = dtx * pixelsPerTile;
+    final dyp = dty * pixelsPerTile;
+    return GameRecording(
+      version: version,
+      nextVolumeId: nextVolumeId,
+      volumes: [
+        for (final volume in volumes)
+          Volume(
+            id: volume.id,
+            cells: [
+              for (final cell in volume.cells)
+                VolumeCell(
+                  tx: cell.tx + dtx,
+                  ty: cell.ty + dty,
+                  box: cell.box.clone(),
+                  accessibleSides: Set<VolumeSide>.from(cell.accessibleSides),
+                ),
+            ],
+          ),
+      ],
+      pathTiles: {
+        for (final tile in pathTiles) (tile.$1 + dtx, tile.$2 + dty),
+      },
+      pathEdges: {
+        for (final edge in pathEdges)
+          PathEdge(edge.x0 + dtx, edge.y0 + dty, edge.x1 + dtx, edge.y1 + dty),
+      },
+      wallEdges: {
+        for (final edge in wallEdges)
+          WallEdge(
+            edge.x0 + dtx,
+            edge.y0 + dty,
+            edge.x1 + dtx,
+            edge.y1 + dty,
+            kind: edge.kind,
+          ),
+      },
+      friends: [for (final instance in friends) instance.clone()],
+      facePaint: FacePaintStore.fromCanvases({
+        for (final entry in facePaint.canvases.entries)
+          FacePaintKey(
+            volumeId: entry.key.volumeId,
+            tx: entry.key.tx + dtx,
+            ty: entry.key.ty + dty,
+            face: entry.key.face,
+          ): entry.value,
+      }),
+      landscapePaint: [
+        for (final cell in landscapePaint)
+          (cell.$1 + dxp, cell.$2 + dyp, cell.$3),
+      ],
+      landscapeErase: [
+        for (final cell in landscapeErase) (cell.$1 + dxp, cell.$2 + dyp),
+      ],
     );
   }
 

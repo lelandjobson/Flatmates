@@ -1,9 +1,12 @@
 import 'package:flatmates/crafting/placed_paper.dart';
+import 'package:flatmates/gameplay/graph/connection_graph.dart';
 import 'package:flatmates/gameplay/paint/face_paint_store.dart';
+import 'package:flatmates/gameplay/paths/path_store.dart';
 import 'package:flatmates/gameplay/viewers/world_plane.dart';
 import 'package:flatmates/gameplay/volumes/volume.dart';
 import 'package:flatmates/gameplay/volumes/volume_box_mesh.dart';
 import 'package:flatmates/gameplay/volumes/volume_door.dart';
+import 'package:flatmates/gameplay/volumes/volume_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math_64.dart';
 
@@ -27,6 +30,16 @@ void main() {
       }
     }
     expect(n, 8);
+  });
+
+  test('joined mass mesh omits the shared wall', () {
+    final geom = volumeBoxGeometry(
+      min: Vector3(0, 0, 0),
+      max: Vector3(8, 6, 8),
+      id: 'v',
+      omitHandles: {VolumeHandle.posX},
+    );
+    expect(geom.faces, hasLength(5));
   });
 
   test('door clamps to a minimum-size face', () {
@@ -122,5 +135,83 @@ void main() {
     expect(canvas.fill(1, 0, PaperColor.yellow), isTrue);
     expect(canvas.colorAt(3, 0), isNull);
     expect(canvas.isVoid(3, 0), isTrue);
+  });
+
+  test('door stamp is 2×4, sets access, and removal clears it', () {
+    final volumes = VolumeStore();
+    expect(volumes.startNew(2, 2), isTrue);
+    expect(volumes.confirmEdit(), isTrue);
+    final volume = volumes.volumes.single;
+    final cell = volume.cells.single;
+    expect(
+      volumes.placeDoor(
+        volume: volume,
+        cell: cell,
+        side: VolumeSide.east,
+        originU: 1,
+      ),
+      isTrue,
+    );
+    expect(cell.accessibleSides, {VolumeSide.east});
+    expect(cell.doorOrigins[VolumeSide.east], 1);
+    final door = volumeDoorForSide(
+      cell.box,
+      VolumeSide.east,
+      originU: cell.doorOrigins[VolumeSide.east],
+    )!;
+    expect(door.width, kDoorWidthSubtiles);
+    expect(door.height, kDoorHeightSubtiles);
+    expect(door.originU, 1);
+    expect(door.originY, 0);
+    expect(door.containsFacePixel(1, 0), isTrue);
+    expect(door.containsFacePixel(2, 3), isTrue);
+    expect(door.containsFacePixel(0, 0), isFalse);
+
+    expect(
+      volumes.removeDoor(volume: volume, cell: cell, side: VolumeSide.east),
+      isTrue,
+    );
+    expect(cell.accessibleSides, isEmpty);
+    expect(cell.doorOrigins, isEmpty);
+  });
+
+  test('stamped door origin is used by mesh punch and connection graph', () {
+    final volumes = VolumeStore();
+    final paths = PathStore(grid: volumes.grid);
+    expect(volumes.startNew(2, 2), isTrue);
+    expect(volumes.confirmEdit(), isTrue);
+    final volume = volumes.volumes.single;
+    final cell = volume.cells.single;
+    expect(
+      volumes.placeDoor(
+        volume: volume,
+        cell: cell,
+        side: VolumeSide.east,
+        originU: 0,
+      ),
+      isTrue,
+    );
+
+    final paint = FacePaintStore();
+    final canvas = paint.canvasFor(
+      volumeId: volume.id,
+      cell: cell,
+      face: VolumeFace.posX,
+    );
+    expect(canvas.isVoid(0, 0), isTrue);
+    expect(canvas.isVoid(1, 3), isTrue);
+    expect(canvas.isVoid(3, 0), isFalse);
+
+    final geom = volumeBoxGeometry(
+      min: Vector3(0, 0, 0),
+      max: Vector3(8, 6, 8),
+      id: 'v',
+      doors: exteriorDoors(volume, cell).toList(),
+      subtileSize: 1,
+    );
+    expect(geom.faces.where((f) => f.length > 4), hasLength(1));
+
+    final graph = ConnectionGraph.build(volumes: volumes, paths: paths);
+    expect(graph.edges.where((e) => e.kind == JointKind.inOut), hasLength(1));
   });
 }

@@ -24,21 +24,23 @@ class VolumeTransformGizmo extends StatelessWidget {
   final VolumeStore store;
   final Camera camera;
   final Size viewport;
-  final void Function(VolumeHandle handle, Offset global) onDragStart;
-  final void Function(VolumeHandle handle, Offset global) onDragUpdate;
+  final void Function(VolumeCell cell, VolumeHandle handle, Offset global)
+      onDragStart;
+  final void Function(VolumeCell cell, VolumeHandle handle, Offset global)
+      onDragUpdate;
   final VoidCallback onDragEnd;
 
   @override
   Widget build(BuildContext context) {
-    final cell = store.draftCell;
-    if (cell == null || store.phase != VolumeEditPhase.editing) {
-      return const SizedBox.shrink();
-    }
+    final volume = store.draftVolume;
+    if (volume == null) return const SizedBox.shrink();
 
     final stems = <(Offset, Offset, Color)>[];
     final handles = <Widget>[];
 
-    for (final handle in VolumeHandle.values) {
+    for (final facet in volume.exteriorFacets()) {
+      final cell = facet.cell;
+      final handle = facet.handle;
       final face = cell.box.faceCenter(store.grid, cell.tx, cell.ty, handle);
       final tip = face + handle.axis * kVolumeHandleStemOut;
       final a = camera.projectToScreen(face, viewport);
@@ -55,8 +57,10 @@ class VolumeTransformGizmo extends StatelessWidget {
           size: const Size(_kHandleHit, _kHandleHit),
           child: _HandleKnob(
             color: color,
-            onPanStart: (details) => onDragStart(handle, details.globalPosition),
-            onPanUpdate: (details) => onDragUpdate(handle, details.globalPosition),
+            onPanStart: (details) =>
+                onDragStart(cell, handle, details.globalPosition),
+            onPanUpdate: (details) =>
+                onDragUpdate(cell, handle, details.globalPosition),
             onPanEnd: onDragEnd,
           ),
         ),
@@ -158,6 +162,5 @@ class _HandleStemPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _HandleStemPainter oldDelegate) =>
-      oldDelegate.stems != stems;
+  bool shouldRepaint(covariant _HandleStemPainter oldDelegate) => true;
 }

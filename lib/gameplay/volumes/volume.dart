@@ -20,12 +20,7 @@ extension VolumeSideX on VolumeSide {
       };
 
   /// Index in [GeometryBuilders.cubeFaces]: -Z, +Z, -Y, +Y, +X, -X.
-  int get cubeFaceIndex => switch (this) {
-        VolumeSide.north => 0,
-        VolumeSide.south => 1,
-        VolumeSide.east => 4,
-        VolumeSide.west => 5,
-      };
+  int get cubeFaceIndex => handle.cubeFaceIndex;
 
   VolumeSide get opposite => switch (this) {
         VolumeSide.north => VolumeSide.south,
@@ -265,6 +260,24 @@ extension VolumeHandleX on VolumeHandle {
       };
 
   bool get isHeight => this == VolumeHandle.posY;
+
+  /// Tile step for a horizontal face, or null for height.
+  (int dx, int dy)? get tileDelta => switch (this) {
+        VolumeHandle.posX => (1, 0),
+        VolumeHandle.negX => (-1, 0),
+        VolumeHandle.posZ => (0, 1),
+        VolumeHandle.negZ => (0, -1),
+        VolumeHandle.posY => null,
+      };
+
+  /// Index in [GeometryBuilders.cubeFaces]: -Z, +Z, -Y, +Y, +X, -X.
+  int get cubeFaceIndex => switch (this) {
+        VolumeHandle.negZ => 0,
+        VolumeHandle.posZ => 1,
+        VolumeHandle.posY => 3,
+        VolumeHandle.posX => 4,
+        VolumeHandle.negX => 5,
+      };
 }
 
 extension VolumeSideHandle on VolumeSide {
@@ -282,7 +295,9 @@ class VolumeCell {
     required this.ty,
     required this.box,
     Set<VolumeSide>? accessibleSides,
-  }) : accessibleSides = accessibleSides ?? <VolumeSide>{};
+    Map<VolumeSide, int>? doorOrigins,
+  })  : accessibleSides = accessibleSides ?? <VolumeSide>{},
+        doorOrigins = doorOrigins ?? <VolumeSide, int>{};
 
   final int tx;
   final int ty;
@@ -291,11 +306,15 @@ class VolumeCell {
   /// Exterior sides on this cell that have a door. A cell may have several.
   final Set<VolumeSide> accessibleSides;
 
+  /// Subtile originU of a placed 2×4 door paper. Missing sides use centering.
+  final Map<VolumeSide, int> doorOrigins;
+
   VolumeCell clone() => VolumeCell(
         tx: tx,
         ty: ty,
         box: box.clone(),
         accessibleSides: Set<VolumeSide>.from(accessibleSides),
+        doorOrigins: Map<VolumeSide, int>.from(doorOrigins),
       );
 }
 
@@ -326,6 +345,32 @@ class Volume {
         id: id,
         cells: [for (final cell in cells) cell.clone()],
       );
+
+  /// Push-pull faces that are not shared with another cell of this mass.
+  List<VolumeFacet> exteriorFacets() {
+    final out = <VolumeFacet>[];
+    for (final cell in cells) {
+      for (final handle in VolumeHandle.values) {
+        if (hasNeighborOn(cell, handle)) continue;
+        out.add(VolumeFacet(cell: cell, handle: handle));
+      }
+    }
+    return out;
+  }
+
+  /// True when another cell of this mass occupies the tile past [handle].
+  bool hasNeighborOn(VolumeCell cell, VolumeHandle handle) {
+    final delta = handle.tileDelta;
+    if (delta == null) return false;
+    return cellAt(cell.tx + delta.$1, cell.ty + delta.$2) != null;
+  }
+}
+
+class VolumeFacet {
+  const VolumeFacet({required this.cell, required this.handle});
+
+  final VolumeCell cell;
+  final VolumeHandle handle;
 }
 
 class VolumeGrowCandidate {

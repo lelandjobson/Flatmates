@@ -1,15 +1,23 @@
-import 'package:flatmates/gameplay/volumes/volume.dart';
 import 'package:flatmates/gameplay/volumes/volume_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('first volume cannot commit without a door', () {
+  test('first volume commits with no door', () {
     final volumes = VolumeStore();
-    expect(volumes.requiresAccessibleSide, isTrue);
+    expect(volumes.requiresAccessibleSide, isFalse);
     expect(volumes.startNew(1, 1), isTrue);
     expect(volumes.confirmEdit(), isTrue);
-    expect(volumes.confirmAccess(), isFalse);
-    volumes.toggleAccess(VolumeSide.east);
+    expect(volumes.phase, VolumeEditPhase.idle);
+    expect(volumes.volumes, hasLength(1));
+    expect(volumes.volumes.single.accessibleSides, isEmpty);
+    expect(volumes.confirmAccess(), isTrue);
+  });
+
+  test('confirmAccess after idle succeeds', () {
+    final volumes = VolumeStore();
+    expect(volumes.confirmAccess(), isTrue);
+    expect(volumes.startNew(2, 2), isTrue);
+    expect(volumes.confirmEdit(), isTrue);
     expect(volumes.confirmAccess(), isTrue);
     expect(volumes.volumes, hasLength(1));
   });
@@ -18,15 +26,13 @@ void main() {
     final volumes = VolumeStore();
     expect(volumes.startNew(1, 1), isTrue);
     expect(volumes.confirmEdit(), isTrue);
-    volumes.toggleAccess(VolumeSide.east);
     expect(volumes.confirmAccess(), isTrue);
 
     expect(volumes.requiresAccessibleSide, isFalse);
     expect(volumes.startNew(3, 3), isTrue);
     expect(volumes.confirmEdit(), isTrue);
-    expect(volumes.draftCell!.accessibleSides, isEmpty);
+    expect(volumes.volumes.last.accessibleSides, isEmpty);
     expect(volumes.confirmAccess(), isTrue);
     expect(volumes.volumes, hasLength(2));
-    expect(volumes.volumes.last.accessibleSides, isEmpty);
   });
 }

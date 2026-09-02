@@ -334,7 +334,11 @@ class FacePaintStore {
     }
     for (final side in cell.accessibleSides) {
       if (side.volumeFace != face) continue;
-      final door = volumeDoorForSide(cell.box, side);
+      final door = volumeDoorForSide(
+        cell.box,
+        side,
+        originU: cell.doorOrigins[side],
+      );
       if (door == null) continue;
       for (var v = door.originY; v < door.originY + door.height; v++) {
         for (var u = door.originU; u < door.originU + door.width; u++) {
@@ -343,6 +347,27 @@ class FacePaintStore {
         }
       }
     }
+  }
+
+  /// Move paint keys from [fromId] onto [toId] after a volume merge.
+  void rekeyVolume(int fromId, int toId) {
+    if (fromId == toId) return;
+    final next = <FacePaintKey, FaceCanvas>{};
+    for (final entry in _canvases.entries) {
+      if (entry.key.volumeId != fromId) {
+        next[entry.key] = entry.value;
+        continue;
+      }
+      next[FacePaintKey(
+        volumeId: toId,
+        tx: entry.key.tx,
+        ty: entry.key.ty,
+        face: entry.key.face,
+      )] = entry.value;
+    }
+    _canvases
+      ..clear()
+      ..addAll(next);
   }
 
   /// Move paint keys for [volumeId] by [dtx],[dty] after a volume translate.

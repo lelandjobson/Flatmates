@@ -43,8 +43,12 @@ extension VolumeSideFace on VolumeSide {
       };
 }
 
-/// Centered 2×4 door on [side], clamped to the box. Null if the face is gone.
-VolumeDoor? volumeDoorForSide(BoxPrimitive box, VolumeSide side) {
+/// 2×4 door on [side]. Uses [originU] when set; otherwise centers on the face.
+VolumeDoor? volumeDoorForSide(
+  BoxPrimitive box,
+  VolumeSide side, {
+  int? originU,
+}) {
   final faceW = switch (side) {
     VolumeSide.east || VolumeSide.west => box.depthSubtiles,
     VolumeSide.north || VolumeSide.south => box.widthSubtiles,
@@ -52,9 +56,13 @@ VolumeDoor? volumeDoorForSide(BoxPrimitive box, VolumeSide side) {
   final w = math.min(kDoorWidthSubtiles, faceW);
   final h = math.min(kDoorHeightSubtiles, box.heightSubtiles);
   if (w < 1 || h < 1) return null;
+  final maxU = faceW - w;
+  final u = originU == null
+      ? (faceW - w) ~/ 2
+      : originU.clamp(0, maxU < 0 ? 0 : maxU);
   return VolumeDoor(
     side: side,
-    originU: (faceW - w) ~/ 2,
+    originU: u,
     originY: 0,
     width: w,
     height: h,
@@ -67,10 +75,11 @@ bool volumeDoorContainsFacePixel({
   required int u,
   required int v,
   required Set<VolumeSide> accessibleSides,
+  Map<VolumeSide, int> doorOrigins = const {},
 }) {
   for (final side in accessibleSides) {
     if (side.volumeFace != face) continue;
-    final door = volumeDoorForSide(box, side);
+    final door = volumeDoorForSide(box, side, originU: doorOrigins[side]);
     if (door != null && door.containsFacePixel(u, v)) return true;
   }
   return false;
@@ -81,7 +90,11 @@ Iterable<VolumeDoor> exteriorDoors(Volume volume, VolumeCell cell) sync* {
   for (final side in cell.accessibleSides) {
     final (dx, dy) = side.tileDelta;
     if (volume.cellAt(cell.tx + dx, cell.ty + dy) != null) continue;
-    final door = volumeDoorForSide(cell.box, side);
+    final door = volumeDoorForSide(
+      cell.box,
+      side,
+      originU: cell.doorOrigins[side],
+    );
     if (door != null) yield door;
   }
 }

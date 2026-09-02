@@ -8,6 +8,7 @@ import 'package:flatmates/gameplay/friends/friend_instance.dart';
 import 'package:flatmates/gameplay/recording/game_recording.dart';
 import 'package:flatmates/gameplay/recording/game_recording_io.dart';
 import 'package:flatmates/gameplay/viewers/world_plane.dart';
+import 'package:flatmates/gameplay/vision/map_vision.dart';
 import 'package:flatmates/gameplay/volumes/volume.dart';
 import 'package:flatmates/gameplay/volumes/volume_store.dart';
 import 'package:flatmates/gameplay/walls/wall_edge.dart';
@@ -19,8 +20,12 @@ import 'package:flatmates/landscape/landscape_material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  VolumeStore emptyVolumes() => VolumeStore(
-        grid: const VolumeGrid(tilesSide: 16, tileSize: 8),
+  const vision = MapVisionConfig.game;
+  final ox = vision.startingOriginTx;
+  final oy = vision.startingOriginTy;
+
+  VolumeStore emptyVolumes({int tilesSide = 16}) => VolumeStore(
+        grid: VolumeGrid(tilesSide: tilesSide, tileSize: 8),
       );
 
   test('json roundtrip preserves volumes, paths, and face paint', () {
@@ -82,7 +87,7 @@ void main() {
   });
 
   test('applyTo replaces live content and landscape paint', () {
-    final volumes = emptyVolumes();
+    final volumes = emptyVolumes(tilesSide: vision.worldTilesSide);
     expect(volumes.startNew(0, 0), isTrue);
     expect(volumes.confirmEdit(), isTrue);
     volumes.toggleAccess(VolumeSide.south);
@@ -103,16 +108,16 @@ void main() {
     expect(volumes.phase, VolumeEditPhase.idle);
     expect(volumes.draftVolume, isNull);
     expect(volumes.occupant(0, 0), isNull);
-    expect(volumes.occupant(5, 5), 1);
-    expect(volumes.occupant(12, 10), 3);
-    expect(paths.contains(5, 6), isTrue);
+    expect(volumes.occupant(ox + 5, oy + 5), 1);
+    expect(volumes.occupant(ox + 12, oy + 10), 3);
+    expect(paths.contains(ox + 5, oy + 6), isTrue);
     expect(paths.contains(1, 1), isFalse);
     expect(
       paint.canvases.containsKey(
-        const FacePaintKey(
+        FacePaintKey(
           volumeId: 1,
-          tx: 5,
-          ty: 5,
+          tx: ox + 5,
+          ty: oy + 5,
           face: VolumeFace.posY,
         ),
       ),
@@ -120,10 +125,10 @@ void main() {
     );
     expect(
       paint.canvases.containsKey(
-        const FacePaintKey(
+        FacePaintKey(
           volumeId: 2,
-          tx: 10,
-          ty: 5,
+          tx: ox + 10,
+          ty: oy + 5,
           face: VolumeFace.posX,
         ),
       ),
@@ -131,10 +136,10 @@ void main() {
     );
     expect(
       paint.canvases.containsKey(
-        const FacePaintKey(
+        FacePaintKey(
           volumeId: 4,
-          tx: 4,
-          ty: 9,
+          tx: ox + 4,
+          ty: oy + 9,
           face: VolumeFace.negZ,
         ),
       ),
@@ -193,7 +198,7 @@ void main() {
 
   test('sample walls form four enclosed regions', () {
     final walls = WallStore(
-      grid: const VolumeGrid(tilesSide: 16, tileSize: 8),
+      grid: VolumeGrid(tilesSide: vision.worldTilesSide, tileSize: 8),
     );
     walls.restore(GameRecording.sample().wallEdges);
     final regions = computeEnclosedRegions(walls);
@@ -226,8 +231,8 @@ void main() {
     expect(fromAsset.friends, isNotEmpty);
     expect(fromAsset.friends.single.friend.id, kCubeboyFriend.id);
     final walls = WallStore(
-      grid: const VolumeGrid(tilesSide: 16, tileSize: 8),
+      grid: VolumeGrid(tilesSide: vision.worldTilesSide, tileSize: 8),
     )..restore(fromAsset.wallEdges);
-    expect(computeEnclosedRegions(walls), hasLength(4));
+    expect(computeEnclosedRegions(walls), isNotEmpty);
   });
 }

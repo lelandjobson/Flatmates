@@ -18,8 +18,12 @@ Geometry volumeBoxGeometry({
   required String id,
   List<VolumeDoor> doors = const [],
   double subtileSize = 1,
+  Set<VolumeHandle> omitHandles = const {},
 }) {
-  if (doors.isEmpty) {
+  bool omit(VolumeHandle handle) => omitHandles.contains(handle);
+  bool omitSide(VolumeSide side) => omit(side.handle);
+
+  if (doors.isEmpty && omitHandles.isEmpty) {
     return Geometry(
       id: id,
       name: 'VolumeBox',
@@ -50,18 +54,20 @@ Geometry volumeBoxGeometry({
   final faces = <List<int>>[];
   final holed = {for (final door in doors) door.side};
 
-  if (!holed.contains(VolumeSide.north)) {
+  if (!holed.contains(VolumeSide.north) && !omitSide(VolumeSide.north)) {
     faces.add(List<int>.from(GeometryBuilders.cubeFaces[0]));
   }
-  if (!holed.contains(VolumeSide.south)) {
+  if (!holed.contains(VolumeSide.south) && !omitSide(VolumeSide.south)) {
     faces.add(List<int>.from(GeometryBuilders.cubeFaces[1]));
   }
   faces.add(List<int>.from(GeometryBuilders.cubeFaces[2])); // -Y floor
-  faces.add(List<int>.from(GeometryBuilders.cubeFaces[3])); // +Y
-  if (!holed.contains(VolumeSide.east)) {
+  if (!omit(VolumeHandle.posY)) {
+    faces.add(List<int>.from(GeometryBuilders.cubeFaces[3])); // +Y
+  }
+  if (!holed.contains(VolumeSide.east) && !omitSide(VolumeSide.east)) {
     faces.add(List<int>.from(GeometryBuilders.cubeFaces[4]));
   }
-  if (!holed.contains(VolumeSide.west)) {
+  if (!holed.contains(VolumeSide.west) && !omitSide(VolumeSide.west)) {
     faces.add(List<int>.from(GeometryBuilders.cubeFaces[5]));
   }
 
@@ -83,6 +89,7 @@ Geometry volumeBoxGeometry({
   }
 
   for (final door in doors) {
+    if (omitSide(door.side)) continue;
     final s = subtileSize;
     final yD0 = min.y + door.originY * s;
     final yD1 = yD0 + door.height * s;
@@ -168,6 +175,7 @@ void syncVolumeMeshes(
   VolumeStore store, {
   Color? committed,
   Color? draftColor,
+  Set<int> hideCeilingVolumeIds = const {},
 }) {
   final wanted = <String>{};
   final draft = store.draftVolume;
@@ -177,19 +185,30 @@ void syncVolumeMeshes(
     for (final cell in volume.cells) {
       final id = volumeMeshId(volume.id, cell.tx, cell.ty);
       wanted.add(id);
-      final isDraftCell =
-          isDraftVolume && store.draftCell?.tx == cell.tx && store.draftCell?.ty == cell.ty;
       final min = cell.box.worldMin(store.grid, cell.tx, cell.ty);
       final max = cell.box.worldMax(store.grid, cell.tx, cell.ty);
       final doors = exteriorDoors(volume, cell).toList();
-      final geometry = volumeBoxGeometry(
+      final omitHandles = {
+        for (final handle in VolumeHandle.values)
+          if (volume.hasNeighborOn(cell, handle)) handle,
+      };
+      var geometry = volumeBoxGeometry(
         min: min,
         max: max,
         id: id,
         doors: doors,
         subtileSize: store.grid.subtileSize,
+        omitHandles: omitHandles,
       );
-      final color = isDraftCell
+      if (hideCeilingVolumeIds.contains(volume.id)) {
+        geometry = _withoutCeiling(geometry, id);
+      }
+      final highlightDraftCell =
+          store.isEditing &&
+          isDraftVolume &&
+          store.draftCell?.tx == cell.tx &&
+          store.draftCell?.ty == cell.ty;
+      final color = highlightDraftCell
           ? (draftColor ?? WorldTheme.paperDiorama.volumeDraft)
           : (committed ?? WorldTheme.paperDiorama.volume);
       final existing = scene.meshById(id);
@@ -223,4 +242,29 @@ void syncVolumeMeshes(
     }
   }
   scene.markNeedsPaint();
+}
+
+Geometry _withoutCeiling(Geometry geometry, String id) {
+  if (geometry.vertices.length < 8) return geometry;
+  var maxY = geometry.vertices.first.y;
+  for (final v in geometry.vertices) {
+    if (v.y > maxY) maxY = v.y;
+  }
+  final faces = <List<int>>[];
+  for (final face in geometry.faces) {
+    var onCeiling = true;
+    for (final i in face) {
+      if ((geometry.vertices[i].y - maxY).abs() > 1e-4) {
+        onCeiling = false;
+        break;
+      }
+    }
+    if (!onCeiling) faces.add(face);
+  }
+  return Geometry(
+    id: id,
+    name: geometry.name,
+    vertices: geometry.vertices,
+    faces: faces,
+  );
 }

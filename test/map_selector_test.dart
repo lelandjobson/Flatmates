@@ -1,0 +1,77 @@
+import 'package:flatmates/gameplay/friends/friend_instance_store.dart';
+import 'package:flatmates/gameplay/picking/map_selector.dart';
+import 'package:flatmates/gameplay/picking/selectable.dart';
+import 'package:flatmates/gameplay/volumes/volume_store.dart';
+import 'package:flatmates/rendering/scene/camera.dart';
+import 'package:flutter/painting.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:vector_math/vector_math_64.dart';
+
+void main() {
+  late VolumeStore volumes;
+  late FriendInstanceStore friends;
+  late Camera camera;
+  const viewport = Size(200, 200);
+  const center = Offset(100, 100);
+
+  setUp(() {
+    volumes = VolumeStore();
+    friends = FriendInstanceStore();
+    expect(volumes.startNew(8, 8), isTrue);
+    expect(volumes.confirmEdit(), isTrue);
+    // Look at the volume from above / +Z so the center ray hits a face.
+    camera = Camera(
+      name: 'selector-test',
+      position: Vector3(4, 28, 22),
+      target: Vector3(4, 3, 4),
+      fovDegrees: 50,
+    );
+  });
+
+  SelectableHit? pick(double distance) {
+    return const MapSelector().pick(
+      screen: center,
+      viewport: viewport,
+      camera: camera,
+      distance: distance,
+      volumes: volumes,
+      friends: friends,
+      regions: const [],
+    );
+  }
+
+  test('close distance selects a volume face, not the mass', () {
+    final hit = pick(40);
+    expect(hit, isNotNull);
+    expect(hit!.kind, SelectableKind.volumeFace);
+    expect(hit.volumeId, volumes.volumes.single.id);
+    expect(hit.face, isNotNull);
+  });
+
+  test('far distance selects the volume, not a face', () {
+    final hit = pick(200);
+    expect(hit, isNotNull);
+    expect(hit!.kind, SelectableKind.volume);
+    expect(hit.volumeId, volumes.volumes.single.id);
+  });
+
+  test('empty ground falls back to a tile', () {
+    camera = Camera(
+      name: 'empty',
+      position: Vector3(-32, 30, -16),
+      target: Vector3(-32, 0, -32),
+      fovDegrees: 50,
+    );
+    final hit = const MapSelector().pick(
+      screen: center,
+      viewport: viewport,
+      camera: camera,
+      distance: 40,
+      volumes: volumes,
+      friends: friends,
+      regions: const [],
+    );
+    expect(hit, isNotNull);
+    expect(hit!.kind, SelectableKind.tile);
+  });
+}

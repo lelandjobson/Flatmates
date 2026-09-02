@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../crafting/placed_paper.dart';
+import '../../gameplay/volumes/volume_program.dart';
 
 /// Thin vertical tool strip, matching mixed-3D / crafting HUD chrome.
 class GameToolSidebar extends StatelessWidget {
@@ -14,8 +15,6 @@ class GameToolSidebar extends StatelessWidget {
     required this.onToggleWalls,
     required this.eraserActive,
     required this.onToggleEraser,
-    required this.selectActive,
-    required this.onToggleSelect,
     required this.onIsolate,
     this.showShapeButton = false,
     this.onVolumeShape,
@@ -29,8 +28,6 @@ class GameToolSidebar extends StatelessWidget {
   final VoidCallback onToggleWalls;
   final bool eraserActive;
   final VoidCallback onToggleEraser;
-  final bool selectActive;
-  final VoidCallback onToggleSelect;
   final VoidCallback onIsolate;
   final bool showShapeButton;
   final VoidCallback? onVolumeShape;
@@ -39,13 +36,6 @@ class GameToolSidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     return _ToolStrip(
       children: [
-        _ToolBtn(
-          icon: Icons.near_me,
-          tooltip: 'Select',
-          active: selectActive,
-          onTap: onToggleSelect,
-        ),
-        const SizedBox(height: 2),
         _ToolBtn(
           icon: Icons.filter_center_focus,
           tooltip: 'Isolate 3D',
@@ -169,6 +159,56 @@ class GamePlane2dSidebar extends StatelessWidget {
 }
 
 /// Separate bubble above the right tool strip to leave plane2d.
+class GameInteriorSidebar extends StatelessWidget {
+  const GameInteriorSidebar({
+    super.key,
+    required this.kind,
+    required this.onKind,
+  });
+
+  final VolumeProgramKind kind;
+  final ValueChanged<VolumeProgramKind> onKind;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ToolStrip(
+      children: [
+        for (final value in VolumeProgramKind.values) ...[
+          if (value != VolumeProgramKind.values.first) const SizedBox(height: 2),
+          Tooltip(
+            message: value.label,
+            child: _ColorDot(
+              color: Color(value.paperArgb),
+              selected: kind == value,
+              onTap: () => onKind(value),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class GameFaceFocusSidebar extends StatelessWidget {
+  const GameFaceFocusSidebar({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return _ToolStrip(
+      children: [
+        Tooltip(
+          message: 'Door 2×4',
+          child: _ColorDot(
+            color: const Color(0xFFF7F7F2),
+            selected: true,
+            onTap: () {},
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class GameViewerBackButton extends StatelessWidget {
   const GameViewerBackButton({super.key, required this.onPressed});
 

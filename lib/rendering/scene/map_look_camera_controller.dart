@@ -47,6 +47,10 @@ class MapLookCameraController extends ChangeNotifier {
       vsync: vsync,
       duration: const Duration(milliseconds: 280),
     )..addListener(_onYawTick);
+    _lookAtAnim = AnimationController(
+      vsync: vsync,
+      duration: const Duration(milliseconds: 280),
+    )..addListener(_onLookAtTick);
     _applyPose(notify: false);
   }
 
@@ -87,6 +91,9 @@ class MapLookCameraController extends ChangeNotifier {
 
   late final AnimationController _zoomAnim;
   late final AnimationController _yawAnim;
+  late final AnimationController _lookAtAnim;
+  Vector3? _lookAtFrom;
+  Vector3? _lookAtTo;
   late List<double> _steps;
   late double _distance;
   late double _targetDistance;
@@ -138,9 +145,32 @@ class MapLookCameraController extends ChangeNotifier {
     _applyPose();
   }
 
+  /// Ease the look-at to [target] on the ground plane.
+  void animateLookAt(Vector3 target) {
+    _lookAtAnim.stop();
+    _lookAtFrom = Vector3.copy(_lookAt);
+    _lookAtTo = Vector3(target.x, 0, target.z);
+    _lookAtAnim.forward(from: 0);
+  }
+
+  void _onLookAtTick() {
+    final from = _lookAtFrom;
+    final to = _lookAtTo;
+    if (from == null || to == null) return;
+    final t = Curves.easeInOut.transform(_lookAtAnim.value);
+    _lookAt.setValues(
+      from.x + (to.x - from.x) * t,
+      0,
+      from.z + (to.z - from.z) * t,
+    );
+    _clampLookAt();
+    _applyPose();
+  }
+
   /// Screen-pixel drag moves the look-at on the ground plane (Y = 0).
   void pan(Offset delta) {
     if (delta == Offset.zero) return;
+    if (_lookAtAnim.isAnimating) _lookAtAnim.stop();
     var right = Vector3(camera.right.x, 0, camera.right.z);
     if (right.length2 < 1e-10) {
       right = Vector3(1, 0, 0);
@@ -182,6 +212,7 @@ class MapLookCameraController extends ChangeNotifier {
     _gestureZooming = false;
     if (_zoomAnim.isAnimating) _zoomAnim.stop();
     if (_yawAnim.isAnimating) _yawAnim.stop();
+    if (_lookAtAnim.isAnimating) _lookAtAnim.stop();
   }
 
   /// Start a live pinch/scroll zoom. Distance can pass min/max with resistance.
@@ -379,6 +410,9 @@ class MapLookCameraController extends ChangeNotifier {
       ..dispose();
     _yawAnim
       ..removeListener(_onYawTick)
+      ..dispose();
+    _lookAtAnim
+      ..removeListener(_onLookAtTick)
       ..dispose();
     super.dispose();
   }

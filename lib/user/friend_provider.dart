@@ -7,14 +7,21 @@ import '../rendering/iso/friend_expression.dart';
 
 /// Stats for a friend
 class FriendStats {
-  const FriendStats({required this.tileSpeed});
+  const FriendStats({
+    required this.tileSpeed,
+    this.viewRadius = 2,
+  });
 
   /// How many tiles per second the friend can move
   final double tileSpeed;
 
-  FriendStats copyWith({double? tileSpeed}) {
+  /// Chebyshev vision radius in tiles. `2` sees two tiles in every direction.
+  final int viewRadius;
+
+  FriendStats copyWith({double? tileSpeed, int? viewRadius}) {
     return FriendStats(
       tileSpeed: tileSpeed ?? this.tileSpeed,
+      viewRadius: viewRadius ?? this.viewRadius,
     );
   }
 
@@ -23,10 +30,11 @@ class FriendStats {
       identical(this, other) ||
       other is FriendStats &&
           runtimeType == other.runtimeType &&
-          tileSpeed == other.tileSpeed;
+          tileSpeed == other.tileSpeed &&
+          viewRadius == other.viewRadius;
 
   @override
-  int get hashCode => tileSpeed.hashCode;
+  int get hashCode => Object.hash(tileSpeed, viewRadius);
 }
 
 /// Represents a friend available to the player

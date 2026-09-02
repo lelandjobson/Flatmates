@@ -10,9 +10,17 @@ class VolumeTool3d implements Tool3d {
   final VolumeStore store;
 
   @override
-  Iterable<Vector3> get workAreaPoints {
+  Iterable<Vector3> get workAreaPoints sync* {
+    var any = false;
+    for (final volume in store.sessionVolumes) {
+      for (final cell in volume.cells) {
+        any = true;
+        yield* cell.box.worldCorners(store.grid, cell.tx, cell.ty);
+      }
+    }
+    if (any) return;
     final cell = store.draftCell;
-    if (cell == null) return const Iterable<Vector3>.empty();
-    return cell.box.worldCorners(store.grid, cell.tx, cell.ty);
+    if (cell == null) return;
+    yield* cell.box.worldCorners(store.grid, cell.tx, cell.ty);
   }
 }

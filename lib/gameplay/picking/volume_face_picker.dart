@@ -41,6 +41,14 @@ class VolumeFacePicker {
         final min = cell.box.worldMin(store.grid, cell.tx, cell.ty);
         final max = cell.box.worldMax(store.grid, cell.tx, cell.ty);
         for (final face in VolumeFace.values) {
+          final handle = switch (face) {
+            VolumeFace.posX => VolumeHandle.posX,
+            VolumeFace.negX => VolumeHandle.negX,
+            VolumeFace.posZ => VolumeHandle.posZ,
+            VolumeFace.negZ => VolumeHandle.negZ,
+            VolumeFace.posY || VolumeFace.negY => null,
+          };
+          if (handle != null && volume.hasNeighborOn(cell, handle)) continue;
           final (origin, normal) = face.originAndNormal(min, max);
           final denom = ray.direction.dot(normal);
           if (denom.abs() < 1e-8) continue;
