@@ -6,7 +6,7 @@ import '../volumes/volume.dart';
 import 'wall_edge.dart';
 
 /// How close a pointer must be to an edge midpoint, in tile units.
-const kWallMidpointHitTiles = 0.2;
+const kWallMidpointHitTiles = 0.28;
 
 /// Walls occupy tile-boundary edges. Adjacency of tiles is not enough to join.
 class WallStore {

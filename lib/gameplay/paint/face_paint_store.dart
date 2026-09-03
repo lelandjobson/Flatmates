@@ -6,7 +6,6 @@ import 'package:vector_math/vector_math_64.dart';
 import '../../crafting/placed_paper.dart';
 import '../viewers/world_plane.dart';
 import '../volumes/volume.dart';
-import '../volumes/volume_door.dart';
 import '../volumes/volume_solid.dart';
 import '../volumes/volume_store.dart';
 
@@ -77,6 +76,21 @@ class FaceCanvas {
   bool isVoid(int x, int y) => inBounds(x, y) && cells[index(x, y)] == kVoid;
 
   bool isEmpty(int x, int y) => inBounds(x, y) && !isDrawn(x, y);
+
+  bool get hasPaint {
+    for (final id in cells) {
+      if (id >= 0) return true;
+    }
+    return false;
+  }
+
+  int get paintedCount {
+    var n = 0;
+    for (final id in cells) {
+      if (id >= 0) n++;
+    }
+    return n;
+  }
 
   PaperColor? colorAt(int x, int y) {
     if (!inBounds(x, y)) return null;
@@ -205,6 +219,65 @@ class FacePaintStore {
     return (u, v);
   }
 
+  /// Four world corners of the full face, matching [pixelCorners] winding.
+  static List<Vector3> faceCorners({
+    required VolumeGrid grid,
+    required VolumeCell cell,
+    required VolumeFace face,
+    double outset = 0.04,
+  }) {
+    final (w, h) = faceSize(cell.box, face);
+    final min = cell.box.worldMin(grid, cell.tx, cell.ty);
+    final max = cell.box.worldMax(grid, cell.tx, cell.ty);
+    final s = grid.subtileSize;
+    final n = face.originAndNormal(min, max).$2;
+    final lift = n * outset;
+    switch (face) {
+      case VolumeFace.posY:
+        return [
+          Vector3(min.x, max.y, min.z) + lift,
+          Vector3(min.x, max.y, min.z + h * s) + lift,
+          Vector3(min.x + w * s, max.y, min.z + h * s) + lift,
+          Vector3(min.x + w * s, max.y, min.z) + lift,
+        ];
+      case VolumeFace.negY:
+        return [
+          Vector3(min.x, min.y, min.z) + lift,
+          Vector3(min.x + w * s, min.y, min.z) + lift,
+          Vector3(min.x + w * s, min.y, min.z + h * s) + lift,
+          Vector3(min.x, min.y, min.z + h * s) + lift,
+        ];
+      case VolumeFace.posX:
+        return [
+          Vector3(max.x, min.y, min.z) + lift,
+          Vector3(max.x, min.y + h * s, min.z) + lift,
+          Vector3(max.x, min.y + h * s, min.z + w * s) + lift,
+          Vector3(max.x, min.y, min.z + w * s) + lift,
+        ];
+      case VolumeFace.negX:
+        return [
+          Vector3(min.x, min.y, min.z) + lift,
+          Vector3(min.x, min.y, min.z + w * s) + lift,
+          Vector3(min.x, min.y + h * s, min.z + w * s) + lift,
+          Vector3(min.x, min.y + h * s, min.z) + lift,
+        ];
+      case VolumeFace.posZ:
+        return [
+          Vector3(min.x, min.y, max.z) + lift,
+          Vector3(min.x + w * s, min.y, max.z) + lift,
+          Vector3(min.x + w * s, min.y + h * s, max.z) + lift,
+          Vector3(min.x, min.y + h * s, max.z) + lift,
+        ];
+      case VolumeFace.negZ:
+        return [
+          Vector3(min.x, min.y, min.z) + lift,
+          Vector3(min.x, min.y + h * s, min.z) + lift,
+          Vector3(min.x + w * s, min.y + h * s, min.z) + lift,
+          Vector3(min.x + w * s, min.y, min.z) + lift,
+        ];
+    }
+  }
+
   static List<Vector3> pixelCorners({
     required int u,
     required int v,
@@ -309,45 +382,92 @@ class FacePaintStore {
     final existing = _canvases[key];
     if (existing == null) {
       final created = FaceCanvas(width: w, height: h);
-      _stampDoorVoids(created, cell, face);
       _canvases[key] = created;
       return created;
     }
     if (existing.width != w || existing.height != h) {
       final resized = existing.resized(w, h);
-      _stampDoorVoids(resized, cell, face);
       _canvases[key] = resized;
       return resized;
     }
-    _stampDoorVoids(existing, cell, face);
     return existing;
   }
 
-  static void _stampDoorVoids(
-    FaceCanvas canvas,
-    VolumeCell cell,
-    VolumeFace face,
-  ) {
-    for (var i = 0; i < canvas.cells.length; i++) {
-      if (canvas.cells[i] == FaceCanvas.kVoid) {
-        canvas.cells[i] = FaceCanvas.kEmpty;
-      }
+  /// Paint remaining solid pixels of one face. Skips swallowed interior.
+  bool fillFace({
+    required int volumeId,
+    required VolumeCell cell,
+    required VolumeFace face,
+    required PaperColor color,
+    required VolumeSolid solid,
+  }) {
+    final canvas = canvasFor(volumeId: volumeId, cell: cell, face: face);
+    if (face == VolumeFace.negY) {
+      return _fillCanvas(canvas, color);
     }
-    for (final side in cell.accessibleSides) {
-      if (side.volumeFace != face) continue;
-      final door = volumeDoorForSide(
-        cell.box,
-        side,
-        originU: cell.doorOrigins[side],
-      );
-      if (door == null) continue;
-      for (var v = door.originY; v < door.originY + door.height; v++) {
-        for (var u = door.originU; u < door.originU + door.width; u++) {
-          if (!canvas.inBounds(u, v)) continue;
-          canvas.cells[canvas.index(u, v)] = FaceCanvas.kVoid;
+    final surface = solid.surfaceForFace(cell.tx, cell.ty, face);
+    if (surface == null) return false;
+    var changed = false;
+    for (final fragment in surface.fragments) {
+      for (var v = fragment.v0; v < fragment.v1; v++) {
+        for (var u = fragment.u0; u < fragment.u1; u++) {
+          if (canvas.paint(u, v, color)) changed = true;
         }
       }
     }
+    return changed;
+  }
+
+  /// Paint every remaining exterior face of one stored cell.
+  bool fillCell({
+    required int volumeId,
+    required VolumeCell cell,
+    required PaperColor color,
+    required VolumeSolid solid,
+  }) {
+    var changed = false;
+    for (final face in VolumeFace.values) {
+      if (fillFace(
+        volumeId: volumeId,
+        cell: cell,
+        face: face,
+        color: color,
+        solid: solid,
+      )) {
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  /// Paint every remaining surface of the joined solid.
+  bool fillSolid({
+    required Volume volume,
+    required PaperColor color,
+    required VolumeSolid solid,
+  }) {
+    var changed = false;
+    for (final cell in volume.cells) {
+      if (fillCell(
+        volumeId: volume.id,
+        cell: cell,
+        color: color,
+        solid: solid,
+      )) {
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  bool _fillCanvas(FaceCanvas canvas, PaperColor color) {
+    var changed = false;
+    for (var v = 0; v < canvas.height; v++) {
+      for (var u = 0; u < canvas.width; u++) {
+        if (canvas.paint(u, v, color)) changed = true;
+      }
+    }
+    return changed;
   }
 
   /// Move paint keys from [fromId] onto [toId] after a volume merge.

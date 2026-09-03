@@ -15,6 +15,16 @@ void main() {
     return vision;
   }
 
+  test('world center tile is 24,24 on the default 48 map', () {
+    expect(config.centerTx, 24);
+    expect(config.centerTy, 24);
+    expect(config.inStartingArea(config.centerTx, config.centerTy), isTrue);
+    final look = grid.tileCenter(config.centerTx, config.centerTy);
+    expect(grid.tileAtWorld(look), (24, 24));
+    expect(look.x, isNot(0));
+    expect(look.z, isNot(0));
+  });
+
   test('starting area is visible with no sources', () {
     final vision = rebuilt(const []);
     expect(vision.visibleTiles, hasLength(16 * 16));

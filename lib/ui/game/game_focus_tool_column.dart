@@ -103,26 +103,28 @@ class GameFocusToolColumn extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(width: 6),
-        _Subcolumn(
-          children: [
-            _ToolBtn(
-              icon: Icons.sticky_note_2_outlined,
-              tooltip: stickerExpanded ? 'Collapse stickers' : 'Stickers',
-              active: stickerExpanded || selectedSticker != null,
-              onTap: onToggleStickerGroup,
-            ),
-            if (stickerExpanded)
-              for (final spec in stickers) ...[
-                const SizedBox(height: 2),
-                _StickerBtn(
-                  spec: spec,
-                  selected: selectedSticker == spec.kind,
-                  onTap: () => onSelectSticker(spec.kind),
-                ),
-              ],
-          ],
-        ),
+        if (stickers.isNotEmpty) ...[
+          const SizedBox(width: 6),
+          _Subcolumn(
+            children: [
+              _ToolBtn(
+                icon: Icons.sticky_note_2_outlined,
+                tooltip: stickerExpanded ? 'Collapse stickers' : 'Stickers',
+                active: stickerExpanded || selectedSticker != null,
+                onTap: onToggleStickerGroup,
+              ),
+              if (stickerExpanded)
+                for (final spec in stickers) ...[
+                  const SizedBox(height: 2),
+                  _StickerBtn(
+                    spec: spec,
+                    selected: selectedSticker == spec.kind,
+                    onTap: () => onSelectSticker(spec.kind),
+                  ),
+                ],
+            ],
+          ),
+        ],
       ],
     );
   }

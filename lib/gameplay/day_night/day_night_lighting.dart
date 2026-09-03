@@ -44,7 +44,7 @@ class DayNightLighting {
   factory DayNightLighting.day([WorldTheme theme = WorldTheme.paperDiorama]) {
     return DayNightLighting(
       background: theme.background,
-      globalIllumination: 0.25,
+      globalIllumination: 0.7,
       shade: theme.shade,
       shadow: GroundShadowModel(
         lightX: theme.shade.lightX,
@@ -52,10 +52,10 @@ class DayNightLighting {
         lightZ: theme.shade.lightZ,
       ),
       keyColor: const Color(0xFFFFFFFF),
-      keyIntensity: 0.95,
+      keyIntensity: 0.25,
       keyDirection: Vector3.copy(kDayKeyDir),
       fillColor: const Color(0xB3FFFFFF),
-      fillIntensity: 0.35,
+      fillIntensity: 0.3,
       fillDirection: Vector3.copy(kDayFillDir),
     );
   }
@@ -72,6 +72,34 @@ class DayNightLighting {
           direction: Vector3.copy(fillDirection),
         ),
       ];
+
+  DayNightLighting copyWith({
+    Color? background,
+    double? globalIllumination,
+    PlaneShadeModel? shade,
+    GroundShadowModel? shadow,
+    Color? keyColor,
+    double? keyIntensity,
+    Vector3? keyDirection,
+    Color? fillColor,
+    double? fillIntensity,
+    Vector3? fillDirection,
+    Color? wash,
+  }) {
+    return DayNightLighting(
+      background: background ?? this.background,
+      globalIllumination: globalIllumination ?? this.globalIllumination,
+      shade: shade ?? this.shade,
+      shadow: shadow ?? this.shadow,
+      keyColor: keyColor ?? this.keyColor,
+      keyIntensity: keyIntensity ?? this.keyIntensity,
+      keyDirection: Vector3.copy(keyDirection ?? this.keyDirection),
+      fillColor: fillColor ?? this.fillColor,
+      fillIntensity: fillIntensity ?? this.fillIntensity,
+      fillDirection: Vector3.copy(fillDirection ?? this.fillDirection),
+      wash: wash ?? this.wash,
+    );
+  }
 
   static DayNightLighting lerp(
     DayNightLighting a,

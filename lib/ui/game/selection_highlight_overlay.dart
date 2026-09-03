@@ -14,6 +14,20 @@ import '../../gameplay/walls/wall_store.dart';
 import '../../rendering/scene/camera.dart';
 import 'selection_highlight_style.dart';
 
+/// Stored cells the overlay should draw for a volume hit.
+List<VolumeCell> volumeCellsForHighlight(
+  SelectableHit target,
+  Volume volume, {
+  required bool cellOnly,
+}) {
+  if (!cellOnly) return volume.cells;
+  final cell = target.cell ??
+      (target.tx != null && target.ty != null
+          ? volume.cellAt(target.tx!, target.ty!)
+          : null);
+  return cell == null ? const [] : [cell];
+}
+
 /// Fades a fill + thick outline over the hovered or selected map entity.
 class SelectionHighlightOverlay extends StatefulWidget {
   const SelectionHighlightOverlay({
@@ -28,6 +42,7 @@ class SelectionHighlightOverlay extends StatefulWidget {
     this.style = SelectionHighlightStyle.standard,
     this.listenable,
     this.tileSize = 8,
+    this.cellOnly = false,
   });
 
   final SelectableHit? hit;
@@ -40,6 +55,9 @@ class SelectionHighlightOverlay extends StatefulWidget {
   final SelectionHighlightStyle style;
   final Listenable? listenable;
   final double tileSize;
+
+  /// When true, a volume hit draws only its stored cell, not the joined solid.
+  final bool cellOnly;
 
   @override
   State<SelectionHighlightOverlay> createState() =>
@@ -112,6 +130,7 @@ class _SelectionHighlightOverlayState extends State<SelectionHighlightOverlay>
             viewport: widget.viewport,
             style: widget.style,
             tileSize: widget.tileSize,
+            cellOnly: widget.cellOnly,
           ),
         ),
       ),
@@ -130,6 +149,7 @@ class _HighlightPainter extends CustomPainter {
     required this.viewport,
     required this.style,
     required this.tileSize,
+    required this.cellOnly,
   });
 
   final SelectableHit? hit;
@@ -141,6 +161,7 @@ class _HighlightPainter extends CustomPainter {
   final Size viewport;
   final SelectionHighlightStyle style;
   final double tileSize;
+  final bool cellOnly;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -229,33 +250,46 @@ class _HighlightPainter extends CustomPainter {
         final p = instance.position;
         return _boxQuads(p - Vector3(half, half, half), p + Vector3(half, half, half));
       case SelectableKind.volume:
+        return _volumeQuads(target, cellOnly: cellOnly);
+      case SelectableKind.volumeFace:
+        if (cellOnly) return _volumeQuads(target, cellOnly: true);
+        final cell = target.cell;
+        final face = target.face;
         final volume = target.volumeId == null
             ? null
             : volumes.volumeById(target.volumeId!);
-        if (volume == null) return const [];
-        return [
-          for (final cell in volume.cells)
-            for (final face in VolumeFace.values)
-              if (!_internalFace(volume, cell, face))
-                _faceQuad(
-                  face,
-                  cell.box.worldMin(volumes.grid, cell.tx, cell.ty),
-                  cell.box.worldMax(volumes.grid, cell.tx, cell.ty),
-                ),
-        ];
-      case SelectableKind.volumeFace:
-        final cell = target.cell;
-        final face = target.face;
-        if (cell == null || face == null) return const [];
-        final min = cell.box.worldMin(volumes.grid, cell.tx, cell.ty);
-        final max = cell.box.worldMax(volumes.grid, cell.tx, cell.ty);
-        return [_faceQuad(face, min, max)];
+        if (cell == null || face == null || volume == null) return const [];
+        return resolveVolumeSolid(volume, volumes.grid).faceWorldQuads(
+          cell: cell,
+          face: face,
+          grid: volumes.grid,
+        );
     }
   }
 
-  bool _internalFace(Volume volume, VolumeCell cell, VolumeFace face) {
+  List<List<Vector3>> _volumeQuads(
+    SelectableHit target, {
+    required bool cellOnly,
+  }) {
+    final volume = target.volumeId == null
+        ? null
+        : volumes.volumeById(target.volumeId!);
+    if (volume == null) return const [];
+    final cells = volumeCellsForHighlight(
+      target,
+      volume,
+      cellOnly: cellOnly,
+    );
     final solid = resolveVolumeSolid(volume, volumes.grid);
-    return solid.isFaceFullyInternal(cell.tx, cell.ty, face);
+    return [
+      for (final cell in cells)
+        for (final face in VolumeFace.values)
+          ...solid.faceWorldQuads(
+            cell: cell,
+            face: face,
+            grid: volumes.grid,
+          ),
+    ];
   }
 
   List<Vector3> _tileQuad(VolumeGrid grid, int tx, int ty) {

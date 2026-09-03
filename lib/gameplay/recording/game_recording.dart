@@ -8,10 +8,11 @@ import '../friends/friend_instance_store.dart';
 import '../friends/friend_mesh_sync.dart';
 import '../vision/map_vision.dart';
 import '../paint/face_paint_store.dart';
+import '../paper/paper_cost.dart';
+import '../paper/paper_wallet.dart';
 import '../paths/path_store.dart';
 import '../viewers/world_plane.dart';
 import '../volumes/volume.dart';
-import '../volumes/volume_door.dart';
 import '../volumes/volume_store.dart';
 import '../walls/wall_edge.dart';
 import '../walls/wall_store.dart';
@@ -34,6 +35,11 @@ class GameRecording {
     required this.facePaint,
     required this.landscapePaint,
     required this.landscapeErase,
+    this.paperHeld = kStartingPaper,
+    this.volumePaperCommitted = const {},
+    this.pathPaperCommitted = 0,
+    this.wallPaperCommitted = 0,
+    this.paperPersisted = false,
     this.version = currentSchemaVersion,
   });
 
@@ -52,6 +58,11 @@ class GameRecording {
   final FacePaintStore facePaint;
   final List<(int x, int y, int colorIndex)> landscapePaint;
   final List<(int x, int y)> landscapeErase;
+  final int paperHeld;
+  final Map<int, int> volumePaperCommitted;
+  final int pathPaperCommitted;
+  final int wallPaperCommitted;
+  final bool paperPersisted;
 
   factory GameRecording.empty() => GameRecording(
         nextVolumeId: 1,
@@ -183,7 +194,6 @@ class GameRecording {
         box: houseB.cells.single.box,
         a: PaperColor.yellow,
         b: PaperColor.green,
-        accessibleSides: houseB.cells.single.accessibleSides,
       ),
       ..._sideCanvases(
         volumeId: 4,
@@ -192,7 +202,6 @@ class GameRecording {
         box: houseD.cells.single.box,
         a: PaperColor.yellow,
         b: PaperColor.pink,
-        accessibleSides: houseD.cells.single.accessibleSides,
       ),
     });
 
@@ -291,6 +300,7 @@ class GameRecording {
                   ty: cell.ty + dty,
                   box: cell.box.clone(),
                   accessibleSides: Set<VolumeSide>.from(cell.accessibleSides),
+                  doorOrigins: Map<VolumeSide, int>.from(cell.doorOrigins),
                 ),
             ],
           ),
@@ -355,7 +365,6 @@ class GameRecording {
     required BoxPrimitive box,
     required PaperColor a,
     required PaperColor b,
-    Set<VolumeSide> accessibleSides = const {},
   }) {
     const sides = [
       VolumeFace.posX,
@@ -366,7 +375,7 @@ class GameRecording {
     return {
       for (final face in sides)
         FacePaintKey(volumeId: volumeId, tx: tx, ty: ty, face: face):
-            _filledFace(box, face, a, b, accessibleSides: accessibleSides),
+            _filledFace(box, face, a, b),
     };
   }
 
@@ -374,23 +383,12 @@ class GameRecording {
     BoxPrimitive box,
     VolumeFace face,
     PaperColor a,
-    PaperColor b, {
-    Set<VolumeSide> accessibleSides = const {},
-  }) {
+    PaperColor b,
+  ) {
     final (width, height) = FacePaintStore.faceSize(box, face);
     final canvas = FaceCanvas(width: width, height: height);
     for (var y = 0; y < height; y++) {
       for (var x = 0; x < width; x++) {
-        if (volumeDoorContainsFacePixel(
-          box: box,
-          face: face,
-          u: x,
-          v: y,
-          accessibleSides: accessibleSides,
-        )) {
-          canvas.cells[canvas.index(x, y)] = FaceCanvas.kVoid;
-          continue;
-        }
         canvas.paint(x, y, (x + y).isEven ? a : b);
       }
     }
@@ -425,6 +423,7 @@ class GameRecording {
     required FacePaintStore facePaint,
     FriendInstanceStore? friends,
     LandscapeGrid? landscape,
+    PaperWallet? paper,
   }) {
     var nextId = volumes.nextId;
     for (final volume in volumes.volumes) {
@@ -455,6 +454,13 @@ class GameRecording {
               if (landscape.materials[landscape.index(x, y)] == kLandscapeEmpty)
                 (x, y),
       ],
+      paperHeld: paper?.held ?? kStartingPaper,
+      volumePaperCommitted: paper == null
+          ? const {}
+          : Map<int, int>.from(paper.volumeCommitted),
+      pathPaperCommitted: paper?.pathCommitted ?? 0,
+      wallPaperCommitted: paper?.wallCommitted ?? 0,
+      paperPersisted: paper != null,
     );
   }
 
@@ -466,6 +472,7 @@ class GameRecording {
     FriendInstanceStore? friends,
     LandscapeGrid? landscape,
     LandscapeGenerator? generator,
+    PaperWallet? paper,
   }) {
     volumes.restore(
       volumes: [for (final volume in this.volumes) volume.clone()],
@@ -496,6 +503,17 @@ class GameRecording {
         if (colorIndex < 0 || colorIndex >= PaperColor.values.length) continue;
         landscape.paint(cell.$1, cell.$2, PaperColor.values[colorIndex]);
       }
+    }
+    if (paper == null) return;
+    if (paperPersisted) {
+      final restored = PaperWallet(held: paperHeld);
+      restored.volumeCommitted.addAll(volumePaperCommitted);
+      restored.pathCommitted = pathPaperCommitted;
+      restored.wallCommitted = wallPaperCommitted;
+      paper.restoreFrom(restored);
+    } else {
+      paper.restoreFrom(PaperWallet());
+      paper.settleWorld(volumes: volumes, paths: paths, walls: walls);
     }
   }
 
@@ -554,6 +572,15 @@ class GameRecording {
             for (final cell in landscapeErase) [cell.$1, cell.$2],
           ],
         },
+        if (paperPersisted)
+          'paper': {
+            'held': paperHeld,
+            'volumes': {
+              for (final e in volumePaperCommitted.entries) '${e.key}': e.value,
+            },
+            'path': pathPaperCommitted,
+            'walls': wallPaperCommitted,
+          },
       };
 
   factory GameRecording.fromJson(Map<String, dynamic> json) {
@@ -643,6 +670,22 @@ class GameRecording {
         if (item is List && item.length >= 2) (_int(item[0])!, _int(item[1])!),
     ];
 
+    final paperJson = json['paper'];
+    final paperMap = paperJson is Map
+        ? paperJson.cast<String, dynamic>()
+        : null;
+    final volumePaper = <int, int>{};
+    if (paperMap != null) {
+      final volumesPaper = paperMap['volumes'];
+      if (volumesPaper is Map) {
+        for (final entry in volumesPaper.entries) {
+          final id = int.tryParse('${entry.key}');
+          final cost = _int(entry.value);
+          if (id != null && cost != null) volumePaper[id] = cost;
+        }
+      }
+    }
+
     return GameRecording(
       version: version,
       nextVolumeId: nextId,
@@ -654,6 +697,13 @@ class GameRecording {
       facePaint: FacePaintStore.fromCanvases(canvases),
       landscapePaint: paint,
       landscapeErase: erase,
+      paperHeld: paperMap == null
+          ? kStartingPaper
+          : (_int(paperMap['held']) ?? kStartingPaper),
+      volumePaperCommitted: volumePaper,
+      pathPaperCommitted: paperMap == null ? 0 : (_int(paperMap['path']) ?? 0),
+      wallPaperCommitted: paperMap == null ? 0 : (_int(paperMap['walls']) ?? 0),
+      paperPersisted: paperMap != null,
     );
   }
 }
@@ -676,6 +726,11 @@ Map<String, dynamic> _volumeToJson(Volume volume) => {
               for (final side in VolumeSide.values)
                 if (cell.accessibleSides.contains(side)) side.name,
             ],
+            'doorOrigins': {
+              for (final side in VolumeSide.values)
+                if (cell.doorOrigins.containsKey(side))
+                  side.name: cell.doorOrigins[side],
+            },
           },
       ],
     };
@@ -726,10 +781,19 @@ VolumeCell _cellFromJson(Map<String, dynamic> json) {
           for (final side in VolumeSide.values)
             if (side.name == item) side,
     },
+    doorOrigins: {
+      for (final entry in _asMap(json['doorOrigins']).entries)
+        for (final side in VolumeSide.values)
+          if (side.name == entry.key)
+            side: _int(entry.value) ?? 0,
+    },
   );
 }
 
 List<dynamic> _asList(Object? value) => value is List ? value : const [];
+
+Map<String, dynamic> _asMap(Object? value) =>
+    value is Map ? value.cast<String, dynamic>() : const <String, dynamic>{};
 
 int? _int(Object? value) {
   if (value is int) return value;

@@ -3,10 +3,8 @@ import 'package:flatmates/gameplay/volumes/volume_door.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('wall focus offers a standard door sticker', () {
-    final stickers = focusStickersFor(FocusWorkSurface.facade);
-    expect(stickers, [kFocusDoorSticker]);
-    expect(stickers.single.kind, FocusStickerKind.door);
+  test('wall focus does not offer a door sticker', () {
+    expect(focusStickersFor(FocusWorkSurface.facade), isEmpty);
     expect(DoorKind.values, [DoorKind.standard]);
   });
 

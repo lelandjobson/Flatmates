@@ -69,6 +69,7 @@ void syncWallMeshes(
     final material = MaterialModel(
       color: wallColor,
       wireframe: false,
+      strokeEdges: false,
       doubleSided: true,
     );
     final existing = scene.meshById(id);

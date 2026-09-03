@@ -105,6 +105,43 @@ void main() {
     expect(byTile[(2, 2)], contains(gap));
     expect(byTile[(3, 2)], isNotNull);
   });
+
+  test('preview place is an island, or joins to an existing neighbor', () {
+    final paths = PathStore();
+    expect(previewPlaceFootprints(paths, tx: 2, ty: 2), hasLength(1));
+    expect(paths.addIsland(3, 2), isTrue);
+    final preview = previewPlaceFootprints(paths, tx: 2, ty: 2);
+    expect(preview.length, greaterThan(1));
+    expect(preview.any((p) => p.originXSubtiles == 6), isTrue);
+  });
+
+  test('preview place draws join stubs on adjacent existing path tiles', () {
+    final paths = PathStore();
+    expect(previewPlaceFootprintsByTile(paths, tx: 2, ty: 2).keys, {(2, 2)});
+    expect(paths.addIsland(3, 2), isTrue);
+    final byTile = previewPlaceFootprintsByTile(paths, tx: 2, ty: 2);
+    expect(byTile.keys, {(2, 2), (3, 2)});
+    expect(byTile[(2, 2)]!.any((p) => p.originXSubtiles == 6), isTrue);
+    expect(
+      byTile[(3, 2)],
+      [
+        const PathFootprint(
+          originXSubtiles: 0,
+          originZSubtiles: 2,
+          widthSubtiles: 2,
+          depthSubtiles: 4,
+        ),
+      ],
+    );
+  });
+
+  test('already-joined neighbors do not get a second hologram stub', () {
+    final paths = PathStore()
+      ..placeAndJoin(2, 2)
+      ..placeAndJoin(3, 2);
+    final byTile = previewPlaceFootprintsByTile(paths, tx: 2, ty: 2);
+    expect(byTile.keys, {(2, 2)});
+  });
 }
 
 bool _overlapsBox(PathFootprint p, BoxPrimitive box) {

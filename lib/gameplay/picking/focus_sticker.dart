@@ -31,7 +31,7 @@ const kFocusDoorSticker = FocusStickerSpec(
   kind: FocusStickerKind.door,
   label: 'Door',
   icon: Icons.door_front_door_outlined,
-  swatch: Color(0xFFF7F7F2),
+  swatch: Color(0xFF2ECC71),
 );
 
 const kFocusBedroomSticker = FocusStickerSpec(
@@ -48,10 +48,10 @@ const kFocusCommonSticker = FocusStickerSpec(
   swatch: Color(0xFFF2F6FF),
 );
 
-/// Stickers offered for the current focus. Wall faces get doors; floors get rooms.
+/// Stickers offered for the current focus. Doors come from paths, not the palette.
 List<FocusStickerSpec> focusStickersFor(FocusWorkSurface surface) {
   return switch (surface) {
-    FocusWorkSurface.facade => const [kFocusDoorSticker],
+    FocusWorkSurface.facade => const [],
     FocusWorkSurface.floor => const [kFocusBedroomSticker, kFocusCommonSticker],
   };
 }

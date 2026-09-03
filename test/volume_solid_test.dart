@@ -8,6 +8,7 @@ import 'package:flatmates/gameplay/volumes/volume_store.dart';
 import 'package:flatmates/gameplay/walls/wall_edge.dart';
 import 'package:flatmates/gameplay/walls/wall_store.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vector_math/vector_math_64.dart';
 
 Volume _mass(VolumeStore store) {
   expect(store.volumes, hasLength(1));
@@ -93,6 +94,40 @@ void main() {
     expect(leftover!.isComplete, isFalse);
     expect(leftover.remainingArea, 8 * 3);
     expect(leftover.enclosure, VolumeEnclosure.outer);
+
+    final tall = volume.cellAt(2, 2)!;
+    final min = tall.box.worldMin(volumes.grid, tall.tx, tall.ty);
+    final max = tall.box.worldMax(volumes.grid, tall.tx, tall.ty);
+    final swallowed = Vector3(max.x, min.y + volumes.grid.subtileSize * 1.5, (min.z + max.z) * 0.5);
+    final remaining = Vector3(max.x, min.y + volumes.grid.subtileSize * 4.5, (min.z + max.z) * 0.5);
+    expect(
+      solid.containsFaceHit(
+        cell: tall,
+        face: VolumeFace.posX,
+        grid: volumes.grid,
+        world: swallowed,
+      ),
+      isFalse,
+    );
+    expect(
+      solid.containsFaceHit(
+        cell: tall,
+        face: VolumeFace.posX,
+        grid: volumes.grid,
+        world: remaining,
+      ),
+      isTrue,
+    );
+    final quads = solid.faceWorldQuads(
+      cell: tall,
+      face: VolumeFace.posX,
+      grid: volumes.grid,
+    );
+    expect(quads, hasLength(1));
+    final cutY = min.y + 3 * volumes.grid.subtileSize;
+    for (final p in quads.single) {
+      expect(p.y, greaterThanOrEqualTo(cutY - 1e-6));
+    }
   });
 
   test('paint on a swallowed face is pruned; new courtyard faces stay empty', () {

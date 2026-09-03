@@ -34,7 +34,9 @@ void main() {
     expect(theme.paper(PaperColor.pink), const Color(0xFFF0B4C0));
     expect(theme.paper(PaperColor.yellow), const Color(0xFFF5E6C8));
     expect(theme.paper(PaperColor.green), const Color(0xFFB8E0C8));
-    expect(theme.path, const Color(0xFFE8C9A8));
+    expect(theme.path, const Color(0xFFF4EFE6));
+    expect(theme.wall, const Color(0xFFF4EFE6));
+    expect(theme.volume, const Color(0xFFEEE9E0));
     expect(theme.background, const Color(0xFFD8E8F0));
     for (final material in LandscapeMaterial.values) {
       final a = theme.material(material);

@@ -8,9 +8,9 @@ void main() {
   test('day lighting matches the paper diorama lamps', () {
     final day = DayNightLighting.day();
     expect(day.background, WorldTheme.paperDiorama.background);
-    expect(day.globalIllumination, closeTo(0.25, 0.001));
-    expect(day.keyIntensity, closeTo(0.95, 0.001));
-    expect(day.fillIntensity, closeTo(0.35, 0.001));
+    expect(day.globalIllumination, closeTo(0.7, 0.001));
+    expect(day.keyIntensity, closeTo(0.25, 0.001));
+    expect(day.fillIntensity, closeTo(0.3, 0.001));
     expect(day.shade.minShade, WorldTheme.paperDiorama.shade.minShade);
     expect(day.wash.a, 0);
     expect(day.lights, hasLength(2));
@@ -35,7 +35,7 @@ void main() {
     final day = DayNightLighting.day();
     final night = NightSwatch.invertedTwilight.lighting;
     final mid = DayNightLighting.lerp(day, night, 0.5);
-    expect(mid.keyIntensity, closeTo(0.75, 0.02));
+    expect(mid.keyIntensity, closeTo(0.40, 0.02));
     expect(mid.shade.minShade, lessThan(day.shade.minShade));
     expect(mid.shade.minShade, greaterThan(night.shade.minShade));
   });
@@ -89,5 +89,14 @@ void main() {
     expect(mid.lightX, closeTo(0.5, 0.001));
     expect(mid.minShade, closeTo(0.5, 0.001));
     expect(mid.litTint.r, closeTo(0.5, 0.02));
+  });
+
+  test('copyWith raises ambient without mutating the day lamps', () {
+    final day = DayNightLighting.day();
+    final lifted = day.copyWith(globalIllumination: 0.85);
+    expect(day.globalIllumination, closeTo(0.7, 0.001));
+    expect(lifted.globalIllumination, closeTo(0.85, 0.001));
+    expect(lifted.keyIntensity, day.keyIntensity);
+    expect(lifted.keyDirection.x, day.keyDirection.x);
   });
 }

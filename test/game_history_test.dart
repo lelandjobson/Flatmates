@@ -1,5 +1,7 @@
 import 'package:flatmates/gameplay/game_history.dart';
 import 'package:flatmates/gameplay/paint/face_paint_store.dart';
+import 'package:flatmates/gameplay/paper/paper_cost.dart';
+import 'package:flatmates/gameplay/paper/paper_wallet.dart';
 import 'package:flatmates/gameplay/paths/path_store.dart';
 import 'package:flatmates/gameplay/volumes/volume.dart';
 import 'package:flatmates/gameplay/volumes/volume_store.dart';
@@ -13,6 +15,7 @@ void main() {
     PathStore paths,
     FacePaintStore paint, {
     WallStore? walls,
+    PaperWallet? paper,
     String label = 'test',
   }) {
     return GameSnapshot.capture(
@@ -21,6 +24,7 @@ void main() {
       walls: walls ?? WallStore(grid: volumes.grid),
       landscape: null,
       facePaint: paint,
+      paper: paper,
       label: label,
     );
   }
@@ -31,6 +35,7 @@ void main() {
     PathStore paths,
     FacePaintStore paint, {
     WallStore? walls,
+    PaperWallet? paper,
   }) {
     snap.applyTo(
       volumes: volumes,
@@ -38,6 +43,7 @@ void main() {
       walls: walls ?? WallStore(grid: volumes.grid),
       landscape: null,
       facePaint: paint,
+      paper: paper,
     );
   }
 
@@ -158,5 +164,42 @@ void main() {
 
     apply(snap, volumes, paths, paint);
     expect(volumes.draftCell!.box.widthSubtiles, 5);
+  });
+
+  test('undo and redo restore paper held and committed', () {
+    final volumes = VolumeStore();
+    final paths = PathStore(grid: volumes.grid);
+    final walls = WallStore(grid: volumes.grid);
+    final paint = FacePaintStore();
+    final paper = PaperWallet();
+    final history = GameHistory();
+
+    final before = capture(volumes, paths, paint, walls: walls, paper: paper);
+    expect(volumes.paintAt(1, 1), isTrue);
+    expect(paper.settleWorld(volumes: volumes, paths: paths, walls: walls), isTrue);
+    expect(paper.held, kStartingPaper - 20);
+    history.pushSnapshot(before);
+
+    apply(
+      history.undo(capture(volumes, paths, paint, walls: walls, paper: paper))!,
+      volumes,
+      paths,
+      paint,
+      walls: walls,
+      paper: paper,
+    );
+    expect(paper.held, kStartingPaper);
+    expect(paper.volumeCommitted, isEmpty);
+
+    apply(
+      history.redo(capture(volumes, paths, paint, walls: walls, paper: paper))!,
+      volumes,
+      paths,
+      paint,
+      walls: walls,
+      paper: paper,
+    );
+    expect(paper.held, kStartingPaper - 20);
+    expect(paper.volumeCommitted.values.single, 20);
   });
 }

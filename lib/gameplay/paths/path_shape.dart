@@ -98,6 +98,55 @@ List<PathFootprint> pathFootprints(
   return pieces;
 }
 
+/// Corridor arms only — the centered island is omitted.
+List<PathFootprint> pathStubFootprints(
+  int mask, {
+  int subtilesPerTile = VolumeGrid.defaultSubtilesPerTile,
+}) {
+  final pieces = pathFootprints(mask, subtilesPerTile: subtilesPerTile);
+  return pieces.length <= 1 ? const [] : pieces.sublist(1);
+}
+
+/// Footprints as if [tx],[ty] were placed and joined to existing neighbors.
+List<PathFootprint> previewPlaceFootprints(
+  PathStore paths, {
+  required int tx,
+  required int ty,
+}) {
+  var mask = 0;
+  for (final side in VolumeSide.values) {
+    final (dx, dy) = side.tileDelta;
+    if (paths.contains(tx + dx, ty + dy)) mask |= side.maskBit;
+  }
+  return pathFootprints(mask, subtilesPerTile: paths.grid.subtilesPerTile);
+}
+
+/// Place preview keyed by tile: the new tile plus join stubs on neighbors.
+///
+/// Existing neighbor tiles already draw their island; only the new arm toward
+/// [tx],[ty] is included so the hologram can sit on an adjacent path.
+Map<(int, int), List<PathFootprint>> previewPlaceFootprintsByTile(
+  PathStore paths, {
+  required int tx,
+  required int ty,
+}) {
+  final n = paths.grid.subtilesPerTile;
+  final out = <(int, int), List<PathFootprint>>{
+    (tx, ty): previewPlaceFootprints(paths, tx: tx, ty: ty),
+  };
+  for (final side in VolumeSide.values) {
+    final (dx, dy) = side.tileDelta;
+    final nx = tx + dx;
+    final ny = ty + dy;
+    if (!paths.contains(nx, ny)) continue;
+    if (paths.hasEdge(tx, ty, nx, ny)) continue;
+    final stubs = pathStubFootprints(side.opposite.maskBit, subtilesPerTile: n);
+    if (stubs.isEmpty) continue;
+    out[(nx, ny)] = stubs;
+  }
+  return out;
+}
+
 /// 4-wide strip on [cell]'s tile from the door face to the tile edge.
 ///
 /// Null when the box is flush with that edge — the dest-tile stub meets the
@@ -169,6 +218,7 @@ Map<(int, int), List<PathFootprint>> pathFootprintsByTile({
   final n = volumes.grid.subtilesPerTile;
   final masks = <(int, int), int>{};
   for (final (tx, ty) in paths.tiles) {
+    if (volumes.isOccupied(tx, ty)) continue;
     masks[(tx, ty)] = paths.neighborMask(tx, ty);
   }
   final gaps = <(int, int), List<PathFootprint>>{};

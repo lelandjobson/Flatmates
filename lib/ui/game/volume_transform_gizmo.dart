@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:vector_math/vector_math_64.dart' hide Colors;
 
 import '../../gameplay/volumes/volume.dart';
+import '../../gameplay/volumes/volume_solid.dart';
 import '../../gameplay/volumes/volume_store.dart';
 import '../../rendering/scene/camera.dart';
 import 'projected_world_anchor.dart';
@@ -19,6 +20,9 @@ class VolumeTransformGizmo extends StatelessWidget {
     required this.onDragStart,
     required this.onDragUpdate,
     required this.onDragEnd,
+    this.volume,
+    this.cell,
+    this.opacity = 1,
   });
 
   final VolumeStore store;
@@ -29,19 +33,32 @@ class VolumeTransformGizmo extends StatelessWidget {
   final void Function(VolumeCell cell, VolumeHandle handle, Offset global)
       onDragUpdate;
   final VoidCallback onDragEnd;
+  final Volume? volume;
+  final VolumeCell? cell;
+  final double opacity;
 
   @override
   Widget build(BuildContext context) {
-    final volume = store.draftVolume;
-    if (volume == null) return const SizedBox.shrink();
+    final volume = this.volume ?? store.draftVolume;
+    if (volume == null || opacity <= 0) return const SizedBox.shrink();
 
     final stems = <(Offset, Offset, Color)>[];
     final handles = <Widget>[];
 
-    for (final facet in volume.exteriorFacets()) {
+    final solid = resolveVolumeSolid(volume, store.grid);
+    final filter = cell;
+    for (final facet in volume.exteriorFacets(store.grid)) {
+      if (filter != null &&
+          (facet.cell.tx != filter.tx || facet.cell.ty != filter.ty)) {
+        continue;
+      }
       final cell = facet.cell;
       final handle = facet.handle;
-      final face = cell.box.faceCenter(store.grid, cell.tx, cell.ty, handle);
+      final face = solid.handleCenter(
+        cell: cell,
+        handle: handle,
+        grid: store.grid,
+      );
       final tip = face + handle.axis * kVolumeHandleStemOut;
       final a = camera.projectToScreen(face, viewport);
       final b = camera.projectToScreen(tip, viewport);
@@ -67,17 +84,23 @@ class VolumeTransformGizmo extends StatelessWidget {
       );
     }
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        IgnorePointer(
-          child: CustomPaint(
-            size: viewport,
-            painter: _HandleStemPainter(stems: stems),
-          ),
+    return Opacity(
+      opacity: opacity.clamp(0.0, 1.0),
+      child: IgnorePointer(
+        ignoring: opacity < 0.05,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            IgnorePointer(
+              child: CustomPaint(
+                size: viewport,
+                painter: _HandleStemPainter(stems: stems),
+              ),
+            ),
+            ...handles,
+          ],
         ),
-        ...handles,
-      ],
+      ),
     );
   }
 }

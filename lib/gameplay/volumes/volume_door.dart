@@ -99,6 +99,32 @@ Iterable<VolumeDoor> exteriorDoors(Volume volume, VolumeCell cell) sync* {
   }
 }
 
+/// True when the door's outward face looks toward the camera.
+bool doorFacesCamera({
+  required VolumeFace face,
+  required List<Vector3> corners,
+  required Vector3 cameraPosition,
+}) {
+  if (corners.isEmpty) return false;
+  var mx = 0.0;
+  var my = 0.0;
+  var mz = 0.0;
+  for (final c in corners) {
+    mx += c.x;
+    my += c.y;
+    mz += c.z;
+  }
+  final n = corners.length.toDouble();
+  return face.worldNormal.dot(
+        Vector3(
+          cameraPosition.x - mx / n,
+          cameraPosition.y - my / n,
+          cameraPosition.z - mz / n,
+        ),
+      ) >
+      1e-6;
+}
+
 /// Four world corners of the door quad, CCW when viewed from outside.
 List<Vector3> doorWorldCorners({
   required VolumeGrid grid,

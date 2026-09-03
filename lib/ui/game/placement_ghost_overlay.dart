@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:vector_math/vector_math_64.dart' hide Colors;
 
+import '../../gameplay/paths/path_shape.dart';
+import '../../gameplay/paths/path_store.dart';
 import '../../gameplay/volumes/volume.dart';
 import '../../gameplay/walls/wall_edge.dart';
 import '../../gameplay/walls/wall_mesh.dart';
@@ -8,6 +10,8 @@ import '../../gameplay/walls/wall_store.dart';
 import '../../rendering/scene/camera.dart';
 
 enum PlacementGhostKind { volume, path, wall, delete, pathSplit }
+
+const kPlacementGhostRemove = Color(0xCCEF5350);
 
 /// Translucent preview of the item that a click at the crosshair would place.
 class PlacementGhostOverlay extends StatelessWidget {
@@ -19,8 +23,10 @@ class PlacementGhostOverlay extends StatelessWidget {
     required this.viewport,
     this.tile,
     this.wallEdge,
+    this.paths,
     this.listenable,
-    this.color = const Color(0x99B3E5FC),
+    this.color = const Color(0x99F4EFE6),
+    this.removing = false,
   });
 
   final PlacementGhostKind kind;
@@ -29,8 +35,10 @@ class PlacementGhostOverlay extends StatelessWidget {
   final Size viewport;
   final (int, int)? tile;
   final WallEdge? wallEdge;
+  final PathStore? paths;
   final Listenable? listenable;
   final Color color;
+  final bool removing;
 
   @override
   Widget build(BuildContext context) {
@@ -55,7 +63,9 @@ class PlacementGhostOverlay extends StatelessWidget {
           viewport: viewport,
           tile: tile,
           wallEdge: wallEdge,
+          paths: paths,
           color: color,
+          removing: removing,
         ),
       ),
     );
@@ -70,7 +80,9 @@ class _GhostPainter extends CustomPainter {
     required this.viewport,
     required this.tile,
     required this.wallEdge,
+    required this.paths,
     required this.color,
+    required this.removing,
   });
 
   final PlacementGhostKind kind;
@@ -79,17 +91,20 @@ class _GhostPainter extends CustomPainter {
   final Size viewport;
   final (int, int)? tile;
   final WallEdge? wallEdge;
+  final PathStore? paths;
   final Color color;
+  final bool removing;
 
   @override
   void paint(Canvas canvas, Size size) {
+    final edge = removing ? kPlacementGhostRemove : color;
     final fill = Paint()
-      ..color = color.withValues(alpha: 0.22)
+      ..color = edge.withValues(alpha: removing ? 0.32 : 0.50)
       ..style = PaintingStyle.fill;
     final stroke = Paint()
-      ..color = color.withValues(alpha: 0.85)
+      ..color = edge.withValues(alpha: 0.85)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5
+      ..strokeWidth = 1.5
       ..strokeJoin = StrokeJoin.round;
 
     for (final quad in _quads()) {
@@ -149,8 +164,31 @@ class _GhostPainter extends CustomPainter {
             Vector3(max.x, max.y, max.z),
             Vector3(min.x, max.y, max.z),
           ],
+          [
+            Vector3(min.x, min.y, min.z),
+            Vector3(min.x, min.y, max.z),
+            Vector3(min.x, max.y, max.z),
+            Vector3(min.x, max.y, min.z),
+          ],
+          [
+            Vector3(max.x, min.y, min.z),
+            Vector3(max.x, max.y, min.z),
+            Vector3(max.x, max.y, max.z),
+            Vector3(max.x, min.y, max.z),
+          ],
         ];
       case PlacementGhostKind.path:
+        final t = tile;
+        if (t == null) return const [];
+        final byTile = paths == null
+            ? <(int, int), List<PathFootprint>>{
+                t: pathFootprints(0, subtilesPerTile: grid.subtilesPerTile),
+              }
+            : previewPlaceFootprintsByTile(paths!, tx: t.$1, ty: t.$2);
+        return [
+          for (final entry in byTile.entries)
+            ..._pathQuads(entry.key.$1, entry.key.$2, entry.value),
+        ];
       case PlacementGhostKind.delete:
         final t = tile;
         if (t == null) return const [];
@@ -206,6 +244,41 @@ class _GhostPainter extends CustomPainter {
           ],
         ];
     }
+  }
+
+  List<List<Vector3>> _pathQuads(
+    int tx,
+    int ty,
+    List<PathFootprint> pieces,
+  ) {
+    final origin = grid.tileOrigin(tx, ty);
+    final s = grid.subtileSize;
+    const y = 0.06;
+    return [
+      for (final p in pieces)
+        [
+          Vector3(
+            origin.x + p.originXSubtiles * s,
+            y,
+            origin.z + p.originZSubtiles * s,
+          ),
+          Vector3(
+            origin.x + (p.originXSubtiles + p.widthSubtiles) * s,
+            y,
+            origin.z + p.originZSubtiles * s,
+          ),
+          Vector3(
+            origin.x + (p.originXSubtiles + p.widthSubtiles) * s,
+            y,
+            origin.z + (p.originZSubtiles + p.depthSubtiles) * s,
+          ),
+          Vector3(
+            origin.x + p.originXSubtiles * s,
+            y,
+            origin.z + (p.originZSubtiles + p.depthSubtiles) * s,
+          ),
+        ],
+    ];
   }
 
   @override

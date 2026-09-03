@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:flatmates/crafting/placed_paper.dart';
 import 'package:flatmates/gameplay/paint/face_paint_store.dart';
+import 'package:flatmates/gameplay/paper/paper_cost.dart';
+import 'package:flatmates/gameplay/paper/paper_wallet.dart';
 import 'package:flatmates/gameplay/paths/path_store.dart';
 import 'package:flatmates/gameplay/friends/friend_instance.dart';
 import 'package:flatmates/gameplay/recording/game_recording.dart';
@@ -84,6 +86,49 @@ void main() {
     )];
     expect(roof, isNotNull);
     expect(roof!.colorAt(1, 2), PaperColor.pink);
+  });
+
+  test('json roundtrip persists paper wallet committed costs', () {
+    final volumes = emptyVolumes();
+    expect(volumes.paintAt(2, 2), isTrue);
+    final paths = PathStore(grid: volumes.grid);
+    expect(paths.placeAndJoin(4, 4), isTrue);
+    final walls = WallStore(grid: volumes.grid)..add(WallEdge(0, 0, 1, 0));
+    final paper = PaperWallet();
+    expect(
+      paper.settleWorld(volumes: volumes, paths: paths, walls: walls),
+      isTrue,
+    );
+    final recording = GameRecording.capture(
+      volumes: volumes,
+      paths: paths,
+      walls: walls,
+      facePaint: FacePaintStore(),
+      paper: paper,
+    );
+    expect(recording.paperPersisted, isTrue);
+    expect(recording.paperHeld, kStartingPaper - 20 - 1 - 1);
+
+    final decoded = GameRecording.fromJson(
+      jsonDecode(jsonEncode(recording.toJson())) as Map<String, dynamic>,
+    );
+    expect(decoded.paperPersisted, isTrue);
+    expect(decoded.paperHeld, recording.paperHeld);
+    expect(decoded.volumePaperCommitted, recording.volumePaperCommitted);
+    expect(decoded.pathPaperCommitted, 1);
+    expect(decoded.wallPaperCommitted, 1);
+
+    final restored = PaperWallet();
+    decoded.applyTo(
+      volumes: emptyVolumes(),
+      paths: PathStore(),
+      walls: WallStore(),
+      facePaint: FacePaintStore(),
+      paper: restored,
+    );
+    expect(restored.held, recording.paperHeld);
+    expect(restored.pathCommitted, 1);
+    expect(restored.wallCommitted, 1);
   });
 
   test('applyTo replaces live content and landscape paint', () {

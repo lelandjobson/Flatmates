@@ -23,7 +23,7 @@ class VolumeFaceHit {
   final double t;
 }
 
-/// Closest volume-cell AABB face under a screen ray.
+/// Closest remaining solid face under a screen ray.
 class VolumeFacePicker {
   const VolumeFacePicker();
 
@@ -38,30 +38,25 @@ class VolumeFacePicker {
 
     VolumeFaceHit? best;
     for (final volume in store.visibleVolumes) {
+      final solid = resolveVolumeSolid(volume, store.grid);
       for (final cell in volume.cells) {
         final min = cell.box.worldMin(store.grid, cell.tx, cell.ty);
         final max = cell.box.worldMax(store.grid, cell.tx, cell.ty);
         for (final face in VolumeFace.values) {
-          final handle = switch (face) {
-            VolumeFace.posX => VolumeHandle.posX,
-            VolumeFace.negX => VolumeHandle.negX,
-            VolumeFace.posZ => VolumeHandle.posZ,
-            VolumeFace.negZ => VolumeHandle.negZ,
-            VolumeFace.posY || VolumeFace.negY => null,
-          };
-          if (handle != null &&
-              resolveVolumeSolid(volume, store.grid)
-                  .isHandleFullyInternal(cell.tx, cell.ty, handle)) {
-            continue;
-          }
           final (origin, normal) = face.originAndNormal(min, max);
           final denom = ray.direction.dot(normal);
           if (denom.abs() < 1e-8) continue;
-          // Prefer the outward face (camera in front).
           final t = (origin - ray.origin).dot(normal) / denom;
           if (t < 1e-4) continue;
           final hit = ray.pointAt(t);
-          if (!face.containsHit(hit, min, max)) continue;
+          if (!solid.containsFaceHit(
+            cell: cell,
+            face: face,
+            grid: store.grid,
+            world: hit,
+          )) {
+            continue;
+          }
           if (best == null || t < best.t) {
             best = VolumeFaceHit(
               volumeId: volume.id,

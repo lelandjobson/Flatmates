@@ -75,6 +75,37 @@ void main() {
     expect(corners[2].y, closeTo(4 * grid.subtileSize, 1e-9));
   });
 
+  test('door paper is hidden when the camera is behind the volume', () {
+    const grid = VolumeGrid(tilesSide: 16, tileSize: 8);
+    final box = BoxPrimitive();
+    final door = volumeDoorForSide(box, VolumeSide.north)!;
+    final corners = doorWorldCorners(
+      grid: grid,
+      tx: 0,
+      ty: 0,
+      box: box,
+      door: door,
+    );
+    final min = box.worldMin(grid, 0, 0);
+    final max = box.worldMax(grid, 0, 0);
+    expect(
+      doorFacesCamera(
+        face: VolumeFace.negZ,
+        corners: corners,
+        cameraPosition: Vector3(min.x + 4, 4, min.z - 10),
+      ),
+      isTrue,
+    );
+    expect(
+      doorFacesCamera(
+        face: VolumeFace.negZ,
+        corners: corners,
+        cameraPosition: Vector3(min.x + 4, 4, max.z + 10),
+      ),
+      isFalse,
+    );
+  });
+
   test('shared interior sides do not get a door', () {
     final a = VolumeCell(
       tx: 1,
@@ -113,7 +144,7 @@ void main() {
     expect(geom.faces.where((f) => f.length > 4), hasLength(1));
   });
 
-  test('face voids are transparent and skip paint', () {
+  test('door pixels stay paintable; applique sits on top', () {
     final store = FacePaintStore();
     final cell = VolumeCell(
       tx: 0,
@@ -126,15 +157,10 @@ void main() {
       cell: cell,
       face: VolumeFace.posX,
     );
-    expect(canvas.isVoid(3, 0), isTrue);
-    expect(canvas.colorAt(3, 0), isNull);
-    expect(canvas.paint(3, 0, PaperColor.pink), isFalse);
-    expect(canvas.erase(3, 0), isFalse);
-    expect(canvas.fill(3, 0, PaperColor.pink), isFalse);
+    expect(canvas.isVoid(3, 0), isFalse);
+    expect(canvas.paint(3, 0, PaperColor.pink), isTrue);
+    expect(canvas.colorAt(3, 0), PaperColor.pink);
     expect(canvas.paint(0, 0, PaperColor.pink), isTrue);
-    expect(canvas.fill(1, 0, PaperColor.yellow), isTrue);
-    expect(canvas.colorAt(3, 0), isNull);
-    expect(canvas.isVoid(3, 0), isTrue);
   });
 
   test('door stamp is 2×4, sets access, and removal clears it', () {
@@ -198,9 +224,8 @@ void main() {
       cell: cell,
       face: VolumeFace.posX,
     );
-    expect(canvas.isVoid(0, 0), isTrue);
-    expect(canvas.isVoid(1, 3), isTrue);
-    expect(canvas.isVoid(3, 0), isFalse);
+    expect(canvas.isVoid(0, 0), isFalse);
+    expect(canvas.paint(0, 0, PaperColor.pink), isTrue);
 
     final geom = volumeBoxGeometry(
       min: Vector3(0, 0, 0),

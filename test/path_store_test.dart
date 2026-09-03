@@ -67,6 +67,22 @@ void main() {
     expect(paths.contains(3, 2), isTrue);
   });
 
+  test('paintStroke skippable tiles are not placed', () {
+    final paths = PathStore();
+    expect(
+      paths.paintStroke(
+        (1, 1),
+        (3, 1),
+        skippable: (tx, ty) => tx == 2 && ty == 1,
+      ),
+      isTrue,
+    );
+    expect(paths.contains(1, 1), isTrue);
+    expect(paths.contains(2, 1), isFalse);
+    expect(paths.contains(3, 1), isTrue);
+    expect(paths.hasEdge(1, 1, 3, 1), isFalse);
+  });
+
   test('placeAndJoin deletes a wall the new connection would cross', () {
     final walls = WallStore()..add(WallEdge(3, 2, 3, 3));
     final paths = PathStore()..addIsland(3, 2);

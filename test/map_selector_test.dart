@@ -2,6 +2,7 @@ import 'package:flatmates/gameplay/friends/friend_instance_store.dart';
 import 'package:flatmates/gameplay/paths/path_store.dart';
 import 'package:flatmates/gameplay/picking/map_selector.dart';
 import 'package:flatmates/gameplay/picking/selectable.dart';
+import 'package:flatmates/gameplay/volumes/volume.dart';
 import 'package:flatmates/gameplay/volumes/volume_store.dart';
 import 'package:flatmates/gameplay/walls/wall_regions.dart';
 import 'package:flatmates/rendering/scene/camera.dart';
@@ -51,10 +52,35 @@ void main() {
   });
 
   test('far distance selects the volume, not a face', () {
-    final hit = pick(200);
+    final hit = pick(45);
     expect(hit, isNotNull);
     expect(hit!.kind, SelectableKind.volume);
     expect(hit.volumeId, volumes.volumes.single.id);
+  });
+
+  test('solid-scope distance still picks the volume mass', () {
+    final hit = pick(62);
+    expect(hit, isNotNull);
+    expect(hit!.kind, SelectableKind.volume);
+    expect(hit.volumeId, volumes.volumes.single.id);
+    expect(hit.cell, isNotNull);
+  });
+
+  test('tool scope is face, then cell, then joined solid', () {
+    expect(volumeToolScope(40), VolumeToolScope.face);
+    expect(volumeToolScope(45), VolumeToolScope.cell);
+    expect(volumeToolScope(61.9), VolumeToolScope.cell);
+    expect(volumeToolScope(62), VolumeToolScope.solid);
+    expect(volumeToolScope(80), VolumeToolScope.solid);
+  });
+
+  test('transform handles filter to the hovered cell only in mid zoom', () {
+    VolumeCell? gizmoCell(double distance, VolumeCell cell) =>
+        volumeToolScope(distance) == VolumeToolScope.cell ? cell : null;
+    final cell = volumes.volumes.single.cells.single;
+    expect(gizmoCell(40, cell), isNull);
+    expect(gizmoCell(50, cell), same(cell));
+    expect(gizmoCell(62, cell), isNull);
   });
 
   test('empty ground falls back to a tile', () {

@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:vector_math/vector_math_64.dart';
 
 import '../volumes/volume.dart';
+import '../volumes/volume_solid.dart';
 import 'world_plane.dart';
 
 /// Distance from [p] to the closest point on segment [a]–[b].
@@ -148,8 +149,99 @@ bool facesShareWorldEdge({
   return false;
 }
 
-/// Prefer a neighbor face that shares the leaving edge over wrapping around
-/// the current cell. Coplanar continuations keep the current plane.
+bool _faceIsNavigable(
+  Volume volume,
+  VolumeCell cell,
+  VolumeFace face,
+  VolumeGrid grid,
+) {
+  if (face == VolumeFace.negY) return false;
+  final solid = resolveVolumeSolid(volume, grid);
+  return !solid.isFaceFullyInternal(cell.tx, cell.ty, face);
+}
+
+bool _segmentsShareVertex(
+  Vector3 a,
+  Vector3 b,
+  Vector3 c,
+  Vector3 d, {
+  double eps = 1e-3,
+}) {
+  bool near(Vector3 p, Vector3 q) => p.distanceTo(q) <= eps;
+  return near(a, c) || near(a, d) || near(b, c) || near(b, d);
+}
+
+List<VolumeFaceEdge> _navigableFaceEdges({
+  required VolumeCell cell,
+  required VolumeFace face,
+  required VolumeGrid grid,
+  required VolumeSolid solid,
+}) {
+  final min = cell.box.worldMin(grid, cell.tx, cell.ty);
+  final max = cell.box.worldMax(grid, cell.tx, cell.ty);
+  final surface = solid.surfaceForFace(cell.tx, cell.ty, face);
+  if (surface == null || surface.isComplete) {
+    return volumeFaceEdges(face, min, max);
+  }
+  final out = <VolumeFaceEdge>[];
+  for (final fragment in surface.fragments) {
+    final quad = volumeFaceFragmentQuad(
+      min: min,
+      max: max,
+      handle: surface.handle,
+      fragment: fragment,
+      subtileSize: grid.subtileSize,
+    );
+    out.addAll([
+      VolumeFaceEdge(adjacent: _uvAdjacent(face, uAxis: false, high: false), a: quad[0], b: quad[3]),
+      VolumeFaceEdge(adjacent: _uvAdjacent(face, uAxis: false, high: true), a: quad[1], b: quad[2]),
+      VolumeFaceEdge(adjacent: _uvAdjacent(face, uAxis: true, high: false), a: quad[0], b: quad[1]),
+      VolumeFaceEdge(adjacent: _uvAdjacent(face, uAxis: true, high: true), a: quad[3], b: quad[2]),
+    ]);
+  }
+  return out;
+}
+
+VolumeFace _uvAdjacent(
+  VolumeFace face, {
+  required bool uAxis,
+  required bool high,
+}) {
+  return switch (face) {
+    VolumeFace.posX || VolumeFace.negX => uAxis
+        ? (high ? VolumeFace.posZ : VolumeFace.negZ)
+        : (high ? VolumeFace.posY : VolumeFace.negY),
+    VolumeFace.posZ || VolumeFace.negZ => uAxis
+        ? (high ? VolumeFace.posX : VolumeFace.negX)
+        : (high ? VolumeFace.posY : VolumeFace.negY),
+    VolumeFace.posY || VolumeFace.negY => uAxis
+        ? (high ? VolumeFace.posX : VolumeFace.negX)
+        : (high ? VolumeFace.posZ : VolumeFace.negZ),
+  };
+}
+
+VolumeFaceEdge? _closestProjectedEdge(
+  Iterable<VolumeFaceEdge> edges,
+  Offset screenPoint,
+  Offset? Function(Vector3 world) project,
+) {
+  VolumeFaceEdge? best;
+  var bestDist = double.infinity;
+  for (final edge in edges) {
+    final a = project(edge.a);
+    final b = project(edge.b);
+    if (a == null || b == null) continue;
+    final d = distancePointToSegment2d(screenPoint, a, b);
+    if (d < bestDist) {
+      bestDist = d;
+      best = edge;
+    }
+  }
+  return best;
+}
+
+/// Prefer the exterior face that shares the leaving edge. Parallel faces
+/// that are only in view do not win over a shared edge or corner.
 FaceTurnTarget? nextPlane2dFaceTurn({
   required int volumeId,
   required VolumeCell cell,
@@ -161,9 +253,23 @@ FaceTurnTarget? nextPlane2dFaceTurn({
   required Iterable<Volume> volumes,
   required WorldPlane currentPlane,
 }) {
-  final min = cell.box.worldMin(grid, cell.tx, cell.ty);
-  final max = cell.box.worldMax(grid, cell.tx, cell.ty);
-  if (face.liesOnFace(lookAt, min, max)) return null;
+  Volume? currentVolume;
+  for (final volume in volumes) {
+    if (volume.id == volumeId) {
+      currentVolume = volume;
+      break;
+    }
+  }
+  currentVolume ??= Volume(id: volumeId, cells: [cell]);
+  final currentSolid = resolveVolumeSolid(currentVolume, grid);
+  if (currentSolid.containsFaceHit(
+    cell: cell,
+    face: face,
+    grid: grid,
+    world: lookAt,
+  )) {
+    return null;
+  }
 
   FaceTurnTarget targetFor(int id, VolumeCell nextCell, VolumeFace nextFace) {
     final plane = WorldPlane.fromVolumeFace(
@@ -179,85 +285,97 @@ FaceTurnTarget? nextPlane2dFaceTurn({
     );
   }
 
-  // Look-at is still on this infinite plane: another coplanar face that
-  // contains it (same volume or a neighbor in the row).
+  // Look-at landed on another remaining solid face of the same facing.
   for (final volume in volumes) {
+    final solid = resolveVolumeSolid(volume, grid);
     for (final other in volume.cells) {
       if (volume.id == volumeId &&
           other.tx == cell.tx &&
           other.ty == cell.ty) {
         continue;
       }
-      final oMin = other.box.worldMin(grid, other.tx, other.ty);
-      final oMax = other.box.worldMax(grid, other.tx, other.ty);
-      if (face.liesOnFace(lookAt, oMin, oMax)) {
+      if (solid.isFaceFullyInternal(other.tx, other.ty, face)) continue;
+      if (solid.containsFaceHit(
+        cell: other,
+        face: face,
+        grid: grid,
+        world: lookAt,
+      )) {
         return targetFor(volume.id, other, face);
       }
     }
   }
 
-  final leaving = closestVolumeFaceEdge(
-    face: face,
-    min: min,
-    max: max,
-    screenPoint: screenCenter,
-    project: project,
+  final leaving = _closestProjectedEdge(
+    _navigableFaceEdges(
+      cell: cell,
+      face: face,
+      grid: grid,
+      solid: currentSolid,
+    ),
+    screenCenter,
+    project,
   );
   if (leaving == null) return null;
 
   FaceTurnTarget? best;
   var bestScore = -1;
 
-  void consider(int id, VolumeCell nextCell, VolumeFace nextFace) {
+  void consider(Volume volume, VolumeCell nextCell, VolumeFace nextFace) {
     if (nextFace == VolumeFace.negY) return;
-    if (id == volumeId &&
+    if (volume.id == volumeId &&
         nextCell.tx == cell.tx &&
         nextCell.ty == cell.ty &&
         nextFace == face) {
       return;
     }
-    final oMin = nextCell.box.worldMin(grid, nextCell.tx, nextCell.ty);
-    final oMax = nextCell.box.worldMax(grid, nextCell.tx, nextCell.ty);
-    final plane = WorldPlane.fromVolumeFace(
-      grid: grid,
+    if (!_faceIsNavigable(volume, nextCell, nextFace, grid)) return;
+    final solid = resolveVolumeSolid(volume, grid);
+    final nextEdges = _navigableFaceEdges(
       cell: nextCell,
       face: nextFace,
+      grid: grid,
+      solid: solid,
     );
-    final shared = facesShareWorldEdge(
-      aFace: face,
-      aMin: min,
-      aMax: max,
-      bFace: nextFace,
-      bMin: oMin,
-      bMax: oMax,
-    );
-    final sameCell =
-        id == volumeId && nextCell.tx == cell.tx && nextCell.ty == cell.ty;
+    var sharesEdge = false;
+    var sharesVertex = false;
+    for (final edge in nextEdges) {
+      if (segmentsShareEdge(leaving.a, leaving.b, edge.a, edge.b)) {
+        sharesEdge = true;
+      }
+      if (_segmentsShareVertex(leaving.a, leaving.b, edge.a, edge.b)) {
+        sharesVertex = true;
+      }
+    }
+    final sameCell = volume.id == volumeId &&
+        nextCell.tx == cell.tx &&
+        nextCell.ty == cell.ty;
+    final step = tileDeltaAcrossFaceEdge(face, leaving.adjacent);
+    final towardNeighbor = step != null &&
+        nextCell.tx == cell.tx + step.$1 &&
+        nextCell.ty == cell.ty + step.$2;
+    final tileNeighborSameFace =
+        towardNeighbor && nextFace == face;
     var score = 0;
-    if (!sameCell) score += 100;
-    if (nextFace == face) score += 50;
-    if (currentPlane.isCoplanarWith(plane)) score += 20;
-    if (currentPlane.normal.dot(plane.normal) > 0.99) score += 20;
-    if (shared) score += 15;
-    if (nextFace == leaving.adjacent) score += 1;
+    if (sharesEdge && !sameCell) score += 1000;
+    if (tileNeighborSameFace) score += 800;
+    if (sameCell && nextFace == leaving.adjacent) score += 500;
+    if (sharesVertex && !sameCell) score += 200;
+    if (score == 0) return;
     if (score > bestScore) {
       bestScore = score;
+      final plane = WorldPlane.fromVolumeFace(
+        grid: grid,
+        cell: nextCell,
+        face: nextFace,
+      );
       best = FaceTurnTarget(
-        volumeId: id,
+        volumeId: volume.id,
         cell: nextCell,
         face: nextFace,
         coplanar: currentPlane.isCoplanarWith(plane),
       );
     }
-  }
-
-  bool sharesLeaving(VolumeFace nextFace, VolumeCell nextCell) {
-    final oMin = nextCell.box.worldMin(grid, nextCell.tx, nextCell.ty);
-    final oMax = nextCell.box.worldMax(grid, nextCell.tx, nextCell.ty);
-    for (final b in volumeFaceEdges(nextFace, oMin, oMax)) {
-      if (segmentsShareEdge(leaving.a, leaving.b, b.a, b.b)) return true;
-    }
-    return false;
   }
 
   final delta = tileDeltaAcrossFaceEdge(face, leaving.adjacent);
@@ -267,12 +385,10 @@ FaceTurnTarget? nextPlane2dFaceTurn({
     for (final volume in volumes) {
       final neighbor = volume.cellAt(ntx, nty);
       if (neighbor == null) continue;
-      consider(volume.id, neighbor, face);
+      consider(volume, neighbor, face);
       for (final otherFace in VolumeFace.values) {
         if (otherFace == face || otherFace == VolumeFace.negY) continue;
-        if (sharesLeaving(otherFace, neighbor)) {
-          consider(volume.id, neighbor, otherFace);
-        }
+        consider(volume, neighbor, otherFace);
       }
     }
   }
@@ -284,13 +400,11 @@ FaceTurnTarget? nextPlane2dFaceTurn({
       }
       for (final otherFace in VolumeFace.values) {
         if (otherFace == VolumeFace.negY) continue;
-        if (sharesLeaving(otherFace, other)) {
-          consider(volume.id, other, otherFace);
-        }
+        consider(volume, other, otherFace);
       }
     }
   }
 
-  consider(volumeId, cell, leaving.adjacent);
+  consider(currentVolume, cell, leaving.adjacent);
   return best;
 }

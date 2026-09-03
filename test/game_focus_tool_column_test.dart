@@ -36,7 +36,7 @@ void main() {
     expect(find.byIcon(Icons.door_front_door_outlined), findsNothing);
   });
 
-  testWidgets('expanded sticker column on a wall shows the door', (tester) async {
+  testWidgets('expanded wall tools hide the sticker column', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -54,7 +54,7 @@ void main() {
             onToggleErase: () {},
             paintColor: PaperColor.green,
             onPaintColor: (_) {},
-            selectedSticker: FocusStickerKind.door,
+            selectedSticker: null,
             onSelectSticker: (_) {},
             telephoto: false,
             onToggleTelephoto: () {},
@@ -62,8 +62,8 @@ void main() {
         ),
       ),
     );
-    expect(find.byIcon(Icons.door_front_door_outlined), findsOneWidget);
-    expect(find.byTooltip('Door'), findsOneWidget);
+    expect(find.byIcon(Icons.door_front_door_outlined), findsNothing);
+    expect(find.byIcon(Icons.sticky_note_2_outlined), findsNothing);
   });
 
   testWidgets('expanded paint column shows fill, erase, and colors', (

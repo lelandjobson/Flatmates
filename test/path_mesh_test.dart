@@ -24,13 +24,14 @@ void main() {
     expect(normal.y, greaterThan(0));
   });
 
-  test('path meshes skip seam strokes and request a surface grid', () {
+  test('path meshes are a single paper fill', () {
     final scene = Scene();
     final volumes = VolumeStore();
     final paths = PathStore(grid: volumes.grid)..addIsland(1, 1);
     syncPathMeshes(scene, paths, volumes);
     final mesh = scene.meshes.singleWhere((m) => m.id.startsWith('path_'));
     expect(mesh.material.strokeEdges, isFalse);
-    expect(mesh.material.surfaceGrid, isTrue);
+    expect(mesh.material.surfaceGrid, isFalse);
+    expect(mesh.material.wireframe, isFalse);
   });
 }

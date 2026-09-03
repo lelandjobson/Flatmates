@@ -270,6 +270,54 @@ void main() {
     expect(next.coplanar, isTrue);
   });
 
+  test('L-shape pans to the shared-edge face, not a parallel background wall', () {
+    final stem = VolumeCell(tx: 1, ty: 1, box: BoxPrimitive());
+    final corner = VolumeCell(tx: 1, ty: 2, box: BoxPrimitive());
+    final foot = VolumeCell(tx: 2, ty: 2, box: BoxPrimitive());
+    final volume = Volume(id: 1, cells: [stem, corner, foot]);
+    final fMin = foot.box.worldMin(grid, foot.tx, foot.ty);
+    final fMax = foot.box.worldMax(grid, foot.tx, foot.ty);
+    final next = nextPlane2dFaceTurn(
+      volumeId: 1,
+      cell: foot,
+      face: VolumeFace.negZ,
+      lookAt: Vector3(fMin.x - 4, 3, fMin.z),
+      screenCenter: Offset(fMin.x - 20, -3),
+      project: (w) => Offset(w.x, -w.y),
+      grid: grid,
+      volumes: [volume],
+      currentPlane: planeOf(foot, VolumeFace.negZ),
+    );
+    expect(next, isNotNull);
+    expect(next!.cell.tx, 1);
+    expect(next.cell.ty, 1);
+    expect(next.face, VolumeFace.posX);
+    expect(next.face, isNot(VolumeFace.negZ));
+  });
+
+  test('L-shape south strip stays on the shared south faces', () {
+    final stem = VolumeCell(tx: 1, ty: 1, box: BoxPrimitive());
+    final corner = VolumeCell(tx: 1, ty: 2, box: BoxPrimitive());
+    final foot = VolumeCell(tx: 2, ty: 2, box: BoxPrimitive());
+    final volume = Volume(id: 1, cells: [stem, corner, foot]);
+    final cMax = corner.box.worldMax(grid, corner.tx, corner.ty);
+    final next = nextPlane2dFaceTurn(
+      volumeId: 1,
+      cell: corner,
+      face: VolumeFace.posZ,
+      lookAt: Vector3(cMax.x + 0.5, 3, cMax.z),
+      screenCenter: Offset(cMax.x + 20, -3),
+      project: projectPosZ,
+      grid: grid,
+      volumes: [volume],
+      currentPlane: planeOf(corner, VolumeFace.posZ),
+    );
+    expect(next, isNotNull);
+    expect(next!.cell.tx, 2);
+    expect(next.cell.ty, 2);
+    expect(next.face, VolumeFace.posZ);
+  });
+
   test('collinear overlapping segments share an edge', () {
     expect(
       segmentsShareEdge(

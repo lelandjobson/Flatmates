@@ -192,13 +192,11 @@ void syncVolumeMeshes(
     for (final cell in volume.cells) {
       final id = volumeMeshId(volume.id, cell.tx, cell.ty);
       wanted.add(id);
-      final doors = exteriorDoors(volume, cell).toList();
       final geometry = volumeSolidCellGeometry(
         cell: cell,
         solid: solid,
         grid: store.grid,
         id: id,
-        doors: doors,
         hideCeiling: hideCeiling,
         inwardWallsOnly: inwardOnly,
       );
@@ -208,12 +206,13 @@ void syncVolumeMeshes(
           store.draftCell?.tx == cell.tx &&
           store.draftCell?.ty == cell.ty;
       final color = highlightDraftCell
-          ? (draftColor ?? WorldTheme.paperDiorama.volumeDraft)
+          ? (draftColor ?? committed ?? WorldTheme.paperDiorama.volume)
           : (committed ?? WorldTheme.paperDiorama.volume);
       final existing = scene.meshById(id);
       final material = MaterialModel(
         color: color,
-        wireframe: true,
+        wireframe: false,
+        strokeEdges: false,
         doubleSided: !inwardOnly,
       );
       if (existing == null) {
@@ -375,7 +374,7 @@ Geometry volumeSolidCellGeometry({
     final inward = inwardWallsOnly && surface.kind == VolumeSurfaceKind.wall;
     for (final fragment in surface.fragments) {
       addQuad(
-        _fragmentWorldQuad(
+        volumeFaceFragmentQuad(
           min: min,
           max: max,
           handle: handle,
@@ -395,48 +394,3 @@ Geometry volumeSolidCellGeometry({
   );
 }
 
-List<Vector3> _fragmentWorldQuad({
-  required Vector3 min,
-  required Vector3 max,
-  required VolumeHandle handle,
-  required VolumeFaceRect fragment,
-  required double subtileSize,
-}) {
-  final s = subtileSize;
-  final u0 = fragment.u0 * s;
-  final u1 = fragment.u1 * s;
-  final v0 = fragment.v0 * s;
-  final v1 = fragment.v1 * s;
-  return switch (handle) {
-    VolumeHandle.posX => [
-        Vector3(max.x, min.y + v0, min.z + u0),
-        Vector3(max.x, min.y + v1, min.z + u0),
-        Vector3(max.x, min.y + v1, min.z + u1),
-        Vector3(max.x, min.y + v0, min.z + u1),
-      ],
-    VolumeHandle.negX => [
-        Vector3(min.x, min.y + v0, min.z + u0),
-        Vector3(min.x, min.y + v0, min.z + u1),
-        Vector3(min.x, min.y + v1, min.z + u1),
-        Vector3(min.x, min.y + v1, min.z + u0),
-      ],
-    VolumeHandle.posZ => [
-        Vector3(min.x + u0, min.y + v0, max.z),
-        Vector3(min.x + u1, min.y + v0, max.z),
-        Vector3(min.x + u1, min.y + v1, max.z),
-        Vector3(min.x + u0, min.y + v1, max.z),
-      ],
-    VolumeHandle.negZ => [
-        Vector3(min.x + u0, min.y + v0, min.z),
-        Vector3(min.x + u0, min.y + v1, min.z),
-        Vector3(min.x + u1, min.y + v1, min.z),
-        Vector3(min.x + u1, min.y + v0, min.z),
-      ],
-    VolumeHandle.posY => [
-        Vector3(min.x + u0, max.y, min.z + v0),
-        Vector3(min.x + u0, max.y, min.z + v1),
-        Vector3(min.x + u1, max.y, min.z + v1),
-        Vector3(min.x + u1, max.y, min.z + v0),
-      ],
-  };
-}

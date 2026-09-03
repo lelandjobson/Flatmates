@@ -4,8 +4,22 @@ import '../viewers/world_plane.dart';
 import '../volumes/volume.dart';
 import '../walls/wall_regions.dart';
 
-/// Camera distance at or below which a volume hit selects a face, not the mass.
-const double kSelectVolumeFacesBelowDistance = 80;
+/// Camera distance below which a volume hit selects a face, not the mass.
+const double kSelectVolumeFacesBelowDistance = 45;
+
+/// Camera distance at or above which paint/transform target the joined solid.
+const double kSelectJoinedSolidAtOrAboveDistance = 62;
+
+enum VolumeToolScope { face, cell, solid }
+
+/// Face when close, one stored cell in the mid band, joined solid when far.
+VolumeToolScope volumeToolScope(double distance) {
+  if (distance < kSelectVolumeFacesBelowDistance) return VolumeToolScope.face;
+  if (distance < kSelectJoinedSolidAtOrAboveDistance) {
+    return VolumeToolScope.cell;
+  }
+  return VolumeToolScope.solid;
+}
 
 enum SelectableKind { tile, region, friend, volume, volumeFace, path }
 
@@ -130,7 +144,10 @@ class SelectableHit {
         region != null && other.region != null && region == other.region,
       SelectableKind.friend => friendId == other.friendId,
       SelectableKind.path => tx == other.tx && ty == other.ty,
-      SelectableKind.volume => volumeId == other.volumeId,
+      SelectableKind.volume =>
+        volumeId == other.volumeId &&
+            cell?.tx == other.cell?.tx &&
+            cell?.ty == other.cell?.ty,
       SelectableKind.volumeFace =>
         volumeId == other.volumeId &&
             face == other.face &&

@@ -39,7 +39,6 @@ import '../ui/fm_screen.dart';
 import '../ui/fm_slider.dart';
 import '../ui/game/frame_stats_hud.dart';
 import '../ui/game/game_tool_sidebar.dart';
-import '../ui/game/volume_face_paint_overlay.dart';
 import '../ui/game/volume_ground_shadow_overlay.dart';
 
 enum _MapToolbarTab { tools, colors, shade, grain, assets }
@@ -665,18 +664,6 @@ class _Test3dMapViewState extends State<Test3dMapView>
                   ),
                 ),
                 SizedBox.expand(child: SceneView(scene: _scene)),
-                Positioned.fill(
-                  child: VolumeFacePaintOverlay(
-                    store: _facePaint,
-                    volumes: _volumes,
-                    camera: _camera,
-                    viewport: _viewportSize,
-                    listenable: _look,
-                    shade: _shade,
-                    grain: _grain,
-                    theme: _theme,
-                  ),
-                ),
               ],
             ),
           ),

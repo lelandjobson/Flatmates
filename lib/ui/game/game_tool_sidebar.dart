@@ -3,6 +3,37 @@ import 'package:flutter/material.dart';
 import '../../crafting/placed_paper.dart';
 import '../../gameplay/volumes/volume_program.dart';
 
+/// Right-hand color strip for map Edit → Paint.
+class GameMapPaintPalette extends StatelessWidget {
+  const GameMapPaintPalette({
+    super.key,
+    required this.paintColor,
+    required this.onPaintColor,
+    this.resolvePaper,
+  });
+
+  final PaperColor paintColor;
+  final ValueChanged<PaperColor> onPaintColor;
+  final Color Function(PaperColor)? resolvePaper;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ToolStrip(
+      children: [
+        for (var i = 0; i < PaperColor.values.length; i++) ...[
+          if (i > 0) const SizedBox(height: 2),
+          _ColorDot(
+            color: resolvePaper?.call(PaperColor.values[i]) ??
+                PaperColor.values[i].color,
+            selected: paintColor == PaperColor.values[i],
+            onTap: () => onPaintColor(PaperColor.values[i]),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 /// Thin vertical tool strip, matching mixed-3D / crafting HUD chrome.
 class GameToolSidebar extends StatelessWidget {
   const GameToolSidebar({

@@ -2,6 +2,7 @@ import 'package:flatmates/gameplay/eraser/erase_preview.dart';
 import 'package:flatmates/gameplay/eraser/eraser_filter.dart';
 import 'package:flatmates/gameplay/paths/path_store.dart';
 import 'package:flatmates/gameplay/picking/selectable.dart';
+import 'package:flatmates/gameplay/viewers/world_plane.dart';
 import 'package:flatmates/gameplay/volumes/volume_store.dart';
 import 'package:flatmates/gameplay/walls/wall_edge.dart';
 import 'package:flatmates/gameplay/walls/wall_store.dart';
@@ -65,5 +66,32 @@ void main() {
     );
     expect(preview.hits.map((h) => h.kind), [SelectableKind.path]);
     expect(preview.walls, isEmpty);
+  });
+
+  test('volume preview is the hovered cell, not the joined solid', () {
+    final volumes = VolumeStore();
+    expect(volumes.startNew(2, 2), isTrue);
+    expect(volumes.paintAt(3, 2), isTrue);
+    expect(volumes.confirmEdit(), isTrue);
+    final volume = volumes.volumes.single;
+    expect(volume.cells, hasLength(2));
+    final preview = erasePreviewAt(
+      tx: 3,
+      ty: 2,
+      filter: EraserFilter(eraseAllOnTile: false, paths: false, walls: false),
+      volumes: volumes,
+      paths: PathStore(grid: volumes.grid),
+      walls: WallStore(grid: volumes.grid),
+      primary: SelectableHit.volumeFace(
+        volume.id,
+        face: VolumeFace.posX,
+        cell: volume.cellAt(3, 2),
+      ),
+    );
+    expect(preview.hits, hasLength(1));
+    expect(preview.hits.single.kind, SelectableKind.volume);
+    expect(preview.hits.single.cell?.tx, 3);
+    expect(preview.hits.single.cell?.ty, 2);
+    expect(preview.hits.single.volumeId, volume.id);
   });
 }

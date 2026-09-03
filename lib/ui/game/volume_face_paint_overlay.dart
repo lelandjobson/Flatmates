@@ -1,104 +1,89 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 
+import '../../gameplay/paint/face_applique_atlas.dart';
 import '../../gameplay/paint/face_paint_store.dart';
-import '../../gameplay/paint/plane_grain_model.dart';
-import '../../gameplay/paint/plane_shade_model.dart';
 import '../../gameplay/viewers/world_plane.dart';
 import '../../gameplay/volumes/volume.dart';
+import '../../gameplay/volumes/volume_solid.dart';
 import '../../gameplay/volumes/volume_store.dart';
 import '../../rendering/scene/camera.dart';
-import '../../theme/world_theme.dart';
 
-/// Projects painted volume-face subtles into screen space.
+/// One textured applique quad per baked face. Map 3d leaves this off.
 class VolumeFacePaintOverlay extends StatelessWidget {
   const VolumeFacePaintOverlay({
     super.key,
-    required this.store,
+    required this.atlas,
     required this.volumes,
     required this.camera,
     required this.viewport,
     this.listenable,
     this.tileVisible,
-    this.shade,
-    this.grain,
-    this.theme,
   });
 
-  final FacePaintStore store;
+  final FaceAppliqueAtlas atlas;
   final VolumeStore volumes;
   final Camera camera;
   final Size viewport;
   final Listenable? listenable;
   final bool Function(int tx, int ty)? tileVisible;
-  final PlaneShadeModel? shade;
-  final PlaneGrainModel? grain;
-  final WorldTheme? theme;
 
   @override
   Widget build(BuildContext context) {
-    final listenable = this.listenable;
-    if (listenable != null) {
-      return ListenableBuilder(
-        listenable: listenable,
-        builder: (context, _) => _paint(),
-      );
-    }
-    return _paint();
-  }
-
-  Widget _paint() {
-    return IgnorePointer(
-      child: CustomPaint(
-        size: viewport,
-        painter: _FacePaintPainter(
-          store: store,
-          volumes: volumes,
-          camera: camera,
-          viewport: viewport,
-          tileVisible: tileVisible,
-          shade: shade,
-          grain: grain,
-          theme: theme,
+    final extra = this.listenable;
+    final listenable =
+        extra == null ? atlas : Listenable.merge([extra, atlas]);
+    return ListenableBuilder(
+      listenable: listenable,
+      builder: (context, _) => IgnorePointer(
+        child: CustomPaint(
+          size: viewport,
+          painter: _FaceAppliquePainter(
+            atlas: atlas,
+            volumes: volumes,
+            camera: camera,
+            viewport: viewport,
+            tileVisible: tileVisible,
+          ),
         ),
       ),
     );
   }
 }
 
-class _FacePaintPainter extends CustomPainter {
-  _FacePaintPainter({
-    required this.store,
+class _FaceAppliquePainter extends CustomPainter {
+  _FaceAppliquePainter({
+    required this.atlas,
     required this.volumes,
     required this.camera,
     required this.viewport,
     this.tileVisible,
-    this.shade,
-    this.grain,
-    this.theme,
   });
 
-  final FacePaintStore store;
+  final FaceAppliqueAtlas atlas;
   final VolumeStore volumes;
   final Camera camera;
   final Size viewport;
   final bool Function(int tx, int ty)? tileVisible;
-  final PlaneShadeModel? shade;
-  final PlaneGrainModel? grain;
-  final WorldTheme? theme;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final quads = <_PaintedQuad>[];
-    for (final entry in store.canvases.entries) {
-      final key = entry.key;
-      final faceCanvas = entry.value;
+    final quads = <_TexturedQuad>[];
+    for (final slot in atlas.slots) {
+      final key = slot.key.face;
+      if (key == null) continue;
+      Volume? owner;
       VolumeCell? cell;
       for (final volume in volumes.visibleVolumes) {
         if (volume.id != key.volumeId) continue;
+        owner = volume;
         cell = volume.cellAt(key.tx, key.ty);
         break;
       }
-      if (cell == null) continue;
+      if (owner == null || cell == null) continue;
+      final solid = resolveVolumeSolid(owner, volumes.grid);
+      if (solid.isFaceFullyInternal(key.tx, key.ty, key.face)) continue;
       final visible = tileVisible;
       if (visible != null && !visible(key.tx, key.ty)) continue;
 
@@ -109,74 +94,85 @@ class _FacePaintPainter extends CustomPainter {
       final toCamera = camera.position - origin;
       if (faceNormal.dot(toCamera) <= 1e-6) continue;
 
-      for (var y = 0; y < faceCanvas.height; y++) {
-        for (var x = 0; x < faceCanvas.width; x++) {
-          final color = faceCanvas.colorAt(x, y);
-          if (color == null) continue;
-          final corners = FacePaintStore.pixelCorners(
-            u: x,
-            v: y,
-            grid: volumes.grid,
-            cell: cell,
-            face: key.face,
-          );
-          final pts = <Offset>[];
-          var ok = true;
-          var depth = 0.0;
-          for (final c in corners) {
-            final p = camera.projectToScreen(c, viewport);
-            if (p == null) {
-              ok = false;
-              break;
-            }
-            pts.add(p);
-            depth += (c - camera.position).length2;
-          }
-          if (!ok || pts.length < 3) continue;
-          final shade = this.shade;
-          final paper = theme?.paper(color) ?? color.color;
-          var painted = shade == null
-              ? paper
-              : shade.apply(paper, faceNormal);
-          final grain = this.grain;
-          if (grain != null) {
-            painted = grain.apply(
-              painted,
-              tx: key.tx,
-              ty: key.ty,
-              u: x,
-              v: y,
-              faceIndex: key.face.index,
-            );
-          }
-          quads.add(
-            _PaintedQuad(
-              points: pts,
-              color: painted,
-              depth: depth / corners.length,
-            ),
-          );
+      final corners = FacePaintStore.faceCorners(
+        grid: volumes.grid,
+        cell: cell,
+        face: key.face,
+      );
+      final pts = <Offset>[];
+      var ok = true;
+      var depth = 0.0;
+      for (final c in corners) {
+        final p = camera.projectToScreen(c, viewport);
+        if (p == null) {
+          ok = false;
+          break;
         }
+        pts.add(p);
+        depth += (c - camera.position).length2;
       }
+      if (!ok || pts.length < 4) continue;
+      quads.add(
+        _TexturedQuad(
+          points: pts,
+          image: slot.image,
+          src: slot.rect,
+          depth: depth / corners.length,
+        ),
+      );
     }
     quads.sort((a, b) => b.depth.compareTo(a.depth));
     for (final quad in quads) {
-      canvas.drawPath(Path()..addPolygon(quad.points, true), Paint()..color = quad.color);
+      _drawTexturedQuad(canvas, quad);
     }
   }
 
+  void _drawTexturedQuad(Canvas canvas, _TexturedQuad quad) {
+    final img = quad.image;
+    final src = quad.src;
+    final tw = src.width;
+    final th = src.height;
+    final t00 = Offset(src.left, src.top);
+    final t10 = Offset(src.left + tw, src.top);
+    final t11 = Offset(src.left + tw, src.top + th);
+    final t01 = Offset(src.left, src.top + th);
+    final p00 = quad.points[0];
+    final p01 = quad.points[1];
+    final p11 = quad.points[2];
+    final p10 = quad.points[3];
+    final paint = Paint()
+      ..shader = ui.ImageShader(
+        img,
+        TileMode.clamp,
+        TileMode.clamp,
+        Matrix4.identity().storage,
+      )
+      ..filterQuality = FilterQuality.none;
+    canvas.drawVertices(
+      ui.Vertices(
+        VertexMode.triangles,
+        [p00, p10, p11, p00, p11, p01],
+        textureCoordinates: [t00, t10, t11, t00, t11, t01],
+      ),
+      BlendMode.srcOver,
+      paint,
+    );
+  }
+
   @override
-  bool shouldRepaint(covariant _FacePaintPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _FaceAppliquePainter oldDelegate) => true;
 }
 
-class _PaintedQuad {
-  const _PaintedQuad({
+class _TexturedQuad {
+  const _TexturedQuad({
     required this.points,
-    required this.color,
+    required this.image,
+    required this.src,
     required this.depth,
   });
 
   final List<Offset> points;
-  final Color color;
+  final ui.Image image;
+  final Rect src;
   final double depth;
 }

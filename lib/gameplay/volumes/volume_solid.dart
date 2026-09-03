@@ -1,5 +1,7 @@
 import 'dart:collection';
 
+import 'package:vector_math/vector_math_64.dart';
+
 import '../viewers/world_plane.dart';
 import 'volume.dart';
 
@@ -25,6 +27,9 @@ class VolumeFaceRect {
 
   bool sameAs(VolumeFaceRect other) =>
       u0 == other.u0 && v0 == other.v0 && u1 == other.u1 && v1 == other.v1;
+
+  bool containsUv(double u, double v, {double eps = 1e-6}) =>
+      u >= u0 - eps && u < u1 + eps && v >= v0 - eps && v < v1 + eps;
 
   VolumeFaceRect? intersection(VolumeFaceRect other) {
     final nu0 = u0 > other.u0 ? u0 : other.u0;
@@ -123,6 +128,180 @@ class VolumeSolid {
         (s) => s.kind == VolumeSurfaceKind.wall &&
             s.enclosure == VolumeEnclosure.courtyard,
       );
+
+  /// True when [world] lands on remaining solid area of [face], not a
+  /// swallowed interior patch of the original box.
+  bool containsFaceHit({
+    required VolumeCell cell,
+    required VolumeFace face,
+    required VolumeGrid grid,
+    required Vector3 world,
+  }) {
+    final min = cell.box.worldMin(grid, cell.tx, cell.ty);
+    final max = cell.box.worldMax(grid, cell.tx, cell.ty);
+    if (!face.liesOnFace(world, min, max)) return false;
+    if (face == VolumeFace.negY) return true;
+    final surface = surfaceForFace(cell.tx, cell.ty, face);
+    if (surface == null) return false;
+    final uv = faceUvAt(world: world, grid: grid, cell: cell, face: face);
+    if (uv == null) return false;
+    for (final fragment in surface.fragments) {
+      if (fragment.containsUv(uv.$1, uv.$2)) return true;
+    }
+    return false;
+  }
+
+  List<List<Vector3>> faceWorldQuads({
+    required VolumeCell cell,
+    required VolumeFace face,
+    required VolumeGrid grid,
+  }) {
+    final min = cell.box.worldMin(grid, cell.tx, cell.ty);
+    final max = cell.box.worldMax(grid, cell.tx, cell.ty);
+    if (face == VolumeFace.negY) {
+      return [
+        [
+          Vector3(min.x, min.y, min.z),
+          Vector3(min.x, min.y, max.z),
+          Vector3(max.x, min.y, max.z),
+          Vector3(max.x, min.y, min.z),
+        ],
+      ];
+    }
+    final surface = surfaceForFace(cell.tx, cell.ty, face);
+    if (surface == null) return const [];
+    final s = grid.subtileSize;
+    return [
+      for (final fragment in surface.fragments)
+        volumeFaceFragmentQuad(
+          min: min,
+          max: max,
+          handle: surface.handle,
+          fragment: fragment,
+          subtileSize: s,
+        ),
+    ];
+  }
+
+  Vector3 handleCenter({
+    required VolumeCell cell,
+    required VolumeHandle handle,
+    required VolumeGrid grid,
+  }) {
+    final surface = surfaceAt(cell.tx, cell.ty, handle);
+    if (surface == null || surface.fragments.isEmpty) {
+      return cell.box.faceCenter(grid, cell.tx, cell.ty, handle);
+    }
+    final min = cell.box.worldMin(grid, cell.tx, cell.ty);
+    final max = cell.box.worldMax(grid, cell.tx, cell.ty);
+    var x = 0.0;
+    var y = 0.0;
+    var z = 0.0;
+    var n = 0;
+    for (final fragment in surface.fragments) {
+      final quad = volumeFaceFragmentQuad(
+        min: min,
+        max: max,
+        handle: handle,
+        fragment: fragment,
+        subtileSize: grid.subtileSize,
+      );
+      for (final p in quad) {
+        x += p.x;
+        y += p.y;
+        z += p.z;
+        n++;
+      }
+    }
+    if (n == 0) return cell.box.faceCenter(grid, cell.tx, cell.ty, handle);
+    return Vector3(x / n, y / n, z / n);
+  }
+}
+
+(double, double)? faceUvAt({
+  required Vector3 world,
+  required VolumeGrid grid,
+  required VolumeCell cell,
+  required VolumeFace face,
+}) {
+  final min = cell.box.worldMin(grid, cell.tx, cell.ty);
+  final s = grid.subtileSize;
+  if (s <= 1e-8) return null;
+  final box = cell.box;
+  late final double u;
+  late final double v;
+  late final int uMax;
+  late final int vMax;
+  switch (face) {
+    case VolumeFace.posY:
+    case VolumeFace.negY:
+      u = (world.x - min.x) / s;
+      v = (world.z - min.z) / s;
+      uMax = box.widthSubtiles;
+      vMax = box.depthSubtiles;
+    case VolumeFace.posX:
+    case VolumeFace.negX:
+      u = (world.z - min.z) / s;
+      v = (world.y - min.y) / s;
+      uMax = box.depthSubtiles;
+      vMax = box.heightSubtiles;
+    case VolumeFace.posZ:
+    case VolumeFace.negZ:
+      u = (world.x - min.x) / s;
+      v = (world.y - min.y) / s;
+      uMax = box.widthSubtiles;
+      vMax = box.heightSubtiles;
+  }
+  if (u < -1e-4 || v < -1e-4 || u > uMax + 1e-4 || v > vMax + 1e-4) {
+    return null;
+  }
+  return (u, v);
+}
+
+List<Vector3> volumeFaceFragmentQuad({
+  required Vector3 min,
+  required Vector3 max,
+  required VolumeHandle handle,
+  required VolumeFaceRect fragment,
+  required double subtileSize,
+}) {
+  final s = subtileSize;
+  final u0 = fragment.u0 * s;
+  final u1 = fragment.u1 * s;
+  final v0 = fragment.v0 * s;
+  final v1 = fragment.v1 * s;
+  return switch (handle) {
+    VolumeHandle.posX => [
+        Vector3(max.x, min.y + v0, min.z + u0),
+        Vector3(max.x, min.y + v1, min.z + u0),
+        Vector3(max.x, min.y + v1, min.z + u1),
+        Vector3(max.x, min.y + v0, min.z + u1),
+      ],
+    VolumeHandle.negX => [
+        Vector3(min.x, min.y + v0, min.z + u0),
+        Vector3(min.x, min.y + v0, min.z + u1),
+        Vector3(min.x, min.y + v1, min.z + u1),
+        Vector3(min.x, min.y + v1, min.z + u0),
+      ],
+    VolumeHandle.posZ => [
+        Vector3(min.x + u0, min.y + v0, max.z),
+        Vector3(min.x + u1, min.y + v0, max.z),
+        Vector3(min.x + u1, min.y + v1, max.z),
+        Vector3(min.x + u0, min.y + v1, max.z),
+      ],
+    VolumeHandle.negZ => [
+        Vector3(min.x + u0, min.y + v0, min.z),
+        Vector3(min.x + u0, min.y + v1, min.z),
+        Vector3(min.x + u1, min.y + v1, min.z),
+        Vector3(min.x + u1, min.y + v0, min.z),
+      ],
+    VolumeHandle.posY => [
+        Vector3(min.x + u0, max.y, min.z + v0),
+        Vector3(min.x + u0, max.y, min.z + v1),
+        Vector3(min.x + u1, max.y, min.z + v1),
+        Vector3(min.x + u1, max.y, min.z + v0),
+      ],
+  };
 }
 
 VolumeHandle? handleForFace(VolumeFace face) => switch (face) {

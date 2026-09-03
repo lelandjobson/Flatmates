@@ -1,6 +1,7 @@
 import 'package:vector_math/vector_math_64.dart';
 
 import '../volumes/volume.dart';
+import '../volumes/volume_solid.dart';
 import 'world_plane.dart';
 
 /// One volume-cell face that lies on a shared [WorldPlane].
@@ -31,7 +32,9 @@ List<CoplanarFace> collectCoplanarFaces({
     for (final cell in volume.cells) {
       final min = cell.box.worldMin(grid, cell.tx, cell.ty);
       final max = cell.box.worldMax(grid, cell.tx, cell.ty);
+      final solid = resolveVolumeSolid(volume, grid);
       for (final face in VolumeFace.values) {
+        if (solid.isFaceFullyInternal(cell.tx, cell.ty, face)) continue;
         final (origin, normal) = face.originAndNormal(min, max);
         if (plane.normal.dot(normal) < 0.99) continue;
         if ((origin - plane.origin).dot(plane.normal).abs() > eps) continue;
@@ -63,9 +66,23 @@ CoplanarFace? pickCoplanarFace({
         eps: eps,
       );
   for (final face in candidates) {
-    final min = face.cell.box.worldMin(grid, face.cell.tx, face.cell.ty);
-    final max = face.cell.box.worldMax(grid, face.cell.tx, face.cell.ty);
-    if (face.face.containsHit(world, min, max, eps: eps)) return face;
+    Volume? volume;
+    for (final candidate in volumes) {
+      if (candidate.id == face.volumeId) {
+        volume = candidate;
+        break;
+      }
+    }
+    if (volume == null) continue;
+    final solid = resolveVolumeSolid(volume, grid);
+    if (solid.containsFaceHit(
+      cell: face.cell,
+      face: face.face,
+      grid: grid,
+      world: world,
+    )) {
+      return face;
+    }
   }
   return null;
 }

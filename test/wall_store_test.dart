@@ -21,6 +21,8 @@ void main() {
     final mid = Vector3((a.x + b.x) * 0.5, 0, a.z);
     expect(store.hitEdgeAtMidpoint(mid), WallEdge(3, 4, 4, 4));
     expect(store.hitEdgeAtMidpoint(a), isNull);
+    final near = Vector3(mid.x, 0, mid.z + store.grid.tileSize * 0.22);
+    expect(store.hitEdgeAtMidpoint(near), WallEdge(3, 4, 4, 4));
     final far = Vector3(mid.x, 0, mid.z + store.grid.tileSize * 0.4);
     expect(store.hitEdgeAtMidpoint(far), isNull);
   });

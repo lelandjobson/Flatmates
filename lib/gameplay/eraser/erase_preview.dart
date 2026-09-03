@@ -86,7 +86,16 @@ ErasePreview _primaryOnly({
       case SelectableKind.volume:
       case SelectableKind.volumeFace:
         if (filter.volumes && primary.volumeId != null) {
-          return ErasePreview(hits: [primary]);
+          final volume = volumes.volumeById(primary.volumeId!);
+          final cell = primary.cell ??
+              (primary.tx != null && primary.ty != null
+                  ? volume?.cellAt(primary.tx!, primary.ty!)
+                  : null) ??
+              volume?.cellAt(tx, ty);
+          if (volume == null || cell == null) return const ErasePreview();
+          return ErasePreview(
+            hits: [SelectableHit.volume(volume.id, cell: cell)],
+          );
         }
       case SelectableKind.path:
         if (filter.paths) return ErasePreview(hits: [primary]);

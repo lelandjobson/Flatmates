@@ -147,37 +147,68 @@ class PathStore {
   }
 
   /// Walk from [from] to [to], connecting each ortho step (diagonal → L).
+  ///
+  /// [skippable] tiles are not placed. The stroke continues past them.
   bool paintStroke(
     (int, int) from,
     (int, int) to, {
     bool Function(int tx, int ty)? blocked,
+    bool Function(int tx, int ty)? skippable,
     WallStore? walls,
   }) {
-    if (blocked?.call(from.$1, from.$2) ?? false) return false;
-    var changed = addIsland(from.$1, from.$2, blocked: blocked);
+    bool skip(int tx, int ty) => skippable?.call(tx, ty) ?? false;
+    bool block(int tx, int ty) => blocked?.call(tx, ty) ?? false;
+    if (!grid.inBounds(from.$1, from.$2)) return false;
+    if (block(from.$1, from.$2)) return false;
+
+    var changed = false;
+    (int, int)? last;
+    if (!skip(from.$1, from.$2)) {
+      changed = addIsland(from.$1, from.$2, blocked: blocked);
+      last = from;
+    }
+
     var x = from.$1;
     var y = from.$2;
     final x1 = to.$1;
     final y1 = to.$2;
     final sx = x1 > x ? 1 : (x1 < x ? -1 : 0);
     final sy = y1 > y ? 1 : (y1 < y ? -1 : 0);
+
+    bool placeStep(int nx, int ny) {
+      if (skip(nx, ny)) return false;
+      if (last != null) {
+        final dx = (nx - last!.$1).abs();
+        final dy = (ny - last!.$2).abs();
+        if ((dx == 1 && dy == 0) || (dx == 0 && dy == 1)) {
+          return connect(
+            last!.$1,
+            last!.$2,
+            nx,
+            ny,
+            blocked: blocked,
+            walls: walls,
+          );
+        }
+      }
+      return addIsland(nx, ny, blocked: blocked);
+    }
+
     while (x != x1 || y != y1) {
       var stepped = false;
       if (x != x1) {
         final nx = x + sx;
-        if (!grid.inBounds(nx, y) || (blocked?.call(nx, y) ?? false)) break;
-        if (connect(x, y, nx, y, blocked: blocked, walls: walls)) {
-          changed = true;
-        }
+        if (!grid.inBounds(nx, y) || block(nx, y)) break;
+        if (placeStep(nx, y)) changed = true;
+        if (!skip(nx, y)) last = (nx, y);
         x = nx;
         stepped = true;
       }
       if (y != y1) {
         final ny = y + sy;
-        if (!grid.inBounds(x, ny) || (blocked?.call(x, ny) ?? false)) break;
-        if (connect(x, y, x, ny, blocked: blocked, walls: walls)) {
-          changed = true;
-        }
+        if (!grid.inBounds(x, ny) || block(x, ny)) break;
+        if (placeStep(x, ny)) changed = true;
+        if (!skip(x, ny)) last = (x, ny);
         y = ny;
         stepped = true;
       }

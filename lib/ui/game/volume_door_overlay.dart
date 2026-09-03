@@ -3,18 +3,19 @@ import 'package:vector_math/vector_math_64.dart' hide Colors;
 
 import '../../gameplay/picking/focus_sticker.dart';
 import '../../gameplay/volumes/volume.dart';
+import '../../gameplay/volumes/volume_applique.dart';
 import '../../gameplay/volumes/volume_door.dart';
 import '../../gameplay/volumes/volume_store.dart';
 import '../../rendering/scene/camera.dart';
 
-const _kDoorOutline = Color(0xFF455A64);
 const _kDoorStroke = 2.8;
 
-/// Outer outline of each volume door (not per-subtile edges).
+/// Door appliques (path-colored paper) plus focus-view selection / drag preview.
 class VolumeDoorOverlay extends StatelessWidget {
   const VolumeDoorOverlay({
     super.key,
     required this.volumes,
+    required this.appliques,
     required this.camera,
     required this.viewport,
     this.listenable,
@@ -29,6 +30,7 @@ class VolumeDoorOverlay extends StatelessWidget {
   });
 
   final VolumeStore volumes;
+  final VolumeAppliqueStore appliques;
   final Camera camera;
   final Size viewport;
   final Listenable? listenable;
@@ -57,8 +59,9 @@ class VolumeDoorOverlay extends StatelessWidget {
     return IgnorePointer(
       child: CustomPaint(
         size: viewport,
-        painter: _DoorOutlinePainter(
+        painter: _DoorAppliquePainter(
           volumes: volumes,
+          appliques: appliques,
           camera: camera,
           viewport: viewport,
           tileVisible: tileVisible,
@@ -75,9 +78,10 @@ class VolumeDoorOverlay extends StatelessWidget {
   }
 }
 
-class _DoorOutlinePainter extends CustomPainter {
-  _DoorOutlinePainter({
+class _DoorAppliquePainter extends CustomPainter {
+  _DoorAppliquePainter({
     required this.volumes,
+    required this.appliques,
     required this.camera,
     required this.viewport,
     this.tileVisible,
@@ -91,6 +95,7 @@ class _DoorOutlinePainter extends CustomPainter {
   });
 
   final VolumeStore volumes;
+  final VolumeAppliqueStore appliques;
   final Camera camera;
   final Size viewport;
   final bool Function(int tx, int ty)? tileVisible;
@@ -104,55 +109,73 @@ class _DoorOutlinePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = _kDoorOutline
-      ..strokeWidth = _kDoorStroke
-      ..strokeJoin = StrokeJoin.miter
-      ..style = PaintingStyle.stroke;
-    for (final volume in volumes.visibleVolumes) {
-      for (final cell in volume.cells) {
-        final visible = tileVisible;
-        if (visible != null && !visible(cell.tx, cell.ty)) continue;
-        for (final door in exteriorDoors(volume, cell)) {
-          final pts = _project(doorWorldCorners(
-            grid: volumes.grid,
-            tx: cell.tx,
-            ty: cell.ty,
-            box: cell.box,
-            door: door,
-          ));
-          if (pts == null) continue;
-          final selected = volume.id == selectedVolumeId &&
-              cell.tx == selectedTx &&
-              cell.ty == selectedTy &&
-              door.side == selectedSide;
-          if (selected && draftCorners != null) continue;
-          if (selected && selectedInvalid) {
-            canvas.drawPath(
-              Path()..addPolygon(pts, true),
-              Paint()..color = kFocusStickerInvalid.withValues(alpha: 0.55),
-            );
-          }
+    final ordered = List<VolumeApplique>.from(appliques.items)
+      ..sort((a, b) {
+        final layer = a.layer.compareTo(b.layer);
+        if (layer != 0) return layer;
+        return a.id.compareTo(b.id);
+      });
+    for (final piece in ordered) {
+      final visible = tileVisible;
+      if (visible != null && !visible(piece.tx, piece.ty)) continue;
+      final volume = volumes.volumeById(piece.volumeId);
+      final cell = volume?.cellAt(piece.tx, piece.ty);
+      if (volume == null || cell == null) continue;
+      final selected = piece.kind == VolumeAppliqueKind.door &&
+          piece.volumeId == selectedVolumeId &&
+          piece.tx == selectedTx &&
+          piece.ty == selectedTy &&
+          piece.side == selectedSide;
+      if (selected && draftCorners != null) continue;
+      final corners = appliqueWorldCorners(
+        grid: volumes.grid,
+        cell: cell,
+        piece: piece,
+      );
+      if (!doorFacesCamera(
+        face: piece.face,
+        corners: corners,
+        cameraPosition: camera.position,
+      )) {
+        continue;
+      }
+      final pts = _project(corners);
+      if (pts == null) continue;
+      canvas.drawPath(
+        Path()..addPolygon(pts, true),
+        Paint()..color = piece.color,
+      );
+      if (selected) {
+        if (selectedInvalid) {
           canvas.drawPath(
             Path()..addPolygon(pts, true),
-            selected
-                ? (Paint()
-                  ..color = selectedInvalid ? kFocusStickerInvalid : Colors.white
-                  ..strokeWidth = _kDoorStroke
-                  ..style = PaintingStyle.stroke)
-                : paint,
+            Paint()..color = kFocusStickerInvalid.withValues(alpha: 0.55),
           );
         }
+        canvas.drawPath(
+          Path()..addPolygon(pts, true),
+          Paint()
+            ..color = selectedInvalid ? kFocusStickerInvalid : Colors.white
+            ..strokeWidth = _kDoorStroke
+            ..style = PaintingStyle.stroke,
+        );
       }
     }
     final draft = draftCorners;
-    if (draft != null) {
+    final draftFace = selectedSide?.volumeFace;
+    if (draft != null &&
+        (draftFace == null ||
+            doorFacesCamera(
+              face: draftFace,
+              corners: draft,
+              cameraPosition: camera.position,
+            ))) {
       final pts = _project(draft);
       if (pts != null) {
         canvas.drawPath(
           Path()..addPolygon(pts, true),
           Paint()
-            ..color = (draftInvalid ? kFocusStickerInvalid : const Color(0xFFF7F7F2))
+            ..color = (draftInvalid ? kFocusStickerInvalid : kDoorAppliqueColor)
                 .withValues(alpha: 0.7),
         );
         canvas.drawPath(
@@ -178,5 +201,5 @@ class _DoorOutlinePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _DoorOutlinePainter oldDelegate) => true;
+  bool shouldRepaint(covariant _DoorAppliquePainter oldDelegate) => true;
 }

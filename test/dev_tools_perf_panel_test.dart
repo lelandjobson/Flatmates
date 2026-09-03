@@ -44,6 +44,23 @@ void main() {
             onCloseZoomChanged: (_) {},
             perf: perf,
             onPerfChanged: () => changed++,
+            faceAmbient: 0.25,
+            faceKeyIntensity: 0.95,
+            faceFillIntensity: 0.35,
+            faceSunX: -0.6,
+            faceSunY: -1,
+            faceSunZ: -0.4,
+            faceShadowOpacity: 0.22,
+            onFaceLightChanged: ({
+              ambient,
+              keyIntensity,
+              fillIntensity,
+              sunX,
+              sunY,
+              sunZ,
+              shadowOpacity,
+            }) {},
+            onFaceLightReset: () {},
           ),
         ),
       ),
@@ -72,6 +89,8 @@ void main() {
 
     expect(find.text('Camera'), findsOneWidget);
     expect(find.text('Close zoom  42'), findsOneWidget);
+    expect(find.text('Sun / shade'), findsOneWidget);
+    expect(find.text('Reset sun / shade'), findsOneWidget);
   });
 
   testWidgets('frame hud starts collapsed on a dash fps', (tester) async {

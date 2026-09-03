@@ -4,6 +4,16 @@ import '../../debug/perf_debug.dart';
 import '../../gameplay/day_night/day_night_lighting.dart';
 import '../../gameplay/viewers/game_viewer.dart';
 
+typedef FaceLightChanged = void Function({
+  double? ambient,
+  double? keyIntensity,
+  double? fillIntensity,
+  double? sunX,
+  double? sunY,
+  double? sunZ,
+  double? shadowOpacity,
+});
+
 /// Compact GameView DevTools sheet. Assets is the only tab for now.
 class DevToolsPanel extends StatelessWidget {
   const DevToolsPanel({
@@ -17,12 +27,21 @@ class DevToolsPanel extends StatelessWidget {
     required this.onDayNightProgressChanged,
     this.closeZoom,
     this.onCloseZoomChanged,
-    this.closeZoomMin = 20,
+    this.closeZoomMin = 15,
     this.closeZoomMax = 80,
     this.springyLookPeek = true,
     this.onSpringyLookPeekChanged,
     required this.perf,
     required this.onPerfChanged,
+    required this.faceAmbient,
+    required this.faceKeyIntensity,
+    required this.faceFillIntensity,
+    required this.faceSunX,
+    required this.faceSunY,
+    required this.faceSunZ,
+    required this.faceShadowOpacity,
+    required this.onFaceLightChanged,
+    required this.onFaceLightReset,
   });
 
   final bool showGizmos;
@@ -40,6 +59,15 @@ class DevToolsPanel extends StatelessWidget {
   final ValueChanged<bool>? onSpringyLookPeekChanged;
   final PerfDebugSettings perf;
   final VoidCallback onPerfChanged;
+  final double faceAmbient;
+  final double faceKeyIntensity;
+  final double faceFillIntensity;
+  final double faceSunX;
+  final double faceSunY;
+  final double faceSunZ;
+  final double faceShadowOpacity;
+  final FaceLightChanged onFaceLightChanged;
+  final VoidCallback onFaceLightReset;
 
   @override
   Widget build(BuildContext context) {
@@ -52,7 +80,7 @@ class DevToolsPanel extends StatelessWidget {
       child: SizedBox(
         width: 248,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 500),
+          constraints: const BoxConstraints(maxHeight: 560),
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
             child: Column(
@@ -164,6 +192,90 @@ class DevToolsPanel extends StatelessWidget {
                   max: 1,
                   onChanged: onDayNightProgressChanged,
                 ),
+                const SizedBox(height: 8),
+                const _CategoryHeader('Sun / shade'),
+                const SizedBox(height: 4),
+                Text(
+                  'Ambient lifts dark volume sides. Sun aims the key light.',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.45),
+                    fontSize: 10,
+                    height: 1.3,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Ambient  ${faceAmbient.toStringAsFixed(2)}',
+                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+                ),
+                _DevSlider(
+                  value: faceAmbient.clamp(0.0, 0.85),
+                  min: 0,
+                  max: 0.85,
+                  onChanged: (v) => onFaceLightChanged(ambient: v),
+                ),
+                Text(
+                  'Key  ${faceKeyIntensity.toStringAsFixed(2)}',
+                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+                ),
+                _DevSlider(
+                  value: faceKeyIntensity.clamp(0.0, 1.5),
+                  min: 0,
+                  max: 1.5,
+                  onChanged: (v) => onFaceLightChanged(keyIntensity: v),
+                ),
+                Text(
+                  'Fill  ${faceFillIntensity.toStringAsFixed(2)}',
+                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+                ),
+                _DevSlider(
+                  value: faceFillIntensity.clamp(0.0, 1.0),
+                  min: 0,
+                  max: 1,
+                  onChanged: (v) => onFaceLightChanged(fillIntensity: v),
+                ),
+                Text(
+                  'Sun X  ${faceSunX.toStringAsFixed(2)}',
+                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+                ),
+                _DevSlider(
+                  value: faceSunX.clamp(-1.0, 1.0),
+                  min: -1,
+                  max: 1,
+                  onChanged: (v) => onFaceLightChanged(sunX: v),
+                ),
+                Text(
+                  'Sun Y  ${faceSunY.toStringAsFixed(2)}',
+                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+                ),
+                _DevSlider(
+                  value: faceSunY.clamp(-1.0, 1.0),
+                  min: -1,
+                  max: 1,
+                  onChanged: (v) => onFaceLightChanged(sunY: v),
+                ),
+                Text(
+                  'Sun Z  ${faceSunZ.toStringAsFixed(2)}',
+                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+                ),
+                _DevSlider(
+                  value: faceSunZ.clamp(-1.0, 1.0),
+                  min: -1,
+                  max: 1,
+                  onChanged: (v) => onFaceLightChanged(sunZ: v),
+                ),
+                Text(
+                  'Ground shadow  ${(faceShadowOpacity * 100).round()}%',
+                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+                ),
+                _DevSlider(
+                  value: faceShadowOpacity.clamp(0.0, 0.6),
+                  min: 0,
+                  max: 0.6,
+                  onChanged: (v) => onFaceLightChanged(shadowOpacity: v),
+                ),
+                const SizedBox(height: 4),
+                _AssetButton(label: 'Reset sun / shade', onTap: onFaceLightReset),
                 if (closeZoom != null && onCloseZoomChanged != null) ...[
                   const SizedBox(height: 8),
                   const _CategoryHeader('Camera'),

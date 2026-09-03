@@ -37,7 +37,7 @@ class MapSelector {
       store: volumes,
     );
     if (face != null) {
-      if (distance <= faceMaxDistance) {
+      if (distance < faceMaxDistance) {
         return SelectableHit.volumeFace(
           face.volumeId,
           face: face.face,
