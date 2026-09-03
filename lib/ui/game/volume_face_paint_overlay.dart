@@ -20,6 +20,7 @@ class VolumeFacePaintOverlay extends StatelessWidget {
     required this.viewport,
     this.listenable,
     this.tileVisible,
+    this.hideFace,
   });
 
   final FaceAppliqueAtlas atlas;
@@ -28,6 +29,7 @@ class VolumeFacePaintOverlay extends StatelessWidget {
   final Size viewport;
   final Listenable? listenable;
   final bool Function(int tx, int ty)? tileVisible;
+  final bool Function(int tx, int ty, VolumeFace face)? hideFace;
 
   @override
   Widget build(BuildContext context) {
@@ -45,6 +47,7 @@ class VolumeFacePaintOverlay extends StatelessWidget {
             camera: camera,
             viewport: viewport,
             tileVisible: tileVisible,
+            hideFace: hideFace,
           ),
         ),
       ),
@@ -59,6 +62,7 @@ class _FaceAppliquePainter extends CustomPainter {
     required this.camera,
     required this.viewport,
     this.tileVisible,
+    this.hideFace,
   });
 
   final FaceAppliqueAtlas atlas;
@@ -66,6 +70,7 @@ class _FaceAppliquePainter extends CustomPainter {
   final Camera camera;
   final Size viewport;
   final bool Function(int tx, int ty)? tileVisible;
+  final bool Function(int tx, int ty, VolumeFace face)? hideFace;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -86,6 +91,7 @@ class _FaceAppliquePainter extends CustomPainter {
       if (solid.isFaceFullyInternal(key.tx, key.ty, key.face)) continue;
       final visible = tileVisible;
       if (visible != null && !visible(key.tx, key.ty)) continue;
+      if (hideFace?.call(key.tx, key.ty, key.face) == true) continue;
 
       final min = cell.box.worldMin(volumes.grid, cell.tx, cell.ty);
       final max = cell.box.worldMax(volumes.grid, cell.tx, cell.ty);

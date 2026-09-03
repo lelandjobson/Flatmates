@@ -83,11 +83,13 @@ void syncPathMeshes(
             name: 'Path',
             geometry: geometry,
             material: material,
+            groundPlane: true,
           ),
         );
       } else {
         existing.geometry = geometry;
         existing.material = material;
+        existing.groundPlane = true;
       }
     }
   }

@@ -22,6 +22,7 @@ class VolumeProgramOverlay extends StatelessWidget {
     this.draftCorners,
     this.draftInvalid = false,
     this.draftKind,
+    this.hideFloorAt,
   });
 
   final VolumeProgramStore programs;
@@ -35,6 +36,7 @@ class VolumeProgramOverlay extends StatelessWidget {
   final List<Vector3>? draftCorners;
   final bool draftInvalid;
   final VolumeProgramKind? draftKind;
+  final bool Function(int tx, int ty)? hideFloorAt;
 
   @override
   Widget build(BuildContext context) {
@@ -63,6 +65,7 @@ class VolumeProgramOverlay extends StatelessWidget {
           draftCorners: draftCorners,
           draftInvalid: draftInvalid,
           draftKind: draftKind,
+          hideFloorAt: hideFloorAt,
         ),
       ),
     );
@@ -81,6 +84,7 @@ class _ProgramPainter extends CustomPainter {
     this.draftCorners,
     this.draftInvalid = false,
     this.draftKind,
+    this.hideFloorAt,
   });
 
   final VolumeProgramStore programs;
@@ -93,6 +97,7 @@ class _ProgramPainter extends CustomPainter {
   final List<Vector3>? draftCorners;
   final bool draftInvalid;
   final VolumeProgramKind? draftKind;
+  final bool Function(int tx, int ty)? hideFloorAt;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -106,6 +111,7 @@ class _ProgramPainter extends CustomPainter {
         break;
       }
       if (cell == null) continue;
+      if (hideFloorAt?.call(stamp.tx, stamp.ty) == true) continue;
       final min = cell.box.worldMin(volumes.grid, cell.tx, cell.ty);
       final s = volumes.grid.subtileSize;
       final x0 = min.x + stamp.originU * s;

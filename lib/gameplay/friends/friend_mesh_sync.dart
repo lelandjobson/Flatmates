@@ -141,6 +141,7 @@ void syncFriendMeshes(
       material: MaterialModel(
         color: instance.friend.color,
         doubleSided: true,
+        strokeEdges: false,
       ),
       position: instance.position,
       rotation: Vector3(0, instance.yaw, 0),

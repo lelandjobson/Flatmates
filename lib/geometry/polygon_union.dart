@@ -68,19 +68,35 @@ List<(Offset, Offset)> splitAllAtIntersections(
     (_) => [0.0, 1.0],
   );
 
+  void addSplit(int idx, Offset p) {
+    final t = parameterOnSegment(segments[idx].$1, segments[idx].$2, p);
+    if (t > planarEpsilon && t < 1 - planarEpsilon) splits[idx].add(t);
+  }
+
   for (var i = 0; i < segments.length; i++) {
     for (var j = i + 1; j < segments.length; j++) {
-      final ip = segmentIntersectionPoint(
+      final hit = segmentIntersection(
         segments[i].$1,
         segments[i].$2,
         segments[j].$1,
         segments[j].$2,
       );
-      if (ip == null) continue;
-      final ti = parameterOnSegment(segments[i].$1, segments[i].$2, ip);
-      final tj = parameterOnSegment(segments[j].$1, segments[j].$2, ip);
-      if (ti > planarEpsilon && ti < 1 - planarEpsilon) splits[i].add(ti);
-      if (tj > planarEpsilon && tj < 1 - planarEpsilon) splits[j].add(tj);
+      if (!hit.hasIntersection) continue;
+      if (hit.isPoint && hit.point != null) {
+        addSplit(i, hit.point!);
+        addSplit(j, hit.point!);
+      } else if (hit.isCollinear) {
+        // T-junctions and overlapping roof/wall seams: split both
+        // segments at the overlap interval so shared runs cancel.
+        if (hit.segmentStart != null) {
+          addSplit(i, hit.segmentStart!);
+          addSplit(j, hit.segmentStart!);
+        }
+        if (hit.segmentEnd != null) {
+          addSplit(i, hit.segmentEnd!);
+          addSplit(j, hit.segmentEnd!);
+        }
+      }
     }
   }
 

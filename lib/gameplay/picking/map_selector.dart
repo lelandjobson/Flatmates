@@ -5,6 +5,7 @@ import '../../rendering/scene/camera.dart';
 import '../friends/friend_instance_store.dart';
 import '../friends/friend_mesh_sync.dart';
 import '../paths/path_store.dart';
+import '../viewers/world_plane.dart';
 import '../volumes/volume_store.dart';
 import '../walls/wall_regions.dart';
 import 'selectable.dart';
@@ -27,6 +28,8 @@ class MapSelector {
     PathStore? paths,
     double faceMaxDistance = kSelectVolumeFacesBelowDistance,
     double tileSize = 8,
+    bool Function(int tx, int ty)? skipVolumeRoofAt,
+    bool Function(int tx, int ty, VolumeFace face)? skipVolumeFace,
   }) {
     if (viewport.width <= 0 || viewport.height <= 0) return null;
 
@@ -35,6 +38,8 @@ class MapSelector {
       viewport: viewport,
       camera: camera,
       store: volumes,
+      skipRoofAt: skipVolumeRoofAt,
+      skipFace: skipVolumeFace,
     );
     if (face != null) {
       if (distance < faceMaxDistance) {

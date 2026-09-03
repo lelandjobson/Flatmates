@@ -1,4 +1,5 @@
 import 'package:flatmates/gameplay/picking/selectable.dart';
+import 'package:flatmates/gameplay/volumes/volume_outline.dart';
 import 'package:flatmates/gameplay/volumes/volume_store.dart';
 import 'package:flatmates/ui/game/selection_highlight_overlay.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,5 +20,39 @@ void main() {
     expect(piece, hasLength(1));
     expect(piece.single.tx, 3);
     expect(piece.single.ty, 2);
+  });
+
+  test('joined volume hover strokes the mass outline, not each cell', () {
+    expect(
+      highlightStrokesWholeVolume(
+        kind: SelectableKind.volume,
+        cellOnly: false,
+      ),
+      isTrue,
+    );
+    expect(
+      highlightStrokesWholeVolume(
+        kind: SelectableKind.volume,
+        cellOnly: true,
+      ),
+      isFalse,
+    );
+    expect(
+      highlightStrokesWholeVolume(
+        kind: SelectableKind.volumeFace,
+        cellOnly: false,
+      ),
+      isFalse,
+    );
+
+    final volumes = VolumeStore();
+    expect(volumes.paintAt(2, 2), isTrue);
+    expect(volumes.paintAt(3, 2), isTrue);
+    expect(volumes.confirmEdit(), isTrue);
+    final outline = buildVolumeOutline(
+      volumes.volumes.single,
+      volumes.grid,
+    );
+    expect(outline.edges, hasLength(12));
   });
 }

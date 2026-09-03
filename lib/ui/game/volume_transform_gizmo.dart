@@ -23,6 +23,7 @@ class VolumeTransformGizmo extends StatelessWidget {
     this.volume,
     this.cell,
     this.opacity = 1,
+    this.featureOpacity,
   });
 
   final VolumeStore store;
@@ -36,6 +37,9 @@ class VolumeTransformGizmo extends StatelessWidget {
   final Volume? volume;
   final VolumeCell? cell;
   final double opacity;
+
+  /// 0 hides a handle (missing ceiling, etc.). Null keeps every handle.
+  final double Function(VolumeCell cell, VolumeHandle handle)? featureOpacity;
 
   @override
   Widget build(BuildContext context) {
@@ -54,6 +58,8 @@ class VolumeTransformGizmo extends StatelessWidget {
       }
       final cell = facet.cell;
       final handle = facet.handle;
+      final vis = featureOpacity?.call(cell, handle) ?? 1.0;
+      if (vis <= 0.05) continue;
       final face = solid.handleCenter(
         cell: cell,
         handle: handle,
@@ -62,7 +68,8 @@ class VolumeTransformGizmo extends StatelessWidget {
       final tip = face + handle.axis * kVolumeHandleStemOut;
       final a = camera.projectToScreen(face, viewport);
       final b = camera.projectToScreen(tip, viewport);
-      final color = handle.isHeight ? Colors.white : const Color(0xFFFFD54F);
+      final color = (handle.isHeight ? Colors.white : const Color(0xFFFFD54F))
+          .withValues(alpha: vis.clamp(0.0, 1.0));
       if (a != null && b != null) {
         stems.add((a, b, color));
       }

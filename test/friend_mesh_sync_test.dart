@@ -28,7 +28,8 @@ void main() {
 
     final body = scene.meshById(friendBodyMeshId('cube-1'));
     expect(body, isNotNull);
-    expect(body!.position.y, 1);
+    expect(body!.material.strokeEdges, isFalse);
+    expect(body.position.y, 1);
     expect(body.position.x, 1);
     expect(body.position.z, 3);
     expect(

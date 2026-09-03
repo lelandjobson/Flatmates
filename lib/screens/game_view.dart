@@ -49,9 +49,12 @@ import '../gameplay/viewers/focus_crop.dart';
 import '../gameplay/viewers/focus_region.dart';
 import '../gameplay/viewers/game_viewer.dart';
 import '../gameplay/viewers/world_plane.dart';
+import '../gameplay/viewers/zoom_to_focus.dart';
 import '../gameplay/volumes/volume.dart';
 import '../gameplay/volumes/volume_applique.dart';
 import '../gameplay/volumes/volume_box_mesh.dart';
+import '../gameplay/volumes/volume_ceiling_reveal.dart';
+import '../gameplay/volumes/volume_content_loader.dart';
 import '../gameplay/volumes/volume_door.dart';
 import '../gameplay/volumes/volume_door_sync.dart';
 import '../gameplay/paths/path_outline.dart';
@@ -96,6 +99,7 @@ import '../ui/game/dev_tools_panel.dart';
 import '../ui/game/frame_stats_hud.dart';
 import '../ui/game/flatmate_path_overlay.dart';
 import '../ui/game/friend_eye_overlay.dart';
+import '../ui/game/friend_outline_overlay.dart';
 import '../ui/game/eraser_filter_panel.dart';
 import '../ui/game/game_focus_tool_column.dart';
 import '../ui/game/game_tool_carousel.dart';
@@ -207,6 +211,9 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   final _outlines = VolumeOutlineStore();
   final _pathOutlines = PathOutlineStore();
   final _programs = VolumeProgramStore();
+  late final VolumeContentLoader _volumeContents;
+  late final VolumeCeilingReveal _ceilingReveal;
+  bool _syncingWorld = false;
   FacePaintKey? _focusedFace;
   bool _interiorFocus = false;
   bool _doorFaceFocus = false;
@@ -234,6 +241,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   FocusCrop? _cropDragSnapshot;
   OrbitCameraController? _orbit;
   Timer? _pendingFocusTimer;
+  Timer? _zoomToFocusTimer;
   PlaneLookCameraController? _planeLook;
   late final AnimationController _viewerAnim;
   bool _viewerReturning = false;
@@ -672,7 +680,14 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       ladderZoom: false,
       boundsMin: Vector3(-half, 0, -half),
       boundsMax: Vector3(half, 0, half),
-    )..addListener(_onCameraChanged);
+    );
+    _volumeContents = VolumeContentLoader();
+    _ceilingReveal = VolumeCeilingReveal(
+      vsync: this,
+      loader: _volumeContents,
+      onChanged: _onCeilingRevealChanged,
+    );
+    _look.addListener(_onCameraChanged);
 
     final dayLit = DayNightLighting.day(_theme);
     _scene = Scene(globalIllumination: dayLit.globalIllumination)
@@ -934,6 +949,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   void dispose() {
     _paintDebounce?.cancel();
     _pendingFocusTimer?.cancel();
+    _zoomToFocusTimer?.cancel();
     _paper.removeListener(_onPaperChanged);
     _faceAtlas.dispose();
     _history.dispose();
@@ -955,6 +971,8 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       ..removeListener(_onCameraChanged)
       ..dispose();
     _flatmateTicker.dispose();
+    _ceilingReveal.dispose();
+    _volumeContents.dispose();
     _scene.removeListener(_onSceneChanged);
     _atlas?.dispose();
     _pathGrid.dispose();
@@ -969,6 +987,8 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     _orbit?.setViewportSize(_viewportSize);
     _scene.markNeedsPaint();
     _scheduleStream();
+    _updateCeilingReveal();
+    _updateZoomToFocusPush();
     if (mounted) {
       _refreshHover();
       setState(_refreshStatus);
@@ -1001,10 +1021,67 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
         'dist ${_look.distance.toStringAsFixed(1)} · ${_look.zoomLabel} · '
         'hover $hover · faceZoom < ${kSelectVolumeFacesBelowDistance.toStringAsFixed(0)} · '
         'cull ±$_cullRadius · '
-        'drawn ${_streamer.drawnCount}/${_streamer.placedCount}';
+        'drawn ${_streamer.drawnCount}/${_streamer.placedCount}'
+        '$_ceilingStatus';
+  }
+
+  String get _ceilingStatus {
+    final focus = _ceilingReveal.focus;
+    if (focus == null || !_ceilingReveal.wantsReveal) return '';
+    if (_volumeContents.isLoaded(focus)) return ' · interior';
+    if (_volumeContents.isLoading(focus) || _volumeContents.isQueued(focus)) {
+      return ' · loading interior';
+    }
+    return '';
+  }
+
+  Set<int> get _forcedHideCeilingVolumeIds => {
+        if (_interiorFocus && _programVolumeId != null) _programVolumeId!,
+        if (_isVolumeInterior && _volumeInteriorId != null) _volumeInteriorId!,
+      };
+
+  void _updateCeilingReveal() {
+    _ceilingReveal.update(
+      volumes: _volumes,
+      lookAt: _look.lookAt,
+      distance: _look.distance,
+      enabled: _viewer == GameViewerKind.map3d,
+    );
+  }
+
+  void _onCeilingRevealChanged() {
+    if (_syncingWorld || !mounted) return;
+    _syncVolumeMeshesOnly();
+  }
+
+  void _syncVolumeMeshesOnly() {
+    syncVolumeMeshes(
+      _scene,
+      _volumes,
+      committed: _theme.volume,
+      draftColor: _theme.volume,
+      hideCeilingVolumeIds: _forcedHideCeilingVolumeIds,
+      inwardWallsOnlyVolumeIds: {
+        if (_isVolumeInterior &&
+            !_showVolumeExterior &&
+            _volumeInteriorId != null)
+          _volumeInteriorId!,
+      },
+      ceilingOpacityByPart: _ceilingReveal.opacities,
+    );
+    _applyLayerVisibility();
   }
 
   void _syncWorld() {
+    _syncingWorld = true;
+    try {
+      _syncWorldBody();
+    } finally {
+      _syncingWorld = false;
+    }
+  }
+
+  void _syncWorldBody() {
     final interiorSpec = _isVolumeInterior
         ? volumeInteriorViewSpec(showExterior: _showVolumeExterior)
         : null;
@@ -1021,24 +1098,20 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       programs: _programs,
       outlines: _outlines,
     );
+    _updateCeilingReveal();
     syncVolumeMeshes(
       _scene,
       _volumes,
       committed: _theme.volume,
       draftColor: _theme.volume,
-      hideCeilingVolumeIds: {
-        if (_interiorFocus && _programVolumeId != null) _programVolumeId!,
-        if (interiorSpec != null &&
-            interiorSpec.hideRoof &&
-            _volumeInteriorId != null)
-          _volumeInteriorId!,
-      },
+      hideCeilingVolumeIds: _forcedHideCeilingVolumeIds,
       inwardWallsOnlyVolumeIds: {
         if (interiorSpec != null &&
             interiorSpec.hideOutwardFaces &&
             _volumeInteriorId != null)
           _volumeInteriorId!,
       },
+      ceilingOpacityByPart: _ceilingReveal.opacities,
     );
     syncInteriorGround(
       _scene,
@@ -1300,6 +1373,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       regions: _wallRegions,
       paths: _paths,
       tileSize: _tileWorld,
+      skipVolumeFace: _ceilingReveal.hidesFace,
     );
   }
 
@@ -2248,6 +2322,61 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     setState(() {});
   }
 
+  void _cancelZoomToFocus() {
+    _zoomToFocusTimer?.cancel();
+    _zoomToFocusTimer = null;
+  }
+
+  void _updateZoomToFocusPush() {
+    if (_viewer != GameViewerKind.map3d || _viewerAnim.isAnimating) {
+      _cancelZoomToFocus();
+      return;
+    }
+    if (_look.isPushingPastCloseLimit) {
+      _zoomToFocusTimer ??= Timer(kZoomToFocusHold, _onZoomToFocusHold);
+      return;
+    }
+    _cancelZoomToFocus();
+  }
+
+  void _onZoomToFocusHold() {
+    _zoomToFocusTimer = null;
+    if (!mounted) return;
+    _zoomToFocusFromLook();
+  }
+
+  /// Crosshair zoom-through: enter the viewer for whatever we are looking at.
+  void _zoomToFocusFromLook() {
+    if (_viewer != GameViewerKind.map3d || _viewerAnim.isAnimating) return;
+    final hit = _pickAt(_viewportCenter);
+    if (hit == null) return;
+    _cancelZoomToFocus();
+    _look.endZoom();
+    _setSelectedHit(hit);
+    unawaited(fmHapticSmallClick());
+
+    if (hit.kind == SelectableKind.volumeFace) {
+      final face = _volumeFaceHitFrom(hit);
+      if (face != null &&
+          face.face != VolumeFace.negY &&
+          !_ceilingReveal.hidesFace(face.cell.tx, face.cell.ty, face.face)) {
+        _enterFaceFocus(face);
+        return;
+      }
+      final volume =
+          hit.volumeId == null ? null : _volumes.volumeById(hit.volumeId!);
+      if (volume != null) {
+        if (_programs.canAssignToVolume(volume)) {
+          _enterInteriorFocus(volume);
+        } else {
+          _enterVolumeInterior(volume);
+        }
+        return;
+      }
+    }
+    _focusHit(hit);
+  }
+
   void _onSelectToolClick(Offset local) {
     final hit = _pickAt(_isMapUnlocked ? _viewportCenter : local);
     if (hit != null && canFocusHit(hit)) {
@@ -2265,7 +2394,10 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   void _focusHit(SelectableHit hit) {
     if (hit.kind == SelectableKind.volumeFace) {
       final face = _volumeFaceHitFrom(hit);
-      if (face != null) _enterFaceFocus(face);
+      if (face != null &&
+          !_ceilingReveal.hidesFace(face.cell.tx, face.cell.ty, face.face)) {
+        _enterFaceFocus(face);
+      }
       return;
     }
     if (hit.kind == SelectableKind.region ||
@@ -3680,6 +3812,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     Offset global,
   ) {
     if (_toolsBlocked) return;
+    if (_ceilingReveal.hidesHandle(cell.tx, cell.ty, handle)) return;
     final local = _toLocal(global);
     final face = cell.box.faceCenter(_volumes.grid, cell.tx, cell.ty, handle);
     final planePoint = face + handle.axis * kVolumeHandleStemOut;
@@ -4562,11 +4695,26 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                     gridMotif: _layers.shows(SceneLayer.paths)
                         ? _pathGrid
                         : null,
+                    groundOutlines: _layers.shows(SceneLayer.paths)
+                        ? _pathOutlines.edges
+                        : null,
                     debugOptions: const SceneDebugOptions(
                       showWorldXyPlane: false,
                     ),
                   ),
                 ),
+                if (_layers.shows(SceneLayer.friends))
+                  Positioned.fill(
+                    child: FriendOutlineOverlay(
+                      friends: _friends,
+                      camera: _camera,
+                      viewport: _viewportSize,
+                      tileSize: _tileWorld,
+                      volumes: _volumes,
+                      subtilesPerTile: _volumes.grid.subtilesPerTile,
+                      listenable: _scene,
+                    ),
+                  ),
                 if (_layers.shows(SceneLayer.friends))
                   Positioned.fill(
                     child: FriendEyeOverlay(
@@ -4590,19 +4738,15 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                       tileVisible: _focusTileVisible,
                     ),
                   ),
-                if (_layers.shows(SceneLayer.volumes) ||
-                    _layers.shows(SceneLayer.paths))
+                if (_layers.shows(SceneLayer.volumes))
                   Positioned.fill(
                     child: VolumeOutlineOverlay(
-                      volumes: _layers.shows(SceneLayer.volumes)
-                          ? _outlines
-                          : null,
-                      paths: _layers.shows(SceneLayer.paths)
-                          ? _pathOutlines
-                          : null,
+                      volumes: _outlines,
                       camera: _camera,
                       viewport: _viewportSize,
                       listenable: _scene,
+                      edgeOpacity: (edge) =>
+                          _ceilingReveal.outlineOpacityFor(edge, _volumes.grid),
                     ),
                   ),
                 if (_layers.shows(SceneLayer.volumes))
@@ -4728,6 +4872,21 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                             opacity: _handleDragging
                                 ? 1
                                 : _volumeGizmoFade.value,
+                            featureOpacity: (cell, handle) {
+                              final pinned = _dragCell;
+                              if (_handleDragging &&
+                                  pinned != null &&
+                                  pinned.tx == cell.tx &&
+                                  pinned.ty == cell.ty &&
+                                  handle == _dragHandle) {
+                                return 1;
+                              }
+                              return _ceilingReveal.featureOpacityForHandle(
+                                cell.tx,
+                                cell.ty,
+                                handle,
+                              );
+                            },
                             camera: _camera,
                             viewport: _viewportSize,
                             onDragStart: _onHandleDragStart,
@@ -4750,6 +4909,13 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                       camera: _camera,
                       viewport: _viewportSize,
                       listenable: _scene,
+                      hideFloorAt: _viewer == GameViewerKind.map3d
+                          ? (tx, ty) => _ceilingReveal.hidesFace(
+                                tx,
+                                ty,
+                                VolumeFace.negY,
+                              )
+                          : null,
                       volumeId: _interiorFocus ? _programVolumeId : null,
                       selectedId: _selectedSticker?.stampId,
                       selectedInvalid: _selectedSticker?.loose == true &&
@@ -4785,6 +4951,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                       tileSize: _tileWorld,
                       style: SelectionHighlightStyle.delete,
                       cellOnly: true,
+                      hideFace: _ceilingReveal.hidesFace,
                     ),
                   )
                 else if (_viewer == GameViewerKind.map3d &&
@@ -4798,6 +4965,8 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                       viewport: _viewportSize,
                       listenable: _scene,
                       tileSize: _tileWorld,
+                      hideFace: _ceilingReveal.hidesFace,
+                      outlines: _outlines,
                     ),
                   ),
                 if (_viewer == GameViewerKind.map3d &&

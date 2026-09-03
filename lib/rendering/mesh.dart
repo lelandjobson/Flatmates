@@ -15,6 +15,7 @@ class Mesh extends Transformable {
     Vector3? scale,
     this.highlightOnClick = false,
     this.visible = true,
+    this.groundPlane = false,
   })  : _geometry = geometry,
         _material = material,
         _highlightColor = null,
@@ -24,6 +25,9 @@ class Mesh extends Transformable {
   final String name;
   final bool highlightOnClick;
   bool visible;
+
+  /// Ground-plane paper: paint under volumes / structures / friends.
+  bool groundPlane;
 
   Geometry _geometry;
   Geometry get geometry => _geometry;

@@ -7,6 +7,8 @@ import 'package:vector_math/vector_math_64.dart' hide Colors;
 
 import '../debug/scene_paint_stats.dart';
 
+import '../gameplay/outlines/outline_edges.dart';
+import '../gameplay/outlines/outline_paint.dart';
 import '../geometry/geometry.dart';
 import 'lights.dart';
 import 'mesh.dart';
@@ -19,11 +21,15 @@ class SceneView extends StatelessWidget {
     super.key,
     required this.scene,
     this.gridMotif,
+    this.groundOutlines,
+    this.groundOutlineColor = kWorldOutlineColor,
     this.debugOptions = const SceneDebugOptions(),
   });
 
   final Scene scene;
   final GridMotif? gridMotif;
+  final Iterable<OutlineEdge>? groundOutlines;
+  final Color groundOutlineColor;
   final SceneDebugOptions debugOptions;
 
   @override
@@ -32,6 +38,8 @@ class SceneView extends StatelessWidget {
       painter: ScenePainter(
         scene: scene,
         gridMotif: gridMotif,
+        groundOutlines: groundOutlines,
+        groundOutlineColor: groundOutlineColor,
         debugOptions: debugOptions,
       ),
       isComplex: true,
@@ -44,12 +52,16 @@ class ScenePainter extends CustomPainter {
   ScenePainter({
     required Scene scene,
     this.gridMotif,
+    this.groundOutlines,
+    this.groundOutlineColor = kWorldOutlineColor,
     this.debugOptions = const SceneDebugOptions(),
   }) : _scene = scene,
        super(repaint: scene);
 
   final Scene _scene;
   final GridMotif? gridMotif;
+  final Iterable<OutlineEdge>? groundOutlines;
+  final Color groundOutlineColor;
   final SceneDebugOptions debugOptions;
 
   @override
@@ -157,6 +169,7 @@ class ScenePainter extends CustomPainter {
     }
 
     facesToDraw.sort((a, b) => a.depth.compareTo(b.depth));
+    final passes = splitGroundPass(facesToDraw, (face) => face.groundPlane);
 
     if (debugOptions.showWorldXyPlane) {
       _drawGrid(canvas, size, viewProjection);
@@ -196,81 +209,96 @@ class ScenePainter extends CustomPainter {
       gridUvs.clear();
     }
 
-    for (final face in facesToDraw) {
-      if (face.gridPositions == null) flushGrid();
-      final path = Path()..addPolygon(face.points, true);
+    void paintFaces(List<_ProjectedFace> faces) {
+      for (final face in faces) {
+        if (face.gridPositions == null) flushGrid();
+        final path = Path()..addPolygon(face.points, true);
 
-      if (face.isWireframe) {
-        // Wireframe material: faint fill + colored edge stroke.
-        final faintColor = face.color.withOpacity(0.05);
-        final faintPaint = fillPool.putIfAbsent(
-          faintColor,
-          () => Paint()
-            ..style = PaintingStyle.fill
-            ..color = faintColor,
-        );
-        canvas.drawPath(path, faintPaint);
-        final wirePaint = edgePool.putIfAbsent(
-          face.color,
-          () => Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.0
-            ..color = face.color.withOpacity(0.7),
-        );
-        canvas.drawPath(path, wirePaint);
-        drawCalls += 2;
-        continue;
-      }
-
-      // Fill (respects opacity already baked into face.color alpha).
-      final fillPaint = fillPool.putIfAbsent(
-        face.color,
-        () => Paint()
-          ..style = PaintingStyle.fill
-          ..color = face.color,
-      );
-      canvas.drawPath(path, fillPaint);
-      drawCalls++;
-
-      // Edge stroke.
-      if (face.edgeColor != null) {
-        // Non-opaque material: draw edges in the material's base colour.
-        final coloredStroke = edgePool.putIfAbsent(
-          face.edgeColor!,
-          () => Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.0
-            ..color = face.edgeColor!.withOpacity(0.8),
-        );
-        canvas.drawPath(path, coloredStroke);
-        drawCalls++;
-      } else if (!face.strokeEdges) {
-        // Fill only.
-      } else if (face.isTessellated) {
-        if (debugOptions.enableGrout) {
-          final seamPaint = seamPool.putIfAbsent(
+        if (face.isWireframe) {
+          // Wireframe material: faint fill + colored edge stroke.
+          final faintColor = face.color.withOpacity(0.05);
+          final faintPaint = fillPool.putIfAbsent(
+            faintColor,
+            () => Paint()
+              ..style = PaintingStyle.fill
+              ..color = faintColor,
+          );
+          canvas.drawPath(path, faintPaint);
+          final wirePaint = edgePool.putIfAbsent(
             face.color,
             () => Paint()
               ..style = PaintingStyle.stroke
-              ..strokeWidth = 0.75
-              ..color = face.color,
+              ..strokeWidth = 1.0
+              ..color = face.color.withOpacity(0.7),
           );
-          canvas.drawPath(path, seamPaint);
+          canvas.drawPath(path, wirePaint);
+          drawCalls += 2;
+          continue;
+        }
+
+        // Fill (respects opacity already baked into face.color alpha).
+        final fillPaint = fillPool.putIfAbsent(
+          face.color,
+          () => Paint()
+            ..style = PaintingStyle.fill
+            ..color = face.color,
+        );
+        canvas.drawPath(path, fillPaint);
+        drawCalls++;
+
+        // Edge stroke.
+        if (face.edgeColor != null) {
+          // Non-opaque material: draw edges in the material's base colour.
+          final coloredStroke = edgePool.putIfAbsent(
+            face.edgeColor!,
+            () => Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.0
+              ..color = face.edgeColor!.withOpacity(0.8),
+          );
+          canvas.drawPath(path, coloredStroke);
+          drawCalls++;
+        } else if (!face.strokeEdges) {
+          // Fill only.
+        } else if (face.isTessellated) {
+          if (debugOptions.enableGrout) {
+            final seamPaint = seamPool.putIfAbsent(
+              face.color,
+              () => Paint()
+                ..style = PaintingStyle.stroke
+                ..strokeWidth = 0.75
+                ..color = face.color,
+            );
+            canvas.drawPath(path, seamPaint);
+            drawCalls++;
+          }
+        } else {
+          canvas.drawPath(path, strokePaint);
           drawCalls++;
         }
-      } else {
-        canvas.drawPath(path, strokePaint);
-        drawCalls++;
-      }
 
-      final gp = face.gridPositions;
-      final gu = face.gridUvs;
-      if (gp != null && gu != null && gp.isNotEmpty) {
-        gridPositions.addAll(gp);
-        gridUvs.addAll(gu);
+        final gp = face.gridPositions;
+        final gu = face.gridUvs;
+        if (gp != null && gu != null && gp.isNotEmpty) {
+          gridPositions.addAll(gp);
+          gridUvs.addAll(gu);
+        }
       }
+      flushGrid();
     }
-    flushGrid();
+
+    paintFaces(passes.ground);
+    final groundOutlines = this.groundOutlines;
+    if (groundOutlines != null) {
+      drawCalls += paintOutlineEdges(
+        canvas: canvas,
+        edges: groundOutlines,
+        camera: camera,
+        viewport: size,
+        color: groundOutlineColor,
+      );
+    }
+    paintFaces(passes.elevated);
     gridPaint.shader = null;
 
     // Draw wireframe for tessellated meshes from their original edges.
@@ -453,6 +481,7 @@ class ScenePainter extends CustomPainter {
               : null,
           gridPositions: motifPositions,
           gridUvs: motifUvs,
+          groundPlane: mesh.groundPlane,
         ),
       );
     }
@@ -527,7 +556,9 @@ class ScenePainter extends CustomPainter {
   bool shouldRepaint(covariant ScenePainter oldDelegate) =>
       oldDelegate._scene != _scene ||
       oldDelegate.debugOptions != debugOptions ||
-      oldDelegate.gridMotif != gridMotif;
+      oldDelegate.gridMotif != gridMotif ||
+      oldDelegate.groundOutlines != groundOutlines ||
+      oldDelegate.groundOutlineColor != groundOutlineColor;
 
   void _drawPlaceholder(Canvas canvas, Size size) {
     final textPainter = TextPainter(
@@ -558,11 +589,13 @@ class _ProjectedFace {
     this.edgeColor,
     this.gridPositions,
     this.gridUvs,
+    this.groundPlane = false,
   });
 
   final List<Offset> points;
   final Color color;
   final double depth;
+  final bool groundPlane;
 
   /// True if this face comes from tessellated (subdivided) geometry.
   /// Tessellated faces skip wireframe stroke to avoid visual clutter.

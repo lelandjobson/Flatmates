@@ -7,6 +7,7 @@ import '../../rendering/mesh.dart';
 import '../../rendering/scene/scene.dart';
 import '../../theme/world_theme.dart';
 import 'volume.dart';
+import 'volume_content_loader.dart';
 import 'volume_door.dart';
 import 'volume_solid.dart';
 import 'volume_store.dart';
@@ -22,11 +23,12 @@ Geometry volumeBoxGeometry({
   List<VolumeDoor> doors = const [],
   double subtileSize = 1,
   Set<VolumeHandle> omitHandles = const {},
+  bool hideFloor = false,
 }) {
   bool omit(VolumeHandle handle) => omitHandles.contains(handle);
   bool omitSide(VolumeSide side) => omit(side.handle);
 
-  if (doors.isEmpty && omitHandles.isEmpty) {
+  if (doors.isEmpty && omitHandles.isEmpty && !hideFloor) {
     return Geometry(
       id: id,
       name: 'VolumeBox',
@@ -63,7 +65,9 @@ Geometry volumeBoxGeometry({
   if (!holed.contains(VolumeSide.south) && !omitSide(VolumeSide.south)) {
     faces.add(List<int>.from(GeometryBuilders.cubeFaces[1]));
   }
-  faces.add(List<int>.from(GeometryBuilders.cubeFaces[2])); // -Y floor
+  if (!hideFloor) {
+    faces.add(List<int>.from(GeometryBuilders.cubeFaces[2])); // -Y floor
+  }
   if (!omit(VolumeHandle.posY)) {
     faces.add(List<int>.from(GeometryBuilders.cubeFaces[3])); // +Y
   }
@@ -172,6 +176,58 @@ Geometry volumeBoxGeometry({
   );
 }
 
+const double kVolumeCeilingHiddenOpacity = 0.02;
+
+/// Default interior floor so the ground reads against paper walls.
+const Color kVolumeFloorColor = Color(0xFF2A2A2E);
+
+/// Faces whose vertices all sit on [planeY].
+List<int> volumePlanarFaceIndices(Geometry geometry, double planeY) {
+  final out = <int>[];
+  for (var i = 0; i < geometry.faces.length; i++) {
+    final face = geometry.faces[i];
+    if (face.isEmpty) continue;
+    if (face.every((vi) => (geometry.vertices[vi].y - planeY).abs() < 1e-4)) {
+      out.add(i);
+    }
+  }
+  return out;
+}
+
+/// Roof faces of [geometry] (every vertex sits on [roofY]).
+List<int> volumeRoofFaceIndices(Geometry geometry, double roofY) =>
+    volumePlanarFaceIndices(geometry, roofY);
+
+/// Floor faces of [geometry] (every vertex sits on [floorY]).
+List<int> volumeFloorFaceIndices(Geometry geometry, double floorY) =>
+    volumePlanarFaceIndices(geometry, floorY);
+
+/// Per-face colors: dark floor, optional faded roof, walls stay [color].
+List<Color>? volumeCellFaceColors({
+  required Geometry geometry,
+  required Color color,
+  required double floorY,
+  required double roofY,
+  required double ceilingOpacity,
+}) {
+  if (geometry.faces.isEmpty) return null;
+  final floors = volumeFloorFaceIndices(geometry, floorY).toSet();
+  final roofs = volumeRoofFaceIndices(geometry, roofY).toSet();
+  final fadeRoof = ceilingOpacity > kVolumeCeilingHiddenOpacity &&
+      ceilingOpacity < 0.999;
+  if (floors.isEmpty && !fadeRoof) return null;
+  final fadedRoof = fadeRoof ? color.withValues(alpha: ceilingOpacity) : color;
+  return [
+    for (var i = 0; i < geometry.faces.length; i++)
+      if (floors.contains(i))
+        kVolumeFloorColor
+      else if (fadeRoof && roofs.contains(i))
+        fadedRoof
+      else
+        color,
+  ];
+}
+
 /// Syncs wireframe box meshes on [scene] to match [store].
 void syncVolumeMeshes(
   Scene scene,
@@ -180,24 +236,31 @@ void syncVolumeMeshes(
   Color? draftColor,
   Set<int> hideCeilingVolumeIds = const {},
   Set<int> inwardWallsOnlyVolumeIds = const {},
+  Map<VolumePartId, double> ceilingOpacityByPart = const {},
 }) {
   final wanted = <String>{};
   final draft = store.draftVolume;
 
   for (final volume in store.visibleVolumes) {
     final solid = resolveVolumeSolid(volume, store.grid);
-    final hideCeiling = hideCeilingVolumeIds.contains(volume.id);
+    final hideVolumeCeiling = hideCeilingVolumeIds.contains(volume.id);
     final inwardOnly = inwardWallsOnlyVolumeIds.contains(volume.id);
     final isDraftVolume = identical(volume, draft);
     for (final cell in volume.cells) {
       final id = volumeMeshId(volume.id, cell.tx, cell.ty);
       wanted.add(id);
+      final partOpacity =
+          ceilingOpacityByPart[VolumePartId(cell.tx, cell.ty)] ?? 1.0;
+      final ceilingOpacity = hideVolumeCeiling ? 0.0 : partOpacity;
+      final hideCeiling = ceilingOpacity <= kVolumeCeilingHiddenOpacity;
+      final hideFloor = ceilingOpacity >= 0.999;
       final geometry = volumeSolidCellGeometry(
         cell: cell,
         solid: solid,
         grid: store.grid,
         id: id,
         hideCeiling: hideCeiling,
+        hideFloor: hideFloor,
         inwardWallsOnly: inwardOnly,
       );
       final highlightDraftCell =
@@ -208,12 +271,23 @@ void syncVolumeMeshes(
       final color = highlightDraftCell
           ? (draftColor ?? committed ?? WorldTheme.paperDiorama.volume)
           : (committed ?? WorldTheme.paperDiorama.volume);
+      final min = cell.box.worldMin(store.grid, cell.tx, cell.ty);
+      final max = cell.box.worldMax(store.grid, cell.tx, cell.ty);
+      final faceColors = volumeCellFaceColors(
+        geometry: geometry,
+        color: color,
+        floorY: min.y,
+        roofY: max.y,
+        ceilingOpacity: ceilingOpacity,
+      );
       final existing = scene.meshById(id);
       final material = MaterialModel(
         color: color,
         wireframe: false,
         strokeEdges: false,
         doubleSided: !inwardOnly,
+        perFaceColors: faceColors,
+        exactPerFaceColors: faceColors != null,
       );
       if (existing == null) {
         scene.addMesh(
@@ -294,6 +368,7 @@ Geometry volumeSolidCellGeometry({
   required String id,
   List<VolumeDoor> doors = const [],
   bool hideCeiling = false,
+  bool hideFloor = false,
   bool inwardWallsOnly = false,
 }) {
   final min = cell.box.worldMin(grid, cell.tx, cell.ty);
@@ -325,6 +400,7 @@ Geometry volumeSolidCellGeometry({
       doors: completeDoors,
       subtileSize: s,
       omitHandles: omitHandles,
+      hideFloor: hideFloor,
     );
   }
 
@@ -338,12 +414,14 @@ Geometry volumeSolidCellGeometry({
     faces.add([i, i + 1, i + 2, i + 3]);
   }
 
-  addQuad([
-    Vector3(min.x, min.y, min.z),
-    Vector3(max.x, min.y, min.z),
-    Vector3(max.x, min.y, max.z),
-    Vector3(min.x, min.y, max.z),
-  ], inward: false);
+  if (!hideFloor) {
+    addQuad([
+      Vector3(min.x, min.y, min.z),
+      Vector3(max.x, min.y, min.z),
+      Vector3(max.x, min.y, max.z),
+      Vector3(min.x, min.y, max.z),
+    ], inward: false);
+  }
 
   for (final handle in VolumeHandle.values) {
     if (omitHandles.contains(handle)) continue;
@@ -363,6 +441,7 @@ Geometry volumeSolidCellGeometry({
           for (final other in VolumeHandle.values)
             if (other != handle) other,
         },
+        hideFloor: true,
       );
       final base = vertices.length;
       vertices.addAll(holed.vertices);

@@ -33,5 +33,6 @@ void main() {
     expect(mesh.material.strokeEdges, isFalse);
     expect(mesh.material.surfaceGrid, isFalse);
     expect(mesh.material.wireframe, isFalse);
+    expect(mesh.groundPlane, isTrue);
   });
 }

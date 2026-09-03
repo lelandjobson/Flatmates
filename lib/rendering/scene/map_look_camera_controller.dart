@@ -288,6 +288,7 @@ class MapLookCameraController extends ChangeNotifier {
     _scrollSnap?.cancel();
     _scrollSnap = null;
     _gestureZooming = false;
+    _pushingPastCloseLimit = false;
     if (_zoomAnim.isAnimating) _zoomAnim.stop();
     if (_yawAnim.isAnimating) _yawAnim.stop();
     if (_lookAtAnim.isAnimating) _lookAtAnim.stop();
@@ -325,6 +326,7 @@ class MapLookCameraController extends ChangeNotifier {
     _scrollSnap?.cancel();
     _scrollSnap = null;
     _gestureZooming = false;
+    _pushingPastCloseLimit = false;
     final target = ladderZoom
         ? nearestStepDistance(_distance)
         : _distance.clamp(minDistance, maxDistance);
@@ -396,6 +398,7 @@ class MapLookCameraController extends ChangeNotifier {
   }
 
   void _setLiveDistance(double proposed) {
+    _pushingPastCloseLimit = proposed < minDistance;
     _distance = _rubberBand(proposed);
     _targetDistance = _distance;
     _applyPose();
@@ -410,6 +413,20 @@ class MapLookCameraController extends ChangeNotifier {
     _applyPose();
   }
 
+  /// Soft close overshoot as a fraction of [minDistance].
+  static const double closeOvershootSoft = 0.06;
+
+  /// Hard close overshoot. At game min 15 this stops at 12.9.
+  static const double closeOvershootHard = 0.14;
+
+  /// Closest live distance the rubber-band will allow.
+  double get closeLimitDistance =>
+      minDistance * (1.0 - closeOvershootHard);
+
+  /// True while a live zoom wants to go closer than [minDistance].
+  bool get isPushingPastCloseLimit => _pushingPastCloseLimit;
+  bool _pushingPastCloseLimit = false;
+
   /// Allow passing min/max, with increasing resistance (assembly-style).
   ///
   /// Close-side overshoot is a fraction of [minDistance], not the full zoom
@@ -418,8 +435,8 @@ class MapLookCameraController extends ChangeNotifier {
   double _rubberBand(double proposed) {
     if (proposed >= minDistance && proposed <= maxDistance) return proposed;
     if (proposed < minDistance) {
-      final soft = minDistance * 0.06;
-      final hard = minDistance * 0.14;
+      final soft = minDistance * closeOvershootSoft;
+      final hard = minDistance * closeOvershootHard;
       final extra = minDistance - proposed;
       if (extra >= hard) return minDistance - hard;
       if (extra <= soft) return proposed;

@@ -32,6 +32,8 @@ class VolumeFacePicker {
     required Size viewport,
     required Camera camera,
     required VolumeStore store,
+    bool Function(int tx, int ty)? skipRoofAt,
+    bool Function(int tx, int ty, VolumeFace face)? skipFace,
   }) {
     final ray = camera.unprojectRay(screen, viewport);
     if (ray == null) return null;
@@ -43,6 +45,14 @@ class VolumeFacePicker {
         final min = cell.box.worldMin(store.grid, cell.tx, cell.ty);
         final max = cell.box.worldMax(store.grid, cell.tx, cell.ty);
         for (final face in VolumeFace.values) {
+          if (skipFace?.call(cell.tx, cell.ty, face) == true) {
+            continue;
+          }
+          if (face == VolumeFace.posY &&
+              skipRoofAt != null &&
+              skipRoofAt(cell.tx, cell.ty)) {
+            continue;
+          }
           final (origin, normal) = face.originAndNormal(min, max);
           final denom = ray.direction.dot(normal);
           if (denom.abs() < 1e-8) continue;

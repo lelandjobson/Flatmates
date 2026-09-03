@@ -3,9 +3,12 @@ import 'package:vector_math/vector_math_64.dart' hide Colors;
 
 import '../../gameplay/friends/friend_instance_store.dart';
 import '../../gameplay/friends/friend_mesh_sync.dart';
+import '../../gameplay/outlines/outline_edges.dart';
+import '../../gameplay/outlines/outline_paint.dart';
 import '../../gameplay/picking/selectable.dart';
 import '../../gameplay/viewers/world_plane.dart';
 import '../../gameplay/volumes/volume.dart';
+import '../../gameplay/volumes/volume_outline.dart';
 import '../../gameplay/volumes/volume_solid.dart';
 import '../../gameplay/volumes/volume_store.dart';
 import '../../gameplay/walls/wall_edge.dart';
@@ -28,6 +31,13 @@ List<VolumeCell> volumeCellsForHighlight(
   return cell == null ? const [] : [cell];
 }
 
+/// Joined-mass hover uses one silhouette, not a stroke per stored cell.
+bool highlightStrokesWholeVolume({
+  required SelectableKind kind,
+  required bool cellOnly,
+}) =>
+    kind == SelectableKind.volume && !cellOnly;
+
 /// Fades a fill + thick outline over the hovered or selected map entity.
 class SelectionHighlightOverlay extends StatefulWidget {
   const SelectionHighlightOverlay({
@@ -43,6 +53,8 @@ class SelectionHighlightOverlay extends StatefulWidget {
     this.listenable,
     this.tileSize = 8,
     this.cellOnly = false,
+    this.hideFace,
+    this.outlines,
   });
 
   final SelectableHit? hit;
@@ -58,6 +70,12 @@ class SelectionHighlightOverlay extends StatefulWidget {
 
   /// When true, a volume hit draws only its stored cell, not the joined solid.
   final bool cellOnly;
+
+  /// Skip faces contextual zoom has already taken off (missing roofs, etc.).
+  final bool Function(int tx, int ty, VolumeFace face)? hideFace;
+
+  /// Cached joined-mass outlines. Built on the fly when omitted.
+  final VolumeOutlineStore? outlines;
 
   @override
   State<SelectionHighlightOverlay> createState() =>
@@ -131,6 +149,8 @@ class _SelectionHighlightOverlayState extends State<SelectionHighlightOverlay>
             style: widget.style,
             tileSize: widget.tileSize,
             cellOnly: widget.cellOnly,
+            hideFace: widget.hideFace,
+            outlines: widget.outlines,
           ),
         ),
       ),
@@ -150,6 +170,8 @@ class _HighlightPainter extends CustomPainter {
     required this.style,
     required this.tileSize,
     required this.cellOnly,
+    this.hideFace,
+    this.outlines,
   });
 
   final SelectableHit? hit;
@@ -162,6 +184,8 @@ class _HighlightPainter extends CustomPainter {
   final SelectionHighlightStyle style;
   final double tileSize;
   final bool cellOnly;
+  final bool Function(int tx, int ty, VolumeFace face)? hideFace;
+  final VolumeOutlineStore? outlines;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -181,12 +205,17 @@ class _HighlightPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
 
     for (final target in targets) {
+      final whole = highlightStrokesWholeVolume(
+        kind: target.kind,
+        cellOnly: cellOnly,
+      );
       for (final quad in _quadsFor(target)) {
         final path = _projectQuad(quad);
         if (path == null) continue;
         canvas.drawPath(path, fill);
-        canvas.drawPath(path, stroke);
+        if (!whole) canvas.drawPath(path, stroke);
       }
+      if (whole) _strokeWholeVolume(canvas, target);
     }
     for (final edge in wallEdges) {
       final path = _projectQuad(_wallQuad(edge));
@@ -194,6 +223,39 @@ class _HighlightPainter extends CustomPainter {
       canvas.drawPath(path, fill);
       canvas.drawPath(path, stroke);
     }
+  }
+
+  void _strokeWholeVolume(Canvas canvas, SelectableHit target) {
+    final volume = target.volumeId == null
+        ? null
+        : volumes.volumeById(target.volumeId!);
+    if (volume == null) return;
+    final cached = outlines?.byVolume[volume.id];
+    final edges = cached?.edges ??
+        buildVolumeOutline(volume, volumes.grid).edges;
+    paintOutlineEdges(
+      canvas: canvas,
+      edges: edges.where((edge) => !_hideOutlineEdge(edge)),
+      camera: camera,
+      viewport: viewport,
+      color: style.outline,
+      strokeWidth: style.outlineWidth,
+    );
+  }
+
+  bool _hideOutlineEdge(OutlineEdge edge) {
+    final hide = hideFace;
+    if (hide == null) return false;
+    if (edge.faces.isEmpty) return false;
+    if (!edge.faces.every((face) => face.normal.y > 0.85)) return false;
+    final mid = Vector3(
+      (edge.a.x + edge.b.x) * 0.5,
+      (edge.a.y + edge.b.y) * 0.5,
+      (edge.a.z + edge.b.z) * 0.5,
+    );
+    final tile = volumes.grid.tileAtWorld(mid);
+    if (tile == null) return false;
+    return hide(tile.$1, tile.$2, VolumeFace.posY);
   }
 
   List<Vector3> _wallQuad(WallEdge edge) {
@@ -259,6 +321,7 @@ class _HighlightPainter extends CustomPainter {
             ? null
             : volumes.volumeById(target.volumeId!);
         if (cell == null || face == null || volume == null) return const [];
+        if (hideFace?.call(cell.tx, cell.ty, face) == true) return const [];
         return resolveVolumeSolid(volume, volumes.grid).faceWorldQuads(
           cell: cell,
           face: face,
@@ -284,11 +347,12 @@ class _HighlightPainter extends CustomPainter {
     return [
       for (final cell in cells)
         for (final face in VolumeFace.values)
-          ...solid.faceWorldQuads(
-            cell: cell,
-            face: face,
-            grid: volumes.grid,
-          ),
+          if (hideFace?.call(cell.tx, cell.ty, face) != true)
+            ...solid.faceWorldQuads(
+              cell: cell,
+              face: face,
+              grid: volumes.grid,
+            ),
     ];
   }
 

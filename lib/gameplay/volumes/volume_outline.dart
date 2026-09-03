@@ -1,6 +1,7 @@
 import 'package:vector_math/vector_math_64.dart';
 
 import '../outlines/outline_edges.dart';
+import '../outlines/outline_union.dart';
 import '../viewers/world_plane.dart';
 import 'volume.dart';
 import 'volume_solid.dart';
@@ -72,6 +73,6 @@ VolumeOutline buildVolumeOutline(Volume volume, VolumeGrid grid) {
 
   return VolumeOutline(
     volumeId: volume.id,
-    edges: collectOuterEdges(quads),
+    edges: collectOuterEdges(unionCoplanarQuads(quads)),
   );
 }

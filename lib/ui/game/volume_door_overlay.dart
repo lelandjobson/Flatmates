@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:vector_math/vector_math_64.dart' hide Colors;
 
+import '../../gameplay/outlines/applique_outline.dart';
+import '../../gameplay/outlines/outline_paint.dart';
 import '../../gameplay/picking/focus_sticker.dart';
 import '../../gameplay/volumes/volume.dart';
 import '../../gameplay/volumes/volume_applique.dart';
@@ -161,6 +163,7 @@ class _DoorAppliquePainter extends CustomPainter {
         );
       }
     }
+    _paintAppliqueOutlines(canvas);
     final draft = draftCorners;
     final draftFace = selectedSide?.volumeFace;
     if (draft != null &&
@@ -187,6 +190,25 @@ class _DoorAppliquePainter extends CustomPainter {
         );
       }
     }
+  }
+
+  void _paintAppliqueOutlines(Canvas canvas) {
+    if (appliques.items.isEmpty) return;
+    final edges = buildAppliqueOutline(
+      appliques: appliques.items,
+      volumes: volumes,
+      camera: camera.position,
+      tileVisible: tileVisible,
+    );
+    if (edges.isEmpty) return;
+    paintOutlineEdges(
+      canvas: canvas,
+      edges: edges,
+      camera: camera,
+      viewport: viewport,
+      color: kAppliqueOutlineColor,
+      strokeWidth: kAppliqueOutlineStrokeWidth,
+    );
   }
 
   List<Offset>? _project(List<Vector3> corners) {

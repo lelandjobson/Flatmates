@@ -1,3 +1,5 @@
+import 'package:vector_math/vector_math_64.dart';
+
 import 'volume.dart';
 
 enum VolumeEditPhase { idle, editing, pickingAccess }
@@ -94,6 +96,23 @@ class VolumeStore {
     final id = occupant(tx, ty);
     if (id == null) return null;
     return volumeById(id);
+  }
+
+  /// Tile occupancy plus that cell's AABB. No CSG / ray tests.
+  bool containsWorld(Vector3 world) {
+    final tile = grid.tileAtWorld(world);
+    if (tile == null) return false;
+    final volume = volumeAt(tile.$1, tile.$2);
+    final cell = volume?.cellAt(tile.$1, tile.$2);
+    if (cell == null) return false;
+    final min = cell.box.worldMin(grid, cell.tx, cell.ty);
+    final max = cell.box.worldMax(grid, cell.tx, cell.ty);
+    return world.x >= min.x &&
+        world.x <= max.x &&
+        world.y >= min.y &&
+        world.y <= max.y &&
+        world.z >= min.z &&
+        world.z <= max.z;
   }
 
   /// Volumes whose cells are 4-adjacent to [tx],[ty].
