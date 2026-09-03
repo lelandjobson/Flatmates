@@ -1,6 +1,7 @@
 import '../paint/face_paint_store.dart';
 import '../walls/wall_edge.dart';
 import '../walls/wall_store.dart';
+import 'volume_outline.dart';
 import 'volume_program.dart';
 import 'volume_solid.dart';
 import 'volume_store.dart';
@@ -11,6 +12,7 @@ void syncVolumeSurfaces({
   required VolumeStore volumes,
   required FacePaintStore paint,
   required VolumeProgramStore programs,
+  VolumeOutlineStore? outlines,
 }) {
   for (final volume in volumes.visibleVolumes) {
     final solid = resolveVolumeSolid(volume, volumes.grid);
@@ -18,6 +20,7 @@ void syncVolumeSurfaces({
   }
   paint.prune(volumes);
   programs.prune(volumes);
+  outlines?.rebuild(volumes);
 }
 
 /// Delete wall edges whose two tiles belong to the same volume mass.

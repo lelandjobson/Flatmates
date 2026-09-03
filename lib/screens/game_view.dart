@@ -54,6 +54,8 @@ import '../gameplay/volumes/volume_applique.dart';
 import '../gameplay/volumes/volume_box_mesh.dart';
 import '../gameplay/volumes/volume_door.dart';
 import '../gameplay/volumes/volume_door_sync.dart';
+import '../gameplay/paths/path_outline.dart';
+import '../gameplay/volumes/volume_outline.dart';
 import '../gameplay/volumes/volume_program.dart';
 import '../gameplay/volumes/volume_solid_sync.dart';
 import '../gameplay/vision/map_vision.dart';
@@ -110,6 +112,7 @@ import '../ui/game/plane_subtile_grid_overlay.dart';
 import '../ui/game/scene_transform_gizmo.dart';
 import '../ui/object_radial_menu.dart';
 import '../ui/game/volume_door_overlay.dart';
+import '../ui/game/volume_outline_overlay.dart';
 import '../ui/game/volume_ground_shadow_overlay.dart';
 import '../ui/game/volume_face_paint_overlay.dart';
 import '../ui/game/volume_program_overlay.dart';
@@ -201,6 +204,8 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   bool _mutePaperFly = false;
   Offset? _pointerScreen;
   final _appliques = VolumeAppliqueStore();
+  final _outlines = VolumeOutlineStore();
+  final _pathOutlines = PathOutlineStore();
   final _programs = VolumeProgramStore();
   FacePaintKey? _focusedFace;
   bool _interiorFocus = false;
@@ -671,8 +676,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
 
     final dayLit = DayNightLighting.day(_theme);
     _scene = Scene(globalIllumination: dayLit.globalIllumination)
-      ..camera = _camera
-      ..addListener(_onSceneChanged);
+      ..camera = _camera;
     _scene.setLights(dayLit.lights);
 
     _octree = MapOctree(
@@ -687,6 +691,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       loadPadding: 0,
       unloadPadding: 0,
     );
+    _scene.addListener(_onSceneChanged);
 
     _pathGrid = GridMotif.subtileLines(worldSize: _volumes.grid.subtileSize);
     _bakeLandscape();
@@ -1014,6 +1019,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       volumes: _volumes,
       paint: _facePaint,
       programs: _programs,
+      outlines: _outlines,
     );
     syncVolumeMeshes(
       _scene,
@@ -1040,6 +1046,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       grid: _volumes.grid,
     );
     syncPathMeshes(_scene, _paths, _volumes, color: _theme.path);
+    _pathOutlines.rebuild(paths: _paths, volumes: _volumes);
     syncWallMeshes(_scene, _walls, color: _theme.wall);
     syncFriendMeshes(_scene, _friends, tileSize: _tileWorld);
     _wallRegions = computeEnclosedRegions(_walls);
@@ -4581,6 +4588,21 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                       viewport: _viewportSize,
                       listenable: _scene,
                       tileVisible: _focusTileVisible,
+                    ),
+                  ),
+                if (_layers.shows(SceneLayer.volumes) ||
+                    _layers.shows(SceneLayer.paths))
+                  Positioned.fill(
+                    child: VolumeOutlineOverlay(
+                      volumes: _layers.shows(SceneLayer.volumes)
+                          ? _outlines
+                          : null,
+                      paths: _layers.shows(SceneLayer.paths)
+                          ? _pathOutlines
+                          : null,
+                      camera: _camera,
+                      viewport: _viewportSize,
+                      listenable: _scene,
                     ),
                   ),
                 if (_layers.shows(SceneLayer.volumes))
