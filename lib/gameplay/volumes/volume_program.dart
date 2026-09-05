@@ -1,313 +1,281 @@
+import 'package:flutter/material.dart';
+
+import '../walls/wall_regions.dart';
 import 'volume.dart';
 import 'volume_store.dart';
 
-/// Floor programs placed as 6×6 paper stamps. Circulation is leftover floor.
-enum VolumeProgramKind { bedroom, common }
+/// Max chips in a mass-level alert / possession row.
+const kMaxProgramChips = 5;
 
-extension VolumeProgramKindVisual on VolumeProgramKind {
-  /// Almost-white paper tint.
-  int get paperArgb => switch (this) {
-        VolumeProgramKind.bedroom => 0xFFFFF2F4,
-        VolumeProgramKind.common => 0xFFF2F6FF,
-      };
+const kProgramCirculation = 'circulation';
+const kProgramBedroom = 'bedroom';
+const kProgramStorage = 'storage';
+const kProgramLeisure = 'leisure';
+const kProgramGarden = 'garden';
 
-  String get label => switch (this) {
-        VolumeProgramKind.bedroom => 'Bedroom',
-        VolumeProgramKind.common => 'Common',
-      };
-}
-
-/// One program paper on a volume-cell floor. Size is always [sizeSubtiles].
-class ProgramStamp {
-  ProgramStamp({
+/// One programmable use. Catalog order is display order.
+class ProgramSpec {
+  const ProgramSpec({
     required this.id,
-    required this.volumeId,
-    required this.tx,
-    required this.ty,
-    required this.originU,
-    required this.originV,
-    required this.kind,
+    required this.label,
+    required this.icon,
+    required this.color,
+    this.indoor = false,
+    this.outdoor = false,
   });
 
-  static const int sizeSubtiles = 6;
-
-  final int id;
-  final int volumeId;
-  final int tx;
-  final int ty;
-  final int originU;
-  final int originV;
-  final VolumeProgramKind kind;
-
-  int get width => sizeSubtiles;
-  int get height => sizeSubtiles;
-
-  bool overlaps(ProgramStamp other) {
-    if (volumeId != other.volumeId || tx != other.tx || ty != other.ty) {
-      return false;
-    }
-    return originU < other.originU + other.width &&
-        originU + width > other.originU &&
-        originV < other.originV + other.height &&
-        originV + height > other.originV;
-  }
-
-  bool fits(BoxPrimitive box) {
-    return originU >= 0 &&
-        originV >= 0 &&
-        originU + width <= box.widthSubtiles &&
-        originV + height <= box.depthSubtiles;
-  }
-
-  ProgramStamp clone() => ProgramStamp(
-        id: id,
-        volumeId: volumeId,
-        tx: tx,
-        ty: ty,
-        originU: originU,
-        originV: originV,
-        kind: kind,
-      );
+  final String id;
+  final String label;
+  final IconData icon;
+  final Color color;
+  final bool indoor;
+  final bool outdoor;
 }
 
-/// Floor program stamps. A volume may hold a program once it is a committed
-/// mass with a floor large enough for a 6×6 stamp.
+/// Ordered catalog. Append new programs; do not reorder existing IDs.
+const List<ProgramSpec> kProgramCatalog = [
+  ProgramSpec(
+    id: kProgramCirculation,
+    label: 'Circulation',
+    icon: Icons.directions_walk,
+    color: Color(0xFF9E9E9E),
+    indoor: true,
+    outdoor: true,
+  ),
+  ProgramSpec(
+    id: kProgramBedroom,
+    label: 'Bedroom',
+    icon: Icons.bed_outlined,
+    color: Color(0xFFEC407A),
+    indoor: true,
+  ),
+  ProgramSpec(
+    id: kProgramStorage,
+    label: 'Storage',
+    icon: Icons.inventory_2_outlined,
+    color: Color(0xFF42A5F5),
+    indoor: true,
+  ),
+  ProgramSpec(
+    id: kProgramLeisure,
+    label: 'Leisure',
+    icon: Icons.weekend_outlined,
+    color: Color(0xFFFDD835),
+    indoor: true,
+    outdoor: true,
+  ),
+  ProgramSpec(
+    id: kProgramGarden,
+    label: 'Garden',
+    icon: Icons.yard_outlined,
+    color: Color(0xFF66BB6A),
+    outdoor: true,
+  ),
+];
+
+ProgramSpec? programById(String id) {
+  for (final spec in kProgramCatalog) {
+    if (spec.id == id) return spec;
+  }
+  return null;
+}
+
+bool isKnownProgram(String id) => programById(id) != null;
+
+List<ProgramSpec> programsForSurface({required bool outdoor}) {
+  return [
+    for (final spec in kProgramCatalog)
+      if (outdoor ? spec.outdoor : spec.indoor) spec,
+  ];
+}
+
+/// Unique IDs from [ids], sorted by catalog order, capped at [kMaxProgramChips].
+List<ProgramSpec> sortProgramsByCatalog(Iterable<String> ids) {
+  final set = ids.toSet();
+  final out = <ProgramSpec>[];
+  for (final spec in kProgramCatalog) {
+    if (!set.contains(spec.id)) continue;
+    out.add(spec);
+    if (out.length >= kMaxProgramChips) break;
+  }
+  return out;
+}
+
+/// Per-tile indoor and outdoor program assignments.
+///
+/// Indoor cells have no default (null = unprogrammed). Outdoor tiles default
+/// to circulation when missing.
 class VolumeProgramStore {
   VolumeProgramStore();
 
-  final List<ProgramStamp> stamps = [];
-  int _nextId = 1;
-  int get nextId => _nextId;
+  final Map<(int, int), String> _indoor = {};
+  final Map<(int, int), String> _outdoor = {};
 
-  void restore({
-    required List<ProgramStamp> stamps,
-    required int nextId,
+  Map<(int, int), String> get indoorAssignments =>
+      Map<(int, int), String>.unmodifiable(_indoor);
+
+  Map<(int, int), String> get outdoorAssignments =>
+      Map<(int, int), String>.unmodifiable(_outdoor);
+
+  String? indoorAt(int tx, int ty) => _indoor[(tx, ty)];
+
+  /// Outdoor program, defaulting to circulation.
+  String outdoorAt(int tx, int ty) =>
+      _outdoor[(tx, ty)] ?? kProgramCirculation;
+
+  bool assignIndoor({
+    required int tx,
+    required int ty,
+    required String programId,
   }) {
-    this.stamps
-      ..clear()
-      ..addAll(stamps);
-    _nextId = nextId;
+    final spec = programById(programId);
+    if (spec == null || !spec.indoor) return false;
+    _indoor[(tx, ty)] = programId;
+    return true;
   }
 
-  Iterable<ProgramStamp> stampsOn({
-    required int volumeId,
-    int? tx,
-    int? ty,
-  }) sync* {
-    for (final stamp in stamps) {
-      if (stamp.volumeId != volumeId) continue;
-      if (tx != null && stamp.tx != tx) continue;
-      if (ty != null && stamp.ty != ty) continue;
-      yield stamp;
-    }
-  }
-
-  bool canAssignProgram(VolumeCell cell) {
-    return cell.box.widthSubtiles >= ProgramStamp.sizeSubtiles &&
-        cell.box.depthSubtiles >= ProgramStamp.sizeSubtiles;
-  }
-
-  bool canAssignToVolume(Volume volume) =>
-      volume.cells.any(canAssignProgram);
-
-  bool canPlace({
+  /// Assign [programId] to one cell. The first program on a mass also fills
+  /// every other unprogrammed cell with circulation.
+  bool assignIndoorInVolume({
     required Volume volume,
-    required VolumeCell cell,
-    required int originU,
-    required int originV,
-    int? ignoreStampId,
+    required int tx,
+    required int ty,
+    required String programId,
   }) {
-    if (volume.cellAt(cell.tx, cell.ty) == null) return false;
-    if (!canAssignProgram(cell)) return false;
-    final stamp = ProgramStamp(
-      id: -1,
-      volumeId: volume.id,
-      tx: cell.tx,
-      ty: cell.ty,
-      originU: originU,
-      originV: originV,
-      kind: VolumeProgramKind.bedroom,
-    );
-    if (!stamp.fits(cell.box)) return false;
-    for (final other in stampsOn(volumeId: volume.id, tx: cell.tx, ty: cell.ty)) {
-      if (ignoreStampId != null && other.id == ignoreStampId) continue;
-      if (stamp.overlaps(other)) return false;
+    if (volume.cellAt(tx, ty) == null) return false;
+    final first = !isVolumeProgrammed(volume);
+    if (!assignIndoor(tx: tx, ty: ty, programId: programId)) return false;
+    if (!first) return true;
+    for (final cell in volume.cells) {
+      if (cell.tx == tx && cell.ty == ty) continue;
+      if (_indoor.containsKey((cell.tx, cell.ty))) continue;
+      assignIndoor(
+        tx: cell.tx,
+        ty: cell.ty,
+        programId: kProgramCirculation,
+      );
     }
     return true;
   }
 
-  /// Snap a floor click into a valid 6×6 origin, or null if it cannot fit.
-  (int u, int v)? snapOrigin({
-    required VolumeCell cell,
-    required int u,
-    required int v,
-    int? volumeId,
-  }) {
-    final maxU = cell.box.widthSubtiles - ProgramStamp.sizeSubtiles;
-    final maxV = cell.box.depthSubtiles - ProgramStamp.sizeSubtiles;
-    if (maxU < 0 || maxV < 0) return null;
-    final preferredU = u.clamp(0, maxU);
-    final preferredV = v.clamp(0, maxV);
-    bool blocked(int ou, int ov) {
-      if (volumeId == null) return false;
-      final probe = ProgramStamp(
-        id: -1,
-        volumeId: volumeId,
-        tx: cell.tx,
-        ty: cell.ty,
-        originU: ou,
-        originV: ov,
-        kind: VolumeProgramKind.bedroom,
-      );
-      for (final other in stampsOn(
-        volumeId: volumeId,
-        tx: cell.tx,
-        ty: cell.ty,
-      )) {
-        if (probe.overlaps(other)) return true;
-      }
-      return false;
-    }
+  bool clearIndoor(int tx, int ty) => _indoor.remove((tx, ty)) != null;
 
-    if (!blocked(preferredU, preferredV)) return (preferredU, preferredV);
-    (int, int)? best;
-    var bestDist = 1 << 30;
-    for (var ou = 0; ou <= maxU; ou++) {
-      for (var ov = 0; ov <= maxV; ov++) {
-        if (blocked(ou, ov)) continue;
-        final dist = (ou - preferredU).abs() + (ov - preferredV).abs();
-        if (dist < bestDist) {
-          bestDist = dist;
-          best = (ou, ov);
-        }
+  bool assignOutdoorRegion(Iterable<(int, int)> tiles, String programId) {
+    final spec = programById(programId);
+    if (spec == null || !spec.outdoor) return false;
+    if (programId == kProgramCirculation) {
+      for (final tile in tiles) {
+        _outdoor.remove(tile);
+      }
+    } else {
+      for (final tile in tiles) {
+        _outdoor[tile] = programId;
       }
     }
-    return best;
+    return true;
   }
 
-  ProgramStamp? place({
-    required Volume volume,
-    required VolumeCell cell,
-    required int originU,
-    required int originV,
-    required VolumeProgramKind kind,
-  }) {
-    if (!canPlace(
-      volume: volume,
-      cell: cell,
-      originU: originU,
-      originV: originV,
-    )) {
-      return null;
+  /// Dominant outdoor program for [tiles] (majority, catalog-order ties).
+  String outdoorRegionProgram(Iterable<(int, int)> tiles) {
+    final counts = <String, int>{};
+    for (final tile in tiles) {
+      final id = outdoorAt(tile.$1, tile.$2);
+      counts[id] = (counts[id] ?? 0) + 1;
     }
-    final stamp = ProgramStamp(
-      id: _nextId++,
-      volumeId: volume.id,
-      tx: cell.tx,
-      ty: cell.ty,
-      originU: originU,
-      originV: originV,
-      kind: kind,
-    );
-    stamps.add(stamp);
-    return stamp;
-  }
-
-  bool remove(int id) {
-    final before = stamps.length;
-    stamps.removeWhere((s) => s.id == id);
-    return stamps.length < before;
-  }
-
-  ProgramStamp? move({
-    required int id,
-    required Volume volume,
-    required VolumeCell cell,
-    required int originU,
-    required int originV,
-  }) {
-    final index = stamps.indexWhere((s) => s.id == id);
-    if (index < 0) return null;
-    if (!canPlace(
-      volume: volume,
-      cell: cell,
-      originU: originU,
-      originV: originV,
-      ignoreStampId: id,
-    )) {
-      return null;
+    if (counts.isEmpty) return kProgramCirculation;
+    String? best;
+    var bestCount = -1;
+    for (final spec in kProgramCatalog) {
+      final n = counts[spec.id] ?? 0;
+      if (n > bestCount) {
+        best = spec.id;
+        bestCount = n;
+      }
     }
-    final prev = stamps[index];
-    final next = ProgramStamp(
-      id: prev.id,
-      volumeId: volume.id,
-      tx: cell.tx,
-      ty: cell.ty,
-      originU: originU,
-      originV: originV,
-      kind: prev.kind,
-    );
-    stamps[index] = next;
-    return next;
+    return best ?? kProgramCirculation;
   }
 
-  void remapVolumeTiles(int volumeId, int dtx, int dty) {
+  bool isVolumeProgrammed(Volume volume) {
+    for (final cell in volume.cells) {
+      if (_indoor.containsKey((cell.tx, cell.ty))) return true;
+    }
+    return false;
+  }
+
+  bool canAssignToVolume(Volume volume) => volume.cells.isNotEmpty;
+
+  List<ProgramSpec> programsPossessed(Volume volume) {
+    return sortProgramsByCatalog([
+      for (final cell in volume.cells) ?_indoor[(cell.tx, cell.ty)],
+    ]);
+  }
+
+  List<ProgramSpec> programsPossessedRegion(WallRegion region) {
+    return sortProgramsByCatalog({
+      for (final tile in region.tiles) outdoorAt(tile.$1, tile.$2),
+    });
+  }
+
+  void remapVolumeTiles(Volume volume, int dtx, int dty) {
     if (dtx == 0 && dty == 0) return;
-    for (var i = 0; i < stamps.length; i++) {
-      final s = stamps[i];
-      if (s.volumeId != volumeId) continue;
-      stamps[i] = ProgramStamp(
-        id: s.id,
-        volumeId: s.volumeId,
-        tx: s.tx + dtx,
-        ty: s.ty + dty,
-        originU: s.originU,
-        originV: s.originV,
-        kind: s.kind,
-      );
-    }
+    final oldTiles = <(int, int)>[
+      for (final cell in volume.cells) (cell.tx - dtx, cell.ty - dty),
+    ];
+    _remapMap(_indoor, dtx, dty, oldTiles);
+    _remapMap(_outdoor, dtx, dty, oldTiles);
   }
 
-  void rekeyVolume(int fromId, int toId) {
-    if (fromId == toId) return;
-    for (var i = 0; i < stamps.length; i++) {
-      final s = stamps[i];
-      if (s.volumeId != fromId) continue;
-      stamps[i] = ProgramStamp(
-        id: s.id,
-        volumeId: toId,
-        tx: s.tx,
-        ty: s.ty,
-        originU: s.originU,
-        originV: s.originV,
-        kind: s.kind,
-      );
-    }
-  }
+  /// No-op: assignments are keyed by tile, not volume id.
+  void rekeyVolume(int fromId, int toId) {}
 
   void prune(VolumeStore store) {
-    stamps.removeWhere((s) {
-      final volume = store.volumeById(s.volumeId);
-      if (volume == null) return true;
-      final cell = volume.cellAt(s.tx, s.ty);
-      if (cell == null) return true;
-      return !s.fits(cell.box);
+    _indoor.removeWhere((tile, _) {
+      final volume = store.volumeAt(tile.$1, tile.$2);
+      return volume == null || volume.cellAt(tile.$1, tile.$2) == null;
     });
+  }
+
+  void restore({
+    required Map<(int, int), String> indoor,
+    required Map<(int, int), String> outdoor,
+  }) {
+    _indoor
+      ..clear()
+      ..addAll(indoor);
+    _outdoor
+      ..clear()
+      ..addAll(outdoor);
   }
 
   VolumeProgramStore copy() {
     final next = VolumeProgramStore();
     next.restore(
-      stamps: [for (final s in stamps) s.clone()],
-      nextId: _nextId,
+      indoor: Map<(int, int), String>.from(_indoor),
+      outdoor: Map<(int, int), String>.from(_outdoor),
     );
     return next;
   }
 
   void restoreFrom(VolumeProgramStore other) {
     restore(
-      stamps: [for (final s in other.stamps) s.clone()],
-      nextId: other._nextId,
+      indoor: Map<(int, int), String>.from(other._indoor),
+      outdoor: Map<(int, int), String>.from(other._outdoor),
     );
   }
+}
+
+void _remapMap(
+  Map<(int, int), String> map,
+  int dtx,
+  int dty,
+  Iterable<(int, int)> oldTiles,
+) {
+  final moving = <(int, int), String>{};
+  for (final tile in oldTiles) {
+    final id = map.remove(tile);
+    if (id != null) {
+      moving[(tile.$1 + dtx, tile.$2 + dty)] = id;
+    }
+  }
+  map.addAll(moving);
 }

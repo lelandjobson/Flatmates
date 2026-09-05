@@ -166,6 +166,22 @@ class LandscapeGenParams {
     );
   }
 
+  /// Single off-white sheet. Material IDs stay distinct; only the look is flat.
+  static const Map<LandscapeMaterial, MaterialGradient> kPaperWhiteGradients = {
+    LandscapeMaterial.rock: _kPaperWhite,
+    LandscapeMaterial.grass: _kPaperWhite,
+    LandscapeMaterial.dirt: _kPaperWhite,
+    LandscapeMaterial.water: _kPaperWhite,
+    LandscapeMaterial.flowers: _kPaperWhite,
+    LandscapeMaterial.fruits: _kPaperWhite,
+    LandscapeMaterial.vegetables: _kPaperWhite,
+  };
+
+  static const MaterialGradient _kPaperWhite = MaterialGradient(
+    start: HSLColor.fromAHSL(1, 40, 0.04, 0.94),
+    end: HSLColor.fromAHSL(1, 36, 0.02, 0.97),
+  );
+
   /// Matte cardstock diorama (default). Narrow HSL ranges, high lightness.
   static const Map<LandscapeMaterial, MaterialGradient> kDefaultGradients = {
     LandscapeMaterial.rock: MaterialGradient(

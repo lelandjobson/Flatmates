@@ -2,13 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../../crafting/placed_paper.dart';
 import '../volumes/volume_door.dart';
-import '../volumes/volume_program.dart';
 
 /// What the focused plane is editing.
 enum FocusWorkSurface { facade, floor }
 
 /// Palette item that drops onto the focused work surface.
-enum FocusStickerKind { door, bedroom, common }
+enum FocusStickerKind { door }
 
 /// Door catalog. More kinds will sit beside [standard] later.
 enum DoorKind { standard }
@@ -34,40 +33,13 @@ const kFocusDoorSticker = FocusStickerSpec(
   swatch: Color(0xFF2ECC71),
 );
 
-const kFocusBedroomSticker = FocusStickerSpec(
-  kind: FocusStickerKind.bedroom,
-  label: 'Bedroom',
-  icon: Icons.bed_outlined,
-  swatch: Color(0xFFFFF2F4),
-);
-
-const kFocusCommonSticker = FocusStickerSpec(
-  kind: FocusStickerKind.common,
-  label: 'Common',
-  icon: Icons.weekend_outlined,
-  swatch: Color(0xFFF2F6FF),
-);
-
 /// Stickers offered for the current focus. Doors come from paths, not the palette.
 List<FocusStickerSpec> focusStickersFor(FocusWorkSurface surface) {
   return switch (surface) {
     FocusWorkSurface.facade => const [],
-    FocusWorkSurface.floor => const [kFocusBedroomSticker, kFocusCommonSticker],
+    FocusWorkSurface.floor => const [],
   };
 }
-
-VolumeProgramKind? programKindForSticker(FocusStickerKind kind) =>
-    switch (kind) {
-      FocusStickerKind.bedroom => VolumeProgramKind.bedroom,
-      FocusStickerKind.common => VolumeProgramKind.common,
-      FocusStickerKind.door => null,
-    };
-
-FocusStickerKind stickerKindForProgram(VolumeProgramKind kind) =>
-    switch (kind) {
-      VolumeProgramKind.bedroom => FocusStickerKind.bedroom,
-      VolumeProgramKind.common => FocusStickerKind.common,
-    };
 
 /// True when a 2-wide door at [originU] sits fully on a face of [faceWidth].
 bool doorOriginInBounds({

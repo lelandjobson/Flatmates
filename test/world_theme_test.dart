@@ -1,4 +1,5 @@
 import 'package:flatmates/crafting/placed_paper.dart';
+import 'package:flatmates/landscape/color_texture_catalog.dart';
 import 'package:flatmates/landscape/landscape_material.dart';
 import 'package:flatmates/theme/world_theme.dart';
 import 'package:flutter/material.dart';
@@ -37,10 +38,10 @@ void main() {
     expect(theme.path, const Color(0xFFF4EFE6));
     expect(theme.wall, const Color(0xFFF4EFE6));
     expect(theme.volume, const Color(0xFFEEE9E0));
-    expect(theme.background, const Color(0xFFD8E8F0));
+    expect(theme.background, ColorTextureCatalog.white);
     for (final material in LandscapeMaterial.values) {
       final a = theme.material(material);
-      final b = LandscapeGenParams.kDefaultGradients[material]!;
+      final b = LandscapeGenParams.kPaperWhiteGradients[material]!;
       expect(a.start.toColor(), b.start.toColor());
       expect(a.end.toColor(), b.end.toColor());
     }

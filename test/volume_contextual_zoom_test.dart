@@ -10,6 +10,7 @@ import 'package:flatmates/gameplay/volumes/volume_solid.dart';
 import 'package:flatmates/gameplay/volumes/volume_store.dart';
 import 'package:flatmates/rendering/scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vector_math/vector_math_64.dart';
 
 class _FixedRandom implements math.Random {
   _FixedRandom(this._values);
@@ -255,6 +256,39 @@ void main() {
     );
     expect(reveal.hidesHandle(2, 2, VolumeHandle.posY), isFalse);
     expect(reveal.hidesFace(2, 2, VolumeFace.negY), isTrue);
+  });
+
+  test('camera-facing wall hides after reveal on the current datum only',
+      () async {
+    final volumes = _joinedPair();
+    volumes.volumes.add(
+      Volume(
+        id: 8,
+        datum: 1,
+        cells: [VolumeCell(tx: 6, ty: 6, box: BoxPrimitive())],
+      ),
+    );
+    final loader = VolumeContentLoader(loadPart: (_) async {});
+    addTearDown(loader.dispose);
+    final reveal = VolumeCeilingReveal(
+      loader: loader,
+      fadeDuration: Duration.zero,
+    );
+    addTearDown(reveal.dispose);
+    final look = volumes.grid.tileCenter(2, 2);
+    reveal.update(
+      volumes: volumes,
+      lookAt: look,
+      distance: 18,
+      enabled: true,
+      cameraPosition: look + Vector3(12, 6, 0),
+      currentDatum: 0,
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(reveal.hidesFace(2, 2, VolumeFace.posX), isTrue);
+    expect(reveal.hidesFace(2, 2, VolumeFace.negX), isFalse);
+    expect(reveal.hidesFace(6, 6, VolumeFace.posX), isFalse);
+    expect(reveal.hidesFace(6, 6, VolumeFace.posY), isFalse);
   });
 
   test('joined solid still keeps a roof on every cell', () {

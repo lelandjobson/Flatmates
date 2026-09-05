@@ -229,7 +229,7 @@ class VolumeStore {
     if (volume == null || cell == null) return false;
     if (volume.cells.length < 2) return false;
     volume.cells.remove(cell);
-    final split = Volume(id: _nextId++, cells: [cell]);
+    final split = Volume(id: _nextId++, cells: [cell], datum: volume.datum);
     volumes.add(split);
     _select(split, cell);
     draftIsGrow = false;

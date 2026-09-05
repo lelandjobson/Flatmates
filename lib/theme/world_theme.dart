@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../crafting/placed_paper.dart';
 import '../gameplay/paint/plane_grain_model.dart';
 import '../gameplay/paint/plane_shade_model.dart';
+import '../landscape/color_texture_catalog.dart';
 import '../landscape/landscape_material.dart';
 import '../landscape/landscape_palette.dart';
 
@@ -98,12 +99,13 @@ class WorldTheme {
     PaperColor.green: Color(0xFFBAFFC9),
   };
 
-  /// Matte cardstock diorama — default world look.
+  /// Off-white paper sheet — default world look.
   static const WorldTheme paperDiorama = WorldTheme(
     id: 'paper_diorama',
     label: 'Paper diorama',
-    gradients: LandscapeGenParams.kDefaultGradients,
+    gradients: LandscapeGenParams.kPaperWhiteGradients,
     papers: kPaperDioramaPapers,
+    background: ColorTextureCatalog.white,
   );
 
   static final WorldTheme waterLilies = WorldTheme._fromPalette(

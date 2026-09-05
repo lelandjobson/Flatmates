@@ -293,6 +293,7 @@ class GameRecording {
         for (final volume in volumes)
           Volume(
             id: volume.id,
+            datum: volume.datum,
             cells: [
               for (final cell in volume.cells)
                 VolumeCell(
@@ -710,6 +711,7 @@ class GameRecording {
 
 Map<String, dynamic> _volumeToJson(Volume volume) => {
       'id': volume.id,
+      'datum': volume.datum,
       'cells': [
         for (final cell in volume.cells)
           {
@@ -754,7 +756,11 @@ Volume _volumeFromJson(Map<String, dynamic> json) {
     for (final item in _asList(json['cells']))
       if (item is Map) _cellFromJson(item.cast<String, dynamic>()),
   ];
-  return Volume(id: _int(json['id']) ?? 0, cells: cells);
+  return Volume(
+    id: _int(json['id']) ?? 0,
+    cells: cells,
+    datum: _int(json['datum']) ?? 0,
+  );
 }
 
 VolumeCell _cellFromJson(Map<String, dynamic> json) {

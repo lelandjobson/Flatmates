@@ -96,7 +96,7 @@ void main() {
     );
     expect(find.byIcon(Icons.format_color_fill), findsOneWidget);
     expect(find.byIcon(Icons.auto_fix_off), findsOneWidget);
-    expect(find.byIcon(Icons.bed_outlined), findsOneWidget);
-    expect(find.byIcon(Icons.weekend_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.bed_outlined), findsNothing);
+    expect(find.byIcon(Icons.weekend_outlined), findsNothing);
   });
 }

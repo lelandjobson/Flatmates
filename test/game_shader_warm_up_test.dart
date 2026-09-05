@@ -38,4 +38,31 @@ void main() {
     expect(dusk.shouldRepaint(day), isTrue);
     expect(dusk.shouldRepaint(dusk), isFalse);
   });
+
+  test('landscape painter treats a new paper texture as a repaint', () {
+    final camera = Camera(
+      name: 'test',
+      position: Vector3(0, 80, 80),
+    );
+    final listenable = ChangeNotifier();
+    final plain = LandscapePlanePainter(
+      camera: camera,
+      listenable: listenable,
+      image: null,
+      worldSize: 128,
+      tilesSide: 16,
+      pixelsPerTile: 8,
+    );
+    final papered = LandscapePlanePainter(
+      camera: camera,
+      listenable: listenable,
+      image: null,
+      worldSize: 128,
+      tilesSide: 16,
+      pixelsPerTile: 8,
+      paperRepeatWorld: 4.0,
+    );
+    expect(papered.shouldRepaint(plain), isTrue);
+    expect(papered.shouldRepaint(papered), isFalse);
+  });
 }

@@ -13,7 +13,7 @@ const kCubeboyFriend = Friend(
   id: 'b2c9f5e1-7a3d-4f8b-9c6e-1d4a8b2f7e3c',
   name: 'Cubeboy',
   geometryType: GeometryPrefabs.cube,
-  stats: FriendStats(tileSpeed: 10.0),
+  stats: FriendStats(tileSpeed: 5.0),
   color: Colors.lightGreenAccent,
 );
 

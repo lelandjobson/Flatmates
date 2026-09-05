@@ -1,7 +1,9 @@
 import 'package:flatmates/gameplay/picking/selectable.dart';
+import 'package:flatmates/gameplay/viewers/world_plane.dart';
 import 'package:flatmates/gameplay/volumes/volume_outline.dart';
 import 'package:flatmates/gameplay/volumes/volume_store.dart';
 import 'package:flatmates/ui/game/selection_highlight_overlay.dart';
+import 'package:flatmates/ui/game/selection_highlight_style.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -54,5 +56,28 @@ void main() {
       volumes.grid,
     );
     expect(outline.edges, hasLength(12));
+  });
+
+  test('floor picks use a thin footprint style', () {
+    final floor = SelectableHit.volumeFace(1, face: VolumeFace.negY);
+    final wall = SelectableHit.volumeFace(1, face: VolumeFace.posX);
+    expect(highlightUsesFloorStyle(floor), isTrue);
+    expect(highlightUsesFloorStyle(wall), isFalse);
+    expect(
+      highlightStyleFor(floor, SelectionHighlightStyle.standard),
+      SelectionHighlightStyle.floor,
+    );
+    expect(
+      highlightStyleFor(wall, SelectionHighlightStyle.standard),
+      SelectionHighlightStyle.standard,
+    );
+    expect(
+      highlightDrawsFloorQuads(
+        target: const SelectableHit(kind: SelectableKind.volume, volumeId: 1),
+        style: SelectionHighlightStyle.floor,
+      ),
+      isTrue,
+    );
+    expect(SelectionHighlightStyle.floor.outlineWidth, lessThan(2));
   });
 }

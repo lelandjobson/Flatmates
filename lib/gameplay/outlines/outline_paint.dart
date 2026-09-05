@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../rendering/scene/camera.dart';
@@ -5,6 +7,9 @@ import 'outline_edges.dart';
 
 const kWorldOutlineColor = Color(0xB3808080);
 const kWorldOutlineStrokeWidth = 1.6;
+
+/// Thicker ring around friend eye fills. Sits outside the white disk.
+const kFriendEyeOutlineStrokeWidth = 4.0;
 
 /// Thinner, lighter stroke for door / face paper on top of volume fills.
 const kAppliqueOutlineColor = Color(0xB3A8A8A8);
@@ -44,6 +49,8 @@ int paintOutlineEdges({
   Color color = kWorldOutlineColor,
   double strokeWidth = kWorldOutlineStrokeWidth,
   double Function(OutlineEdge edge)? opacityFor,
+  double? dashLength,
+  double? dashGap,
 }) {
   final stroke = Paint()
     ..color = color
@@ -63,8 +70,49 @@ int paintOutlineEdges({
     stroke.color = opacity < 0.999
         ? color.withValues(alpha: (color.a * opacity).clamp(0.0, 1.0))
         : color;
-    canvas.drawLine(a, b, stroke);
+    if (dashLength != null && dashLength > 0) {
+      paintDashedLine(
+        canvas,
+        a,
+        b,
+        stroke,
+        dashLength: dashLength,
+        gapLength: dashGap ?? dashLength,
+      );
+    } else {
+      canvas.drawLine(a, b, stroke);
+    }
     drawn++;
   }
   return drawn;
+}
+
+void paintDashedLine(
+  Canvas canvas,
+  Offset a,
+  Offset b,
+  Paint paint, {
+  double dashLength = 9,
+  double gapLength = 5,
+}) {
+  final dx = b.dx - a.dx;
+  final dy = b.dy - a.dy;
+  final len = math.sqrt(dx * dx + dy * dy);
+  if (len < 1e-3) return;
+  final ux = dx / len;
+  final uy = dy / len;
+  var t = 0.0;
+  var draw = true;
+  while (t < len) {
+    final next = math.min(t + (draw ? dashLength : gapLength), len);
+    if (draw) {
+      canvas.drawLine(
+        Offset(a.dx + ux * t, a.dy + uy * t),
+        Offset(a.dx + ux * next, a.dy + uy * next),
+        paint,
+      );
+    }
+    t = next;
+    draw = !draw;
+  }
 }

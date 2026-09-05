@@ -38,6 +38,35 @@ bool highlightStrokesWholeVolume({
 }) =>
     kind == SelectableKind.volume && !cellOnly;
 
+/// Floors / ground picks use a footprint stroke, not the 3D mass box.
+bool highlightUsesFloorStyle(SelectableHit target) {
+  if (target.kind == SelectableKind.volumeFace) {
+    return target.face == VolumeFace.negY;
+  }
+  return target.kind == SelectableKind.region ||
+      target.kind == SelectableKind.tile;
+}
+
+SelectionHighlightStyle highlightStyleFor(
+  SelectableHit target,
+  SelectionHighlightStyle base,
+) {
+  if (base == SelectionHighlightStyle.delete) return base;
+  if (base == SelectionHighlightStyle.floor || highlightUsesFloorStyle(target)) {
+    return SelectionHighlightStyle.floor;
+  }
+  return base;
+}
+
+/// Floor style draws only the ground quad, even for a volume + cell pick.
+bool highlightDrawsFloorQuads({
+  required SelectableHit target,
+  required SelectionHighlightStyle style,
+}) {
+  return style == SelectionHighlightStyle.floor ||
+      highlightUsesFloorStyle(target);
+}
+
 /// Fades a fill + thick outline over the hovered or selected map entity.
 class SelectionHighlightOverlay extends StatefulWidget {
   const SelectionHighlightOverlay({
@@ -194,22 +223,21 @@ class _HighlightPainter extends CustomPainter {
       ...extraHits,
     ];
     if (targets.isEmpty && wallEdges.isEmpty) return;
-    final fill = Paint()
-      ..color = style.fill
-      ..style = PaintingStyle.fill;
-    final stroke = Paint()
-      ..color = style.outline
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = style.outlineWidth
-      ..strokeJoin = StrokeJoin.round
-      ..strokeCap = StrokeCap.round;
 
     for (final target in targets) {
-      final whole = highlightStrokesWholeVolume(
-        kind: target.kind,
-        cellOnly: cellOnly,
+      final targetStyle = highlightStyleFor(target, style);
+      final fill = _fillPaint(targetStyle);
+      final stroke = _strokePaint(targetStyle);
+      final floor = highlightDrawsFloorQuads(
+        target: target,
+        style: targetStyle,
       );
-      for (final quad in _quadsFor(target)) {
+      final whole = !floor &&
+          highlightStrokesWholeVolume(
+            kind: target.kind,
+            cellOnly: cellOnly,
+          );
+      for (final quad in _quadsFor(target, floorOnly: floor)) {
         final path = _projectQuad(quad);
         if (path == null) continue;
         canvas.drawPath(path, fill);
@@ -217,12 +245,29 @@ class _HighlightPainter extends CustomPainter {
       }
       if (whole) _strokeWholeVolume(canvas, target);
     }
+    final wallFill = _fillPaint(style);
+    final wallStroke = _strokePaint(style);
     for (final edge in wallEdges) {
       final path = _projectQuad(_wallQuad(edge));
       if (path == null) continue;
-      canvas.drawPath(path, fill);
-      canvas.drawPath(path, stroke);
+      canvas.drawPath(path, wallFill);
+      canvas.drawPath(path, wallStroke);
     }
+  }
+
+  Paint _fillPaint(SelectionHighlightStyle targetStyle) {
+    return Paint()
+      ..color = targetStyle.fill
+      ..style = PaintingStyle.fill;
+  }
+
+  Paint _strokePaint(SelectionHighlightStyle targetStyle) {
+    return Paint()
+      ..color = targetStyle.outline
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = targetStyle.outlineWidth
+      ..strokeJoin = StrokeJoin.round
+      ..strokeCap = StrokeCap.round;
   }
 
   void _strokeWholeVolume(Canvas canvas, SelectableHit target) {
@@ -288,7 +333,11 @@ class _HighlightPainter extends CustomPainter {
     return path;
   }
 
-  List<List<Vector3>> _quadsFor(SelectableHit target) {
+  List<List<Vector3>> _quadsFor(
+    SelectableHit target, {
+    required bool floorOnly,
+  }) {
+    if (floorOnly) return _floorQuadsFor(target);
     switch (target.kind) {
       case SelectableKind.tile:
       case SelectableKind.path:
@@ -327,6 +376,48 @@ class _HighlightPainter extends CustomPainter {
           face: face,
           grid: volumes.grid,
         );
+    }
+  }
+
+  List<List<Vector3>> _floorQuadsFor(SelectableHit target) {
+    switch (target.kind) {
+      case SelectableKind.tile:
+      case SelectableKind.path:
+        final tx = target.tx;
+        final ty = target.ty;
+        if (tx == null || ty == null) return const [];
+        return [_tileQuad(volumes.grid, tx, ty)];
+      case SelectableKind.region:
+        final region = target.region;
+        if (region == null) return const [];
+        return [
+          for (final tile in region.tiles)
+            _tileQuad(volumes.grid, tile.$1, tile.$2),
+        ];
+      case SelectableKind.volume:
+      case SelectableKind.volumeFace:
+        final volume = target.volumeId == null
+            ? null
+            : volumes.volumeById(target.volumeId!);
+        if (volume == null) return const [];
+        final cells = volumeCellsForHighlight(
+          target,
+          volume,
+          cellOnly: true,
+        );
+        if (cells.isEmpty) return const [];
+        final solid = resolveVolumeSolid(volume, volumes.grid);
+        return [
+          for (final cell in cells)
+            if (hideFace?.call(cell.tx, cell.ty, VolumeFace.negY) != true)
+              ...solid.faceWorldQuads(
+                cell: cell,
+                face: VolumeFace.negY,
+                grid: volumes.grid,
+              ),
+        ];
+      case SelectableKind.friend:
+        return const [];
     }
   }
 

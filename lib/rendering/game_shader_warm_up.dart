@@ -124,7 +124,7 @@ class GameViewShaderWarmUp extends ShaderWarmUp {
     );
   }
 
-  /// LandscapePlanePainter: nearest-neighbor textured tris + day-night modulate.
+  /// LandscapePlanePainter: atlas tris, day-night modulate, paper multiply.
   static void _warmTexturedLandscape(ui.Canvas canvas, ui.Image atlas) {
     final shader = ui.ImageShader(
       atlas,
@@ -161,10 +161,29 @@ class GameViewShaderWarmUp extends ShaderWarmUp {
       BlendMode.modulate,
     );
     canvas.drawVertices(verts, ui.BlendMode.srcOver, paint);
+
+    final paperShader = ui.ImageShader(
+      atlas,
+      ui.TileMode.repeated,
+      ui.TileMode.repeated,
+      Matrix4.identity().storage,
+    );
+    paint
+      ..colorFilter = const ColorFilter.mode(
+        Color(0xFFE8E0F0),
+        BlendMode.modulate,
+      )
+      ..filterQuality = ui.FilterQuality.medium
+      ..blendMode = ui.BlendMode.multiply
+      ..shader = paperShader;
+    canvas.drawVertices(verts, ui.BlendMode.srcOver, paint);
     paint
       ..colorFilter = null
+      ..blendMode = ui.BlendMode.srcOver
+      ..filterQuality = ui.FilterQuality.none
       ..shader = null;
     shader.dispose();
+    paperShader.dispose();
 
     canvas.drawLine(
       const ui.Offset(8, 124),

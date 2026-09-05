@@ -5,7 +5,10 @@ import '../outlines/outline_edges.dart';
 import '../viewers/world_plane.dart';
 import 'volume.dart';
 import 'volume_content_loader.dart';
+import 'volume_datum.dart';
+import 'volume_solid.dart';
 import 'volume_store.dart';
+import 'volume_wall_cutaway.dart';
 
 /// Hide the focused part's ceiling once closer than this.
 const double kVolumeCeilingRevealDistance = 28.5;
@@ -55,8 +58,10 @@ class VolumeCeilingReveal {
   Duration? _lastElapsed;
   VolumeStore? _volumes;
   Vector3? _lookAt;
+  Vector3? _cameraPosition;
   double _distance = 0;
   bool _enabled = true;
+  int _currentDatum = 0;
   bool _wantsReveal = false;
   VolumePartId? _focus;
   final Map<VolumePartId, _FadeState> _states = {};
@@ -79,7 +84,7 @@ class VolumeCeilingReveal {
   /// Visibility of a volume face that contextual zoom can hide.
   ///
   /// Roofs follow the ceiling fade. Floors appear only once the interior is
-  /// opening. Walls stay fully visible.
+  /// opening. Camera-facing walls fade only on the current datum.
   double featureOpacityForFace(int tx, int ty, VolumeFace face) {
     final ceiling = opacityFor(VolumePartId(tx, ty));
     return switch (face) {
@@ -89,16 +94,17 @@ class VolumeCeilingReveal {
       VolumeFace.negX ||
       VolumeFace.posZ ||
       VolumeFace.negZ =>
-        1.0,
+        _wallOpacity(tx, ty, face, ceiling),
     };
   }
 
-  /// Visibility of a transform handle. Height follows the ceiling; others stay.
+  /// Visibility of a transform handle. Height follows the ceiling; walls
+  /// follow the same cutaway as their face on the current datum.
   double featureOpacityForHandle(int tx, int ty, VolumeHandle handle) {
     if (handle == VolumeHandle.posY) {
       return opacityFor(VolumePartId(tx, ty));
     }
-    return 1;
+    return featureOpacityForFace(tx, ty, faceForHandle(handle));
   }
 
   bool hidesFace(int tx, int ty, VolumeFace face) =>
@@ -107,10 +113,9 @@ class VolumeCeilingReveal {
   bool hidesHandle(int tx, int ty, VolumeHandle handle) =>
       featureOpacityForHandle(tx, ty, handle) <= kVolumeFeatureHiddenOpacity;
 
-  /// Roof-only outline edges fade with that part's ceiling. Wall/roof rims stay.
+  /// Roof edges fade with the ceiling. Cutaway wall edges follow wall opacity.
   double outlineOpacityFor(OutlineEdge edge, VolumeGrid grid) {
     if (edge.faces.isEmpty) return 1;
-    if (!edge.faces.every((face) => face.normal.y > 0.85)) return 1;
     final mid = Vector3(
       (edge.a.x + edge.b.x) * 0.5,
       (edge.a.y + edge.b.y) * 0.5,
@@ -118,7 +123,17 @@ class VolumeCeilingReveal {
     );
     final tile = grid.tileAtWorld(mid);
     if (tile == null) return 1;
-    return opacityFor(VolumePartId(tile.$1, tile.$2));
+    if (edge.faces.every((face) => face.normal.y > 0.85)) {
+      return opacityFor(VolumePartId(tile.$1, tile.$2));
+    }
+    final n = edge.faces.first.normal;
+    final face = n.x.abs() > 0.85
+        ? (n.x > 0 ? VolumeFace.posX : VolumeFace.negX)
+        : n.z.abs() > 0.85
+            ? (n.z > 0 ? VolumeFace.posZ : VolumeFace.negZ)
+            : null;
+    if (face == null) return 1;
+    return featureOpacityForFace(tile.$1, tile.$2, face);
   }
 
   void update({
@@ -126,12 +141,45 @@ class VolumeCeilingReveal {
     required Vector3 lookAt,
     required double distance,
     required bool enabled,
+    Vector3? cameraPosition,
+    int currentDatum = 0,
   }) {
+    final cameraMoved = cameraPosition != null &&
+        (_cameraPosition == null ||
+            _cameraPosition!.distanceToSquared(cameraPosition) > 1e-6);
     _volumes = volumes;
     _lookAt = lookAt;
     _distance = distance;
     _enabled = enabled;
+    _cameraPosition = cameraPosition;
+    _currentDatum = currentDatum;
     _recompute();
+    if (cameraMoved && _states.isNotEmpty) onChanged?.call();
+  }
+
+  double _wallOpacity(
+    int tx,
+    int ty,
+    VolumeFace face,
+    double ceiling,
+  ) {
+    final volume = _volumes?.volumeAt(tx, ty);
+    if (volume == null ||
+        !volumeAtCurrentDatum(
+          volumeDatum: volume.datum,
+          currentDatum: _currentDatum,
+        )) {
+      return 1;
+    }
+    final camera = _cameraPosition;
+    final grid = _volumes?.grid;
+    if (camera == null || grid == null || ceiling >= 0.999) return 1;
+    return wallOpacityForFace(
+      face: face,
+      camera: camera,
+      cellCenter: grid.tileCenter(tx, ty),
+      ceilingOpacity: ceiling,
+    );
   }
 
   void dispose() {
@@ -180,8 +228,17 @@ class VolumeCeilingReveal {
     _states.removeWhere((id, _) => !live.contains(id));
 
     for (final id in live) {
-      final target =
-          revealable.contains(id) && loader.isLoaded(id) ? 0.0 : 1.0;
+      final volume = volumes.volumeAt(id.tx, id.ty);
+      final atDatum = volume != null &&
+          volumeAtCurrentDatum(
+            volumeDatum: volume.datum,
+            currentDatum: _currentDatum,
+          );
+      final target = atDatum &&
+              revealable.contains(id) &&
+              loader.isLoaded(id)
+          ? 0.0
+          : 1.0;
       final existing = _states[id];
       if (target >= 0.999 &&
           (existing == null || existing.current >= 0.999)) {

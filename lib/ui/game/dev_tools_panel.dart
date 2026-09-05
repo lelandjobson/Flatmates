@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../debug/perf_debug.dart';
 import '../../gameplay/day_night/day_night_lighting.dart';
+import '../../gameplay/flatmates/flatmate_walk_style.dart';
 import '../../gameplay/viewers/game_viewer.dart';
 
 typedef FaceLightChanged = void Function({
@@ -21,6 +22,8 @@ class DevToolsPanel extends StatelessWidget {
     required this.showGizmos,
     required this.onShowGizmosChanged,
     required this.onPlaceCubeboy,
+    required this.walkStyle,
+    required this.onWalkStyleChanged,
     required this.nightSwatchId,
     required this.onNightSwatchChanged,
     required this.dayNightProgress,
@@ -47,6 +50,8 @@ class DevToolsPanel extends StatelessWidget {
   final bool showGizmos;
   final ValueChanged<bool> onShowGizmosChanged;
   final VoidCallback onPlaceCubeboy;
+  final FlatmateWalkStyle walkStyle;
+  final ValueChanged<FlatmateWalkStyle> onWalkStyleChanged;
   final String nightSwatchId;
   final ValueChanged<NightSwatch> onNightSwatchChanged;
   final double dayNightProgress;
@@ -326,6 +331,31 @@ class DevToolsPanel extends StatelessWidget {
                 const SizedBox(height: 10),
                 const _CategoryHeader('Flatmates'),
                 const SizedBox(height: 4),
+                const Text(
+                  'Walk style',
+                  style: TextStyle(color: Colors.white70, fontSize: 11),
+                ),
+                DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    isExpanded: true,
+                    isDense: true,
+                    dropdownColor: const Color(0xFF1A1A1A),
+                    value: walkStyle.id,
+                    iconEnabledColor: Colors.white70,
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    items: [
+                      for (final style in FlatmateWalkStyle.all)
+                        DropdownMenuItem(
+                          value: style.id,
+                          child: Text(style.label),
+                        ),
+                    ],
+                    onChanged: (id) {
+                      if (id != null) onWalkStyleChanged(FlatmateWalkStyle.byId(id));
+                    },
+                  ),
+                ),
+                const SizedBox(height: 6),
                 _AssetButton(label: 'Cubeboy', onTap: onPlaceCubeboy),
                 const SizedBox(height: 10),
                 const _CategoryHeader('Structures'),

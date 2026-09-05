@@ -92,7 +92,7 @@ VolumeSide? _sideToward((int, int) from, (int, int) to) {
   return null;
 }
 
-/// Outdoor path on the ortho neighbor, or on either corner of that face.
+/// Outdoor path on the tile that shares [side]'s edge. Corners do not count.
 bool outdoorPathMeetsSide({
   required Volume volume,
   required VolumeCell cell,
@@ -103,18 +103,10 @@ bool outdoorPathMeetsSide({
   final ntx = cell.tx + dx;
   final nty = cell.ty + dy;
   if (volume.cellAt(ntx, nty) != null) return false;
-  if (paths.contains(ntx, nty)) return true;
-  final (px, py) = dx != 0 ? (0, 1) : (1, 0);
-  for (final step in [-1, 1]) {
-    final ctx = ntx + px * step;
-    final cty = nty + py * step;
-    if (volume.cellAt(ctx, cty) != null) continue;
-    if (paths.contains(ctx, cty)) return true;
-  }
-  return false;
+  return paths.contains(ntx, nty);
 }
 
-/// Interior path plus an outdoor neighbor (ortho or corner), and no wall.
+/// Interior path plus an outdoor path on the tile across [side], and no wall.
 bool pathRequiresDoor({
   required Volume volume,
   required VolumeCell cell,
@@ -138,8 +130,9 @@ bool pathRequiresDoor({
   );
 }
 
-/// Create centered doors where an interior path meets outdoor paths; remove
-/// doors that no longer qualify. Door papers sit on applique layer max+1.
+/// Create centered doors where an interior path meets an outdoor path across
+/// that side; remove doors that no longer qualify. Door papers sit on
+/// applique layer max+1.
 bool syncVolumeDoorsFromPaths({
   required VolumeStore volumes,
   required PathStore paths,

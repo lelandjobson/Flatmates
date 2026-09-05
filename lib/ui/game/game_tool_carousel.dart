@@ -61,6 +61,8 @@ enum GameEditTool { transform, paint, delete }
 
 enum GameCreateTool { volume, path, wall }
 
+enum GameSelectViewFilter { all, program }
+
 extension GameModeX on GameMode {
   IconData get icon => switch (this) {
         GameMode.select => Icons.ads_click,
@@ -98,6 +100,23 @@ extension GameEditToolX on GameEditTool {
   GameEditTool stepped(int delta) {
     final n = GameEditTool.values.length;
     return GameEditTool.values[(index + delta % n + n) % n];
+  }
+}
+
+extension GameSelectViewFilterX on GameSelectViewFilter {
+  IconData get icon => switch (this) {
+        GameSelectViewFilter.all => Icons.layers,
+        GameSelectViewFilter.program => Icons.weekend_outlined,
+      };
+
+  String get label => switch (this) {
+        GameSelectViewFilter.all => 'All',
+        GameSelectViewFilter.program => 'Program',
+      };
+
+  GameSelectViewFilter stepped(int delta) {
+    final n = GameSelectViewFilter.values.length;
+    return GameSelectViewFilter.values[(index + delta % n + n) % n];
   }
 }
 
@@ -151,6 +170,16 @@ List<HudCarouselItem<GameEditTool>> get kGameEditToolItems => [
           icon: tool.icon,
           label: tool.label,
           fill: gameModeFill(GameMode.edit, submenu: true),
+        ),
+    ];
+
+List<HudCarouselItem<GameSelectViewFilter>> get kGameSelectViewFilterItems => [
+      for (final filter in GameSelectViewFilter.values)
+        HudCarouselItem(
+          value: filter,
+          icon: filter.icon,
+          label: filter.label,
+          fill: gameModeFill(GameMode.select, submenu: true),
         ),
     ];
 

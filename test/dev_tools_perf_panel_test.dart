@@ -1,5 +1,6 @@
 import 'package:flatmates/debug/perf_debug.dart';
 import 'package:flatmates/gameplay/day_night/day_night_lighting.dart';
+import 'package:flatmates/gameplay/flatmates/flatmate_walk_style.dart';
 import 'package:flatmates/gameplay/viewers/game_viewer.dart';
 import 'package:flatmates/ui/game/dev_tools_panel.dart';
 import 'package:flatmates/ui/game/frame_stats_hud.dart';
@@ -36,6 +37,8 @@ void main() {
             showGizmos: false,
             onShowGizmosChanged: (_) {},
             onPlaceCubeboy: () {},
+            walkStyle: FlatmateWalkStyle.hop,
+            onWalkStyleChanged: (_) {},
             nightSwatchId: NightSwatch.invertedTwilight.id,
             onNightSwatchChanged: (_) {},
             dayNightProgress: 0,
@@ -91,6 +94,9 @@ void main() {
     expect(find.text('Close zoom  42'), findsOneWidget);
     expect(find.text('Sun / shade'), findsOneWidget);
     expect(find.text('Reset sun / shade'), findsOneWidget);
+    expect(find.text('Walk style'), findsOneWidget);
+    expect(find.text('Hop'), findsOneWidget);
+    expect(find.text('Cubeboy'), findsOneWidget);
   });
 
   testWidgets('frame hud starts collapsed on a dash fps', (tester) async {

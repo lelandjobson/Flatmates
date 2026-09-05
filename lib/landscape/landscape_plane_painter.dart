@@ -31,6 +31,8 @@ class LandscapePlanePainter extends CustomPainter {
     this.hideGround = false,
     this.backgroundColor = const Color(0xFF101418),
     this.modulateColor,
+    this.paperTexture,
+    this.paperRepeatWorld = 2.0,
   }) : super(repaint: listenable);
 
   final Camera camera;
@@ -61,29 +63,42 @@ class LandscapePlanePainter extends CustomPainter {
   /// Impeller does not need a [ColorFiltered] saveLayer around the plane.
   final Color? modulateColor;
 
+  /// World-locked repeating paper grain. Multiplied over the color atlas.
+  final ui.Image? paperTexture;
+
+  /// World units per one repeat of [paperTexture].
+  final double paperRepeatWorld;
+
   static ui.Image? _atlasImage;
   static ui.ImageShader? _atlasShader;
+  static ui.Image? _paperImage;
+  static ui.ImageShader? _paperShader;
 
   static final Paint _imagePaint = Paint()
     ..isAntiAlias = false
     ..filterQuality = FilterQuality.none;
 
+  static final Paint _paperPaint = Paint()
+    ..isAntiAlias = true
+    ..filterQuality = FilterQuality.medium
+    ..blendMode = BlendMode.multiply;
+
   static final Paint _bgPaint = Paint();
 
   static final Paint _gridPaint = Paint()
-    ..color = const Color(0x55FFFFFF)
+    ..color = const Color(0x338A8078)
     ..strokeWidth = 1
     ..style = PaintingStyle.stroke
     ..isAntiAlias = true;
 
   static final Paint _borderPaint = Paint()
-    ..color = const Color(0x88FFFFFF)
+    ..color = const Color(0x668A8078)
     ..strokeWidth = 1.25
     ..style = PaintingStyle.stroke
     ..isAntiAlias = true;
 
   static final Paint _hoverPaint = Paint()
-    ..color = const Color(0xAAFFFFFF)
+    ..color = const Color(0xAA6B6358)
     ..strokeWidth = 1.5
     ..style = PaintingStyle.stroke
     ..isAntiAlias = true;
@@ -107,6 +122,19 @@ class LandscapePlanePainter extends CustomPainter {
     );
   }
 
+  static ui.ImageShader _paperShaderFor(ui.Image img) {
+    final cached = _paperShader;
+    if (identical(_paperImage, img) && cached != null) return cached;
+    cached?.dispose();
+    _paperImage = img;
+    return _paperShader = ui.ImageShader(
+      img,
+      TileMode.repeated,
+      TileMode.repeated,
+      Matrix4.identity().storage,
+    );
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     final sw = Stopwatch()..start();
@@ -114,6 +142,7 @@ class LandscapePlanePainter extends CustomPainter {
     final filter = _modulateFilter;
     _bgPaint.colorFilter = filter;
     _imagePaint.colorFilter = filter;
+    _paperPaint.colorFilter = filter;
     _gridPaint.colorFilter = filter;
     _borderPaint.colorFilter = filter;
     _hoverPaint.colorFilter = filter;
@@ -134,6 +163,8 @@ class LandscapePlanePainter extends CustomPainter {
       _bgPaint.colorFilter = null;
       _imagePaint.colorFilter = null;
       _imagePaint.shader = null;
+      _paperPaint.colorFilter = null;
+      _paperPaint.shader = null;
       _gridPaint.colorFilter = null;
       _borderPaint.colorFilter = null;
       _hoverPaint.colorFilter = null;
@@ -198,8 +229,12 @@ class LandscapePlanePainter extends CustomPainter {
 
     final tw = img.width.toDouble();
     final th = img.height.toDouble();
+    final paper = paperTexture;
+    final paperW = paper?.width.toDouble() ?? 0;
+    final paperH = paper?.height.toDouble() ?? 0;
     final positions = <Offset>[];
     final texCoords = <Offset>[];
+    final paperCoords = paper == null ? null : <Offset>[];
 
     Offset? project(double x, double z) =>
         _projectToScreen(Vector3(x, 0, z), mvp, size);
@@ -244,21 +279,11 @@ class LandscapePlanePainter extends CustomPainter {
           ..add(t00)
           ..add(t11)
           ..add(t01);
+        _appendPaperCoords(paperCoords, paperW, paperH, half, x0, x1, z0, z1);
       }
     }
 
-    if (positions.isEmpty) return;
-
-    _imagePaint.shader = _shaderFor(img);
-    canvas.drawVertices(
-      ui.Vertices(
-        VertexMode.triangles,
-        positions,
-        textureCoordinates: texCoords,
-      ),
-      BlendMode.srcOver,
-      _imagePaint,
-    );
+    _drawAtlasAndPaper(canvas, img, positions, texCoords, paperCoords);
   }
 
   void _drawVisibleTiles(
@@ -273,9 +298,13 @@ class LandscapePlanePainter extends CustomPainter {
     final tileWorld = worldSize / tilesSide;
     final tw = img.width.toDouble();
     final th = img.height.toDouble();
+    final paper = paperTexture;
+    final paperW = paper?.width.toDouble() ?? 0;
+    final paperH = paper?.height.toDouble() ?? 0;
     const segs = 4;
     final positions = <Offset>[];
     final texCoords = <Offset>[];
+    final paperCoords = paper == null ? null : <Offset>[];
     final cMinX = clipMinX;
     final cMaxX = clipMaxX;
     final cMinZ = clipMinZ;
@@ -346,9 +375,59 @@ class LandscapePlanePainter extends CustomPainter {
             ..add(t00)
             ..add(t11)
             ..add(t01);
+          _appendPaperCoords(
+            paperCoords,
+            paperW,
+            paperH,
+            half,
+            px0,
+            px1,
+            pz0,
+            pz1,
+          );
         }
       }
     }
+    _drawAtlasAndPaper(canvas, img, positions, texCoords, paperCoords);
+  }
+
+  void _appendPaperCoords(
+    List<Offset>? paperCoords,
+    double paperW,
+    double paperH,
+    double half,
+    double x0,
+    double x1,
+    double z0,
+    double z1,
+  ) {
+    if (paperCoords == null) return;
+    final p00 = _paperUv(x0, z0, half, paperW, paperH);
+    final p10 = _paperUv(x1, z0, half, paperW, paperH);
+    final p11 = _paperUv(x1, z1, half, paperW, paperH);
+    final p01 = _paperUv(x0, z1, half, paperW, paperH);
+    paperCoords
+      ..add(p00)
+      ..add(p10)
+      ..add(p11)
+      ..add(p00)
+      ..add(p11)
+      ..add(p01);
+  }
+
+  Offset _paperUv(double x, double z, double half, double pw, double ph) {
+    final repeat = paperRepeatWorld;
+    if (repeat <= 1e-6) return Offset.zero;
+    return Offset((x + half) / repeat * pw, (z + half) / repeat * ph);
+  }
+
+  void _drawAtlasAndPaper(
+    Canvas canvas,
+    ui.Image img,
+    List<Offset> positions,
+    List<Offset> texCoords,
+    List<Offset>? paperCoords,
+  ) {
     if (positions.isEmpty) return;
     _imagePaint.shader = _shaderFor(img);
     canvas.drawVertices(
@@ -359,6 +438,19 @@ class LandscapePlanePainter extends CustomPainter {
       ),
       BlendMode.srcOver,
       _imagePaint,
+    );
+
+    final paper = paperTexture;
+    if (paper == null || paperCoords == null || paperCoords.isEmpty) return;
+    _paperPaint.shader = _paperShaderFor(paper);
+    canvas.drawVertices(
+      ui.Vertices(
+        VertexMode.triangles,
+        positions,
+        textureCoordinates: paperCoords,
+      ),
+      BlendMode.srcOver,
+      _paperPaint,
     );
   }
 
@@ -464,6 +556,8 @@ class LandscapePlanePainter extends CustomPainter {
         oldDelegate.hideGround != hideGround ||
         oldDelegate.backgroundColor != backgroundColor ||
         oldDelegate.modulateColor != modulateColor ||
+        oldDelegate.paperTexture != paperTexture ||
+        oldDelegate.paperRepeatWorld != paperRepeatWorld ||
         oldDelegate.camera != camera ||
         oldDelegate.listenable != listenable;
   }

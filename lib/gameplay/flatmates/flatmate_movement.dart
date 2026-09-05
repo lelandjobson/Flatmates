@@ -4,6 +4,7 @@ import 'package:vector_math/vector_math_64.dart';
 
 import '../volumes/volume.dart';
 import 'flatmate_pathfinder.dart';
+import 'flatmate_walk_style.dart';
 
 /// Session-only walk along a tile polyline.
 class FlatmateMovement {
@@ -42,7 +43,13 @@ class FlatmateMovement {
     return true;
   }
 
-  Vector3 worldPosition(VolumeGrid grid, double sitY) {
+  Vector3 worldPosition(
+    VolumeGrid grid,
+    double sitY, {
+    FlatmateWalkStyle style = FlatmateWalkStyle.hop,
+    String swaySeed = '',
+    double bodySize = 2,
+  }) {
     if (tiles.isEmpty) return Vector3(0, sitY, 0);
     if (tiles.length == 1) {
       final c = grid.tileCenter(tiles.first.$1, tiles.first.$2);
@@ -52,12 +59,26 @@ class FlatmateMovement {
     final t = progress.clamp(0.0, max.toDouble());
     final i = t.floor().clamp(0, max - 1);
     final frac = t - i;
+    final along = style.curveAlong(frac);
     final a = grid.tileCenter(tiles[i].$1, tiles[i].$2);
     final b = grid.tileCenter(tiles[i + 1].$1, tiles[i + 1].$2);
+    final pose = style.pose(
+      t: frac,
+      segmentIndex: i,
+      swaySeed: swaySeed,
+      bodySize: bodySize,
+    );
+    final dx = b.x - a.x;
+    final dz = b.z - a.z;
+    final yaw = (dx.abs() < 1e-8 && dz.abs() < 1e-8)
+        ? 0.0
+        : math.atan2(dx, dz);
+    final rightX = math.cos(yaw);
+    final rightZ = -math.sin(yaw);
     return Vector3(
-      a.x + (b.x - a.x) * frac,
-      sitY,
-      a.z + (b.z - a.z) * frac,
+      a.x + dx * along + rightX * pose.side,
+      sitY + pose.up,
+      a.z + dz * along + rightZ * pose.side,
     );
   }
 

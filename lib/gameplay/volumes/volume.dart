@@ -324,15 +324,22 @@ class Volume {
   Volume({
     required this.id,
     List<VolumeCell>? cells,
+    this.datum = 0,
   }) : cells = cells ?? [];
 
   final int id;
   final List<VolumeCell> cells;
 
+  /// Story index. Ground is 0; stacked volumes sit above.
+  final int datum;
+
   /// Every accessible side on every cell. Volumes may have many doors.
   Set<VolumeSide> get accessibleSides => {
         for (final cell in cells) ...cell.accessibleSides,
       };
+
+  /// True when any cell has a door onto an exterior side.
+  bool get hasEntry => accessibleSides.isNotEmpty;
 
   bool get isMerged => cells.length > 1;
 
@@ -346,6 +353,7 @@ class Volume {
   Volume clone() => Volume(
         id: id,
         cells: [for (final cell in cells) cell.clone()],
+        datum: datum,
       );
 
   /// Push-pull faces that still have exterior area on the resolved solid.

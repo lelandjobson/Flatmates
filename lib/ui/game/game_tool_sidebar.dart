@@ -193,25 +193,26 @@ class GamePlane2dSidebar extends StatelessWidget {
 class GameInteriorSidebar extends StatelessWidget {
   const GameInteriorSidebar({
     super.key,
-    required this.kind,
+    required this.kindId,
     required this.onKind,
   });
 
-  final VolumeProgramKind kind;
-  final ValueChanged<VolumeProgramKind> onKind;
+  final String kindId;
+  final ValueChanged<String> onKind;
 
   @override
   Widget build(BuildContext context) {
+    final indoor = programsForSurface(outdoor: false);
     return _ToolStrip(
       children: [
-        for (final value in VolumeProgramKind.values) ...[
-          if (value != VolumeProgramKind.values.first) const SizedBox(height: 2),
+        for (var i = 0; i < indoor.length; i++) ...[
+          if (i > 0) const SizedBox(height: 2),
           Tooltip(
-            message: value.label,
+            message: indoor[i].label,
             child: _ColorDot(
-              color: Color(value.paperArgb),
-              selected: kind == value,
-              onTap: () => onKind(value),
+              color: indoor[i].color,
+              selected: kindId == indoor[i].id,
+              onTap: () => onKind(indoor[i].id),
             ),
           ),
         ],

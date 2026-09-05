@@ -66,6 +66,7 @@ void main() {
 
     expect(decoded.volumes, hasLength(1));
     expect(decoded.volumes.single.id, 1);
+    expect(decoded.volumes.single.datum, 0);
     expect(decoded.volumes.single.cells.single.tx, 3);
     expect(decoded.volumes.single.cells.single.ty, 4);
     expect(decoded.volumes.single.cells.single.box.widthSubtiles, 6);

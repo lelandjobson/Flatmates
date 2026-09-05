@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../viewers/world_plane.dart';
 import '../volumes/volume.dart';
 import '../volumes/volume_program.dart';
 import 'selectable.dart';
@@ -27,13 +28,25 @@ List<SelectionActionSpec> inferSelectionActions({
 }) {
   switch (hit.kind) {
     case SelectableKind.tile:
-    case SelectableKind.region:
     case SelectableKind.path:
       return const [
         SelectionActionSpec(
           id: SelectionActionId.isolate,
           label: 'Isolate',
           icon: Icons.filter_center_focus,
+        ),
+      ];
+    case SelectableKind.region:
+      return const [
+        SelectionActionSpec(
+          id: SelectionActionId.isolate,
+          label: 'Isolate',
+          icon: Icons.filter_center_focus,
+        ),
+        SelectionActionSpec(
+          id: SelectionActionId.program,
+          label: 'Program',
+          icon: Icons.directions_walk,
         ),
       ];
     case SelectableKind.volume:
@@ -43,7 +56,7 @@ List<SelectionActionSpec> inferSelectionActions({
           label: 'Isolate',
           icon: Icons.filter_center_focus,
         ),
-        if (volume != null && (programs?.canAssignToVolume(volume) ?? false))
+        if (volume != null && (programs?.canAssignToVolume(volume) ?? true))
           const SelectionActionSpec(
             id: SelectionActionId.program,
             label: 'Program',
@@ -56,13 +69,19 @@ List<SelectionActionSpec> inferSelectionActions({
         ),
       ];
     case SelectableKind.volumeFace:
-      return const [
-        SelectionActionSpec(
+      return [
+        const SelectionActionSpec(
           id: SelectionActionId.isolate,
           label: 'Isolate',
           icon: Icons.filter_center_focus,
         ),
-        SelectionActionSpec(
+        if (hit.face == VolumeFace.negY)
+          const SelectionActionSpec(
+            id: SelectionActionId.program,
+            label: 'Program',
+            icon: Icons.weekend_outlined,
+          ),
+        const SelectionActionSpec(
           id: SelectionActionId.focusFace,
           label: 'Focus face',
           icon: Icons.crop_landscape,

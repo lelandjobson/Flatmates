@@ -79,12 +79,35 @@ void main() {
     expect(paper.originU, 3);
   });
 
-  test('corner outdoor path still opens the facing door', () {
+  test('corner outdoor path does not open a door', () {
     final volumes = VolumeStore();
     final paths = PathStore(grid: volumes.grid);
     final appliques = VolumeAppliqueStore();
     expect(volumes.startNew(2, 2), isTrue);
     expect(volumes.confirmEdit(), isTrue);
+    expect(paths.placeAndJoin(3, 1), isTrue);
+    expect(paths.placeAndJoin(2, 2), isTrue);
+
+    expect(
+      syncVolumeDoorsFromPaths(
+        volumes: volumes,
+        paths: paths,
+        appliques: appliques,
+      ),
+      isFalse,
+    );
+    expect(volumes.volumes.single.cells.single.accessibleSides, isEmpty);
+    expect(appliques.items, isEmpty);
+  });
+
+  test('door opens only on the side whose shared neighbor already has a path',
+      () {
+    final volumes = VolumeStore();
+    final paths = PathStore(grid: volumes.grid);
+    final appliques = VolumeAppliqueStore();
+    expect(volumes.startNew(2, 2), isTrue);
+    expect(volumes.confirmEdit(), isTrue);
+    expect(paths.placeAndJoin(3, 2), isTrue);
     expect(paths.placeAndJoin(3, 1), isTrue);
     expect(paths.placeAndJoin(2, 2), isTrue);
 
@@ -95,7 +118,7 @@ void main() {
     );
     expect(
       volumes.volumes.single.cells.single.accessibleSides,
-      {VolumeSide.east, VolumeSide.north},
+      {VolumeSide.east},
     );
   });
 

@@ -3,6 +3,7 @@ import 'package:flatmates/gameplay/friends/friend_instance_store.dart';
 import 'package:flatmates/gameplay/friends/friend_mesh_sync.dart';
 import 'package:flatmates/gameplay/outlines/friend_outline.dart';
 import 'package:flatmates/gameplay/outlines/outline_edges.dart';
+import 'package:flatmates/gameplay/outlines/outline_paint.dart';
 import 'package:flatmates/gameplay/volumes/volume_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math_64.dart';
@@ -114,5 +115,9 @@ void main() {
       ),
       hasLength(12),
     );
+  });
+
+  test('friend eye outlines are thicker than body outlines', () {
+    expect(kFriendEyeOutlineStrokeWidth, greaterThan(kWorldOutlineStrokeWidth));
   });
 }

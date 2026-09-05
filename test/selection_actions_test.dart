@@ -15,11 +15,11 @@ void main() {
     ).map((a) => a.id).toList();
   }
 
-  test('tile, region, and path only expose isolate', () {
+  test('tile and path only expose isolate; region also exposes program', () {
     expect(ids(SelectableHit.tile(2, 3)), [SelectionActionId.isolate]);
     expect(
       ids(SelectableHit.region(WallRegion({(1, 1), (1, 2)}), tx: 1, ty: 1)),
-      [SelectionActionId.isolate],
+      [SelectionActionId.isolate, SelectionActionId.program],
     );
     expect(ids(SelectableHit.path(4, 5)), [SelectionActionId.isolate]);
   });
@@ -46,6 +46,23 @@ void main() {
         ),
       ),
       [SelectionActionId.isolate, SelectionActionId.focusFace],
+    );
+  });
+
+  test('volume floor face also exposes program', () {
+    expect(
+      ids(
+        SelectableHit.volumeFace(
+          1,
+          face: VolumeFace.negY,
+          cell: VolumeCell(tx: 2, ty: 2, box: BoxPrimitive()),
+        ),
+      ),
+      [
+        SelectionActionId.isolate,
+        SelectionActionId.program,
+        SelectionActionId.focusFace,
+      ],
     );
   });
 

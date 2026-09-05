@@ -8,11 +8,8 @@ void main() {
     expect(DoorKind.values, [DoorKind.standard]);
   });
 
-  test('floor focus offers room plan stickers', () {
-    expect(
-      focusStickersFor(FocusWorkSurface.floor).map((s) => s.kind),
-      [FocusStickerKind.bedroom, FocusStickerKind.common],
-    );
+  test('floor focus no longer offers room plan stickers', () {
+    expect(focusStickersFor(FocusWorkSurface.floor), isEmpty);
   });
 
   test('door origin is valid only when fully on the face', () {
