@@ -21,7 +21,7 @@ VolumeToolScope volumeToolScope(double distance) {
   return VolumeToolScope.solid;
 }
 
-enum SelectableKind { tile, region, friend, volume, volumeFace, path }
+enum SelectableKind { tile, region, friend, volume, volumeFace, path, stuff }
 
 /// One pick of a map entity under a screen ray.
 class SelectableHit {
@@ -33,6 +33,7 @@ class SelectableHit {
     this.cell,
     this.face,
     this.friendId,
+    this.stuffId,
     this.region,
     this.worldPoint,
   });
@@ -82,6 +83,22 @@ class SelectableHit {
         worldPoint: worldPoint,
       );
 
+  factory SelectableHit.stuff(
+    String stuffId, {
+    int? volumeId,
+    int? tx,
+    int? ty,
+    Vector3? worldPoint,
+  }) =>
+      SelectableHit(
+        kind: SelectableKind.stuff,
+        stuffId: stuffId,
+        volumeId: volumeId,
+        tx: tx,
+        ty: ty,
+        worldPoint: worldPoint,
+      );
+
   factory SelectableHit.path(int tx, int ty, {Vector3? worldPoint}) =>
       SelectableHit(
         kind: SelectableKind.path,
@@ -113,6 +130,7 @@ class SelectableHit {
   final VolumeCell? cell;
   final VolumeFace? face;
   final String? friendId;
+  final String? stuffId;
   final WallRegion? region;
   final Vector3? worldPoint;
 
@@ -133,6 +151,8 @@ class SelectableHit {
         return 'path (${tx ?? '?'},${ty ?? '?'})';
       case SelectableKind.volumeFace:
         return 'volumeFace v${volumeId ?? '?'} ${face?.name ?? '?'}';
+      case SelectableKind.stuff:
+        return 'stuff ${stuffId ?? '?'}';
     }
   }
 
@@ -153,6 +173,7 @@ class SelectableHit {
             face == other.face &&
             cell?.tx == other.cell?.tx &&
             cell?.ty == other.cell?.ty,
+      SelectableKind.stuff => stuffId == other.stuffId,
     };
   }
 }

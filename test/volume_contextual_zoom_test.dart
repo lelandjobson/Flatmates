@@ -38,21 +38,21 @@ VolumeStore _joinedPair() {
 }
 
 void main() {
-  test('reveal hysteresis opens below 28.5 and restores past 30', () {
+  test('reveal hysteresis opens below 40 and restores past 60', () {
     expect(
-      volumeCeilingWantsReveal(distance: 28.4, currentlyRevealing: false),
+      volumeCeilingWantsReveal(distance: 39.9, currentlyRevealing: false),
       isTrue,
     );
     expect(
-      volumeCeilingWantsReveal(distance: 28.5, currentlyRevealing: true),
+      volumeCeilingWantsReveal(distance: 50, currentlyRevealing: true),
       isTrue,
     );
     expect(
-      volumeCeilingWantsReveal(distance: 28.5, currentlyRevealing: false),
+      volumeCeilingWantsReveal(distance: 50, currentlyRevealing: false),
       isFalse,
     );
     expect(
-      volumeCeilingWantsReveal(distance: 31, currentlyRevealing: true),
+      volumeCeilingWantsReveal(distance: 61, currentlyRevealing: true),
       isFalse,
     );
   });
@@ -160,7 +160,7 @@ void main() {
     reveal.update(
       volumes: volumes,
       lookAt: look,
-      distance: 32,
+      distance: 61,
       enabled: true,
     );
     expect(reveal.opacityFor(const VolumePartId(2, 2)), 1);
@@ -251,7 +251,7 @@ void main() {
     reveal.update(
       volumes: volumes,
       lookAt: volumes.grid.tileCenter(2, 2),
-      distance: 32,
+      distance: 61,
       enabled: true,
     );
     expect(reveal.hidesHandle(2, 2, VolumeHandle.posY), isFalse);

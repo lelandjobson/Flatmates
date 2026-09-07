@@ -5,6 +5,8 @@ import '../../rendering/scene/camera.dart';
 import '../friends/friend_instance_store.dart';
 import '../friends/friend_mesh_sync.dart';
 import '../paths/path_store.dart';
+import '../stuff/stuff_hull.dart';
+import '../stuff/stuff_store.dart';
 import '../viewers/world_plane.dart';
 import '../volumes/volume_store.dart';
 import '../walls/wall_regions.dart';
@@ -25,13 +27,26 @@ class MapSelector {
     required VolumeStore volumes,
     required FriendInstanceStore friends,
     required Iterable<WallRegion> regions,
+    StuffStore? stuff,
     PathStore? paths,
     double faceMaxDistance = kSelectVolumeFacesBelowDistance,
     double tileSize = 8,
     bool Function(int tx, int ty)? skipVolumeRoofAt,
     bool Function(int tx, int ty, VolumeFace face)? skipVolumeFace,
+    bool Function(String stuffId)? skipStuff,
   }) {
     if (viewport.width <= 0 || viewport.height <= 0) return null;
+
+    final stuffHit = stuff == null
+        ? null
+        : _pickStuff(
+            screen: screen,
+            viewport: viewport,
+            camera: camera,
+            stuff: stuff,
+            skipStuff: skipStuff,
+          );
+    if (stuffHit != null) return stuffHit;
 
     final face = facePicker.pick(
       screen: screen,
@@ -83,6 +98,34 @@ class MapSelector {
       );
     }
     return SelectableHit.tile(tile.$1, tile.$2, worldPoint: ground);
+  }
+
+  SelectableHit? _pickStuff({
+    required Offset screen,
+    required Size viewport,
+    required Camera camera,
+    required StuffStore stuff,
+    bool Function(String stuffId)? skipStuff,
+  }) {
+    final ray = camera.unprojectRay(screen, viewport);
+    if (ray == null) return null;
+    SelectableHit? best;
+    var bestT = double.infinity;
+    for (final item in stuff.items) {
+      if (skipStuff?.call(item.id) == true) continue;
+      final (min, max) = stuffSelectionHull(item);
+      final t = _rayAabb(ray, min, max);
+      if (t == null || t >= bestT) continue;
+      bestT = t;
+      best = SelectableHit.stuff(
+        item.id,
+        volumeId: item.volumeId,
+        tx: item.tx,
+        ty: item.ty,
+        worldPoint: ray.pointAt(t),
+      );
+    }
+    return best;
   }
 
   SelectableHit? _pickFriend({

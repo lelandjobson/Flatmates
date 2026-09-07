@@ -70,11 +70,10 @@ class FlatmateMovement {
     );
     final dx = b.x - a.x;
     final dz = b.z - a.z;
-    final yaw = (dx.abs() < 1e-8 && dz.abs() < 1e-8)
-        ? 0.0
-        : math.atan2(dx, dz);
-    final rightX = math.cos(yaw);
-    final rightZ = -math.sin(yaw);
+    // World-up × along-path, so sway stays perpendicular on every heading.
+    final len = math.sqrt(dx * dx + dz * dz);
+    final rightX = len < 1e-8 ? 1.0 : dz / len;
+    final rightZ = len < 1e-8 ? 0.0 : -dx / len;
     return Vector3(
       a.x + dx * along + rightX * pose.side,
       sitY + pose.up,

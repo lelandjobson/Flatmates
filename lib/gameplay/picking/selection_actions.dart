@@ -5,7 +5,14 @@ import '../volumes/volume.dart';
 import '../volumes/volume_program.dart';
 import 'selectable.dart';
 
-enum SelectionActionId { isolate, program, delete, focusFace, focusFriend }
+enum SelectionActionId {
+  isolate,
+  program,
+  stuff,
+  delete,
+  focusFace,
+  focusFriend,
+}
 
 class SelectionActionSpec {
   const SelectionActionSpec({
@@ -62,6 +69,12 @@ List<SelectionActionSpec> inferSelectionActions({
             label: 'Program',
             icon: Icons.weekend_outlined,
           ),
+        if (_programmedAt(hit, programs))
+          const SelectionActionSpec(
+            id: SelectionActionId.stuff,
+            label: 'Stuff',
+            icon: Icons.chair_outlined,
+          ),
         const SelectionActionSpec(
           id: SelectionActionId.delete,
           label: 'Delete',
@@ -75,16 +88,36 @@ List<SelectionActionSpec> inferSelectionActions({
           label: 'Isolate',
           icon: Icons.filter_center_focus,
         ),
-        if (hit.face == VolumeFace.negY)
+        if (hit.face == VolumeFace.negY) ...[
           const SelectionActionSpec(
             id: SelectionActionId.program,
             label: 'Program',
             icon: Icons.weekend_outlined,
           ),
+          if (_programmedAt(hit, programs))
+            const SelectionActionSpec(
+              id: SelectionActionId.stuff,
+              label: 'Stuff',
+              icon: Icons.chair_outlined,
+            ),
+        ],
         const SelectionActionSpec(
           id: SelectionActionId.focusFace,
           label: 'Focus face',
           icon: Icons.crop_landscape,
+        ),
+      ];
+    case SelectableKind.stuff:
+      return const [
+        SelectionActionSpec(
+          id: SelectionActionId.isolate,
+          label: 'Focus floor',
+          icon: Icons.crop_landscape,
+        ),
+        SelectionActionSpec(
+          id: SelectionActionId.delete,
+          label: 'Delete',
+          icon: Icons.delete_outline,
         ),
       ];
     case SelectableKind.friend:
@@ -99,4 +132,12 @@ List<SelectionActionSpec> inferSelectionActions({
 }
 
 /// Volume mass / face isolate opens the roof-off interior viewer, not crop isolate.
-bool isolateOpensVolumeInterior(SelectableHit hit) => hit.volumeId != null;
+bool isolateOpensVolumeInterior(SelectableHit hit) =>
+    hit.volumeId != null && hit.kind != SelectableKind.stuff;
+
+bool _programmedAt(SelectableHit hit, VolumeProgramStore? programs) {
+  final tx = hit.tx ?? hit.cell?.tx;
+  final ty = hit.ty ?? hit.cell?.ty;
+  if (programs == null || tx == null || ty == null) return false;
+  return programs.indoorAt(tx, ty) != null;
+}

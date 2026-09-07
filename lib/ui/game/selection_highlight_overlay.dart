@@ -6,6 +6,8 @@ import '../../gameplay/friends/friend_mesh_sync.dart';
 import '../../gameplay/outlines/outline_edges.dart';
 import '../../gameplay/outlines/outline_paint.dart';
 import '../../gameplay/picking/selectable.dart';
+import '../../gameplay/stuff/stuff_hull.dart';
+import '../../gameplay/stuff/stuff_store.dart';
 import '../../gameplay/viewers/world_plane.dart';
 import '../../gameplay/volumes/volume.dart';
 import '../../gameplay/volumes/volume_outline.dart';
@@ -74,6 +76,7 @@ class SelectionHighlightOverlay extends StatefulWidget {
     required this.hit,
     required this.volumes,
     required this.friends,
+    this.stuff,
     required this.camera,
     required this.viewport,
     this.extraHits = const [],
@@ -91,6 +94,7 @@ class SelectionHighlightOverlay extends StatefulWidget {
   final List<WallEdge> wallEdges;
   final VolumeStore volumes;
   final FriendInstanceStore friends;
+  final StuffStore? stuff;
   final Camera camera;
   final Size viewport;
   final SelectionHighlightStyle style;
@@ -173,6 +177,7 @@ class _SelectionHighlightOverlayState extends State<SelectionHighlightOverlay>
             wallEdges: widget.wallEdges,
             volumes: widget.volumes,
             friends: widget.friends,
+            stuff: widget.stuff,
             camera: widget.camera,
             viewport: widget.viewport,
             style: widget.style,
@@ -194,6 +199,7 @@ class _HighlightPainter extends CustomPainter {
     required this.wallEdges,
     required this.volumes,
     required this.friends,
+    this.stuff,
     required this.camera,
     required this.viewport,
     required this.style,
@@ -208,6 +214,7 @@ class _HighlightPainter extends CustomPainter {
   final List<WallEdge> wallEdges;
   final VolumeStore volumes;
   final FriendInstanceStore friends;
+  final StuffStore? stuff;
   final Camera camera;
   final Size viewport;
   final SelectionHighlightStyle style;
@@ -376,6 +383,8 @@ class _HighlightPainter extends CustomPainter {
           face: face,
           grid: volumes.grid,
         );
+      case SelectableKind.stuff:
+        return _stuffQuads(target);
     }
   }
 
@@ -417,8 +426,18 @@ class _HighlightPainter extends CustomPainter {
               ),
         ];
       case SelectableKind.friend:
+      case SelectableKind.stuff:
         return const [];
     }
+  }
+
+  List<List<Vector3>> _stuffQuads(SelectableHit target) {
+    final item = target.stuffId == null
+        ? null
+        : stuff?.byId(target.stuffId!);
+    if (item == null) return const [];
+    final (min, max) = stuffSelectionHull(item);
+    return _boxQuads(min, max);
   }
 
   List<List<Vector3>> _volumeQuads(

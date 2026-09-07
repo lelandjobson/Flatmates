@@ -117,7 +117,7 @@ void main() {
     );
   });
 
-  test('friend eye outlines are thicker than body outlines', () {
-    expect(kFriendEyeOutlineStrokeWidth, greaterThan(kWorldOutlineStrokeWidth));
+  test('friend eye outlines match body outline stroke', () {
+    expect(kFriendEyeOutlineStrokeWidth, kWorldOutlineStrokeWidth);
   });
 }

@@ -66,6 +66,38 @@ void main() {
     );
   });
 
+  test('programmed floor also exposes stuff', () {
+    final programs = VolumeProgramStore()
+      ..assignIndoor(tx: 2, ty: 2, programId: kProgramBedroom);
+    final hit = SelectableHit.volumeFace(
+      1,
+      face: VolumeFace.negY,
+      cell: VolumeCell(tx: 2, ty: 2, box: BoxPrimitive()),
+    );
+    expect(
+      inferSelectionActions(hit: hit, programs: programs).map((a) => a.id),
+      [
+        SelectionActionId.isolate,
+        SelectionActionId.program,
+        SelectionActionId.stuff,
+        SelectionActionId.focusFace,
+      ],
+    );
+  });
+
+  test('stuff exposes focus floor and delete', () {
+    expect(
+      ids(SelectableHit.stuff('1', volumeId: 1, tx: 2, ty: 2)),
+      [SelectionActionId.isolate, SelectionActionId.delete],
+    );
+    expect(
+      isolateOpensVolumeInterior(
+        SelectableHit.stuff('1', volumeId: 1, tx: 2, ty: 2),
+      ),
+      isFalse,
+    );
+  });
+
   test('volume isolate opens interior view instead of crop isolate', () {
     final volume = Volume(
       id: 1,

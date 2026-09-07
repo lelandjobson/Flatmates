@@ -8,8 +8,8 @@ import 'outline_edges.dart';
 const kWorldOutlineColor = Color(0xB3808080);
 const kWorldOutlineStrokeWidth = 1.6;
 
-/// Thicker ring around friend eye fills. Sits outside the white disk.
-const kFriendEyeOutlineStrokeWidth = 4.0;
+/// Same stroke as cubeboy body outlines. Sits outside the white disk.
+const kFriendEyeOutlineStrokeWidth = kWorldOutlineStrokeWidth;
 
 /// Thinner, lighter stroke for door / face paper on top of volume fills.
 const kAppliqueOutlineColor = Color(0xB3A8A8A8);

@@ -1,3 +1,7 @@
+/// When false, per-floor program icons stay up in interior / plan / focus
+/// viewers instead of fading after the camera rests. Map3d is unchanged.
+const bool kProgramIconAutohideInInterior = false;
+
 /// Mass-level alert / possession chips sit above a volume or region from
 /// the outside. They hide in Create mode and whenever that structure's
 /// interior is open (ceiling down, plan, focus, or volume-interior viewer).

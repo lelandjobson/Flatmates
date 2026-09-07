@@ -16,6 +16,7 @@ class PaperWallet extends ChangeNotifier {
   final Map<int, int> volumeCommitted = {};
   int pathCommitted = 0;
   int wallCommitted = 0;
+  int stuffCommitted = 0;
 
   int get held => _held;
 
@@ -24,6 +25,7 @@ class PaperWallet extends ChangeNotifier {
     next.volumeCommitted.addAll(volumeCommitted);
     next.pathCommitted = pathCommitted;
     next.wallCommitted = wallCommitted;
+    next.stuffCommitted = stuffCommitted;
     return next;
   }
 
@@ -34,6 +36,7 @@ class PaperWallet extends ChangeNotifier {
       ..addAll(other.volumeCommitted);
     pathCommitted = other.pathCommitted;
     wallCommitted = other.wallCommitted;
+    stuffCommitted = other.stuffCommitted;
     notifyListeners();
   }
 
@@ -51,11 +54,16 @@ class PaperWallet extends ChangeNotifier {
         wallCommitted = v;
       }, next);
 
+  bool settleStuff(int next) => _settleScalar(() => stuffCommitted, (v) {
+        stuffCommitted = v;
+      }, next);
+
   /// Recompute every construct from the live stores.
   bool settleWorld({
     required VolumeStore volumes,
     required PathStore paths,
     required WallStore walls,
+    int stuffCost = 0,
   }) {
     final volumeCosts = <int, int>{
       for (final volume in volumes.visibleVolumes)
@@ -67,7 +75,8 @@ class PaperWallet extends ChangeNotifier {
     final backup = copy();
     if (!settleVolumes(volumeCosts) ||
         !settlePath(pathCost) ||
-        !settleWalls(wallCost)) {
+        !settleWalls(wallCost) ||
+        !settleStuff(stuffCost)) {
       restoreFrom(backup);
       return false;
     }

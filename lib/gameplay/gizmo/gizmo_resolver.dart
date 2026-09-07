@@ -1,4 +1,5 @@
 import '../friends/friend_instance_store.dart';
+import '../stuff/stuff_store.dart';
 import '../volumes/volume_box_mesh.dart';
 import '../volumes/volume_store.dart';
 import 'gizmo_target.dart';
@@ -9,6 +10,13 @@ String? parseFriendInstanceId(String meshId) {
   const suffix = '_body';
   if (!meshId.startsWith(prefix) || !meshId.endsWith(suffix)) return null;
   return meshId.substring(prefix.length, meshId.length - suffix.length);
+}
+
+/// Parses `stuff_{id}` (not the hologram).
+String? parseStuffMeshId(String meshId) {
+  const prefix = 'stuff_';
+  if (!meshId.startsWith(prefix) || meshId == 'stuff_ghost') return null;
+  return meshId.substring(prefix.length);
 }
 
 /// Parses `volume_{id}_{tx}_{ty}`.
@@ -30,8 +38,16 @@ GizmoTarget? resolveGizmoTarget({
   required FriendInstanceStore friends,
   required VolumeStore volumes,
   required double tileSize,
+  StuffStore? stuff,
   bool Function(int tx, int ty)? pathBlocked,
 }) {
+  final stuffId = parseStuffMeshId(meshId);
+  if (stuffId != null && stuff != null) {
+    final item = stuff.byId(stuffId);
+    if (item == null) return null;
+    return StuffGizmoTarget(item, volumes: volumes);
+  }
+
   final friendId = parseFriendInstanceId(meshId);
   if (friendId != null) {
     final instance = friends.byId(friendId);
@@ -55,6 +71,11 @@ GizmoTarget? resolveGizmoTarget({
 
 /// True when [a] and [b] resolve to the same grouped target.
 bool sameGizmoGroup(String meshIdA, String meshIdB) {
+  final stuffA = parseStuffMeshId(meshIdA);
+  final stuffB = parseStuffMeshId(meshIdB);
+  if (stuffA != null || stuffB != null) {
+    return stuffA != null && stuffA == stuffB;
+  }
   final friendA = parseFriendInstanceId(meshIdA);
   final friendB = parseFriendInstanceId(meshIdB);
   if (friendA != null || friendB != null) {

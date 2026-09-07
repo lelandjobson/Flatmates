@@ -5,6 +5,7 @@ import 'paint/face_paint_store.dart';
 import 'paper/paper_wallet.dart';
 import 'paths/path_store.dart';
 import 'volumes/volume.dart';
+import 'stuff/stuff_store.dart';
 import 'volumes/volume_program.dart';
 import 'volumes/volume_store.dart';
 import 'walls/wall_edge.dart';
@@ -27,6 +28,7 @@ class GameSnapshot {
     required this.label,
     PaperWallet? paper,
     this.programs,
+    this.stuff,
     this.sessionTouchedIds = const {},
     this.sessionBaseline,
     this.sessionNextId,
@@ -47,6 +49,7 @@ class GameSnapshot {
   final FacePaintStore facePaint;
   final PaperWallet paper;
   final VolumeProgramStore? programs;
+  final StuffStore? stuff;
   final Set<int> sessionTouchedIds;
   final List<Volume>? sessionBaseline;
   final int? sessionNextId;
@@ -71,6 +74,7 @@ class GameSnapshot {
       facePaint: facePaint,
       paper: paper,
       programs: programs,
+      stuff: stuff,
       sessionTouchedIds: sessionTouchedIds,
       sessionBaseline: sessionBaseline,
       sessionNextId: sessionNextId,
@@ -90,6 +94,7 @@ class GameSnapshot {
     required String label,
     PaperWallet? paper,
     VolumeProgramStore? programs,
+    StuffStore? stuff,
     bool noOp = false,
   }) {
     final cloned = <Volume>[
@@ -123,6 +128,7 @@ class GameSnapshot {
       facePaint: facePaint.copy(),
       paper: paper?.copy(),
       programs: programs?.copy(),
+      stuff: stuff?.copy(),
       sessionTouchedIds: Set<int>.from(volumes.sessionTouchedIds),
       sessionBaseline: volumes.sessionBaseline == null
           ? null
@@ -141,6 +147,7 @@ class GameSnapshot {
     required FacePaintStore facePaint,
     PaperWallet? paper,
     VolumeProgramStore? programs,
+    StuffStore? stuff,
   }) {
     final clonedVolumes = [for (final volume in this.volumes) volume.clone()];
     Volume? draft;
@@ -184,6 +191,9 @@ class GameSnapshot {
     paper?.restoreFrom(this.paper);
     if (programs != null && this.programs != null) {
       programs.restoreFrom(this.programs!);
+    }
+    if (stuff != null && this.stuff != null) {
+      stuff.restoreFrom(this.stuff!);
     }
   }
 }

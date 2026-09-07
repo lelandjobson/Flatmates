@@ -102,6 +102,7 @@ ErasePreview _primaryOnly({
       case SelectableKind.region:
       case SelectableKind.tile:
       case SelectableKind.friend:
+      case SelectableKind.stuff:
         break;
     }
   }

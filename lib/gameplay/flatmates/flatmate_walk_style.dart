@@ -1,6 +1,24 @@
+import 'dart:math' as math;
+
 import 'package:flutter/animation.dart';
 
 import '../friend_animation_config.dart';
+
+/// Plant, leap, plant. Keeps hops readable when walking into the camera.
+class HopAlongCurve extends Curve {
+  const HopAlongCurve({this.hold = 0.14});
+
+  /// Fraction of the tile spent grounded at the start and end.
+  final double hold;
+
+  @override
+  double transformInternal(double t) {
+    if (t <= hold) return 0;
+    if (t >= 1 - hold) return 1;
+    final u = (t - hold) / (1 - 2 * hold);
+    return Curves.easeInOutCubic.transform(u);
+  }
+}
 
 /// One pose sample in a [FlatmateWalkStyle] clip. [at] is 0–1 along a tile.
 class FlatmateWalkKeyframe {
@@ -36,8 +54,9 @@ class FlatmateWalkStyle {
     this.alongCurve = Curves.linear,
     this.keyframes = const [],
     this.randomizeSide = false,
-    this.hopHeightFactor = 0.65,
-    this.swayWidthFactor = 0.45,
+    this.verticalArc = false,
+    this.hopHeightFactor = 0.85,
+    this.swayWidthFactor = 0.55,
   });
 
   final String id;
@@ -52,6 +71,9 @@ class FlatmateWalkStyle {
   /// When true, [side] flips left/right per tile using a stable hash.
   final bool randomizeSide;
 
+  /// When true, hop height is `sin(πt)` so every heading stays airborne.
+  final bool verticalArc;
+
   /// Peak hop as a fraction of friend body size.
   final double hopHeightFactor;
 
@@ -62,10 +84,12 @@ class FlatmateWalkStyle {
   static const hop = FlatmateWalkStyle(
     id: 'hop',
     label: 'Hop',
+    alongCurve: HopAlongCurve(),
     randomizeSide: true,
+    verticalArc: true,
     keyframes: [
       FlatmateWalkKeyframe(at: 0, up: 0, side: 0),
-      FlatmateWalkKeyframe(at: 0.45, up: 1, side: 0.7),
+      FlatmateWalkKeyframe(at: 0.5, up: 1, side: 1),
       FlatmateWalkKeyframe(at: 1, up: 0, side: 0),
     ],
   );
@@ -108,11 +132,16 @@ class FlatmateWalkStyle {
     required String swaySeed,
     required double bodySize,
   }) {
-    if (keyframes.isEmpty) return const FlatmateWalkOffset();
-    final sampled = _lerpKeys(t.clamp(0.0, 1.0));
+    final clamped = t.clamp(0.0, 1.0);
+    final sampled = keyframes.isEmpty
+        ? (up: 0.0, side: 0.0)
+        : _lerpKeys(clamped);
     final sign = randomizeSide ? sideSign(segmentIndex, swaySeed) : 1.0;
+    final up = verticalArc
+        ? math.sin(math.pi * clamped) * hopHeightFactor * bodySize
+        : sampled.up * hopHeightFactor * bodySize;
     return FlatmateWalkOffset(
-      up: sampled.up * hopHeightFactor * bodySize,
+      up: up,
       side: sampled.side * swayWidthFactor * bodySize * sign,
     );
   }

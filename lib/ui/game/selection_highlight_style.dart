@@ -23,6 +23,11 @@ class SelectionHighlightStyle {
     outline: Color(0xF0EF5350),
   );
 
+  static const SelectionHighlightStyle invalid = SelectionHighlightStyle(
+    fill: Color(0x33E53935),
+    outline: Color(0xF0E53935),
+  );
+
   final Color fill;
   final Color outline;
   final double outlineWidth;

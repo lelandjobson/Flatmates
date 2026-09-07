@@ -416,7 +416,7 @@ class MapLookCameraController extends ChangeNotifier {
   /// Soft close overshoot as a fraction of [minDistance].
   static const double closeOvershootSoft = 0.06;
 
-  /// Hard close overshoot. At game min 15 this stops at 12.9.
+  /// Hard close overshoot. At game min 22 this stops at 18.92.
   static const double closeOvershootHard = 0.14;
 
   /// Closest live distance the rubber-band will allow.

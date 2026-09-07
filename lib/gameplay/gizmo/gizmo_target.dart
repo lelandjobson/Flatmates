@@ -2,8 +2,11 @@ import 'package:vector_math/vector_math_64.dart';
 
 import '../friends/friend_instance.dart';
 import '../friends/friend_mesh_sync.dart';
+import '../stuff/stuff_hull.dart';
+import '../stuff/stuff_instance.dart';
 import '../volumes/volume.dart';
 import '../volumes/volume_store.dart';
+import '../viewers/world_plane.dart';
 
 /// A grouped scene object that Show gizmos mode can select and translate.
 abstract class GizmoTarget {
@@ -50,6 +53,46 @@ class FriendGizmoTarget implements GizmoTarget {
     instance.position.setFrom(value);
     final minY = FriendMeshLayout.sitOnGroundY(tileSize: tileSize);
     if (instance.position.y < minY) instance.position.y = minY;
+  }
+}
+
+class StuffGizmoTarget implements GizmoTarget {
+  StuffGizmoTarget(this.item, {required this.volumes});
+
+  final StuffInstance item;
+  final VolumeStore volumes;
+
+  @override
+  String get id => 'stuff:${item.id}';
+
+  @override
+  bool get allowsVertical => item.face != VolumeFace.negY;
+
+  @override
+  Vector3 get worldCenter {
+    final (min, max) = stuffSelectionHull(item);
+    return (min + max) * 0.5;
+  }
+
+  @override
+  (Vector3 min, Vector3 max) get worldBounds => stuffSelectionHull(item);
+
+  @override
+  void translate(Vector3 worldDelta) {
+    final n = item.face.worldNormal;
+    final planar = worldDelta - n * worldDelta.dot(n);
+    item.origin.add(planar);
+    retargetHomeTile();
+  }
+
+  void retargetHomeTile() {
+    final tile = volumes.grid.tileAtWorld(item.origin);
+    if (tile == null) return;
+    final volume = volumes.volumeAt(tile.$1, tile.$2);
+    if (volume == null || volume.cellAt(tile.$1, tile.$2) == null) return;
+    item.volumeId = volume.id;
+    item.tx = tile.$1;
+    item.ty = tile.$2;
   }
 }
 
