@@ -15,11 +15,10 @@ Volume _mass(List<(int, int)> tiles, {int id = 1}) {
 }
 
 void main() {
-  test('adjacent bedroom and circulation regions share an edge', () {
+  test('adjacent bedroom and unprogrammed tiles share an edge', () {
     final volume = _mass([(2, 2), (3, 2)]);
     final programs = VolumeProgramStore()
-      ..assignIndoor(tx: 2, ty: 2, programId: kProgramBedroom)
-      ..assignIndoor(tx: 3, ty: 2, programId: kProgramCirculation);
+      ..assignIndoor(tx: 2, ty: 2, programId: kProgramBedroom);
     final graph = buildVolumeProgramGraph(
       volume: volume,
       programs: programs,
@@ -30,11 +29,26 @@ void main() {
     expect(graph.hasDisconnectedBedroom, isFalse);
   });
 
-  test('a door on the bedroom does not replace circulation', () {
+  test('a one-cell bedroom is the whole volume and does not need circulation', () {
     final volume = _mass([(2, 2)]);
-    volume.cells.single.accessibleSides.add(VolumeSide.east);
     final programs = VolumeProgramStore()
       ..assignIndoor(tx: 2, ty: 2, programId: kProgramBedroom);
+    final graph = buildVolumeProgramGraph(
+      volume: volume,
+      programs: programs,
+      walls: WallStore(),
+    );
+    expect(graph.isWholeVolumeBedroom, isTrue);
+    expect(graph.hasDisconnectedBedroom, isFalse);
+  });
+
+  test('a door on the bedroom does not replace circulation when other rooms exist',
+      () {
+    final volume = _mass([(2, 2), (3, 2)]);
+    volume.cellAt(2, 2)!.accessibleSides.add(VolumeSide.west);
+    final programs = VolumeProgramStore()
+      ..assignIndoor(tx: 2, ty: 2, programId: kProgramBedroom)
+      ..assignIndoor(tx: 3, ty: 2, programId: kProgramLeisure);
     final graph = buildVolumeProgramGraph(
       volume: volume,
       programs: programs,
@@ -44,12 +58,11 @@ void main() {
     expect(graph.hasDisconnectedBedroom, isTrue);
   });
 
-  test('circulation may sit away from the door', () {
+  test('unprogrammed circulation may sit away from the door', () {
     final volume = _mass([(2, 2), (3, 2), (4, 2)]);
     volume.cellAt(4, 2)!.accessibleSides.add(VolumeSide.east);
     final programs = VolumeProgramStore()
       ..assignIndoor(tx: 2, ty: 2, programId: kProgramBedroom)
-      ..assignIndoor(tx: 3, ty: 2, programId: kProgramCirculation)
       ..assignIndoor(tx: 4, ty: 2, programId: kProgramLeisure);
     final graph = buildVolumeProgramGraph(
       volume: volume,
@@ -74,11 +87,10 @@ void main() {
     expect(graph.disconnectedBedrooms, hasLength(1));
   });
 
-  test('a wall between bedroom and circulation disconnects the bedroom', () {
+  test('a wall between bedroom and unprogrammed tiles disconnects the bedroom', () {
     final volume = _mass([(2, 2), (3, 2)]);
     final programs = VolumeProgramStore()
-      ..assignIndoor(tx: 2, ty: 2, programId: kProgramBedroom)
-      ..assignIndoor(tx: 3, ty: 2, programId: kProgramCirculation);
+      ..assignIndoor(tx: 2, ty: 2, programId: kProgramBedroom);
     final walls = WallStore()..add(WallEdge(3, 2, 3, 3));
     final graph = buildVolumeProgramGraph(
       volume: volume,
@@ -93,8 +105,7 @@ void main() {
     final volume = _mass([(2, 2), (3, 2), (3, 3)]);
     final programs = VolumeProgramStore()
       ..assignIndoor(tx: 2, ty: 2, programId: kProgramBedroom)
-      ..assignIndoor(tx: 3, ty: 2, programId: kProgramBedroom)
-      ..assignIndoor(tx: 3, ty: 3, programId: kProgramCirculation);
+      ..assignIndoor(tx: 3, ty: 2, programId: kProgramBedroom);
     final graph = buildVolumeProgramGraph(
       volume: volume,
       programs: programs,

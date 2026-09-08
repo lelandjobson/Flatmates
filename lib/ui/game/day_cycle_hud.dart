@@ -8,12 +8,14 @@ class DayCycleHud extends StatelessWidget {
     required this.isNight,
     required this.onEndPhase,
     this.busy = false,
+    this.blocked = false,
   });
 
   final int dayNumber;
   final bool isNight;
   final VoidCallback onEndPhase;
   final bool busy;
+  final bool blocked;
 
   @override
   Widget build(BuildContext context) {
@@ -43,14 +45,14 @@ class DayCycleHud extends StatelessWidget {
               Tooltip(
                 message: isNight ? 'End night' : 'End day',
                 child: InkWell(
-                  onTap: busy ? null : onEndPhase,
+                  onTap: (busy || blocked) ? null : onEndPhase,
                   borderRadius: BorderRadius.circular(8),
                   child: Padding(
                     padding: const EdgeInsets.all(6),
                     child: Icon(
                       isNight ? Icons.dark_mode : Icons.wb_sunny,
                       size: 18,
-                      color: busy
+                      color: (busy || blocked)
                           ? Colors.white38
                           : isNight
                               ? const Color(0xFFC8D0F8)

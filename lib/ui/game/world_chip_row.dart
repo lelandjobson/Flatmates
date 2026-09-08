@@ -117,37 +117,6 @@ class _Chip extends StatelessWidget {
   }
 }
 
-const kUnprogrammedAlertChip = WorldChip(
-  icon: Icons.priority_high,
-  color: Color(0xFFFFC107),
-  iconColor: Color(0xFFFFF8E1),
-  tooltip: 'Unprogrammed',
-  alert: true,
-);
-
-const kNoEntryAlertChip = WorldChip(
-  icon: Icons.door_front_door_outlined,
-  color: Color(0xFFFFC107),
-  iconColor: Color(0xFFFFF8E1),
-  tooltip: 'Volume needs a door',
-  alert: true,
-);
-
-const kBedroomAccessAlertChip = WorldChip(
-  icon: Icons.bed_outlined,
-  color: Color(0xFFFFC107),
-  iconColor: Color(0xFFFFF8E1),
-  tooltip: 'Bedroom needs circulation',
-  alert: true,
-);
-
-const kUnprogrammedQuestionChip = WorldChip(
-  icon: Icons.question_mark,
-  color: Color(0xFFBDBDBD),
-  iconColor: Color(0xFFFAFAFA),
-  tooltip: 'Unprogrammed',
-);
-
 WorldChip programChip(ProgramSpec spec) => WorldChip(
       icon: spec.icon,
       color: spec.color,

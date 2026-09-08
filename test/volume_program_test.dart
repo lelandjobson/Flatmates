@@ -67,14 +67,17 @@ void main() {
     final programs = VolumeProgramStore();
     programs.assignIndoor(tx: 0, ty: 1, programId: kProgramLeisure);
     programs.assignIndoor(tx: 1, ty: 0, programId: kProgramBedroom);
-    programs.assignIndoor(tx: 0, ty: 0, programId: kProgramCirculation);
+    expect(
+      programs.assignIndoor(tx: 0, ty: 0, programId: kProgramCirculation),
+      isFalse,
+    );
     expect(
       programs.programsPossessed(volume).map((s) => s.id),
-      [kProgramCirculation, kProgramBedroom, kProgramLeisure],
+      [kProgramBedroom, kProgramLeisure],
     );
   });
 
-  test('first indoor program fills the rest of the mass with circulation', () {
+  test('first indoor program leaves the rest of the mass unprogrammed', () {
     final volume = Volume(
       id: 1,
       cells: [
@@ -94,8 +97,8 @@ void main() {
       isTrue,
     );
     expect(programs.indoorAt(1, 0), kProgramBedroom);
-    expect(programs.indoorAt(0, 0), kProgramCirculation);
-    expect(programs.indoorAt(0, 1), kProgramCirculation);
+    expect(programs.indoorAt(0, 0), isNull);
+    expect(programs.indoorAt(0, 1), isNull);
     expect(
       programs.assignIndoorInVolume(
         volume: volume,
@@ -106,8 +109,22 @@ void main() {
       isTrue,
     );
     expect(programs.indoorAt(0, 0), kProgramStorage);
-    expect(programs.indoorAt(0, 1), kProgramCirculation);
+    expect(programs.indoorAt(0, 1), isNull);
     expect(programs.indoorAt(1, 0), kProgramBedroom);
+  });
+
+  test('leftover indoor circulation counts as unprogrammed', () {
+    final volume = Volume(
+      id: 1,
+      cells: [VolumeCell(tx: 2, ty: 2, box: BoxPrimitive())],
+    );
+    final programs = VolumeProgramStore()
+      ..restore(
+        indoor: {(2, 2): kProgramCirculation},
+        outdoor: const {},
+      );
+    expect(programs.indoorAt(2, 2), isNull);
+    expect(programs.isVolumeProgrammed(volume), isFalse);
   });
 
   test('one programmed cell clears the mass unprogrammed flag', () {
@@ -180,11 +197,10 @@ void main() {
     expect(clusters, hasLength(2));
   });
 
-  test('catalog order is circulation, bedroom, storage, leisure, garden', () {
+  test('catalog order is bedroom, storage, leisure, garden', () {
     expect(
       kProgramCatalog.map((s) => s.id),
       [
-        kProgramCirculation,
         kProgramBedroom,
         kProgramStorage,
         kProgramLeisure,
@@ -192,13 +208,11 @@ void main() {
       ],
     );
     expect(programsForSurface(outdoor: false).map((s) => s.id), [
-      kProgramCirculation,
       kProgramBedroom,
       kProgramStorage,
       kProgramLeisure,
     ]);
     expect(programsForSurface(outdoor: true).map((s) => s.id), [
-      kProgramCirculation,
       kProgramLeisure,
       kProgramGarden,
     ]);

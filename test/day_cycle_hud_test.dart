@@ -24,6 +24,25 @@ void main() {
     expect(tapped, isTrue);
   });
 
+  testWidgets('day hud ignores taps while alerts block advance', (tester) async {
+    var tapped = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DayCycleHud(
+            dayNumber: 2,
+            isNight: false,
+            blocked: true,
+            onEndPhase: () => tapped = true,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byIcon(Icons.wb_sunny));
+    expect(tapped, isFalse);
+  });
+
   testWidgets('night hud shows a moon and ignores taps while busy', (tester) async {
     var tapped = false;
     await tester.pumpWidget(

@@ -70,6 +70,7 @@ List<ProgramCluster> outdoorProgramClusters({
   for (final region in regions) {
     if (region.tiles.isEmpty) continue;
     final programId = programs.outdoorRegionProgram(region.tiles);
+    if (isCirculationProgram(programId)) continue;
     final outline = tileSetOutline(region.tiles);
     final edges = <OutlineEdge>[
       for (final edge in outline) _wallEdgeToOutline(edge, walls),

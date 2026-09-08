@@ -28,7 +28,8 @@ class ProgramGraphNode {
 
   bool get isRegion => kind == ProgramGraphNodeKind.region;
   bool get isDoor => kind == ProgramGraphNodeKind.door;
-  bool get isCirculation => programId == kProgramCirculation;
+  bool get isCirculation =>
+      isRegion && programId == kProgramCirculation;
   bool get isBedroom => programId == kProgramBedroom;
 }
 
@@ -90,18 +91,25 @@ class ProgramGraph {
     }
   }
 
-  /// Bedroom is OK if it touches a circulation region.
+  /// Bedroom is OK if it touches a circulation region (unprogrammed tiles).
+  ///
+  /// A volume that is only a bedroom has no hall to provide; entry is the
+  /// volume-level door requirement.
   ///
   /// Doors stay on the graph for analysis, but they do not stand in for
-  /// circulation. Entry is a volume-level requirement; where circulation
-  /// sits relative to a door is up to the player.
+  /// circulation when other rooms exist.
   bool bedroomHasAccess(ProgramGraphNode bedroom) {
     if (!bedroom.isBedroom) return true;
+    if (isWholeVolumeBedroom) return true;
     for (final next in neighborsOf(bedroom)) {
       if (next.isCirculation) return true;
     }
     return false;
   }
+
+  /// True when the only indoor region is one bedroom blob.
+  bool get isWholeVolumeBedroom =>
+      regions.length == 1 && regions.first.isBedroom;
 
   bool get hasDisconnectedBedroom {
     for (final bedroom in bedrooms) {
@@ -133,7 +141,8 @@ ProgramGraph buildVolumeProgramGraph({
 }) {
   final kinds = <(int, int), String>{
     for (final cell in volume.cells)
-      (cell.tx, cell.ty): ?programs.indoorAt(cell.tx, cell.ty),
+      (cell.tx, cell.ty):
+          programs.indoorAt(cell.tx, cell.ty) ?? kProgramCirculation,
   };
 
   final regionNodes = <ProgramGraphNode>[];

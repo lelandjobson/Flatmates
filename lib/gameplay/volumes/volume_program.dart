@@ -32,16 +32,12 @@ class ProgramSpec {
   final bool outdoor;
 }
 
-/// Ordered catalog. Append new programs; do not reorder existing IDs.
+/// True for unset tiles and leftover stored circulation assignments.
+bool isCirculationProgram(String? id) =>
+    id == null || id == kProgramCirculation;
+
+/// Ordered catalog. Circulation is implicit (unprogrammed), not pickable.
 const List<ProgramSpec> kProgramCatalog = [
-  ProgramSpec(
-    id: kProgramCirculation,
-    label: 'Circulation',
-    icon: Icons.directions_walk,
-    color: Color(0xFF9E9E9E),
-    indoor: true,
-    outdoor: true,
-  ),
   ProgramSpec(
     id: kProgramBedroom,
     label: 'Bedroom',
@@ -103,8 +99,8 @@ List<ProgramSpec> sortProgramsByCatalog(Iterable<String> ids) {
 
 /// Per-tile indoor and outdoor program assignments.
 ///
-/// Indoor cells have no default (null = unprogrammed). Outdoor tiles default
-/// to circulation when missing.
+/// Indoor cells have no default (null = implicit circulation). Outdoor tiles
+/// default to circulation when missing.
 class VolumeProgramStore {
   VolumeProgramStore();
 
@@ -117,7 +113,11 @@ class VolumeProgramStore {
   Map<(int, int), String> get outdoorAssignments =>
       Map<(int, int), String>.unmodifiable(_outdoor);
 
-  String? indoorAt(int tx, int ty) => _indoor[(tx, ty)];
+  /// Indoor program, treating leftover circulation as unprogrammed.
+  String? indoorAt(int tx, int ty) {
+    final id = _indoor[(tx, ty)];
+    return isCirculationProgram(id) ? null : id;
+  }
 
   /// Outdoor program, defaulting to circulation.
   String outdoorAt(int tx, int ty) =>
@@ -134,8 +134,7 @@ class VolumeProgramStore {
     return true;
   }
 
-  /// Assign [programId] to one cell. The first program on a mass also fills
-  /// every other unprogrammed cell with circulation.
+  /// Assign [programId] to one cell. Other cells stay unprogrammed.
   bool assignIndoorInVolume({
     required Volume volume,
     required int tx,
@@ -143,34 +142,22 @@ class VolumeProgramStore {
     required String programId,
   }) {
     if (volume.cellAt(tx, ty) == null) return false;
-    final first = !isVolumeProgrammed(volume);
-    if (!assignIndoor(tx: tx, ty: ty, programId: programId)) return false;
-    if (!first) return true;
-    for (final cell in volume.cells) {
-      if (cell.tx == tx && cell.ty == ty) continue;
-      if (_indoor.containsKey((cell.tx, cell.ty))) continue;
-      assignIndoor(
-        tx: cell.tx,
-        ty: cell.ty,
-        programId: kProgramCirculation,
-      );
-    }
-    return true;
+    return assignIndoor(tx: tx, ty: ty, programId: programId);
   }
 
   bool clearIndoor(int tx, int ty) => _indoor.remove((tx, ty)) != null;
 
   bool assignOutdoorRegion(Iterable<(int, int)> tiles, String programId) {
-    final spec = programById(programId);
-    if (spec == null || !spec.outdoor) return false;
     if (programId == kProgramCirculation) {
       for (final tile in tiles) {
         _outdoor.remove(tile);
       }
-    } else {
-      for (final tile in tiles) {
-        _outdoor[tile] = programId;
-      }
+      return true;
+    }
+    final spec = programById(programId);
+    if (spec == null || !spec.outdoor) return false;
+    for (final tile in tiles) {
+      _outdoor[tile] = programId;
     }
     return true;
   }
@@ -192,12 +179,14 @@ class VolumeProgramStore {
         bestCount = n;
       }
     }
+    final circ = counts[kProgramCirculation] ?? 0;
+    if (circ > bestCount) return kProgramCirculation;
     return best ?? kProgramCirculation;
   }
 
   bool isVolumeProgrammed(Volume volume) {
     for (final cell in volume.cells) {
-      if (_indoor.containsKey((cell.tx, cell.ty))) return true;
+      if (indoorAt(cell.tx, cell.ty) != null) return true;
     }
     return false;
   }
@@ -206,7 +195,7 @@ class VolumeProgramStore {
 
   List<ProgramSpec> programsPossessed(Volume volume) {
     return sortProgramsByCatalog([
-      for (final cell in volume.cells) ?_indoor[(cell.tx, cell.ty)],
+      for (final cell in volume.cells) ?indoorAt(cell.tx, cell.ty),
     ]);
   }
 
@@ -241,7 +230,10 @@ class VolumeProgramStore {
   }) {
     _indoor
       ..clear()
-      ..addAll(indoor);
+      ..addAll({
+        for (final entry in indoor.entries)
+          if (!isCirculationProgram(entry.value)) entry.key: entry.value,
+      });
     _outdoor
       ..clear()
       ..addAll(outdoor);

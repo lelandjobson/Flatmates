@@ -42,6 +42,10 @@ import '../gameplay/paper/paper_cost.dart';
 import '../gameplay/paper/paper_quote.dart';
 import '../gameplay/paper/paper_wallet.dart';
 import '../gameplay/paint/ground_shadow_model.dart';
+import '../gameplay/alerts/alert_reveal.dart';
+import '../gameplay/alerts/volume_alerts.dart';
+import '../gameplay/alerts/world_alert.dart';
+import '../gameplay/alerts/world_alert_layout.dart';
 import '../gameplay/picking/camera_rest_fade.dart';
 import '../gameplay/picking/focus_click.dart';
 import '../gameplay/picking/focus_sticker.dart';
@@ -74,7 +78,6 @@ import '../gameplay/paths/path_outline.dart';
 import '../gameplay/volumes/volume_outline.dart';
 import '../gameplay/volumes/volume_program.dart';
 import '../gameplay/volumes/volume_program_clusters.dart';
-import '../gameplay/volumes/volume_program_graph.dart';
 import '../gameplay/volumes/volume_program_visibility.dart';
 import '../gameplay/volumes/volume_solid_sync.dart';
 import '../gameplay/vision/map_vision.dart';
@@ -142,6 +145,7 @@ import '../ui/game/stuff_picker_panel.dart';
 import '../ui/rotation_gizmo.dart';
 import '../ui/game/volume_program_overlay.dart';
 import '../ui/game/volume_transform_gizmo.dart';
+import '../ui/game/world_alert_overlay.dart';
 import '../ui/game/world_chip_row.dart';
 
 /// Core 3D game view. Starts from the map bench scene (landscape + look
@@ -929,7 +933,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   }
 
   Future<void> _endDayOrNight() async {
-    if (_dayNightBusy || _advancingDay) return;
+    if (_dayNightBusy || _advancingDay || _hasUnresolvedAlerts) return;
     if (!_isNight) {
       setState(() => _dayNightBusy = true);
       await _sunsetAnim.forward(from: _dayNightProgress);
@@ -1804,6 +1808,64 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       _createTool = tool;
       if (tool != GameCreateTool.wall) _endWallSession();
     });
+    _refreshHover();
+  }
+
+  List<WorldAlert> get _worldAlerts => collectVolumeAlerts(
+        volumes: _volumes,
+        programs: _programs,
+        walls: _walls,
+        paths: _paths,
+      );
+
+  bool get _hasUnresolvedAlerts => _worldAlerts.isNotEmpty;
+
+  List<WorldAlert> _visibleWorldAlerts() {
+    return visibleWorldAlerts(
+      alerts: _worldAlerts,
+      createMode: _mode == GameMode.create,
+      lookingInside: (alert) {
+        if (!alert.hostKey.startsWith('volume:')) return false;
+        final id = int.tryParse(alert.hostKey.substring('volume:'.length));
+        final volume = id == null ? null : _volumes.volumeById(id);
+        return volume != null && _volumeLookingInside(volume);
+      },
+    );
+  }
+
+  void _applyAlertRemediation(AlertRemediation rem) {
+    setState(() {
+      if (_editing && rem.mode != GameMode.create) {
+        _finishOpenVolume();
+      }
+      _mode = rem.mode;
+      if (rem.createTool != null) _createTool = rem.createTool!;
+      if (!_wallsTool) _endWallSession();
+      _cancelStuffPlacement();
+      _floorMenuHit = null;
+    });
+    _look.animateLookAt(rem.lookAt);
+    if (rem.distance != null) _look.animateDistance(rem.distance!);
+
+    SelectableHit? hit;
+    if (rem.select && rem.tx != null && rem.ty != null) {
+      final volume =
+          rem.volumeId == null ? null : _volumes.volumeById(rem.volumeId!);
+      final cell = volume?.cellAt(rem.tx!, rem.ty!);
+      hit = rem.volumeId != null
+          ? SelectableHit.volume(
+              rem.volumeId!,
+              cell: cell,
+              tx: rem.tx,
+              ty: rem.ty,
+              worldPoint: rem.lookAt,
+            )
+          : SelectableHit.tile(rem.tx!, rem.ty!, worldPoint: rem.lookAt);
+      _setSelectedHit(hit);
+    }
+    if (rem.openProgramPicker && hit != null) {
+      _openProgramPicker(hit);
+    }
     _refreshHover();
   }
 
@@ -2687,6 +2749,10 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   void _focusHit(SelectableHit hit) {
     if (hit.kind == SelectableKind.volumeFace) {
       if (_isProgrammableSurface(hit)) {
+        if (_isImplicitCirculationFloor(hit)) {
+          _beginProgram(hit);
+          return;
+        }
         _openFloorMenu(hit);
         return;
       }
@@ -3009,6 +3075,20 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     return _isFloorVisibleAt(cell.tx, cell.ty);
   }
 
+  bool _isImplicitCirculationFloor(SelectableHit hit) {
+    if (hit.kind == SelectableKind.region) {
+      final region = hit.region;
+      if (region == null) return false;
+      return isCirculationProgram(
+        _programs.outdoorRegionProgram(region.tiles),
+      );
+    }
+    final tx = hit.tx ?? hit.cell?.tx;
+    final ty = hit.ty ?? hit.cell?.ty;
+    if (tx == null || ty == null) return false;
+    return _programs.indoorAt(tx, ty) == null;
+  }
+
   bool _tryOpenProgramMenu(Offset local) {
     final screen = _isMapUnlocked && _viewer == GameViewerKind.map3d
         ? _viewportCenter
@@ -3016,6 +3096,10 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     final hit = _pickAt(screen);
     if (hit == null || !_isProgrammableSurface(hit)) return false;
     _setSelectedHit(hit);
+    if (_isImplicitCirculationFloor(hit)) {
+      _beginProgram(hit);
+      return true;
+    }
     _openFloorMenu(hit);
     return true;
   }
@@ -3100,9 +3184,11 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     if (outdoor) {
       final region = hit.region;
       if (region == null) return;
+      final current = _programs.outdoorRegionProgram(region.tiles);
+      final next = current == programId ? kProgramCirculation : programId;
       if (_commitAction(
         'program region',
-        () => _programs.assignOutdoorRegion(region.tiles, programId),
+        () => _programs.assignOutdoorRegion(region.tiles, next),
       )) {
         _hapticPlace(1);
       }
@@ -3114,12 +3200,17 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       if (volume == null) return;
       if (_commitAction(
         'program volume',
-        () => _programs.assignIndoorInVolume(
-          volume: volume,
-          tx: tx,
-          ty: ty,
-          programId: programId,
-        ),
+        () {
+          if (_programs.indoorAt(tx, ty) == programId) {
+            return _programs.clearIndoor(tx, ty);
+          }
+          return _programs.assignIndoorInVolume(
+            volume: volume,
+            tx: tx,
+            ty: ty,
+            programId: programId,
+          );
+        },
       )) {
         _hapticPlace(1);
       }
@@ -3448,7 +3539,8 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     final programs = programsForSurface(outdoor: outdoor);
     String? selected;
     if (outdoor && hit.region != null) {
-      selected = _programs.outdoorRegionProgram(hit.region!.tiles);
+      final id = _programs.outdoorRegionProgram(hit.region!.tiles);
+      selected = isCirculationProgram(id) ? null : id;
     } else {
       final tx = hit.tx ?? hit.cell?.tx;
       final ty = hit.ty ?? hit.cell?.ty;
@@ -3468,12 +3560,6 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     );
   }
 
-  WorldChip _chipForAlert(VolumeAlertKind kind) => switch (kind) {
-        VolumeAlertKind.unprogrammed => kUnprogrammedAlertChip,
-        VolumeAlertKind.noEntry => kNoEntryAlertChip,
-        VolumeAlertKind.bedroomAccess => kBedroomAccessAlertChip,
-      };
-
   List<Widget> _programWorldChips() {
     final chips = <Widget>[];
     for (final volume in _volumes.visibleVolumes) {
@@ -3485,16 +3571,6 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       if (showMass) {
         final programmed = _programs.isVolumeProgrammed(volume);
         final row = <WorldChip>[
-          if (_mode == GameMode.select || _mode == GameMode.edit)
-            ...volumeAlerts(
-              programmed: programmed,
-              hasEntry: volume.hasEntry,
-              bedroomNeedsAccess: buildVolumeProgramGraph(
-                volume: volume,
-                programs: _programs,
-                walls: _walls,
-              ).hasDisconnectedBedroom,
-            ).map(_chipForAlert),
           if (_selectFilter == GameSelectViewFilter.program && programmed)
             ..._programs.programsPossessed(volume).map(programChip),
         ];
@@ -3508,18 +3584,6 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
             ),
           );
         }
-      }
-      for (final cell in volume.cells) {
-        if (_programs.indoorAt(cell.tx, cell.ty) != null) continue;
-        if (!_isFloorVisibleAt(cell.tx, cell.ty)) continue;
-        chips.add(
-          WorldChipAnchor(
-            camera: _camera,
-            viewport: _viewportSize,
-            world: cellFloorCenter(cell, _volumes.grid),
-            chips: const [kUnprogrammedQuestionChip],
-          ),
-        );
       }
     }
     if (_selectFilter == GameSelectViewFilter.program && !_isInteriorViewer) {
@@ -4266,8 +4330,23 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     setState(() {});
   }
 
+  bool _tryActivateAlert() {
+    final issue = hitWorldAlertIssue(
+      alerts: _visibleWorldAlerts(),
+      camera: _camera,
+      viewport: _viewportSize,
+      pointer: _cursorScreen,
+      lookAt: _look.lookAt,
+      tileSize: _volumes.grid.tileSize,
+    );
+    if (issue == null) return false;
+    _applyAlertRemediation(issue.remediation);
+    return true;
+  }
+
   void _onTileTap(Offset local) {
     if (_toolsBlocked || _handleDragging) return;
+    if (_tryActivateAlert()) return;
     if (_tryCommitStuffPlacement(local)) return;
     if (_flatmateDown != null) {
       if (_showGizmos) {
@@ -4971,6 +5050,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                   dayNumber: _dayNumber,
                   isNight: _isNight,
                   busy: _dayNightBusy || _advancingDay,
+                  blocked: _hasUnresolvedAlerts,
                   onEndPhase: _endDayOrNight,
                 ),
               ],
@@ -5646,6 +5726,22 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                           return Stack(children: _programWorldChips());
                         },
                       ),
+                    ),
+                  ),
+                if (_layers.shows(SceneLayer.volumes))
+                  Positioned.fill(
+                    child: ListenableBuilder(
+                      listenable: _scene,
+                      builder: (context, _) {
+                        return WorldAlertOverlay(
+                          alerts: _visibleWorldAlerts(),
+                          camera: _camera,
+                          viewport: _viewportSize,
+                          pointer: _cursorScreen,
+                          lookAt: _look.lookAt,
+                          tileSize: _volumes.grid.tileSize,
+                        );
+                      },
                     ),
                   ),
                 if (_viewer == GameViewerKind.map3d &&

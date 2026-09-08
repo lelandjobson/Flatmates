@@ -5,6 +5,18 @@ import 'package:vector_math/vector_math_64.dart';
 
 import '../../geometry/transformable.dart';
 
+class ScreenEdgeProjection {
+  const ScreenEdgeProjection({
+    required this.position,
+    required this.raw,
+    required this.onScreen,
+  });
+
+  final Offset position;
+  final Offset raw;
+  final bool onScreen;
+}
+
 class CameraRay {
   const CameraRay({required this.origin, required this.direction});
 
@@ -106,6 +118,53 @@ class Camera extends Transformable {
     return Offset(
       (ndcX * 0.5 + 0.5) * viewport.width,
       (1 - (ndcY * 0.5 + 0.5)) * viewport.height,
+    );
+  }
+
+  /// Screen position of [worldPos], clamped to a viewport inset when off-screen
+  /// or behind the camera.
+  ScreenEdgeProjection? projectToScreenOrEdge(
+    Vector3 worldPos,
+    Size viewport, {
+    double margin = 28,
+  }) {
+    if (viewport.width <= 0 || viewport.height <= 0) return null;
+    final clip = Vector4(worldPos.x, worldPos.y, worldPos.z, 1);
+    viewProjectionMatrix(viewport).transform(clip);
+    if (!clip.storage.every((v) => v.isFinite)) return null;
+    var x = clip.x;
+    var y = clip.y;
+    var w = clip.w;
+    if (w.abs() < 1e-6) return null;
+    final behind = w < 0;
+    if (behind) {
+      x = -x;
+      y = -y;
+      w = -w;
+    }
+    final ndcX = x / w;
+    final ndcY = y / w;
+    if (!ndcX.isFinite || !ndcY.isFinite) return null;
+    var sx = (ndcX * 0.5 + 0.5) * viewport.width;
+    var sy = (1 - (ndcY * 0.5 + 0.5)) * viewport.height;
+    final raw = Offset(sx, sy);
+    final minX = margin;
+    final minY = margin;
+    final maxX = math.max(margin, viewport.width - margin);
+    final maxY = math.max(margin, viewport.height - margin);
+    final onScreen = !behind &&
+        sx >= minX &&
+        sx <= maxX &&
+        sy >= minY &&
+        sy <= maxY;
+    if (!onScreen) {
+      sx = sx.clamp(minX, maxX);
+      sy = sy.clamp(minY, maxY);
+    }
+    return ScreenEdgeProjection(
+      position: Offset(sx, sy),
+      raw: raw,
+      onScreen: onScreen,
     );
   }
 
