@@ -805,13 +805,24 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
 
   void _spawnPaperFly(int delta) {
     if (delta == 0) return;
+    final world = _paperFlyWorld();
     _paperFlies.add(
       PaperFlyEvent(
         id: ++_nextPaperFlyId,
         delta: delta,
         cursor: _cursorScreen,
+        world: world,
+        worldScreen0: _viewportSize.isEmpty
+            ? null
+            : _camera.projectToScreen(world, _viewportSize),
       ),
     );
+  }
+
+  Vector3 _paperFlyWorld() {
+    final tile = _volumes.grid.tileAtWorld(_placeAimWorld);
+    if (tile != null) return _volumes.grid.tileCenter(tile.$1, tile.$2);
+    return Vector3(_placeAimWorld.x, 0, _placeAimWorld.z);
   }
 
   void _forgetPaperFly(int id) {
@@ -5768,8 +5779,12 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                   ),
                 Positioned.fill(
                   child: PaperFlyOverlay(
+                    key: const ValueKey('paperFlyOverlay'),
                     events: _paperFlies,
                     onExpired: _forgetPaperFly,
+                    camera: _camera,
+                    viewport: _viewportSize,
+                    listenable: _scene,
                   ),
                 ),
                 if (_isFocus3d && _cropTool && _focusCrop != null)
