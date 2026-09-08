@@ -41,10 +41,10 @@ class FocusRegion {
     required Iterable<(int, int)> tiles,
     int pad = 1,
   }) {
-    var minTx = grid.tilesSide - 1;
-    var minTy = grid.tilesSide - 1;
-    var maxTx = 0;
-    var maxTy = 0;
+    var minTx = grid.lastTile;
+    var minTy = grid.lastTile;
+    var maxTx = grid.originTile;
+    var maxTy = grid.originTile;
     var any = false;
     for (final (tx, ty) in tiles) {
       any = true;
@@ -54,13 +54,13 @@ class FocusRegion {
       if (ty > maxTy) maxTy = ty;
     }
     if (!any) {
-      return FocusRegion(minTx: 0, minTy: 0, maxTx: 0, maxTy: 0);
+      return const FocusRegion(minTx: 0, minTy: 0, maxTx: 0, maxTy: 0);
     }
     return FocusRegion(
-      minTx: (minTx - pad).clamp(0, grid.tilesSide - 1),
-      minTy: (minTy - pad).clamp(0, grid.tilesSide - 1),
-      maxTx: (maxTx + pad).clamp(0, grid.tilesSide - 1),
-      maxTy: (maxTy + pad).clamp(0, grid.tilesSide - 1),
+      minTx: (minTx - pad).clamp(grid.originTile, grid.lastTile),
+      minTy: (minTy - pad).clamp(grid.originTile, grid.lastTile),
+      maxTx: (maxTx + pad).clamp(grid.originTile, grid.lastTile),
+      maxTy: (maxTy + pad).clamp(grid.originTile, grid.lastTile),
     );
   }
 

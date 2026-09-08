@@ -15,14 +15,16 @@ void main() {
     return vision;
   }
 
-  test('world center tile is 24,24 on the default 48 map', () {
-    expect(config.centerTx, 24);
-    expect(config.centerTy, 24);
+  test('world center tile is 0,0 on the default 48 map', () {
+    expect(config.centerTx, 0);
+    expect(config.centerTy, 0);
     expect(config.inStartingArea(config.centerTx, config.centerTy), isTrue);
     final look = grid.tileCenter(config.centerTx, config.centerTy);
-    expect(grid.tileAtWorld(look), (24, 24));
-    expect(look.x, isNot(0));
-    expect(look.z, isNot(0));
+    expect(grid.tileAtWorld(look), (0, 0));
+    expect(look.x, closeTo(4, 1e-6));
+    expect(look.z, closeTo(4, 1e-6));
+    expect(config.startingOriginTx, -8);
+    expect(config.startingMaxTx, 7);
   });
 
   test('starting area is visible with no sources', () {
@@ -88,19 +90,19 @@ void main() {
 
   test('vision stops at the world edge', () {
     final vision = rebuilt(const [
-      VisionSource(tx: 0, ty: 0, radius: 5),
+      VisionSource(tx: -24, ty: 0, radius: 5),
     ]);
-    expect(vision.isVisible(0, 0), isTrue);
-    expect(vision.isVisible(-1, 0), isFalse);
+    expect(vision.isVisible(-24, 0), isTrue);
+    expect(vision.isVisible(-25, 0), isFalse);
     expect(vision.visibleTiles.every((t) => grid.inBounds(t.$1, t.$2)), isTrue);
   });
 
   test('per-source radius can differ', () {
     final vision = rebuilt(const [
-      VisionSource(tx: 2, ty: 20, radius: 1),
-      VisionSource(tx: 10, ty: 20, radius: 4),
+      VisionSource(tx: 2, ty: 10, radius: 1),
+      VisionSource(tx: 10, ty: 10, radius: 4),
     ]);
-    expect(vision.isVisible(2, 22), isFalse);
-    expect(vision.isVisible(10, 24), isTrue);
+    expect(vision.isVisible(2, 12), isFalse);
+    expect(vision.isVisible(10, 14), isTrue);
   });
 }

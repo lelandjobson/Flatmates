@@ -10,13 +10,14 @@ typedef LandscapeCaMask = bool Function(int x, int y);
 /// Maps volume/wall tiles onto landscape pixels (one subtile per material cell).
 Set<(int, int)> landscapePixelsForTiles(
   Iterable<(int, int)> tiles,
-  int subtilesPerTile,
-) {
+  int subtilesPerTile, {
+  int originTile = 0,
+}) {
   final n = subtilesPerTile < 1 ? 1 : subtilesPerTile;
   final out = <(int, int)>{};
   for (final (tx, ty) in tiles) {
-    final x0 = tx * n;
-    final y0 = ty * n;
+    final x0 = (tx - originTile) * n;
+    final y0 = (ty - originTile) * n;
     for (var y = 0; y < n; y++) {
       for (var x = 0; x < n; x++) {
         out.add((x0 + x, y0 + y));
@@ -39,13 +40,18 @@ class MorningLandscapeCA {
     required LandscapeGenerator generator,
     required Iterable<WallRegion> regions,
     required int subtilesPerTile,
+    int originTile = 0,
     int generations = generationsPerDay,
   }) {
     final landscape = LandscapeCA(generator);
     final paint = RegionPaintCA();
     final regionPixels = [
       for (final region in regions)
-        landscapePixelsForTiles(region.tiles, subtilesPerTile),
+        landscapePixelsForTiles(
+          region.tiles,
+          subtilesPerTile,
+          originTile: originTile,
+        ),
     ];
     final enclosed = <(int, int)>{
       for (final pixels in regionPixels) ...pixels,

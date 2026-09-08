@@ -75,18 +75,18 @@ class FocusCrop {
   Vector3 worldMin(VolumeGrid grid) {
     final s = grid.subtileSize;
     return Vector3(
-      -grid.mapHalf + minSx * s,
+      minSx * s,
       minSy * s,
-      -grid.mapHalf + minSz * s,
+      minSz * s,
     );
   }
 
   Vector3 worldMax(VolumeGrid grid) {
     final s = grid.subtileSize;
     return Vector3(
-      -grid.mapHalf + maxSx * s,
+      maxSx * s,
       maxSy * s,
-      -grid.mapHalf + maxSz * s,
+      maxSz * s,
     );
   }
 

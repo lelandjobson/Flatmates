@@ -183,9 +183,9 @@ class _Test3dMapViewState extends State<Test3dMapView>
 
   void _seedPaintedBoxes() {
     const placements = <(int, int, PaperColor)>[
-      (7, 7, PaperColor.pink),
-      (8, 7, PaperColor.yellow),
-      (7, 8, PaperColor.green),
+      (0, 0, PaperColor.pink),
+      (1, 0, PaperColor.yellow),
+      (0, 1, PaperColor.green),
     ];
     final volumes = <Volume>[];
     var id = 1;
@@ -193,7 +193,7 @@ class _Test3dMapViewState extends State<Test3dMapView>
       final cell = VolumeCell(tx: tx, ty: ty, box: BoxPrimitive());
       final volume = Volume(id: id++, cells: [cell]);
       volumes.add(volume);
-      _occupiedTiles.add(ty * _tilesSide + tx);
+      _occupiedTiles.add(_tileKey(tx, ty));
       for (final face in VolumeFace.values) {
         final canvas = _facePaint.canvasFor(
           volumeId: volume.id,
@@ -384,11 +384,16 @@ class _Test3dMapViewState extends State<Test3dMapView>
     }
   }
 
+  static const _originTile = -(_tilesSide ~/ 2);
+
+  int _tileKey(int tx, int ty) =>
+      (ty - _originTile) * _tilesSide + (tx - _originTile);
+
   Vector3 _tileCenter(int tx, int ty) {
     return Vector3(
-      -_mapHalf + (tx + 0.5) * _tileWorld,
+      (tx + 0.5) * _tileWorld,
       0,
-      -_mapHalf + (ty + 0.5) * _tileWorld,
+      (ty + 0.5) * _tileWorld,
     );
   }
 
@@ -406,8 +411,8 @@ class _Test3dMapViewState extends State<Test3dMapView>
       return;
     }
     final key = free[math.Random().nextInt(free.length)];
-    final tx = key % _tilesSide;
-    final ty = key ~/ _tilesSide;
+    final tx = (key % _tilesSide) + _originTile;
+    final ty = (key ~/ _tilesSide) + _originTile;
     final id = ++_placeSeq;
     _streamer.place(
       MapPlacement(

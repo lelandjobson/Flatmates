@@ -29,6 +29,7 @@ class MapSelector {
     required Iterable<WallRegion> regions,
     StuffStore? stuff,
     PathStore? paths,
+    bool Function(int tx, int ty)? skipTile,
     double faceMaxDistance = kSelectVolumeFacesBelowDistance,
     double tileSize = 8,
     bool Function(int tx, int ty)? skipVolumeRoofAt,
@@ -85,6 +86,7 @@ class MapSelector {
     if (ground == null) return null;
     final tile = volumes.grid.tileAtWorld(ground);
     if (tile == null) return null;
+    if (skipTile?.call(tile.$1, tile.$2) ?? false) return null;
     if (paths != null && paths.contains(tile.$1, tile.$2)) {
       return SelectableHit.path(tile.$1, tile.$2, worldPoint: ground);
     }

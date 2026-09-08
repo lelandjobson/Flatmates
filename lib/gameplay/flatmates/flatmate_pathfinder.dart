@@ -1,5 +1,6 @@
 import '../graph/connection_graph.dart';
 import '../paths/path_store.dart';
+import '../spawns/basement_spawn.dart';
 import '../volumes/volume.dart';
 import '../volumes/volume_store.dart';
 import '../walls/wall_store.dart';
@@ -83,7 +84,8 @@ class FlatmatePathfinder {
       start: start,
       goal: goal,
       grid: grid,
-      isWalkable: (tx, ty) => grid.inBounds(tx, ty),
+      isWalkable: (tx, ty) =>
+          grid.inBounds(tx, ty) && !BasementSpawn.blocksWalk(tx, ty),
       isPath: paths.contains,
       blockedEdge: (from, to) {
         if (walls != null && walls.separatesTiles(from, to)) return true;

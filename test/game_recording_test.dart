@@ -9,6 +9,7 @@ import 'package:flatmates/gameplay/paths/path_store.dart';
 import 'package:flatmates/gameplay/friends/friend_instance.dart';
 import 'package:flatmates/gameplay/recording/game_recording.dart';
 import 'package:flatmates/gameplay/recording/game_recording_io.dart';
+import 'package:flatmates/gameplay/spawns/basement_spawn.dart';
 import 'package:flatmates/gameplay/viewers/world_plane.dart';
 import 'package:flatmates/gameplay/vision/map_vision.dart';
 import 'package:flatmates/gameplay/volumes/volume.dart';
@@ -157,7 +158,7 @@ void main() {
     expect(volumes.occupant(ox + 5, oy + 5), 1);
     expect(volumes.occupant(ox + 12, oy + 10), 3);
     expect(paths.contains(ox + 5, oy + 6), isTrue);
-    expect(paths.contains(1, 1), isFalse);
+    expect(paths.contains(6, 6), isFalse);
     expect(
       paint.canvases.containsKey(
         FacePaintKey(
@@ -260,6 +261,50 @@ void main() {
     expect(decoded.friends, isEmpty);
   });
 
+  test('schema 1 recordings recenter tiles from 24,24 to 0,0', () {
+    final decoded = GameRecording.fromJson({
+      'schemaVersion': 1,
+      'nextVolumeId': 2,
+      'volumes': [
+        {
+          'id': 1,
+          'datum': 0,
+          'cells': [
+            {
+              'tx': 24,
+              'ty': 25,
+              'box': {
+                'widthSubtiles': 8,
+                'depthSubtiles': 8,
+                'heightSubtiles': 6,
+                'originXSubtiles': 0,
+                'originZSubtiles': 0,
+              },
+              'accessibleSides': <String>[],
+              'doorOrigins': <String, int>{},
+            },
+          ],
+        },
+      ],
+      'paths': {
+        'tiles': [
+          [26, 24],
+        ],
+        'edges': <List<int>>[],
+      },
+      'walls': {
+        'edges': [
+          [24, 24, 25, 24, 'fence'],
+        ],
+      },
+    });
+    expect(decoded.version, 2);
+    expect(decoded.volumes.single.cells.single.tx, 0);
+    expect(decoded.volumes.single.cells.single.ty, 1);
+    expect(decoded.pathTiles, {(2, 0)});
+    expect(decoded.wallEdges, contains(WallEdge(0, 0, 1, 0)));
+  });
+
   test('repo default recording path resolves', () {
     final file = GameRecordingIo.resolveDefaultFile();
     expect(file, isNotNull);
@@ -275,7 +320,20 @@ void main() {
     expect(fromAsset.volumes, isNotEmpty);
     expect(fromAsset.pathTiles, isNotEmpty);
     expect(fromAsset.friends, isNotEmpty);
-    expect(fromAsset.friends.single.friend.id, kCubeboyFriend.id);
+    expect(
+      fromAsset.friends.every((f) => f.friend.id == kCubeboyFriend.id),
+      isTrue,
+    );
+    expect(
+      fromAsset.volumes.any(
+        (v) => v.cells.any((c) => BasementSpawn.blocksBuild(c.tx, c.ty)),
+      ),
+      isFalse,
+    );
+    expect(
+      fromAsset.pathTiles.any((t) => BasementSpawn.isCutTile(t.$1, t.$2)),
+      isFalse,
+    );
     final walls = WallStore(
       grid: VolumeGrid(tilesSide: vision.worldTilesSide, tileSize: 8),
     )..restore(fromAsset.wallEdges);

@@ -11,17 +11,20 @@ import 'volume_store.dart';
 import 'volume_wall_cutaway.dart';
 
 /// Hide the focused part's ceiling once closer than this.
-const double kVolumeCeilingRevealDistance = 40;
+const double kVolumeCeilingRevealDistance = 28;
 
 /// Restore ceilings once farther than this. Between the two, hold.
-const double kVolumeCeilingRestoreDistance = 60;
+const double kVolumeCeilingRestoreDistance = 32;
+
+/// Click / look-inside zoom: just closer than [kVolumeCeilingRevealDistance].
+const double kVolumeLookInsideDistance = 26;
 
 const Duration kVolumeCeilingFadeDuration = Duration(milliseconds: 320);
 
 /// Tools, picks, and overlays treat a faded face as gone at or below this.
 const double kVolumeFeatureHiddenOpacity = 0.15;
 
-/// Distance hysteresis: reveal below 40, restore above 60, hold in between.
+/// Distance hysteresis: reveal below 28, restore above 32, hold in between.
 bool volumeCeilingWantsReveal({
   required double distance,
   required bool currentlyRevealing,

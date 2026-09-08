@@ -57,29 +57,45 @@ class VolumeGrid {
 
   double get mapHalf => tilesSide * tileSize * 0.5;
 
+  /// Lowest tile index on each axis. A 48-wide map is −24..23.
+  int get originTile => -(tilesSide ~/ 2);
+
+  /// Highest tile index on each axis.
+  int get lastTile => originTile + tilesSide - 1;
+
   /// World size of one subtile.
   double get subtileSize => tileSize / subtilesPerTile;
 
   bool inBounds(int tx, int ty) =>
-      tx >= 0 && ty >= 0 && tx < tilesSide && ty < tilesSide;
+      tx >= originTile &&
+      ty >= originTile &&
+      tx <= lastTile &&
+      ty <= lastTile;
+
+  /// 0-based atlas column/row for a signed tile index.
+  int atlasTile(int tile) => tile - originTile;
+
+  /// Landscape-pixel index along one axis for [tile] plus a subtile [offset].
+  int landscapePixel(int tile, int offset) =>
+      atlasTile(tile) * subtilesPerTile + offset;
 
   (int tx, int ty)? tileAtWorld(Vector3 world) {
-    final tx = ((world.x + mapHalf) / tileSize).floor();
-    final ty = ((world.z + mapHalf) / tileSize).floor();
+    final tx = (world.x / tileSize).floor();
+    final ty = (world.z / tileSize).floor();
     if (!inBounds(tx, ty)) return null;
     return (tx, ty);
   }
 
   Vector3 tileOrigin(int tx, int ty) => Vector3(
-        -mapHalf + tx * tileSize,
+        tx * tileSize,
         0,
-        -mapHalf + ty * tileSize,
+        ty * tileSize,
       );
 
   Vector3 tileCenter(int tx, int ty) => Vector3(
-        -mapHalf + (tx + 0.5) * tileSize,
+        (tx + 0.5) * tileSize,
         0,
-        -mapHalf + (ty + 0.5) * tileSize,
+        (ty + 0.5) * tileSize,
       );
 
   (Vector3 min, Vector3 max) tileAabb(int tx, int ty) {

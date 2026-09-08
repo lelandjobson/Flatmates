@@ -1,7 +1,9 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:vector_math/vector_math_64.dart' hide Colors;
 
+import '../../rendering/ground_occlusion.dart';
 import '../../rendering/scene/camera.dart';
 import 'outline_edges.dart';
 
@@ -51,6 +53,7 @@ int paintOutlineEdges({
   double Function(OutlineEdge edge)? opacityFor,
   double? dashLength,
   double? dashGap,
+  GroundOcclusion? groundOcclusion,
 }) {
   final stroke = Paint()
     ..color = color
@@ -64,25 +67,34 @@ int paintOutlineEdges({
     final opacity = (opacityFor?.call(edge) ?? 1.0).clamp(0.0, 1.0);
     if (opacity <= 0.02) continue;
     if (!outlineEdgeVisible(edge, eye)) continue;
-    final a = camera.projectToScreen(edge.a, viewport);
-    final b = camera.projectToScreen(edge.b, viewport);
-    if (a == null || b == null) continue;
-    stroke.color = opacity < 0.999
-        ? color.withValues(alpha: (color.a * opacity).clamp(0.0, 1.0))
-        : color;
-    if (dashLength != null && dashLength > 0) {
-      paintDashedLine(
-        canvas,
-        a,
-        b,
-        stroke,
-        dashLength: dashLength,
-        gapLength: dashGap ?? dashLength,
-      );
-    } else {
-      canvas.drawLine(a, b, stroke);
+    final occlusion = groundOcclusion;
+    final parts = occlusion == null
+        ? <List<Vector3>>[
+            [edge.a, edge.b],
+          ]
+        : clipSegmentToVisibleParts(camera, edge.a, edge.b, occlusion);
+    for (final part in parts) {
+      if (part.length < 2) continue;
+      final a = camera.projectToScreen(part[0], viewport);
+      final b = camera.projectToScreen(part[1], viewport);
+      if (a == null || b == null) continue;
+      stroke.color = opacity < 0.999
+          ? color.withValues(alpha: (color.a * opacity).clamp(0.0, 1.0))
+          : color;
+      if (dashLength != null && dashLength > 0) {
+        paintDashedLine(
+          canvas,
+          a,
+          b,
+          stroke,
+          dashLength: dashLength,
+          gapLength: dashGap ?? dashLength,
+        );
+      } else {
+        canvas.drawLine(a, b, stroke);
+      }
+      drawn++;
     }
-    drawn++;
   }
   return drawn;
 }

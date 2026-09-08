@@ -1,6 +1,8 @@
 import 'package:vector_math/vector_math_64.dart';
 
 import '../outlines/outline_edges.dart';
+import '../spawns/basement_spawn.dart';
+import '../spawns/basement_spawn_mesh.dart';
 import '../volumes/volume_store.dart';
 import 'path_mesh.dart';
 import 'path_shape.dart';
@@ -49,5 +51,8 @@ List<OutlineEdge> buildPathOutline({
       );
     }
   }
-  return collectOuterEdges(quads);
+  if (paths.contains(BasementSpawn.pathTile.$1, BasementSpawn.pathTile.$2)) {
+    quads.addAll(basementRampPathOutlineQuads(grid));
+  }
+  return collectOuterEdges(quads, keepCreases: false);
 }

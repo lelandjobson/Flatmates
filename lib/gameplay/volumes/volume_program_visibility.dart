@@ -13,7 +13,10 @@ bool massProgramHudVisible({
 
 enum VolumeAlertKind { unprogrammed, noEntry, bedroomAccess }
 
-/// Alerts for one mass. Unprogrammed, missing entry, then isolated bedrooms.
+/// Alerts for one mass. Unprogrammed, missing door, then isolated bedrooms.
+///
+/// Missing entry is volume-level: any exterior door clears it. Circulation
+/// does not have to touch that door.
 List<VolumeAlertKind> volumeAlerts({
   required bool programmed,
   required bool hasEntry,

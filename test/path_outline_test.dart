@@ -1,6 +1,7 @@
 import 'package:flatmates/gameplay/outlines/outline_edges.dart';
 import 'package:flatmates/gameplay/paths/path_outline.dart';
 import 'package:flatmates/gameplay/paths/path_store.dart';
+import 'package:flatmates/gameplay/volumes/volume.dart';
 import 'package:flatmates/gameplay/volumes/volume_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math_64.dart';
@@ -53,5 +54,23 @@ void main() {
       edges.every((e) => !outlineEdgeVisible(e, Vector3(0, -10, 0))),
       isTrue,
     );
+  });
+
+  test('ramp path outline joins the locked path at (0,2)', () {
+    final grid = const VolumeGrid(tilesSide: 48, tileSize: 8);
+    final volumes = VolumeStore(grid: grid);
+    final paths = PathStore(grid: grid)
+      ..lockTile(0, 2)
+      ..placeAndJoin(0, 2);
+    final edges = buildPathOutline(paths: paths, volumes: volumes);
+    expect(edges, isNotEmpty);
+    final joinZ = grid.tileOrigin(0, 1).z + grid.tileSize;
+    final shared = edges.where((e) {
+      return (e.a.z - joinZ).abs() < 1e-3 &&
+          (e.b.z - joinZ).abs() < 1e-3 &&
+          (e.a.y).abs() < 1e-3 &&
+          (e.b.y).abs() < 1e-3;
+    });
+    expect(shared, isEmpty);
   });
 }

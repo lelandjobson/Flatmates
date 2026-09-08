@@ -11,6 +11,7 @@ import '../paint/face_paint_store.dart';
 import '../paper/paper_cost.dart';
 import '../paper/paper_wallet.dart';
 import '../paths/path_store.dart';
+import '../spawns/basement_spawn.dart';
 import '../viewers/world_plane.dart';
 import '../volumes/volume.dart';
 import '../volumes/volume_store.dart';
@@ -43,7 +44,10 @@ class GameRecording {
     this.version = currentSchemaVersion,
   });
 
-  static const int currentSchemaVersion = 1;
+  static const int currentSchemaVersion = 2;
+
+  /// Old 0-based 48-wide maps stored the center tile as (24, 24).
+  static const int v1OriginTile = 24;
 
   /// Stable instance id for the sample Cubeboy.
   static const String sampleCubeboyId = 'rec-cubeboy-1';
@@ -238,9 +242,14 @@ class GameRecording {
       PathEdge(9, 9, 10, 9),
     };
 
-    const grid = VolumeGrid(tilesSide: 16, tileSize: 8);
-    final cubeboyAt = grid.tileCenter(8, 7)
-      ..y = FriendMeshLayout.sitOnGroundY(tileSize: grid.tileSize);
+    const grid = VolumeGrid(
+      tilesSide: MapVisionConfig.defaultWorldTilesSide,
+      tileSize: 8,
+    );
+    final cubeboyAt = grid.tileCenter(
+      8 + MapVisionConfig.game.startingOriginTx,
+      7 + MapVisionConfig.game.startingOriginTy,
+    )..y = FriendMeshLayout.sitOnGroundY(tileSize: grid.tileSize);
 
     return GameRecording(
       nextVolumeId: 5,
@@ -282,6 +291,7 @@ class GameRecording {
     required int dtx,
     required int dty,
     int pixelsPerTile = VolumeGrid.defaultSubtilesPerTile,
+    bool shiftLandscape = true,
   }) {
     if (dtx == 0 && dty == 0) return this;
     final dxp = dtx * pixelsPerTile;
@@ -335,10 +345,14 @@ class GameRecording {
       }),
       landscapePaint: [
         for (final cell in landscapePaint)
-          (cell.$1 + dxp, cell.$2 + dyp, cell.$3),
+          if (shiftLandscape)
+            (cell.$1 + dxp, cell.$2 + dyp, cell.$3)
+          else
+            cell,
       ],
       landscapeErase: [
-        for (final cell in landscapeErase) (cell.$1 + dxp, cell.$2 + dyp),
+        for (final cell in landscapeErase)
+          if (shiftLandscape) (cell.$1 + dxp, cell.$2 + dyp) else cell,
       ],
     );
   }
@@ -476,7 +490,10 @@ class GameRecording {
     PaperWallet? paper,
   }) {
     volumes.restore(
-      volumes: [for (final volume in this.volumes) volume.clone()],
+      volumes: [
+        for (final volume in this.volumes)
+          if (_volumeWithoutReserved(volume) case final kept?) kept,
+      ],
       draftVolume: null,
       draftCell: null,
       draftIsGrow: false,
@@ -484,8 +501,16 @@ class GameRecording {
       nextId: nextVolumeId,
     );
     paths.restore(
-      tiles: Set<(int, int)>.from(pathTiles),
-      edges: Set<PathEdge>.from(pathEdges),
+      tiles: {
+        for (final tile in pathTiles)
+          if (!BasementSpawn.isCutTile(tile.$1, tile.$2)) tile,
+      },
+      edges: {
+        for (final edge in pathEdges)
+          if (!BasementSpawn.isCutTile(edge.x0, edge.y0) &&
+              !BasementSpawn.isCutTile(edge.x1, edge.y1))
+            edge,
+      },
     );
     walls.restore(Set<WallEdge>.from(wallEdges));
     friends?.restore([
@@ -585,8 +610,8 @@ class GameRecording {
       };
 
   factory GameRecording.fromJson(Map<String, dynamic> json) {
-    final version = _int(json['schemaVersion']) ?? currentSchemaVersion;
-    if (version != currentSchemaVersion) {
+    final version = _int(json['schemaVersion']) ?? 1;
+    if (version > currentSchemaVersion) {
       throw FormatException(
         'Unsupported game recording schemaVersion $version',
       );
@@ -687,8 +712,8 @@ class GameRecording {
       }
     }
 
-    return GameRecording(
-      version: version,
+    final loaded = GameRecording(
+      version: currentSchemaVersion,
       nextVolumeId: nextId,
       volumes: volumes,
       pathTiles: tiles,
@@ -706,7 +731,29 @@ class GameRecording {
       wallPaperCommitted: paperMap == null ? 0 : (_int(paperMap['walls']) ?? 0),
       paperPersisted: paperMap != null,
     );
+    if (version >= 2) return loaded;
+    return loaded.shifted(
+      dtx: -v1OriginTile,
+      dty: -v1OriginTile,
+      shiftLandscape: false,
+    );
   }
+}
+
+Volume? _volumeWithoutReserved(Volume volume) {
+  final cells = [
+    for (final cell in volume.cells)
+      if (!BasementSpawn.blocksBuild(cell.tx, cell.ty))
+        VolumeCell(
+          tx: cell.tx,
+          ty: cell.ty,
+          box: cell.box.clone(),
+          accessibleSides: Set<VolumeSide>.from(cell.accessibleSides),
+          doorOrigins: Map<VolumeSide, int>.from(cell.doorOrigins),
+        ),
+  ];
+  if (cells.isEmpty) return null;
+  return Volume(id: volume.id, datum: volume.datum, cells: cells);
 }
 
 Map<String, dynamic> _volumeToJson(Volume volume) => {

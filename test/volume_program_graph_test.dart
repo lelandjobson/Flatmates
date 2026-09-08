@@ -30,7 +30,7 @@ void main() {
     expect(graph.hasDisconnectedBedroom, isFalse);
   });
 
-  test('bedroom with a door on its cell is connected', () {
+  test('a door on the bedroom does not replace circulation', () {
     final volume = _mass([(2, 2)]);
     volume.cells.single.accessibleSides.add(VolumeSide.east);
     final programs = VolumeProgramStore()
@@ -41,10 +41,26 @@ void main() {
       walls: WallStore(),
     );
     expect(graph.doors, hasLength(1));
+    expect(graph.hasDisconnectedBedroom, isTrue);
+  });
+
+  test('circulation may sit away from the door', () {
+    final volume = _mass([(2, 2), (3, 2), (4, 2)]);
+    volume.cellAt(4, 2)!.accessibleSides.add(VolumeSide.east);
+    final programs = VolumeProgramStore()
+      ..assignIndoor(tx: 2, ty: 2, programId: kProgramBedroom)
+      ..assignIndoor(tx: 3, ty: 2, programId: kProgramCirculation)
+      ..assignIndoor(tx: 4, ty: 2, programId: kProgramLeisure);
+    final graph = buildVolumeProgramGraph(
+      volume: volume,
+      programs: programs,
+      walls: WallStore(),
+    );
+    expect(graph.doors, hasLength(1));
     expect(graph.hasDisconnectedBedroom, isFalse);
   });
 
-  test('bedroom next to leisure with no door is disconnected', () {
+  test('bedroom next to leisure with no circulation is disconnected', () {
     final volume = _mass([(2, 2), (3, 2)]);
     final programs = VolumeProgramStore()
       ..assignIndoor(tx: 2, ty: 2, programId: kProgramBedroom)

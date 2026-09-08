@@ -40,8 +40,8 @@ class MapAabb {
     required double mapHalf,
     double height = 20,
   }) {
-    final x0 = -mapHalf + tx * tileSize;
-    final z0 = -mapHalf + ty * tileSize;
+    final x0 = tx * tileSize;
+    final z0 = ty * tileSize;
     return MapAabb(
       Vector3(x0, 0, z0),
       Vector3(x0 + tileSize, height, z0 + tileSize),
@@ -57,10 +57,10 @@ class MapAabb {
     required double mapHalf,
     double height = 20,
   }) {
-    final x0 = -mapHalf + tx0 * tileSize;
-    final z0 = -mapHalf + ty0 * tileSize;
-    final x1 = -mapHalf + (tx1 + 1) * tileSize;
-    final z1 = -mapHalf + (ty1 + 1) * tileSize;
+    final x0 = tx0 * tileSize;
+    final z0 = ty0 * tileSize;
+    final x1 = (tx1 + 1) * tileSize;
+    final z1 = (ty1 + 1) * tileSize;
     return MapAabb(Vector3(x0, 0, z0), Vector3(x1, height, z1));
   }
 }

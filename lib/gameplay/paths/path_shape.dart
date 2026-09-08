@@ -1,3 +1,4 @@
+import '../spawns/basement_spawn.dart';
 import '../volumes/volume.dart';
 import '../volumes/volume_store.dart';
 import '../graph/connection_graph.dart';
@@ -219,7 +220,11 @@ Map<(int, int), List<PathFootprint>> pathFootprintsByTile({
   final masks = <(int, int), int>{};
   for (final (tx, ty) in paths.tiles) {
     if (volumes.isOccupied(tx, ty)) continue;
-    masks[(tx, ty)] = paths.neighborMask(tx, ty);
+    var mask = paths.neighborMask(tx, ty);
+    if (BasementSpawn.isLockedPath(tx, ty)) {
+      mask |= VolumeSide.north.maskBit;
+    }
+    masks[(tx, ty)] = mask;
   }
   final gaps = <(int, int), List<PathFootprint>>{};
   for (final link in ConnectionGraph.inOutLinks(volumes)) {

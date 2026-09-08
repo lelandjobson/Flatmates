@@ -67,6 +67,7 @@ VolumeStore copyVolumeStore(VolumeStore src) {
 
 PathStore copyPathStore(PathStore src) {
   final dst = PathStore(grid: src.grid);
+  dst.lockedTiles.addAll(src.lockedTiles);
   dst.restore(
     tiles: Set<(int, int)>.from(src.tiles),
     edges: Set<PathEdge>.from(src.edges),

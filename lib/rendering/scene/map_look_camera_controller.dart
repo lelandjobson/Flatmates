@@ -26,7 +26,7 @@ class MapLookCameraController extends ChangeNotifier {
     this.maxPitch = defaultMaxPitch,
     this.pitchPeekSensitivity = defaultPitchPeekSensitivity,
     double yaw = defaultYaw,
-    this.zoomSensitivity = 0.0025,
+    this.zoomSensitivity = 0.0009,
     Vector3? boundsMin,
     Vector3? boundsMax,
   })  : zoomStepCount = math.max(2, zoomStepCount),
@@ -37,7 +37,8 @@ class MapLookCameraController extends ChangeNotifier {
         _maxDistance = math.max(maxDistance, minDistance + 1),
         restPitch = pitch,
         _pitch = pitch,
-        _yaw = yaw {
+        _yaw = yaw,
+        _yawTo = yaw {
     _steps = ladderZoom ? _buildSteps() : const [];
     final start = distance ??
         (ladderZoom
@@ -49,10 +50,9 @@ class MapLookCameraController extends ChangeNotifier {
     _targetDistance = _distance;
     _zoomAnim = AnimationController.unbounded(vsync: vsync)
       ..addListener(_onZoomTick);
-    _yawAnim = AnimationController(
-      vsync: vsync,
-      duration: const Duration(milliseconds: 280),
-    )..addListener(_onYawTick);
+    _yawAnim = AnimationController.unbounded(vsync: vsync)
+      ..addListener(_onYawTick)
+      ..addStatusListener(_onYawStatus);
     _lookAtAnim = AnimationController(
       vsync: vsync,
       duration: const Duration(milliseconds: 280),
@@ -80,6 +80,12 @@ class MapLookCameraController extends ChangeNotifier {
     mass: 1,
     stiffness: 90,
     damping: 14,
+  );
+
+  static const SpringDescription yawSpring = SpringDescription(
+    mass: 1,
+    stiffness: 140,
+    damping: 24,
   );
 
   static const SpringDescription pitchSpring = SpringDescription(
@@ -124,8 +130,8 @@ class MapLookCameraController extends ChangeNotifier {
   late List<double> _steps;
   late double _distance;
   late double _targetDistance;
-  double _yawFrom = 0;
-  double _yawTo = 0;
+  double _yawTo;
+  bool _yawQueued = false;
   double _pitch;
   double _pitchEffort = 0;
   bool _pitchPeeking = false;
@@ -136,6 +142,7 @@ class MapLookCameraController extends ChangeNotifier {
   Vector3 get lookAt => Vector3.copy(_lookAt);
   double get distance => _distance;
   double get targetDistance => _targetDistance;
+  double get targetYaw => _yawTo;
   List<double> get steps => List.unmodifiable(_steps);
 
   int get nearestStepIndex => _nearestStepIndex(_distance);
@@ -157,22 +164,69 @@ class MapLookCameraController extends ChangeNotifier {
   }
 
   /// Orbit 90° clockwise around the look-at, as seen from above.
-  void rotateClockwise() => _animateYaw(-math.pi / 2);
+  void rotateClockwise() => _requestYawTurn(-math.pi / 2);
 
   /// Orbit 90° counter-clockwise around the look-at, as seen from above.
-  void rotateCounterClockwise() => _animateYaw(math.pi / 2);
+  void rotateCounterClockwise() => _requestYawTurn(math.pi / 2);
 
-  void _animateYaw(double delta) {
-    _yawAnim.stop();
-    _yawFrom = _yaw;
-    _yawTo = _yaw + delta;
-    _yawAnim.forward(from: 0);
+  /// One extra 90° can be queued. A second click extends the target and
+  /// keeps velocity; further clicks do nothing until that extra is consumed.
+  void _requestYawTurn(double step) {
+    if (_yawAnim.isAnimating) {
+      final remaining = _yawTo - _yaw;
+      final sameDir = remaining * step > 1e-6;
+      if (sameDir) {
+        if (_yawQueued) return;
+        _yawQueued = true;
+        _yawTo = mapLookNextCornerYaw(_yawTo, step);
+      } else {
+        _yawQueued = false;
+        _yawTo = mapLookNextCornerYaw(_yaw, step);
+      }
+    } else {
+      _yawQueued = false;
+      _yawTo = mapLookNextCornerYaw(_yaw, step);
+    }
+    _restartYawSpring();
   }
 
   void _onYawTick() {
-    final t = Curves.easeInOut.transform(_yawAnim.value);
-    _yaw = _yawFrom + (_yawTo - _yawFrom) * t;
+    _yaw = _yawAnim.value;
+    if (_yawQueued && (_yawTo - _yaw).abs() <= math.pi / 2 + 1e-3) {
+      _yawQueued = false;
+    }
     _applyPose();
+  }
+
+  void _onYawStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    _yaw = _yawTo;
+    _yawQueued = false;
+    _applyPose();
+  }
+
+  void _restartYawSpring() {
+    final velocity = _yawAnim.isAnimating ? _yawAnim.velocity : 0.0;
+    _yawAnim
+      ..stop()
+      ..animateWith(SpringSimulation(yawSpring, _yaw, _yawTo, velocity));
+  }
+
+  /// Spring distance to [distance], clamped to min/max.
+  void animateDistance(double distance) {
+    _scrollSnap?.cancel();
+    _scrollSnap = null;
+    _gestureZooming = false;
+    _pushingPastCloseLimit = false;
+    final target = distance.clamp(minDistance, maxDistance);
+    if ((target - _distance).abs() < 1e-4) {
+      _distance = target;
+      _targetDistance = target;
+      _applyPose();
+      return;
+    }
+    _targetDistance = target;
+    _restartZoomSpring();
   }
 
   /// Ease the look-at to [target] on the ground plane.
@@ -276,6 +330,9 @@ class MapLookCameraController extends ChangeNotifier {
     _distance = distance.clamp(minDistance, maxDistance);
     _targetDistance = _distance;
     _yaw = yaw;
+    _yawTo = yaw;
+    _yawQueued = false;
+    if (_yawAnim.isAnimating) _yawAnim.stop();
     _pitch = restPitch;
     _pitchEffort = 0;
     _pitchPeeking = false;
@@ -291,6 +348,7 @@ class MapLookCameraController extends ChangeNotifier {
     _pushingPastCloseLimit = false;
     if (_zoomAnim.isAnimating) _zoomAnim.stop();
     if (_yawAnim.isAnimating) _yawAnim.stop();
+    _yawQueued = false;
     if (_lookAtAnim.isAnimating) _lookAtAnim.stop();
     if (_pitchAnim.isAnimating) _pitchAnim.stop();
     _pitchPeeking = false;
@@ -349,9 +407,10 @@ class MapLookCameraController extends ChangeNotifier {
     required double tileSize,
     required int tilesSide,
   }) {
-    final half = tilesSide * tileSize * 0.5;
-    final tx = ((_lookAt.x + half) / tileSize).floor().clamp(0, tilesSide - 1);
-    final ty = ((_lookAt.z + half) / tileSize).floor().clamp(0, tilesSide - 1);
+    final origin = -(tilesSide ~/ 2);
+    final last = origin + tilesSide - 1;
+    final tx = (_lookAt.x / tileSize).floor().clamp(origin, last);
+    final ty = (_lookAt.z / tileSize).floor().clamp(origin, last);
     return (tx, ty);
   }
 
@@ -514,6 +573,7 @@ class MapLookCameraController extends ChangeNotifier {
       ..dispose();
     _yawAnim
       ..removeListener(_onYawTick)
+      ..removeStatusListener(_onYawStatus)
       ..dispose();
     _lookAtAnim
       ..removeListener(_onLookAtTick)
@@ -555,6 +615,23 @@ double lookPitchEffortFromPitch({
   final lo = math.min(min - rest, -1e-6);
   final t = (delta / lo).clamp(-0.999, 0.999);
   return lo * _atanh(t);
+}
+
+/// Next traditional corner (π/4 + n·π/2) in the sign of [direction].
+double mapLookNextCornerYaw(
+  double yaw,
+  double direction, {
+  double rest = MapLookCameraController.defaultYaw,
+}) {
+  final step = math.pi / 2;
+  final idx = (yaw - rest) / step;
+  final onCorner = (idx - idx.round()).abs() < 1e-4;
+  if (direction >= 0) {
+    final next = onCorner ? idx.round() + 1 : idx.ceil();
+    return rest + next * step;
+  }
+  final next = onCorner ? idx.round() - 1 : idx.floor();
+  return rest + next * step;
 }
 
 double _atanh(double x) => 0.5 * math.log((1 + x) / (1 - x));

@@ -1,6 +1,7 @@
 import 'package:vector_math/vector_math_64.dart';
 
 import '../paths/path_store.dart';
+import '../spawns/basement_spawn.dart';
 import '../volumes/volume.dart';
 import '../volumes/volume_store.dart';
 import '../walls/wall_store.dart';
@@ -17,6 +18,7 @@ bool eraseAtTile({
   required VolumeStore volumes,
 }) {
   if (!grid.inBounds(tx, ty)) return false;
+  if (BasementSpawn.blocksBuild(tx, ty)) return false;
   var changed = false;
   if (filter.paths && paths.removeTile(tx, ty)) changed = true;
   if (filter.walls && walls.removeEdgesTouchingTile(tx, ty)) changed = true;
@@ -42,6 +44,7 @@ bool eraseWorld({
   }
   if (filter.paths) {
     for (final tile in List<(int, int)>.from(paths.tiles)) {
+      if (BasementSpawn.blocksBuild(tile.$1, tile.$2)) continue;
       if (!_tileHits(paths.grid, tile.$1, tile.$2, world, radius)) continue;
       if (paths.removeTile(tile.$1, tile.$2)) changed = true;
     }

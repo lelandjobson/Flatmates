@@ -90,11 +90,15 @@ class ProgramGraph {
     }
   }
 
-  /// Bedroom is OK if it touches a circulation region or a door.
+  /// Bedroom is OK if it touches a circulation region.
+  ///
+  /// Doors stay on the graph for analysis, but they do not stand in for
+  /// circulation. Entry is a volume-level requirement; where circulation
+  /// sits relative to a door is up to the player.
   bool bedroomHasAccess(ProgramGraphNode bedroom) {
     if (!bedroom.isBedroom) return true;
     for (final next in neighborsOf(bedroom)) {
-      if (next.isDoor || next.isCirculation) return true;
+      if (next.isCirculation) return true;
     }
     return false;
   }

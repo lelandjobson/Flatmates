@@ -49,7 +49,13 @@ bool outlineEdgeVisible(OutlineEdge edge, Vector3 camera) {
 }
 
 /// Unique outer edges: drop coplanar joins inside a larger face.
-List<OutlineEdge> collectOuterEdges(Iterable<OutlineQuad> quads) {
+///
+/// When [keepCreases] is false, every shared edge is treated as interior
+/// (used for path paper that folds down a ramp).
+List<OutlineEdge> collectOuterEdges(
+  Iterable<OutlineQuad> quads, {
+  bool keepCreases = true,
+}) {
   final adjacent = <_EdgeKey, List<OutlineFace>>{};
   for (final quad in quads) {
     if (quad.points.length < 3) continue;
@@ -65,7 +71,7 @@ List<OutlineEdge> collectOuterEdges(Iterable<OutlineQuad> quads) {
   for (final entry in adjacent.entries) {
     final faces = entry.value;
     if (faces.length >= 2 &&
-        faces[0].normal.dot(faces[1].normal) >= 0.999) {
+        (!keepCreases || faces[0].normal.dot(faces[1].normal) >= 0.999)) {
       continue;
     }
     edges.add(

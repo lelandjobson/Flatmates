@@ -54,6 +54,11 @@ class PathStore {
   final VolumeGrid grid;
   final Set<(int, int)> tiles = {};
   final Set<PathEdge> edges = {};
+  final Set<(int, int)> lockedTiles = {};
+
+  bool isLocked(int tx, int ty) => lockedTiles.contains((tx, ty));
+
+  void lockTile(int tx, int ty) => lockedTiles.add((tx, ty));
 
   bool contains(int tx, int ty) => tiles.contains((tx, ty));
 
@@ -218,6 +223,7 @@ class PathStore {
   }
 
   bool removeTile(int tx, int ty) {
+    if (isLocked(tx, ty)) return false;
     if (!tiles.remove((tx, ty))) return false;
     edges.removeWhere(
       (edge) =>
@@ -232,7 +238,8 @@ class PathStore {
   }) {
     this.tiles
       ..clear()
-      ..addAll(tiles);
+      ..addAll(tiles)
+      ..addAll(lockedTiles);
     this.edges
       ..clear()
       ..addAll(edges);

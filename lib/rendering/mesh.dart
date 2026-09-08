@@ -3,6 +3,7 @@ import 'package:vector_math/vector_math_64.dart';
 
 import '../geometry/geometry.dart';
 import '../geometry/transformable.dart';
+import 'ground_occlusion.dart';
 
 class Mesh extends Transformable {
   Mesh({
@@ -16,6 +17,7 @@ class Mesh extends Transformable {
     this.highlightOnClick = false,
     this.visible = true,
     this.groundPlane = false,
+    this.groundOcclusion,
   })  : _geometry = geometry,
         _material = material,
         _highlightColor = null,
@@ -28,6 +30,9 @@ class Mesh extends Transformable {
 
   /// Ground-plane paper: paint under volumes / structures / friends.
   bool groundPlane;
+
+  /// When set, faces are clipped so solid ground hides underground parts.
+  GroundOcclusion? groundOcclusion;
 
   Geometry _geometry;
   Geometry get geometry => _geometry;

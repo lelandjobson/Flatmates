@@ -60,8 +60,8 @@ List<SelectionActionSpec> inferSelectionActions({
       return [
         const SelectionActionSpec(
           id: SelectionActionId.isolate,
-          label: 'Isolate',
-          icon: Icons.filter_center_focus,
+          label: 'Look inside',
+          icon: Icons.zoom_in,
         ),
         if (volume != null && (programs?.canAssignToVolume(volume) ?? true))
           const SelectionActionSpec(
@@ -85,8 +85,8 @@ List<SelectionActionSpec> inferSelectionActions({
       return [
         const SelectionActionSpec(
           id: SelectionActionId.isolate,
-          label: 'Isolate',
-          icon: Icons.filter_center_focus,
+          label: 'Look inside',
+          icon: Icons.zoom_in,
         ),
         if (hit.face == VolumeFace.negY) ...[
           const SelectionActionSpec(
@@ -131,7 +131,7 @@ List<SelectionActionSpec> inferSelectionActions({
   }
 }
 
-/// Volume mass / face isolate opens the roof-off interior viewer, not crop isolate.
+/// Volume mass / face isolate zooms in-map instead of crop isolate.
 bool isolateOpensVolumeInterior(SelectableHit hit) =>
     hit.volumeId != null && hit.kind != SelectableKind.stuff;
 

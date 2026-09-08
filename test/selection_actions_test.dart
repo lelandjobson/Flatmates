@@ -98,7 +98,7 @@ void main() {
     );
   });
 
-  test('volume isolate opens interior view instead of crop isolate', () {
+  test('volume isolate zooms in-map instead of crop isolate', () {
     final volume = Volume(
       id: 1,
       cells: [VolumeCell(tx: 2, ty: 2, box: BoxPrimitive())],
@@ -127,6 +127,22 @@ void main() {
     expect(
       ids(SelectableHit.friend('cubeboy')),
       [SelectionActionId.focusFriend],
+    );
+  });
+
+  test('blocked hover does not keep the last selected outline', () {
+    final last = SelectableHit.tile(1, 3);
+    expect(
+      selectionOutlineHit(hover: null, blocked: true),
+      isNull,
+    );
+    expect(
+      selectionOutlineHit(hover: last, blocked: true),
+      isNull,
+    );
+    expect(
+      selectionOutlineHit(hover: SelectableHit.tile(0, 2), blocked: false)?.tx,
+      0,
     );
   });
 }

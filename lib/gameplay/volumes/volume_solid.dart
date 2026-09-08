@@ -538,11 +538,12 @@ Set<(int, int)> _enclosedHoles(VolumeGrid grid, Set<(int, int)> indoor) {
     if (outdoor.add((tx, ty))) queue.add((tx, ty));
   }
 
-  final last = grid.tilesSide - 1;
-  for (var i = 0; i < grid.tilesSide; i++) {
-    seed(i, 0);
+  final origin = grid.originTile;
+  final last = grid.lastTile;
+  for (var i = origin; i <= last; i++) {
+    seed(i, origin);
     seed(i, last);
-    seed(0, i);
+    seed(origin, i);
     seed(last, i);
   }
 
@@ -555,8 +556,8 @@ Set<(int, int)> _enclosedHoles(VolumeGrid grid, Set<(int, int)> indoor) {
   }
 
   final holes = <(int, int)>{};
-  for (var ty = 0; ty < grid.tilesSide; ty++) {
-    for (var tx = 0; tx < grid.tilesSide; tx++) {
+  for (var ty = origin; ty <= last; ty++) {
+    for (var tx = origin; tx <= last; tx++) {
       final tile = (tx, ty);
       if (indoor.contains(tile) || outdoor.contains(tile)) continue;
       holes.add(tile);

@@ -25,29 +25,26 @@ void main() {
 
   test('prefers a longer path corridor because it is 50% faster', () {
     final paths = PathStore(grid: grid);
-    // Detour: (0,0)->(0,2)->(2,2)->(2,0) is 6 steps on path.
-    // Straight (0,0)->(2,0) is 2 ground steps. Time: path 6*(2/3)=4, ground 2.
-    // So straight ground wins. Need a corridor that is actually faster.
-    // Ground L: (0,0)-(3,0)-(3,3) = 6 ground.
-    // Path around closer: (0,0)-(0,1)-(0,2)-(1,2)-(2,2)-(3,2)-(3,3) = 6 path
+    // Ground L: (4,4)-(7,4)-(7,7) = 6 ground.
+    // Path around closer: (4,4)-(4,5)-(4,6)-(5,6)-(6,6)-(7,6)-(7,7) = 6 path
     //   time 6*(2/3)=4 < 6. Should take path.
-    paths.connect(0, 0, 0, 1);
-    paths.connect(0, 1, 0, 2);
-    paths.connect(0, 2, 1, 2);
-    paths.connect(1, 2, 2, 2);
-    paths.connect(2, 2, 3, 2);
-    paths.connect(3, 2, 3, 3);
+    paths.connect(4, 4, 4, 5);
+    paths.connect(4, 5, 4, 6);
+    paths.connect(4, 6, 5, 6);
+    paths.connect(5, 6, 6, 6);
+    paths.connect(6, 6, 7, 6);
+    paths.connect(7, 6, 7, 7);
 
     final route = FlatmatePathfinder().findOnMap(
-      start: (0, 0),
-      goal: (3, 3),
+      start: (4, 4),
+      goal: (7, 7),
       grid: grid,
       volumes: emptyVolumes(),
       paths: paths,
     );
     expect(route, isNotNull);
-    expect(route, containsAllInOrder([(0, 0), (0, 1), (0, 2)]));
-    expect(route!.last, (3, 3));
+    expect(route, containsAllInOrder([(4, 4), (4, 5), (4, 6)]));
+    expect(route!.last, (7, 7));
     expect(route.every((t) => paths.contains(t.$1, t.$2)), isTrue);
   });
 

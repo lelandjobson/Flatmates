@@ -177,3 +177,13 @@ class SelectableHit {
     };
   }
 }
+
+/// World outline follows the pointer. A blocked pick (ramp cut) must not
+/// keep drawing the last selected tile.
+SelectableHit? selectionOutlineHit({
+  SelectableHit? hover,
+  bool blocked = false,
+}) {
+  if (blocked) return null;
+  return hover;
+}

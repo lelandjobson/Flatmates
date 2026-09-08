@@ -16,11 +16,11 @@ void main() {
     expect(mid.contains(2, 5), isFalse);
     expect(mid.tiles.length, 9);
 
-    final corner = FocusRegion.aroundTile(grid: grid, tx: 0, ty: 0);
-    expect(corner.minTx, 0);
-    expect(corner.minTy, 0);
-    expect(corner.maxTx, 1);
-    expect(corner.maxTy, 1);
+    final corner = FocusRegion.aroundTile(grid: grid, tx: -8, ty: -8);
+    expect(corner.minTx, -8);
+    expect(corner.minTy, -8);
+    expect(corner.maxTx, -7);
+    expect(corner.maxTy, -7);
     expect(corner.tiles.length, 4);
   });
 

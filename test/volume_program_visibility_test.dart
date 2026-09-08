@@ -3,7 +3,7 @@ import 'package:flatmates/gameplay/volumes/volume_program_visibility.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('volume alerts cover missing program and missing entry', () {
+  test('volume alerts cover missing program and missing door', () {
     expect(
       volumeAlerts(programmed: false, hasEntry: false),
       [VolumeAlertKind.unprogrammed, VolumeAlertKind.noEntry],

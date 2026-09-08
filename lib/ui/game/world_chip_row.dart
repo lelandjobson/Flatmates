@@ -129,7 +129,7 @@ const kNoEntryAlertChip = WorldChip(
   icon: Icons.door_front_door_outlined,
   color: Color(0xFFFFC107),
   iconColor: Color(0xFFFFF8E1),
-  tooltip: 'No entry',
+  tooltip: 'Volume needs a door',
   alert: true,
 );
 
@@ -137,7 +137,7 @@ const kBedroomAccessAlertChip = WorldChip(
   icon: Icons.bed_outlined,
   color: Color(0xFFFFC107),
   iconColor: Color(0xFFFFF8E1),
-  tooltip: 'Bedroom needs circulation or a door',
+  tooltip: 'Bedroom needs circulation',
   alert: true,
 );
 

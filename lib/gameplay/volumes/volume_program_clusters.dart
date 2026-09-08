@@ -87,6 +87,12 @@ List<ProgramCluster> outdoorProgramClusters({
   return out;
 }
 
+/// Ground-plane center of a mass, for map look-at / look-inside zoom.
+Vector3 volumeGroundCenter(Volume volume, VolumeGrid grid) {
+  final top = volumeTopCenter(volume, grid);
+  return Vector3(top.x, 0, top.z);
+}
+
 Vector3 volumeTopCenter(Volume volume, VolumeGrid grid) {
   var minX = double.infinity;
   var maxX = -double.infinity;

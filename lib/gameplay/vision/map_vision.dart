@@ -40,14 +40,14 @@ class MapVisionConfig {
   final int friendViewRadius;
   final int structureViewRadius;
 
-  /// Halfway tile of the world (48×48 → 24,24). Look-at starts on its center.
-  int get centerTx => worldTilesSide ~/ 2;
+  /// World-center tile. Look-at starts on its center.
+  int get centerTx => 0;
 
-  int get centerTy => worldTilesSide ~/ 2;
+  int get centerTy => 0;
 
-  int get startingOriginTx => (worldTilesSide - startingTilesSide) ~/ 2;
+  int get startingOriginTx => -(startingTilesSide ~/ 2);
 
-  int get startingOriginTy => (worldTilesSide - startingTilesSide) ~/ 2;
+  int get startingOriginTy => -(startingTilesSide ~/ 2);
 
   int get startingMaxTx => startingOriginTx + startingTilesSide - 1;
 

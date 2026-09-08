@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../paths/path_store.dart';
+import '../spawns/basement_spawn.dart';
 import '../walls/wall_edge.dart';
 import '../walls/wall_store.dart';
 import 'volume.dart';
@@ -33,6 +34,7 @@ bool canPaintPathAt({
   required int tx,
   required int ty,
 }) {
+  if (BasementSpawn.blocksBuild(tx, ty)) return false;
   if (!volumes.isOccupied(tx, ty)) return true;
   return volumeHasAdjacentOutdoorPath(
     volumes: volumes,

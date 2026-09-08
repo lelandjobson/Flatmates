@@ -20,7 +20,7 @@ void main() {
   setUp(() {
     volumes = VolumeStore();
     friends = FriendInstanceStore();
-    expect(volumes.startNew(8, 8), isTrue);
+    expect(volumes.startNew(0, 0), isTrue);
     expect(volumes.confirmEdit(), isTrue);
     // Look at the volume from above / +Z so the center ray hits a face.
     camera = Camera(
@@ -137,5 +137,35 @@ void main() {
     expect(hit!.kind, SelectableKind.path);
     expect(hit.tx, tx);
     expect(hit.ty, ty);
+  });
+
+  test('skipTile does not invent a ground hit', () {
+    camera = Camera(
+      name: 'skip',
+      position: Vector3(-32, 30, -16),
+      target: Vector3(-32, 0, -32),
+      fovDegrees: 50,
+    );
+    final ground = const MapSelector().pick(
+      screen: center,
+      viewport: viewport,
+      camera: camera,
+      distance: 40,
+      volumes: volumes,
+      friends: friends,
+      regions: const [],
+    );
+    expect(ground, isNotNull);
+    final skipped = const MapSelector().pick(
+      screen: center,
+      viewport: viewport,
+      camera: camera,
+      distance: 40,
+      volumes: volumes,
+      friends: friends,
+      regions: const [],
+      skipTile: (tx, ty) => tx == ground!.tx && ty == ground.ty,
+    );
+    expect(skipped, isNull);
   });
 }

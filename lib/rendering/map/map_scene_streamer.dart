@@ -62,10 +62,12 @@ class MapSceneStreamer {
     final loadRadius = drawRadius + loadPadding;
     final unloadRadius = loadRadius + unloadPadding;
 
-    final tx0 = (lookTx - loadRadius).clamp(0, tilesSide - 1);
-    final ty0 = (lookTy - loadRadius).clamp(0, tilesSide - 1);
-    final tx1 = (lookTx + loadRadius).clamp(0, tilesSide - 1);
-    final ty1 = (lookTy + loadRadius).clamp(0, tilesSide - 1);
+    final origin = -(tilesSide ~/ 2);
+    final last = origin + tilesSide - 1;
+    final tx0 = (lookTx - loadRadius).clamp(origin, last);
+    final ty0 = (lookTy - loadRadius).clamp(origin, last);
+    final tx1 = (lookTx + loadRadius).clamp(origin, last);
+    final ty1 = (lookTy + loadRadius).clamp(origin, last);
     final ids = octree.query(
       MapAabb.tiles(
         tx0: tx0,

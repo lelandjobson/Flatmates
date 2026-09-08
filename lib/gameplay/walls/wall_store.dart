@@ -134,15 +134,14 @@ class WallStore {
   }
 
   (double fx, double fy) vertexFromWorld(Vector3 world) {
-    final half = grid.mapHalf;
     final s = grid.tileSize;
-    return ((world.x + half) / s, (world.z + half) / s);
+    return (world.x / s, world.z / s);
   }
 
   Vector3 vertexWorld(int vx, int vy) => Vector3(
-        -grid.mapHalf + vx * grid.tileSize,
+        vx * grid.tileSize,
         0,
-        -grid.mapHalf + vy * grid.tileSize,
+        vy * grid.tileSize,
       );
 
   /// Nearest unit edge whose midpoint is within [maxDistTiles] of [world].
@@ -208,9 +207,9 @@ class WallStore {
       collect(
         hitEdgeAtMidpoint(
           Vector3(
-            -grid.mapHalf + (ax + dx * t) * grid.tileSize,
+            (ax + dx * t) * grid.tileSize,
             0,
-            -grid.mapHalf + (ay + dy * t) * grid.tileSize,
+            (ay + dy * t) * grid.tileSize,
           ),
         ),
       );

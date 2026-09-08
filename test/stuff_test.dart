@@ -41,8 +41,8 @@ void main() {
       id: '1',
       specId: kStuffLamp,
       volumeId: 1,
-      tx: 8,
-      ty: 8,
+      tx: 4,
+      ty: 4,
       face: VolumeFace.negY,
       origin: Vector3(4, 0.06, 4),
     );
@@ -58,7 +58,7 @@ void main() {
 
   test('floor inset is valid; side-wall penetration is not; floor slab is ignored', () {
     final volumes = VolumeStore();
-    expect(volumes.startNew(8, 8), isTrue);
+    expect(volumes.startNew(4, 4), isTrue);
     expect(volumes.confirmEdit(), isTrue);
     final volume = volumes.volumes.single;
     final cell = volume.cells.single;
@@ -106,7 +106,7 @@ void main() {
 
   test('activeInTiles skips invalid pieces', () {
     final volumes = VolumeStore();
-    expect(volumes.startNew(8, 8), isTrue);
+    expect(volumes.startNew(4, 4), isTrue);
     expect(volumes.confirmEdit(), isTrue);
     final volume = volumes.volumes.single;
     final cell = volume.cells.single;

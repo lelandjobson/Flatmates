@@ -29,10 +29,10 @@ void main() {
   test('world border is the map perimeter', () {
     final edges = worldBorderEdges(const VolumeGrid(tilesSide: 16));
     expect(edges, hasLength(64));
-    expect(edges, contains(WallEdge(0, 0, 1, 0)));
-    expect(edges, contains(WallEdge(0, 0, 0, 1)));
-    expect(edges, contains(WallEdge(15, 0, 16, 0)));
-    expect(edges, contains(WallEdge(16, 15, 16, 16)));
+    expect(edges, contains(WallEdge(-8, -8, -7, -8)));
+    expect(edges, contains(WallEdge(-8, -8, -8, -7)));
+    expect(edges, contains(WallEdge(7, -8, 8, -8)));
+    expect(edges, contains(WallEdge(8, 7, 8, 8)));
   });
 
   test('a closed loop around one tile is an enclosed region', () {

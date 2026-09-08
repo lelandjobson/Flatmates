@@ -28,6 +28,9 @@ import '../gameplay/eraser/eraser_filter.dart';
 import '../gameplay/eraser/world_eraser.dart';
 import '../gameplay/paths/path_mesh.dart';
 import '../gameplay/paths/path_store.dart';
+import '../gameplay/spawns/basement_blur_veil.dart';
+import '../gameplay/spawns/basement_spawn.dart';
+import '../gameplay/spawns/basement_spawn_mesh.dart';
 import '../gameplay/walls/wall_mesh.dart';
 import '../gameplay/walls/wall_edge.dart';
 import '../gameplay/walls/wall_regions.dart';
@@ -129,6 +132,7 @@ import '../ui/game/gizmo_bounds_overlay.dart';
 import '../ui/game/plane_subtile_grid_overlay.dart';
 import '../ui/game/scene_transform_gizmo.dart';
 import '../ui/object_radial_menu.dart';
+import '../ui/game/basement_door_overlay.dart';
 import '../ui/game/volume_door_overlay.dart';
 import '../ui/game/volume_outline_overlay.dart';
 import '../ui/game/volume_ground_shadow_overlay.dart';
@@ -254,7 +258,9 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   bool _showVolumeExterior = false;
   SelectableHit? _hoverHit;
   SelectableHit? _selectedHit;
-  SelectableHit? get _highlightHit => _hoverHit ?? _selectedHit;
+  bool _hoverBlocked = false;
+  SelectableHit? get _highlightHit =>
+      selectionOutlineHit(hover: _hoverHit, blocked: _hoverBlocked);
   bool _graphVisible = false;
   ConnectionGraph _graph = ConnectionGraph.empty;
 
@@ -749,9 +755,11 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       loadPadding: 0,
       unloadPadding: 0,
     );
-    _scene.addListener(_onSceneChanged);
 
     _pathGrid = GridMotif.subtileLines(worldSize: _volumes.grid.subtileSize);
+    _seedBasementSpawn();
+    _syncWorld();
+    _scene.addListener(_onSceneChanged);
     _loadPaperTexture();
     _bakeLandscape();
     _refreshStatus();
@@ -880,6 +888,13 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       keyIntensity: t.keyIntensity ?? base.keyIntensity,
       fillIntensity: t.fillIntensity ?? base.fillIntensity,
       keyDirection: sun,
+      shade: sun == null
+          ? base.shade
+          : base.shade.copyWith(
+              lightX: sun.x,
+              lightY: sun.y,
+              lightZ: sun.z,
+            ),
       shadow: base.shadow.copyWith(
         lightX: sun?.x,
         lightY: sun?.y,
@@ -942,6 +957,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       generator: gen,
       regions: _wallRegions,
       subtilesPerTile: _volumes.grid.subtilesPerTile,
+      originTile: _volumes.grid.originTile,
     );
     if (filled == 0) return;
     _history.pushSnapshot(before);
@@ -1266,6 +1282,12 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       grid: _volumes.grid,
     );
     syncPathMeshes(_scene, _paths, _volumes, color: _theme.path);
+    syncBasementSpawnMeshes(
+      _scene,
+      _volumes.grid,
+      pathColor: _theme.path,
+      wallColor: _theme.volume,
+    );
     _pathOutlines.rebuild(paths: _paths, volumes: _volumes);
     syncWallMeshes(_scene, _walls, color: _theme.wall);
     syncFriendMeshes(_scene, _friends, tileSize: _tileWorld);
@@ -1322,6 +1344,9 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       } else if (mesh.id.startsWith('stuff_')) {
         final id = parseStuffMeshId(mesh.id);
         mesh.visible = id == null || !_stuffHiddenByDatum(id);
+      } else if (mesh.id.startsWith('basement_spawn_')) {
+        mesh.visible =
+            _focusRegion == null && _layers.shows(SceneLayer.landscape);
       } else {
         mesh.visible =
             _focusRegion == null && _layers.shows(SceneLayer.streamerCrafts);
@@ -1459,7 +1484,22 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
         volumeDoorAcross(edge, _volumes);
   }
 
-  bool _canEditTile(int tx, int ty) => _vision.isVisible(tx, ty);
+  bool _canEditTile(int tx, int ty) =>
+      _vision.isVisible(tx, ty) && !BasementSpawn.blocksBuild(tx, ty);
+
+  bool _tileUnbuildable(int tx, int ty) => BasementSpawn.blocksSelect(tx, ty);
+
+  bool _aimTileUnbuildable() {
+    final tile = _volumes.grid.tileAtWorld(_placeAimWorld);
+    if (tile == null) return false;
+    return _tileUnbuildable(tile.$1, tile.$2);
+  }
+
+  void _seedBasementSpawn() {
+    final (tx, ty) = BasementSpawn.pathTile;
+    _paths.lockTile(tx, ty);
+    _paths.placeAndJoin(tx, ty);
+  }
 
   bool _canEditWorld(Vector3 hit) {
     final tile = _volumes.grid.tileAtWorld(hit);
@@ -1541,6 +1581,15 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     return _ceilingReveal.hidesFace(tx, ty, face);
   }
 
+  bool _groundPickBlocked(Offset screen) {
+    if (_viewportSize.isEmpty) return false;
+    final ground = _camera.intersectGround(screen, _viewportSize);
+    if (ground == null) return false;
+    final tile = _volumes.grid.tileAtWorld(ground);
+    if (tile == null) return false;
+    return BasementSpawn.blocksSelect(tile.$1, tile.$2);
+  }
+
   SelectableHit? _pickAt(Offset screen) {
     if (_viewportSize.isEmpty) return null;
     final orbitDist = (_camera.position - _camera.target).length;
@@ -1557,16 +1606,19 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       tileSize: _tileWorld,
       skipVolumeFace: _hidesVolumeFace,
       skipStuff: _stuffHiddenByDatum,
+      skipTile: BasementSpawn.blocksSelect,
     );
   }
 
   void _refreshHover([Offset? pointer]) {
     if (_viewer != GameViewerKind.map3d || _viewportSize.isEmpty) {
       _hoverHit = null;
+      _hoverBlocked = false;
       return;
     }
     final screen = _isMapUnlocked ? _viewportCenter : (pointer ?? _viewportCenter);
     final next = _pickAt(screen);
+    _hoverBlocked = next == null && _groundPickBlocked(screen);
     if (next == null) {
       _hoverHit = null;
       _erasePreview = const ErasePreview();
@@ -1771,7 +1823,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       break;
     }
     if (volume != null) {
-      _enterVolumeInterior(volume);
+      _lookInsideVolume(volume);
       return;
     }
     _enterFocus3d(
@@ -2136,6 +2188,16 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     _applyLayerVisibility();
     setState(() {});
     _viewerAnim.forward(from: 0);
+  }
+
+  /// Stay in map3d and zoom just past the ceiling-reveal threshold.
+  void _lookInsideVolume(Volume volume) {
+    if (volume.cells.isEmpty) return;
+    if (_viewer != GameViewerKind.map3d || _viewerAnim.isAnimating) return;
+    _cancelZoomToFocus();
+    _look.animateLookAt(volumeGroundCenter(volume, _volumes.grid));
+    _look.animateDistance(kVolumeLookInsideDistance);
+    setState(() {});
   }
 
   void _enterVolumeInterior(Volume volume) {
@@ -2563,7 +2625,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     _zoomToFocusFromLook();
   }
 
-  /// Crosshair zoom-through: enter the viewer for whatever we are looking at.
+  /// Crosshair zoom-through: look inside a volume, or enter another viewer.
   void _zoomToFocusFromLook() {
     if (_viewer != GameViewerKind.map3d || _viewerAnim.isAnimating) return;
     final hit = _pickAt(_viewportCenter);
@@ -2573,21 +2635,6 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     _setSelectedHit(hit);
     unawaited(fmHapticSmallClick());
 
-    if (hit.kind == SelectableKind.volumeFace) {
-      final face = _volumeFaceHitFrom(hit);
-      if (face != null &&
-          face.face != VolumeFace.negY &&
-          !_ceilingReveal.hidesFace(face.cell.tx, face.cell.ty, face.face)) {
-        _enterFaceFocus(face);
-        return;
-      }
-      final volume =
-          hit.volumeId == null ? null : _volumes.volumeById(hit.volumeId!);
-      if (volume != null) {
-        _enterVolumeInterior(volume);
-        return;
-      }
-    }
     _focusHit(hit);
   }
 
@@ -2632,10 +2679,10 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
         _openFloorMenu(hit);
         return;
       }
-      final face = _volumeFaceHitFrom(hit);
-      if (face != null &&
-          !_ceilingReveal.hidesFace(face.cell.tx, face.cell.ty, face.face)) {
-        _enterFaceFocus(face);
+      final volume =
+          hit.volumeId == null ? null : _volumes.volumeById(hit.volumeId!);
+      if (volume != null) {
+        _lookInsideVolume(volume);
       }
       return;
     }
@@ -2648,7 +2695,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     if (hit.volumeId != null) {
       final volume = _volumes.volumeById(hit.volumeId!);
       if (volume != null) {
-        _enterVolumeInterior(volume);
+        _lookInsideVolume(volume);
         return;
       }
     }
@@ -2685,7 +2732,11 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     if (_volumesTool) {
       final placed = _commitAction('place volume', () {
         final added = !_volumes.isOccupied(tx, ty);
-        final painted = _volumes.paintAt(tx, ty);
+        final painted = _volumes.paintAt(
+          tx,
+          ty,
+          blocked: BasementSpawn.blocksBuild,
+        );
         if (painted) {
           final keeper = _volumes.draftVolume?.id;
           if (keeper != null) _rekeyAbsorbed(keeper);
@@ -2803,7 +2854,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
         if (isolateOpensVolumeInterior(hit) && hit.volumeId != null) {
           final volume = _volumes.volumeById(hit.volumeId!);
           if (volume != null) {
-            _enterVolumeInterior(volume);
+            _lookInsideVolume(volume);
             break;
           }
         }
@@ -3007,7 +3058,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     if (!floorVisible && _viewer == GameViewerKind.map3d) {
       _floorMenuHit = null;
       _programPickerTarget = null;
-      _enterVolumeInterior(volume);
+      _lookInsideVolume(volume);
       return;
     }
     _openProgramPicker(
@@ -3850,8 +3901,8 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
 
   void _placeCubeboy() {
     final lookTile = _volumes.grid.tileAtWorld(_look.lookAt);
-    final tx = lookTile?.$1 ?? _tilesSide ~/ 2;
-    final ty = lookTile?.$2 ?? _tilesSide ~/ 2;
+    final tx = lookTile?.$1 ?? 0;
+    final ty = lookTile?.$2 ?? 0;
     final center = _volumes.grid.tileCenter(tx, ty);
     center.y = FriendMeshLayout.sitOnGroundY(tileSize: _tileWorld);
     final instance = FriendInstance(
@@ -3912,6 +3963,10 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     final start = _tileOfFlatmate(flatmate);
     final goal = _tileAt(local);
     if (start == null || goal == null) return null;
+    if (BasementSpawn.blocksWalk(start.$1, start.$2) ||
+        BasementSpawn.blocksWalk(goal.$1, goal.$2)) {
+      return null;
+    }
     return _flatmatePathfinder.findOnMap(
       start: start,
       goal: goal,
@@ -4332,7 +4387,11 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     var changed = false;
     for (final step in _bresenham(last, tile)) {
       final added = !_volumes.isOccupied(step.$1, step.$2);
-      if (_volumes.paintAt(step.$1, step.$2)) {
+      if (_volumes.paintAt(
+        step.$1,
+        step.$2,
+        blocked: BasementSpawn.blocksBuild,
+      )) {
         final keeper = _volumes.draftVolume?.id;
         if (keeper != null) _rekeyAbsorbed(keeper);
         if (added) {
@@ -5303,7 +5362,16 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                               _lighting.background,
                               _dayNightProgress * 0.42,
                             ),
+                      shade: _lighting.shade,
                       visibleTiles: _focusVisibleTiles(),
+                      omitTiles: BasementSpawn.cutTileSet,
+                      omitFloorY: (z) =>
+                          basementRampHeight(_volumes.grid, z),
+                      slopeTiles: BasementSpawn.rampTileSet,
+                      cutDoor: basementCutDoorWall(
+                        _volumes.grid,
+                        color: _theme.volume,
+                      ),
                       clipMinX: _focusCrop?.worldMin(_volumes.grid).x,
                       clipMaxX: _focusCrop?.worldMax(_volumes.grid).x,
                       clipMinZ: _focusCrop?.worldMin(_volumes.grid).z,
@@ -5341,6 +5409,17 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                     ),
                   ),
                 ),
+                if (kBasementBlurVeilEnabled &&
+                    _layers.shows(SceneLayer.landscape) &&
+                    !(_focusCrop != null && !_focusCrop!.includesGround))
+                  Positioned.fill(
+                    child: BlurVeilOverlay(
+                      veil: basementBlurVeil(_volumes.grid),
+                      camera: _camera,
+                      viewport: _viewportSize,
+                      listenable: _scene,
+                    ),
+                  ),
                 if (_layers.shows(SceneLayer.friends))
                   Positioned.fill(
                     child: FriendOutlineOverlay(
@@ -5385,6 +5464,17 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                       viewport: _viewportSize,
                       listenable: _scene,
                       edgeOpacity: _volumeOutlineOpacity,
+                    ),
+                  ),
+                if (_layers.shows(SceneLayer.landscape) &&
+                    !(_focusCrop != null && !_focusCrop!.includesGround))
+                  Positioned.fill(
+                    child: BasementDoorOverlay(
+                      grid: _volumes.grid,
+                      camera: _camera,
+                      viewport: _viewportSize,
+                      listenable: _scene,
+                      groundOcclusion: basementGroundOcclusion(_volumes.grid),
                     ),
                   ),
                 if (_layers.shows(SceneLayer.volumes))
@@ -5635,12 +5725,23 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                         final tile =
                             _volumes.grid.tileAtWorld(_placeAimWorld);
                         if (tile == null) return null;
+                        if (_tileUnbuildable(tile.$1, tile.$2)) return null;
                         if (_pathsTool && !_canPaintPathAt(tile.$1, tile.$2)) {
                           return null;
                         }
                         return tile;
                       }(),
-                      wallEdge: _walls.hitEdgeAtMidpoint(_placeAimWorld),
+                      wallEdge: () {
+                        final edge =
+                            _walls.hitEdgeAtMidpoint(_placeAimWorld);
+                        if (edge == null) return null;
+                        for (final tile in tilesTouchingWall(edge)) {
+                          if (_tileUnbuildable(tile.$1, tile.$2)) {
+                            return null;
+                          }
+                        }
+                        return edge;
+                      }(),
                       paths: _paths,
                       listenable: _scene,
                       color: _theme.volume.withValues(alpha: 0.72),
@@ -5651,7 +5752,13 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                     ),
                   ),
                 if (_isMapUnlocked)
-                  const Positioned.fill(child: ViewCrosshair()),
+                  Positioned.fill(
+                    child: ViewCrosshair(
+                      selectable: _isPlaceTool
+                          ? !_aimTileUnbuildable()
+                          : _hoverHit != null && !_hoverBlocked,
+                    ),
+                  ),
                 if (hoverPaper != null && hoverPaper != 0)
                   PaperCostHover(
                     cursor: _cursorScreen,

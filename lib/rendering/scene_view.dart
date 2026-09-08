@@ -10,6 +10,7 @@ import '../debug/scene_paint_stats.dart';
 import '../gameplay/outlines/outline_edges.dart';
 import '../gameplay/outlines/outline_paint.dart';
 import '../geometry/geometry.dart';
+import 'ground_occlusion.dart';
 import 'lights.dart';
 import 'mesh.dart';
 import 'scene/camera.dart';
@@ -296,6 +297,7 @@ class ScenePainter extends CustomPainter {
         camera: camera,
         viewport: size,
         color: groundOutlineColor,
+        groundOcclusion: _groundOutlineOcclusion(allMeshes),
       );
     }
     paintFaces(passes.elevated);
@@ -355,29 +357,11 @@ class ScenePainter extends CustomPainter {
         worldVertices.add(worldPos);
       }
 
-      // Clip the polygon against the near plane so that faces straddling
-      // the plane are trimmed rather than discarded entirely.
-      final clipped = _clipFaceToNearPlane(worldVertices, view, camera.near);
-      if (clipped.length < 3) continue;
-
-      // Project the clipped vertices.
-      final points = <Offset>[];
-      final depths = <double>[];
-      var shouldDiscard = false;
-      for (final wp in clipped) {
-        final cs = Vector3.copy(wp);
-        view.transform3(cs);
-        depths.add(cs.z);
-
-        final projected = _projectToScreen(wp, viewProjection, size);
-        if (projected == null) {
-          shouldDiscard = true;
-          break;
-        }
-        points.add(projected);
-      }
-
-      if (shouldDiscard || points.length < 3) continue;
+      final occlusion = mesh.groundOcclusion;
+      final faceParts = occlusion == null
+          ? <List<Vector3>>[worldVertices]
+          : clipFaceToVisibleParts(camera, worldVertices, occlusion);
+      if (faceParts.isEmpty) continue;
 
       // Compute face normal from the original (unclipped) vertices to avoid
       // degenerate normals from heavily clipped geometry.
@@ -400,7 +384,6 @@ class ScenePainter extends CustomPainter {
         _scene.lights,
         _scene.globalIllumination,
       );
-      final depth = depths.reduce((a, b) => a + b) / depths.length;
 
       if (debugOptions.showNormals) {
         final centerScreen = _projectToScreen(faceCenter, viewProjection, size);
@@ -467,23 +450,47 @@ class ScenePainter extends CustomPainter {
         }
       }
 
-      facesToDraw.add(
-        _ProjectedFace(
-          points: points,
-          color: faceColor,
-          depth: depth,
-          isTessellated: isTessellated,
-          isWireframe: mesh.material.wireframe,
-          opacity: materialOpacity,
-          strokeEdges: mesh.material.strokeEdges,
-          edgeColor: materialOpacity < 1.0 && mesh.material.strokeEdges
-              ? baseColor
-              : null,
-          gridPositions: motifPositions,
-          gridUvs: motifUvs,
-          groundPlane: mesh.groundPlane,
-        ),
-      );
+      for (final worldForProject in faceParts) {
+        if (worldForProject.length < 3) continue;
+        final clipped =
+            _clipFaceToNearPlane(worldForProject, view, camera.near);
+        if (clipped.length < 3) continue;
+
+        final points = <Offset>[];
+        final depths = <double>[];
+        var shouldDiscard = false;
+        for (final wp in clipped) {
+          final cs = Vector3.copy(wp);
+          view.transform3(cs);
+          depths.add(cs.z);
+
+          final projected = _projectToScreen(wp, viewProjection, size);
+          if (projected == null) {
+            shouldDiscard = true;
+            break;
+          }
+          points.add(projected);
+        }
+        if (shouldDiscard || points.length < 3) continue;
+
+        facesToDraw.add(
+          _ProjectedFace(
+            points: points,
+            color: faceColor,
+            depth: depths.reduce((a, b) => a + b) / depths.length,
+            isTessellated: isTessellated,
+            isWireframe: mesh.material.wireframe,
+            opacity: materialOpacity,
+            strokeEdges: mesh.material.strokeEdges,
+            edgeColor: materialOpacity < 1.0 && mesh.material.strokeEdges
+                ? baseColor
+                : null,
+            gridPositions: motifPositions,
+            gridUvs: motifUvs,
+            groundPlane: mesh.groundPlane,
+          ),
+        );
+      }
     }
   }
 
@@ -550,6 +557,14 @@ class ScenePainter extends CustomPainter {
         );
       }
     }
+  }
+
+  GroundOcclusion? _groundOutlineOcclusion(List<Mesh> meshes) {
+    for (final mesh in meshes) {
+      final occlusion = mesh.groundOcclusion;
+      if (occlusion != null) return occlusion;
+    }
+    return null;
   }
 
   @override

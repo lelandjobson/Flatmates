@@ -134,12 +134,13 @@ List<WallEdge> tileSetOutline(Set<(int, int)> tiles) {
 
 /// Map-edge segments used by the world-border overlay.
 List<WallEdge> worldBorderEdges(VolumeGrid grid) {
-  final n = grid.tilesSide;
+  final lo = grid.originTile;
+  final hi = grid.lastTile + 1;
   return [
-    for (var i = 0; i < n; i++) WallEdge(i, 0, i + 1, 0),
-    for (var i = 0; i < n; i++) WallEdge(n, i, n, i + 1),
-    for (var i = 0; i < n; i++) WallEdge(i, n, i + 1, n),
-    for (var i = 0; i < n; i++) WallEdge(0, i, 0, i + 1),
+    for (var i = lo; i < hi; i++) WallEdge(i, lo, i + 1, lo),
+    for (var i = lo; i < hi; i++) WallEdge(hi, i, hi, i + 1),
+    for (var i = lo; i < hi; i++) WallEdge(i, hi, i + 1, hi),
+    for (var i = lo; i < hi; i++) WallEdge(lo, i, lo, i + 1),
   ];
 }
 
@@ -202,14 +203,16 @@ Set<(int, int)> _floodFace(WallStore store, Set<(int, int)> seeds) {
 }
 
 bool _reachesMapExterior(WallStore store, Set<(int, int)> tiles) {
-  final n = store.grid.tilesSide;
+  final lo = store.grid.originTile;
+  final hi = store.grid.lastTile + 1;
+  final last = store.grid.lastTile;
   for (final (tx, ty) in tiles) {
-    if (ty == 0 && !store.hasBetweenVertices(tx, 0, tx + 1, 0)) return true;
-    if (ty == n - 1 && !store.hasBetweenVertices(tx, n, tx + 1, n)) {
+    if (ty == lo && !store.hasBetweenVertices(tx, lo, tx + 1, lo)) return true;
+    if (ty == last && !store.hasBetweenVertices(tx, hi, tx + 1, hi)) {
       return true;
     }
-    if (tx == 0 && !store.hasBetweenVertices(0, ty, 0, ty + 1)) return true;
-    if (tx == n - 1 && !store.hasBetweenVertices(n, ty, n, ty + 1)) {
+    if (tx == lo && !store.hasBetweenVertices(lo, ty, lo, ty + 1)) return true;
+    if (tx == last && !store.hasBetweenVertices(hi, ty, hi, ty + 1)) {
       return true;
     }
   }
