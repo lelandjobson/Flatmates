@@ -165,17 +165,18 @@ bool syncVolumeDoorsFromPaths({
               volume: volume,
               cell: cell,
               side: side,
-              originU: door.originU,
             )) {
               changed = true;
             }
+          } else if (volumes.placeDoor(
+            volume: volume,
+            cell: cell,
+            side: side,
+          )) {
+            changed = true;
           }
           final live = volume.cellAt(cell.tx, cell.ty) ?? cell;
-          final door = volumeDoorForSide(
-            live.box,
-            side,
-            originU: live.doorOrigins[side],
-          );
+          final door = volumeDoorForSide(live.box, side);
           if (door == null) continue;
           final before = appliques.doorOn(
             volumeId: volume.id,
@@ -190,7 +191,12 @@ bool syncVolumeDoorsFromPaths({
             door: door,
             color: doorColor,
           );
-          if (before == null || before.color != paper.color) {
+          if (before == null ||
+              before.color != paper.color ||
+              before.originU != paper.originU ||
+              before.originV != paper.originV ||
+              before.width != paper.width ||
+              before.height != paper.height) {
             changed = true;
           }
         } else if (has) {

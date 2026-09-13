@@ -1,0 +1,12 @@
+{
+  "id": "smooth1",
+  "name": "Smooth1",
+  "movementTileRatio": 0.779092227711397,
+  "offset": 0.705221737132353,
+  "jank": 0.8775132123161761,
+  "jankIntensity": 0.6924115349264706,
+  "smoothness": 0.9763614430147056,
+  "bendSlowdown": 0.1530761718750001,
+  "hopHeight": 0.0,
+  "tileSpeed": 1.517190372242647
+}

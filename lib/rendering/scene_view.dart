@@ -187,10 +187,10 @@ class ScenePainter extends CustomPainter {
     // Pool for colored edge strokes (wireframe & non-opaque materials).
     final edgePool = <Color, Paint>{};
     final motif = gridMotif;
-    final gridPaint = Paint()
-      ..isAntiAlias = false
-      ..filterQuality = FilterQuality.none;
-    if (motif != null) gridPaint.shader = motif.shader;
+    final gridPaint = motif?.samplingPaint() ??
+        (Paint()
+          ..isAntiAlias = false
+          ..filterQuality = FilterQuality.low);
     final gridPositions = <Offset>[];
     final gridUvs = <Offset>[];
 

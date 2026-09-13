@@ -7,9 +7,11 @@ import 'package:vector_math/vector_math_64.dart';
 void main() {
   test('rejects non-unit and out-of-bounds edges', () {
     final store = WallStore();
+    final lo = store.grid.originTile;
     expect(store.add(WallEdge(0, 0, 2, 0)), isFalse);
     expect(store.add(WallEdge(0, 0, 1, 1)), isFalse);
-    expect(store.add(WallEdge(-1, 0, 0, 0)), isFalse);
+    expect(store.add(WallEdge(lo - 1, 0, lo, 0)), isFalse);
+    expect(store.add(WallEdge(-1, 0, 0, 0)), isTrue);
     expect(store.add(WallEdge(0, 0, 1, 0)), isTrue);
     expect(store.add(WallEdge(0, 0, 1, 0)), isFalse);
   });
@@ -63,6 +65,39 @@ void main() {
     expect(store.add(WallEdge(3, 2, 3, 3)), isTrue);
     expect(store.separatesTiles((2, 2), (3, 2)), isTrue);
     expect(store.separatesTiles((2, 2), (2, 3)), isFalse);
+  });
+
+  test('cut fence still separates tiles but does not block walking', () {
+    final store = WallStore();
+    final edge = WallEdge(3, 2, 3, 3);
+    expect(store.add(edge), isTrue);
+    expect(store.cut(edge), isTrue);
+    expect(store.lookup(edge)?.kind, WallKind.cutFence);
+    expect(store.separatesTiles((2, 2), (3, 2)), isTrue);
+    expect(store.blocksWalk((2, 2), (3, 2)), isFalse);
+    expect(store.uncut(edge), isTrue);
+    expect(store.lookup(edge)?.kind, WallKind.fence);
+    expect(store.blocksWalk((2, 2), (3, 2)), isTrue);
+  });
+
+  test('add, hit, and toggle work on negative-X and negative-Y edges', () {
+    final store = WallStore();
+    final west = WallEdge(-4, 1, -3, 1);
+    expect(store.add(west), isTrue);
+    final westA = store.vertexWorld(-4, 1);
+    final westB = store.vertexWorld(-3, 1);
+    final westMid = Vector3((westA.x + westB.x) * 0.5, 0, westA.z);
+    expect(store.hitEdgeAtMidpoint(westMid), west);
+
+    final south = WallEdge(2, -5, 2, -4);
+    final southA = store.vertexWorld(2, -5);
+    final southB = store.vertexWorld(2, -4);
+    final southMid = Vector3(southA.x, 0, (southA.z + southB.z) * 0.5);
+    expect(store.hitEdgeAtMidpoint(southMid), south);
+    expect(store.toggleAtMidpoint(southMid), isTrue);
+    expect(store.contains(south), isTrue);
+    expect(store.toggleAtMidpoint(southMid), isTrue);
+    expect(store.contains(south), isFalse);
   });
 
   test('adding a wall across a path severs the connection and stores no wall', () {

@@ -17,8 +17,62 @@ class WallStore {
 
   bool contains(WallEdge edge) => edges.contains(edge);
 
+  /// The stored edge (with kind), if present.
+  WallEdge? lookup(WallEdge edge) => edges.lookup(edge);
+
   bool hasBetweenVertices(int ax, int ay, int bx, int by) =>
       edges.contains(WallEdge(ax, ay, bx, by));
+
+  /// The unit wall on the shared side of two 4-adjacent tiles, if any.
+  WallEdge? edgeBetween((int, int) a, (int, int) b) {
+    final dx = b.$1 - a.$1;
+    final dy = b.$2 - a.$2;
+    if (dx == 1 && dy == 0) {
+      return WallEdge(a.$1 + 1, a.$2, a.$1 + 1, a.$2 + 1);
+    }
+    if (dx == -1 && dy == 0) {
+      return WallEdge(a.$1, a.$2, a.$1, a.$2 + 1);
+    }
+    if (dx == 0 && dy == 1) {
+      return WallEdge(a.$1, a.$2 + 1, a.$1 + 1, a.$2 + 1);
+    }
+    if (dx == 0 && dy == -1) {
+      return WallEdge(a.$1, a.$2, a.$1 + 1, a.$2);
+    }
+    return null;
+  }
+
+  /// Replace a solid fence with a path-width cut. No-op if missing or cut.
+  bool cut(WallEdge edge) {
+    final stored = lookup(edge);
+    if (stored == null || stored.kind == WallKind.cutFence) return false;
+    edges.remove(stored);
+    return edges.add(
+      WallEdge(stored.x0, stored.y0, stored.x1, stored.y1, kind: WallKind.cutFence),
+    );
+  }
+
+  /// Restore a cut fence to a solid fence. No-op if missing or already solid.
+  bool uncut(WallEdge edge) {
+    final stored = lookup(edge);
+    if (stored == null || stored.kind != WallKind.cutFence) return false;
+    edges.remove(stored);
+    return edges.add(
+      WallEdge(stored.x0, stored.y0, stored.x1, stored.y1, kind: WallKind.fence),
+    );
+  }
+
+  /// True when a solid wall blocks walking between 4-adjacent tiles.
+  ///
+  /// Cut fences stay region boundaries ([separatesTiles]) but do not block
+  /// walking.
+  bool blocksWalk((int, int) a, (int, int) b) {
+    final edge = edgeBetween(a, b);
+    if (edge == null) return true;
+    final stored = lookup(edge);
+    if (stored == null) return false;
+    return stored.kind != WallKind.cutFence;
+  }
 
   /// True when a wall blocks the shared side of two 4-adjacent tiles.
   bool separatesTiles((int, int) a, (int, int) b) {
@@ -102,13 +156,10 @@ class WallStore {
 
   /// The four boundary edges of tile [tx],[ty] that currently have a wall.
   List<WallEdge> edgesTouchingTile(int tx, int ty) {
-    final candidates = [
-      WallEdge(tx, ty, tx + 1, ty),
-      WallEdge(tx, ty, tx, ty + 1),
-      WallEdge(tx + 1, ty, tx + 1, ty + 1),
-      WallEdge(tx, ty + 1, tx + 1, ty + 1),
+    return [
+      for (final edge in tileBoundaryEdges(tx, ty))
+        if (contains(edge)) edge,
     ];
-    return [for (final edge in candidates) if (contains(edge)) edge];
   }
 
   bool removeEdgesTouchingTile(int tx, int ty) {
@@ -126,8 +177,9 @@ class WallStore {
   }
 
   bool _edgeInBounds(WallEdge edge) {
-    final n = grid.tilesSide;
-    if (edge.x0 < 0 || edge.y0 < 0 || edge.x1 > n || edge.y1 > n) {
+    final lo = grid.originTile;
+    final hi = grid.lastTile + 1;
+    if (edge.x0 < lo || edge.y0 < lo || edge.x1 > hi || edge.y1 > hi) {
       return false;
     }
     return true;
@@ -153,7 +205,8 @@ class WallStore {
     double maxDistTiles = kWallMidpointHitTiles,
   }) {
     final (fx, fy) = vertexFromWorld(world);
-    final n = grid.tilesSide;
+    final lo = grid.originTile;
+    final hi = grid.lastTile + 1;
     WallEdge? best;
     var bestDist = maxDistTiles;
 
@@ -170,12 +223,12 @@ class WallStore {
 
     final vxH = fx.floor();
     final vyH = fy.round();
-    if (vxH >= 0 && vxH < n && vyH >= 0 && vyH <= n) {
+    if (vxH >= lo && vxH < hi && vyH >= lo && vyH <= hi) {
       consider(WallEdge(vxH, vyH, vxH + 1, vyH), vxH + 0.5, vyH.toDouble());
     }
     final vxV = fx.round();
     final vyV = fy.floor();
-    if (vxV >= 0 && vxV <= n && vyV >= 0 && vyV < n) {
+    if (vxV >= lo && vxV <= hi && vyV >= lo && vyV < hi) {
       consider(WallEdge(vxV, vyV, vxV, vyV + 1), vxV.toDouble(), vyV + 0.5);
     }
     return best;
@@ -234,3 +287,11 @@ class WallStore {
     return math.sqrt(dx * dx + dz * dz);
   }
 }
+
+/// The four unit boundary edges of tile [tx],[ty], whether or not walls exist.
+List<WallEdge> tileBoundaryEdges(int tx, int ty) => [
+      WallEdge(tx, ty, tx + 1, ty),
+      WallEdge(tx, ty, tx, ty + 1),
+      WallEdge(tx + 1, ty, tx + 1, ty + 1),
+      WallEdge(tx, ty + 1, tx + 1, ty + 1),
+    ];

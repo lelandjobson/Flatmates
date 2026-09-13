@@ -1,5 +1,6 @@
 import 'package:flatmates/gameplay/paths/path_store.dart';
 import 'package:flatmates/gameplay/walls/wall_edge.dart';
+import 'package:flatmates/gameplay/walls/wall_regions.dart';
 import 'package:flatmates/gameplay/walls/wall_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -88,6 +89,55 @@ void main() {
     final paths = PathStore()..addIsland(3, 2);
     expect(walls.separatesTiles((2, 2), (3, 2)), isTrue);
     expect(paths.placeAndJoin(2, 2, walls: walls), isTrue);
+    expect(paths.hasEdge(2, 2, 3, 2), isTrue);
+    expect(walls.contains(WallEdge(3, 2, 3, 3)), isFalse);
+  });
+
+  test('placeAndJoin into a region cuts the wall and does not enter', () {
+    final walls = WallStore();
+    walls.add(WallEdge(3, 2, 4, 2));
+    walls.add(WallEdge(4, 2, 4, 3));
+    walls.add(WallEdge(3, 3, 4, 3));
+    walls.add(WallEdge(3, 2, 3, 3));
+    final regions = computeEnclosedRegions(walls);
+    expect(regions.single.tiles, {(3, 2)});
+    final paths = PathStore()..addIsland(4, 2);
+    expect(
+      paths.placeAndJoin(3, 2, walls: walls, regions: regions),
+      isTrue,
+    );
+    expect(paths.contains(3, 2), isFalse);
+    expect(paths.contains(4, 2), isTrue);
+    expect(paths.hasEdge(3, 2, 4, 2), isFalse);
+    expect(walls.lookup(WallEdge(4, 2, 4, 3))?.kind, WallKind.cutFence);
+    expect(computeEnclosedRegions(walls).single.tiles, {(3, 2)});
+  });
+
+  test('placeAndJoin on the approach path still cuts the region wall', () {
+    final walls = WallStore();
+    walls.add(WallEdge(3, 2, 4, 2));
+    walls.add(WallEdge(4, 2, 4, 3));
+    walls.add(WallEdge(3, 3, 4, 3));
+    walls.add(WallEdge(3, 2, 3, 3));
+    final regions = computeEnclosedRegions(walls);
+    final paths = PathStore()..addIsland(4, 2);
+    expect(
+      paths.placeAndJoin(4, 2, walls: walls, regions: regions),
+      isTrue,
+    );
+    expect(paths.contains(3, 2), isFalse);
+    expect(paths.contains(4, 2), isTrue);
+    expect(paths.hasEdge(3, 2, 4, 2), isFalse);
+    expect(walls.lookup(WallEdge(4, 2, 4, 3))?.kind, WallKind.cutFence);
+  });
+
+  test('placeAndJoin still deletes a wall that does not bound a region', () {
+    final walls = WallStore()..add(WallEdge(3, 2, 3, 3));
+    final paths = PathStore()..addIsland(3, 2);
+    expect(
+      paths.placeAndJoin(2, 2, walls: walls, regions: const []),
+      isTrue,
+    );
     expect(paths.hasEdge(2, 2, 3, 2), isTrue);
     expect(walls.contains(WallEdge(3, 2, 3, 3)), isFalse);
   });

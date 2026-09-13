@@ -112,6 +112,20 @@ WallRegion? wallRegionContaining(
   return null;
 }
 
+/// Region that uses [wall] as an outline segment, if any.
+WallRegion? regionBoundedByWall(WallEdge wall, Iterable<WallRegion> regions) {
+  final pair = wall.separatedTiles;
+  if (pair == null) return null;
+  final a = wallRegionContaining(regions, pair.$1.$1, pair.$1.$2);
+  final b = wallRegionContaining(regions, pair.$2.$1, pair.$2.$2);
+  if (a != null && b == null) return a;
+  if (b != null && a == null) return b;
+  return a ?? b;
+}
+
+bool wallBoundsRegion(WallEdge wall, Iterable<WallRegion> regions) =>
+    regionBoundedByWall(wall, regions) != null;
+
 /// Perimeter segments of [tiles] in vertex space (unit grid edges).
 List<WallEdge> tileSetOutline(Set<(int, int)> tiles) {
   final outline = <WallEdge>[];

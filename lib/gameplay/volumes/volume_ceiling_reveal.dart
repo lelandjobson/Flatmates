@@ -110,6 +110,10 @@ class VolumeCeilingReveal {
     return featureOpacityForFace(tx, ty, faceForHandle(handle));
   }
 
+  /// True once this tile's roof has started opening (floor becomes visible).
+  bool revealsInterior(int tx, int ty) =>
+      opacityFor(VolumePartId(tx, ty)) < 0.999;
+
   bool hidesFace(int tx, int ty, VolumeFace face) =>
       featureOpacityForFace(tx, ty, face) <= kVolumeFeatureHiddenOpacity;
 

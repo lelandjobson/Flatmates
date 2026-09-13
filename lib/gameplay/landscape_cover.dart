@@ -4,11 +4,13 @@ import 'paths/path_shape.dart';
 import 'paths/path_store.dart';
 import 'volumes/volume.dart';
 import 'volumes/volume_store.dart';
+import 'walls/wall_store.dart';
 
 /// Landscape-pixel indices covered by volume boxes and path footprints.
 Set<(int, int)> coveredGroundPixels({
   required VolumeStore volumes,
   required PathStore paths,
+  WallStore? walls,
 }) {
   final covered = <(int, int)>{};
   for (final volume in volumes.visibleVolumes) {
@@ -26,7 +28,11 @@ Set<(int, int)> coveredGroundPixels({
       );
     }
   }
-  for (final entry in pathFootprintsByTile(volumes: volumes, paths: paths).entries) {
+  for (final entry in pathFootprintsByTile(
+    volumes: volumes,
+    paths: paths,
+    walls: walls,
+  ).entries) {
     final (tx, ty) = entry.key;
     for (final piece in entry.value) {
       _addRect(
@@ -71,9 +77,10 @@ bool syncGroundCoverage({
   required VolumeStore volumes,
   required PathStore paths,
   required LandscapeGenerator generator,
+  WallStore? walls,
 }) {
   return grid.applyCoverage(
-    coveredGroundPixels(volumes: volumes, paths: paths),
+    coveredGroundPixels(volumes: volumes, paths: paths, walls: walls),
     generator,
   );
 }

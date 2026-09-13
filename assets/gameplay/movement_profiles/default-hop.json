@@ -1,0 +1,12 @@
+{
+  "id": "default-hop",
+  "name": "Default hop",
+  "movementTileRatio": 1.0,
+  "offset": 0.35,
+  "jank": 0.15,
+  "jankIntensity": 0.2,
+  "smoothness": 0.7,
+  "bendSlowdown": 0.55,
+  "hopHeight": 0.85,
+  "tileSpeed": 2.5
+}

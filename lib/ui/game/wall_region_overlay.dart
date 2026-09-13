@@ -1,16 +1,24 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:vector_math/vector_math_64.dart' hide Colors;
 
+import '../../gameplay/outlines/outline_paint.dart';
+import '../../gameplay/walls/region_color.dart';
 import '../../gameplay/walls/wall_edge.dart';
 import '../../gameplay/walls/wall_regions.dart';
 import '../../gameplay/walls/wall_store.dart';
 import '../../rendering/scene/camera.dart';
+import '../../rendering/scene/grid_motif.dart';
 
-const kWallRegionLiveColor = Color(0xFF40C4FF);
 const kWorldBorderColor = Color(0xFF40C4FF);
-const kWallRegionFadeColor = Color(0xFFE53935);
+const kWallRegionFadeColor = Color(kRegionAlertArgb);
 const kWallRegionFadeMs = 300;
+const kWallRegionDashLength = 8.0;
+const kWallRegionDashGap = 5.0;
+const _kGridY = 0.05;
+const _kOutlineY = 0.08;
 
 /// Permanent blue frame around the map tile grid.
 class WorldBorderOverlay extends StatelessWidget {
@@ -86,7 +94,7 @@ class _WorldBorderPainter extends CustomPainter {
       oldDelegate.camera != camera || oldDelegate.viewport != viewport;
 }
 
-/// Blue outlines for each DCEL inner face; departed tiles blink red then vanish.
+/// Dashed region borders plus floor dots; departed tiles blink red then vanish.
 class WallRegionOverlay extends StatefulWidget {
   const WallRegionOverlay({
     super.key,
@@ -113,14 +121,21 @@ class _WallRegionOverlayState extends State<WallRegionOverlay>
     with SingleTickerProviderStateMixin {
   List<WallRegion> _live = const [];
   Set<(int, int)> _liveTiles = {};
+  RegionColorAssignment _colors = const RegionColorAssignment([]);
   final List<_FadingTiles> _fading = [];
   Ticker? _ticker;
+  late final GridMotif _grid;
 
   @override
   void initState() {
     super.initState();
     _live = List<WallRegion>.from(widget.regions);
     _liveTiles = enclosedTilesOf(_live);
+    _colors = assignRegionColors(_live);
+    _grid = GridMotif.subtileDots(
+      worldSize: widget.store.grid.subtileSize,
+      dot: const Color(0x1A000000),
+    );
     _ticker = createTicker(_onTick);
   }
 
@@ -134,6 +149,11 @@ class _WallRegionOverlayState extends State<WallRegionOverlay>
       _fading.add(_FadingTiles(removed));
       _ensureTicking();
     }
+    _colors = assignRegionColors(
+      next,
+      previousRegions: _live,
+      previous: _colors,
+    );
     _live = List<WallRegion>.from(next);
     _liveTiles = nextTiles;
   }
@@ -141,6 +161,7 @@ class _WallRegionOverlayState extends State<WallRegionOverlay>
   @override
   void dispose() {
     _ticker?.dispose();
+    _grid.dispose();
     super.dispose();
   }
 
@@ -174,10 +195,12 @@ class _WallRegionOverlayState extends State<WallRegionOverlay>
         size: widget.viewport,
         painter: _WallRegionPainter(
           live: _live,
+          colors: _colors,
           fading: List<_FadingTiles>.from(_fading),
           store: widget.store,
           camera: widget.camera,
           viewport: widget.viewport,
+          grid: _grid,
           tileVisible: widget.tileVisible,
         ),
       ),
@@ -207,27 +230,51 @@ class _FadingTiles {
 class _WallRegionPainter extends CustomPainter {
   _WallRegionPainter({
     required this.live,
+    required this.colors,
     required this.fading,
     required this.store,
     required this.camera,
     required this.viewport,
+    required this.grid,
     this.tileVisible,
   });
 
   final List<WallRegion> live;
+  final RegionColorAssignment colors;
   final List<_FadingTiles> fading;
   final WallStore store;
   final Camera camera;
   final Size viewport;
+  final GridMotif grid;
   final bool Function(int tx, int ty)? tileVisible;
 
   @override
   void paint(Canvas canvas, Size size) {
-    for (final region in live) {
-      _drawTiles(canvas, region.tiles, kWallRegionLiveColor, 1);
+    final gridPos = <Offset>[];
+    final gridUv = <Offset>[];
+    for (var i = 0; i < live.length; i++) {
+      final shown = _visibleTiles(live[i].tiles);
+      if (shown.isEmpty) continue;
+      for (final tile in shown) {
+        _addTileGrid(tile, gridPos, gridUv);
+      }
+    }
+    if (gridPos.isNotEmpty) {
+      canvas.drawVertices(
+        ui.Vertices(
+          VertexMode.triangles,
+          gridPos,
+          textureCoordinates: gridUv,
+        ),
+        BlendMode.srcOver,
+        grid.samplingPaint(),
+      );
+    }
+    for (var i = 0; i < live.length; i++) {
+      _drawOutline(canvas, live[i].tiles, Color(colors.argbAt(i)), 1);
     }
     for (final fade in fading) {
-      _drawTiles(
+      _drawOutline(
         canvas,
         fade.tiles,
         kWallRegionFadeColor.withValues(alpha: fade.opacity),
@@ -236,18 +283,42 @@ class _WallRegionPainter extends CustomPainter {
     }
   }
 
-  void _drawTiles(
+  Set<(int, int)> _visibleTiles(Set<(int, int)> tiles) {
+    final visible = tileVisible;
+    if (visible == null) return tiles;
+    return {
+      for (final tile in tiles)
+        if (visible(tile.$1, tile.$2)) tile,
+    };
+  }
+
+  void _addTileGrid(
+    (int, int) tile,
+    List<Offset> gridPos,
+    List<Offset> gridUv,
+  ) {
+    final origin = store.grid.tileOrigin(tile.$1, tile.$2);
+    final s = store.grid.tileSize;
+    grid.appendRepeating(
+      minX: origin.x,
+      maxX: origin.x + s,
+      minZ: origin.z,
+      maxZ: origin.z + s,
+      y: _kGridY,
+      project: (x, y, z) =>
+          camera.projectToScreen(Vector3(x, y, z), viewport),
+      positions: gridPos,
+      texCoords: gridUv,
+    );
+  }
+
+  void _drawOutline(
     Canvas canvas,
     Set<(int, int)> tiles,
     Color color,
     double widthScale,
   ) {
-    if (tiles.isEmpty) return;
-    final visible = tileVisible;
-    final shown = {
-      for (final tile in tiles)
-        if (visible == null || visible(tile.$1, tile.$2)) tile,
-    };
+    final shown = _visibleTiles(tiles);
     if (shown.isEmpty) return;
     final paint = Paint()
       ..color = color
@@ -255,23 +326,30 @@ class _WallRegionPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
     for (final edge in tileSetOutline(shown)) {
-      _drawEdge(canvas, edge, paint);
+      _drawDashedEdge(canvas, edge, paint);
     }
   }
 
-  void _drawEdge(Canvas canvas, WallEdge edge, Paint paint) {
+  void _drawDashedEdge(Canvas canvas, WallEdge edge, Paint paint) {
     final a = store.vertexWorld(edge.x0, edge.y0);
     final b = store.vertexWorld(edge.x1, edge.y1);
-    // Lift slightly so the stroke sits on top of ground / fence.
-    final sa = camera.projectToScreen(Vector3(a.x, 0.08, a.z), viewport);
-    final sb = camera.projectToScreen(Vector3(b.x, 0.08, b.z), viewport);
+    final sa = camera.projectToScreen(Vector3(a.x, _kOutlineY, a.z), viewport);
+    final sb = camera.projectToScreen(Vector3(b.x, _kOutlineY, b.z), viewport);
     if (sa == null || sb == null) return;
-    canvas.drawLine(sa, sb, paint);
+    paintDashedLine(
+      canvas,
+      sa,
+      sb,
+      paint,
+      dashLength: kWallRegionDashLength,
+      gapLength: kWallRegionDashGap,
+    );
   }
 
   @override
   bool shouldRepaint(covariant _WallRegionPainter oldDelegate) =>
       oldDelegate.live != live ||
+      oldDelegate.colors != colors ||
       oldDelegate.fading != fading ||
       oldDelegate.camera != camera ||
       oldDelegate.viewport != viewport;

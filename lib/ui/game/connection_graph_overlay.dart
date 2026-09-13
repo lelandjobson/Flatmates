@@ -5,10 +5,10 @@ import '../../gameplay/volumes/volume.dart';
 import '../../rendering/scene/camera.dart';
 
 const kJointInInColor = Color(0xFF40C4FF);
-const kJointInOutColor = Color(0xFFE53935);
 const kJointOutOutColor = Color(0xFFFFB74D);
 const kNodeInsideColor = Color(0xFF40C4FF);
 const kNodeOutsideColor = Color(0xFFFFB74D);
+const kAnchorColor = Color(0xFF111111);
 
 const _kEdgeStroke = 7.0;
 const _kNodeDiameter = 16.0;
@@ -86,18 +86,23 @@ class _ConnectionGraphPainter extends CustomPainter {
     final visible = tileVisible;
     bool show(GraphNode n) => visible == null || visible(n.x, n.y);
 
+    final anchorNodes = <GraphNode>{
+      for (final anchor in graph.anchors) ...[anchor.inner, anchor.outer],
+    };
+
     for (final edge in graph.edges) {
       if (!show(edge.a) || !show(edge.b)) continue;
       final a = project(edge.a);
       final b = project(edge.b);
       if (a == null || b == null) continue;
+      final isAnchor = edge.kind == JointKind.inOut;
       final paint = Paint()
         ..color = switch (edge.kind) {
           JointKind.inIn => kJointInInColor,
-          JointKind.inOut => kJointInOutColor,
+          JointKind.inOut => kAnchorColor,
           JointKind.outOut => kJointOutOutColor,
         }
-        ..strokeWidth = _kEdgeStroke
+        ..strokeWidth = isAnchor ? _kEdgeStroke + 1 : _kEdgeStroke
         ..strokeCap = StrokeCap.round
         ..style = PaintingStyle.stroke;
       canvas.drawLine(a, b, paint);
@@ -108,13 +113,61 @@ class _ConnectionGraphPainter extends CustomPainter {
       if (!show(node)) continue;
       final p = project(node);
       if (p == null) continue;
+      final anchored = anchorNodes.contains(node);
       final paint = Paint()
-        ..color = node.kind == NodeKind.inside
-            ? kNodeInsideColor
-            : kNodeOutsideColor
+        ..color = anchored
+            ? kAnchorColor
+            : switch (node.kind) {
+                NodeKind.inside || NodeKind.region => kNodeInsideColor,
+                NodeKind.outside => kNodeOutsideColor,
+              }
         ..style = PaintingStyle.fill;
       canvas.drawCircle(p, r, paint);
     }
+
+    for (final anchor in graph.anchors) {
+      if (!show(anchor.inner) || !show(anchor.outer)) continue;
+      final a = project(anchor.inner);
+      final b = project(anchor.outer);
+      if (a == null || b == null) continue;
+      _paintAnchorLabel(
+        canvas,
+        Offset((a.dx + b.dx) * 0.5, (a.dy + b.dy) * 0.5),
+        'A',
+      );
+    }
+  }
+
+  void _paintAnchorLabel(Canvas canvas, Offset center, String text) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: const TextStyle(
+          color: kAnchorColor,
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+          height: 1,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final origin = center - Offset(painter.width * 0.5, painter.height + 8);
+    final halo = Paint()
+      ..color = const Color(0xE6FFFFFF)
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(
+          origin.dx - 3,
+          origin.dy - 1,
+          painter.width + 6,
+          painter.height + 2,
+        ),
+        const Radius.circular(3),
+      ),
+      halo,
+    );
+    painter.paint(canvas, origin);
   }
 
   @override

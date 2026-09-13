@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../debug/perf_debug.dart';
 import '../../gameplay/day_night/day_night_lighting.dart';
-import '../../gameplay/flatmates/flatmate_walk_style.dart';
 import '../../gameplay/viewers/game_viewer.dart';
 
 typedef FaceLightChanged = void Function({
@@ -22,8 +21,8 @@ class DevToolsPanel extends StatelessWidget {
     required this.showGizmos,
     required this.onShowGizmosChanged,
     required this.onPlaceCubeboy,
-    required this.walkStyle,
-    required this.onWalkStyleChanged,
+    required this.gaitId,
+    required this.onGaitChanged,
     required this.nightSwatchId,
     required this.onNightSwatchChanged,
     required this.dayNightProgress,
@@ -45,13 +44,17 @@ class DevToolsPanel extends StatelessWidget {
     required this.faceShadowOpacity,
     required this.onFaceLightChanged,
     required this.onFaceLightReset,
+    required this.showFeelings,
+    required this.showDesires,
+    required this.onShowFeelingsChanged,
+    required this.onShowDesiresChanged,
   });
 
   final bool showGizmos;
   final ValueChanged<bool> onShowGizmosChanged;
   final VoidCallback onPlaceCubeboy;
-  final FlatmateWalkStyle walkStyle;
-  final ValueChanged<FlatmateWalkStyle> onWalkStyleChanged;
+  final String gaitId;
+  final ValueChanged<String> onGaitChanged;
   final String nightSwatchId;
   final ValueChanged<NightSwatch> onNightSwatchChanged;
   final double dayNightProgress;
@@ -73,6 +76,10 @@ class DevToolsPanel extends StatelessWidget {
   final double faceShadowOpacity;
   final FaceLightChanged onFaceLightChanged;
   final VoidCallback onFaceLightReset;
+  final bool showFeelings;
+  final bool showDesires;
+  final ValueChanged<bool> onShowFeelingsChanged;
+  final ValueChanged<bool> onShowDesiresChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -96,6 +103,19 @@ class DevToolsPanel extends StatelessWidget {
                   label: 'Show gizmos',
                   value: showGizmos,
                   onChanged: onShowGizmosChanged,
+                ),
+                const SizedBox(height: 8),
+                const _CategoryHeader('Thoughts'),
+                const SizedBox(height: 4),
+                _CheckRow(
+                  label: 'Show feelings',
+                  value: showFeelings,
+                  onChanged: onShowFeelingsChanged,
+                ),
+                _CheckRow(
+                  label: 'Show desires',
+                  value: showDesires,
+                  onChanged: onShowDesiresChanged,
                 ),
                 const SizedBox(height: 8),
                 const _CategoryHeader('Performance'),
@@ -332,7 +352,7 @@ class DevToolsPanel extends StatelessWidget {
                 const _CategoryHeader('Flatmates'),
                 const SizedBox(height: 4),
                 const Text(
-                  'Walk style',
+                  'Gait',
                   style: TextStyle(color: Colors.white70, fontSize: 11),
                 ),
                 DropdownButtonHideUnderline(
@@ -340,18 +360,15 @@ class DevToolsPanel extends StatelessWidget {
                     isExpanded: true,
                     isDense: true,
                     dropdownColor: const Color(0xFF1A1A1A),
-                    value: walkStyle.id,
+                    value: gaitId == 'slide' ? 'slide' : 'hop',
                     iconEnabledColor: Colors.white70,
                     style: const TextStyle(color: Colors.white70, fontSize: 12),
-                    items: [
-                      for (final style in FlatmateWalkStyle.all)
-                        DropdownMenuItem(
-                          value: style.id,
-                          child: Text(style.label),
-                        ),
+                    items: const [
+                      DropdownMenuItem(value: 'hop', child: Text('Hop')),
+                      DropdownMenuItem(value: 'slide', child: Text('Slide')),
                     ],
                     onChanged: (id) {
-                      if (id != null) onWalkStyleChanged(FlatmateWalkStyle.byId(id));
+                      if (id != null) onGaitChanged(id);
                     },
                   ),
                 ),

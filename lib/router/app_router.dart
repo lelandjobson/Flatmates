@@ -14,6 +14,8 @@ import '../screens/craft_assembly_view.dart';
 import '../screens/craft_model_preview_view.dart';
 import '../screens/landscape_tiles_debug_view.dart';
 import '../screens/game_view.dart';
+import '../screens/expression_lab_view.dart';
+import '../screens/movement_lab_view.dart';
 import '../screens/test_3d_map_view.dart';
 
 /// Swap between '/dev-routes' and '/' to start at the dev menu or title screen.
@@ -96,6 +98,16 @@ final router = GoRouter(
       path: '/test3dmapview',
       name: 'test3dmapview',
       builder: (context, state) => const Test3dMapView(),
+    ),
+    GoRoute(
+      path: '/movement-lab',
+      name: 'movement_lab',
+      builder: (context, state) => const MovementLabView(),
+    ),
+    GoRoute(
+      path: '/expression-lab',
+      name: 'expression_lab',
+      builder: (context, state) => const ExpressionLabView(),
     ),
   ],
 );

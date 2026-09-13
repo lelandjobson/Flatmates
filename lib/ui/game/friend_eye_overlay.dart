@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
 
+import '../../gameplay/friends/friend_expression_pose.dart';
+import '../../gameplay/friends/friend_instance.dart';
 import '../../gameplay/friends/friend_instance_store.dart';
 import '../../gameplay/friends/friend_mesh_sync.dart';
-import '../../gameplay/outlines/outline_paint.dart';
+import '../../gameplay/friends/friend_overlay_visibility.dart';
 import '../../gameplay/volumes/volume.dart';
 import '../../gameplay/volumes/volume_store.dart';
 import '../../rendering/scene/camera.dart';
 import '../../rendering/scene/scene.dart';
 
-/// White vector dots for friend eyes, projected from body-local 3D offsets.
+/// Closed blob eyes on the friend's body-local front face. Hidden while walking.
 class FriendEyeOverlay extends StatelessWidget {
   const FriendEyeOverlay({
     super.key,
@@ -17,10 +19,9 @@ class FriendEyeOverlay extends StatelessWidget {
     required this.viewport,
     required this.tileSize,
     this.volumes,
+    this.interiorOpen,
     this.subtilesPerTile = VolumeGrid.defaultSubtilesPerTile,
     this.listenable,
-    this.outlineColor = kWorldOutlineColor,
-    this.outlineStrokeWidth = kFriendEyeOutlineStrokeWidth,
   });
 
   final FriendInstanceStore friends;
@@ -28,10 +29,9 @@ class FriendEyeOverlay extends StatelessWidget {
   final Size viewport;
   final double tileSize;
   final VolumeStore? volumes;
+  final bool Function(int tx, int ty)? interiorOpen;
   final int subtilesPerTile;
   final Scene? listenable;
-  final Color outlineColor;
-  final double outlineStrokeWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -55,9 +55,8 @@ class FriendEyeOverlay extends StatelessWidget {
           viewport: viewport,
           tileSize: tileSize,
           volumes: volumes,
+          interiorOpen: interiorOpen,
           subtilesPerTile: subtilesPerTile,
-          outlineColor: outlineColor,
-          outlineStrokeWidth: outlineStrokeWidth,
         ),
       ),
     );
@@ -71,9 +70,8 @@ class _FriendEyePainter extends CustomPainter {
     required this.viewport,
     required this.tileSize,
     this.volumes,
+    this.interiorOpen,
     required this.subtilesPerTile,
-    required this.outlineColor,
-    required this.outlineStrokeWidth,
   });
 
   final FriendInstanceStore friends;
@@ -81,58 +79,58 @@ class _FriendEyePainter extends CustomPainter {
   final Size viewport;
   final double tileSize;
   final VolumeStore? volumes;
+  final bool Function(int tx, int ty)? interiorOpen;
   final int subtilesPerTile;
-  final Color outlineColor;
-  final double outlineStrokeWidth;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final fill = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill;
-    final stroke = Paint()
-      ..color = outlineColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = outlineStrokeWidth
-      ..strokeCap = StrokeCap.round;
-    final right = camera.right;
-
     for (final instance in friends.instances) {
-      final occluding = volumes;
-      if (occluding != null && occluding.containsWorld(instance.position)) {
+      if (hideFriendOverlay(
+        position: instance.position,
+        volumes: volumes,
+        interiorOpen: interiorOpen,
+      )) {
         continue;
       }
-      final expr = instance.friend.expression;
-      if (expr == null) continue;
-      final scaled = FriendMeshLayout.scaledExpression(
-        expr,
+      final opacity = instance.expression.opacity;
+      if (opacity <= 0.01) continue;
+      if (instance.friend.expression == null) continue;
+      _drawFace(canvas, instance: instance, opacity: opacity);
+    }
+  }
+
+  void _drawFace(
+    Canvas canvas, {
+    required FriendInstance instance,
+    required double opacity,
+  }) {
+    final pose = instance.eyeProfile.apply(instance.expression.current);
+    final fill = Paint()
+      ..color = Colors.white.withValues(alpha: opacity)
+      ..style = PaintingStyle.fill;
+
+    Offset? project(Offset face) {
+      final world = FriendMeshLayout.faceWorld(
+        instance: instance,
+        face: face,
         tileSize: tileSize,
         subtilesPerTile: subtilesPerTile,
       );
-      for (final left in [true, false]) {
-        final world = FriendMeshLayout.eyeWorld(
-          instance: instance,
-          left: left,
-          tileSize: tileSize,
-          subtilesPerTile: subtilesPerTile,
-        );
-        final center = camera.projectToScreen(world, viewport);
-        if (center == null) continue;
-        final edge = camera.projectToScreen(
-          world + right * scaled.eyeRadiusX,
-          viewport,
-        );
-        final radius = edge == null
-            ? 2.0
-            : (center - edge).distance.clamp(1.5, 18.0);
-        canvas.drawCircle(
-          center,
-          radius + outlineStrokeWidth * 0.5,
-          stroke,
-        );
-        canvas.drawCircle(center, radius, fill);
-      }
+      return camera.projectToScreen(world, viewport);
     }
+
+    void drawEye(EyeBlob eye) {
+      final screen = <Offset>[];
+      for (final p in eye.ring) {
+        final projected = project(p);
+        if (projected == null) return;
+        screen.add(projected);
+      }
+      canvas.drawPath(eyeBlobPath(screen), fill);
+    }
+
+    drawEye(pose.left);
+    drawEye(pose.right);
   }
 
   @override

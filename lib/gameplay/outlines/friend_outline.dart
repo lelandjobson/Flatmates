@@ -6,6 +6,7 @@ import '../../tiles/tiles.dart';
 import '../friends/friend_instance.dart';
 import '../friends/friend_instance_store.dart';
 import '../friends/friend_mesh_sync.dart';
+import '../friends/friend_overlay_visibility.dart';
 import '../volumes/volume.dart';
 import '../volumes/volume_store.dart';
 import 'outline_edges.dart';
@@ -18,10 +19,15 @@ List<OutlineEdge> buildFriendOutlines({
   required double tileSize,
   int subtilesPerTile = VolumeGrid.defaultSubtilesPerTile,
   VolumeStore? volumes,
+  bool Function(int tx, int ty)? interiorOpen,
 }) {
   final edges = <OutlineEdge>[];
   for (final instance in friends.instances) {
-    if (volumes != null && volumes.containsWorld(instance.position)) {
+    if (hideFriendOverlay(
+      position: instance.position,
+      volumes: volumes,
+      interiorOpen: interiorOpen,
+    )) {
       continue;
     }
     edges.addAll(

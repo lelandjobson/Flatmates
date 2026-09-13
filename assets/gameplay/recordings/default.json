@@ -4,6 +4,7 @@
   "volumes": [
     {
       "id": 1,
+      "datum": 0,
       "cells": [
         {
           "tx": 4,
@@ -36,7 +37,7 @@
           "ty": 1,
           "box": {
             "widthSubtiles": 8,
-            "depthSubtiles": 8,
+            "depthSubtiles": 6,
             "heightSubtiles": 6,
             "originXSubtiles": 0,
             "originZSubtiles": 0
@@ -68,10 +69,10 @@
           "ty": 0,
           "box": {
             "widthSubtiles": 8,
-            "depthSubtiles": 4,
+            "depthSubtiles": 6,
             "heightSubtiles": 6,
             "originXSubtiles": 0,
-            "originZSubtiles": 4
+            "originZSubtiles": 2
           },
           "accessibleSides": [
             "north",
@@ -86,10 +87,10 @@
           "tx": 3,
           "ty": 1,
           "box": {
-            "widthSubtiles": 8,
-            "depthSubtiles": 8,
+            "widthSubtiles": 7,
+            "depthSubtiles": 7,
             "heightSubtiles": 6,
-            "originXSubtiles": 0,
+            "originXSubtiles": 1,
             "originZSubtiles": 0
           },
           "accessibleSides": [],
@@ -101,12 +102,20 @@
   "paths": {
     "tiles": [
       [
+        0,
+        2
+      ],
+      [
         1,
         -1
       ],
       [
         1,
         0
+      ],
+      [
+        1,
+        2
       ],
       [
         2,
@@ -175,6 +184,12 @@
     ],
     "edges": [
       [
+        0,
+        2,
+        1,
+        2
+      ],
+      [
         1,
         -1,
         1,
@@ -191,6 +206,12 @@
         0,
         2,
         0
+      ],
+      [
+        1,
+        2,
+        2,
+        2
       ],
       [
         2,
@@ -281,129 +302,80 @@
   "walls": {
     "edges": [
       [
-        -1,
-        -2,
-        -1,
-        -1,
-        "fence"
-      ],
-      [
-        -1,
-        -2,
-        0,
-        -2,
-        "fence"
-      ],
-      [
-        -1,
-        -1,
-        -1,
-        0,
-        "fence"
-      ],
-      [
-        -1,
-        0,
-        -1,
-        1,
-        "fence"
-      ],
-      [
-        -1,
-        1,
-        -1,
         2,
-        "fence"
-      ],
-      [
-        -1,
+        -4,
         2,
-        -1,
-        3,
+        -3,
         "fence"
       ],
       [
-        -1,
+        2,
+        -4,
         3,
-        0,
-        3,
+        -4,
         "fence"
       ],
       [
-        0,
-        -2,
-        1,
-        -2,
-        "fence"
-      ],
-      [
-        0,
-        3,
-        1,
-        3,
-        "fence"
-      ],
-      [
-        1,
-        -2,
+        2,
+        -3,
         2,
         -2,
         "fence"
       ],
       [
-        1,
-        -1,
-        1,
-        0,
-        "fence"
-      ],
-      [
-        1,
-        -1,
-        2,
-        -1,
-        "fence"
-      ],
-      [
-        1,
-        0,
-        1,
-        1,
-        "fence"
-      ],
-      [
-        1,
-        1,
-        2,
-        1,
-        "fence"
-      ],
-      [
-        1,
-        3,
-        2,
-        3,
-        "fence"
-      ],
-      [
         2,
         -2,
-        2,
-        -1,
-        "fence"
-      ],
-      [
-        2,
-        1,
-        2,
-        2,
-        "fence"
-      ],
-      [
-        2,
-        2,
-        2,
         3,
+        -2,
+        "fence"
+      ],
+      [
+        3,
+        -4,
+        4,
+        -4,
+        "fence"
+      ],
+      [
+        3,
+        -2,
+        4,
+        -2,
+        "fence"
+      ],
+      [
+        3,
+        3,
+        3,
+        4,
+        "fence"
+      ],
+      [
+        3,
+        3,
+        4,
+        3,
+        "fence"
+      ],
+      [
+        3,
+        4,
+        4,
+        4,
+        "fence"
+      ],
+      [
+        4,
+        -4,
+        5,
+        -4,
+        "fence"
+      ],
+      [
+        4,
+        -2,
+        5,
+        -2,
         "fence"
       ],
       [
@@ -412,52 +384,77 @@
         5,
         2,
         "fence"
+      ],
+      [
+        4,
+        3,
+        5,
+        3,
+        "fence"
+      ],
+      [
+        4,
+        4,
+        5,
+        4,
+        "fence"
+      ],
+      [
+        5,
+        -4,
+        5,
+        -3,
+        "fence"
+      ],
+      [
+        5,
+        -3,
+        5,
+        -2,
+        "fence"
+      ],
+      [
+        5,
+        3,
+        5,
+        4,
+        "fence"
       ]
     ]
   },
   "friends": [
     {
-      "id": "2b502aff-1acf-d3a4-25d9-121ceb3193bd",
-      "friendId": "b2c9f5e1-7a3d-4f8b-9c6e-1d4a8b2f7e3c",
+      "id": "d809dbf7-8e02-a5ac-8b40-5d25ba120f6d",
+      "friendId": "50f55ced-042f-98e2-a138-1b8828cbc4fb",
       "position": [
-        12.0,
-        1.0,
-        -4.0
-      ],
-      "yaw": -1.5707963267948966
-    },
-    {
-      "id": "606f0f98-f951-cd24-a4dc-f6b72687c083",
-      "friendId": "b2c9f5e1-7a3d-4f8b-9c6e-1d4a8b2f7e3c",
-      "position": [
-        20.0,
-        1.0,
-        4.0
-      ],
-      "yaw": 3.141592653589793
-    },
-    {
-      "id": "ab758a4e-bd36-cc3e-526d-7e8c5bf8ceb8",
-      "friendId": "b2c9f5e1-7a3d-4f8b-9c6e-1d4a8b2f7e3c",
-      "position": [
-        44.0,
-        1.0,
+        36.0,
+        1.0000000000000002,
         12.0
       ],
-      "yaw": 0.0
+      "yaw": -1.5707963267948966
     }
   ],
+  "programs": {
+    "indoor": [
+      [
+        4,
+        1,
+        "bedroom"
+      ]
+    ],
+    "outdoor": []
+  },
   "facePaint": [],
   "landscape": {
     "paint": [],
     "erase": []
   },
   "paper": {
-    "held": 72,
+    "held": 71,
     "volumes": {
-      "1": 74
+      "1": 73
     },
-    "path": 35,
-    "walls": 19
+    "path": 39,
+    "walls": 17
   }
 }

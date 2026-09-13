@@ -1,0 +1,12 @@
+{
+  "id": "slow1",
+  "name": "Slow1",
+  "movementTileRatio": 0.6522791245404411,
+  "offset": 0.35,
+  "jank": 0.6610179227941175,
+  "jankIntensity": 0.7249109604779412,
+  "smoothness": 0.46194278492647056,
+  "bendSlowdown": 0.6067468979779413,
+  "hopHeight": 0.5039349724264708,
+  "tileSpeed": 1.7490162568933827
+}

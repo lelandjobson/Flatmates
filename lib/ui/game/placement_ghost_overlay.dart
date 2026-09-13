@@ -9,7 +9,7 @@ import '../../gameplay/walls/wall_mesh.dart';
 import '../../gameplay/walls/wall_store.dart';
 import '../../rendering/scene/camera.dart';
 
-enum PlacementGhostKind { volume, path, wall, delete, pathSplit }
+enum PlacementGhostKind { volume, path, wall, delete, pathSplit, regionOpening }
 
 const kPlacementGhostRemove = Color(0xCCEF5350);
 
@@ -23,6 +23,8 @@ class PlacementGhostOverlay extends StatelessWidget {
     required this.viewport,
     this.tile,
     this.wallEdge,
+    this.wallEdges = const [],
+    this.removeWallEdges = const [],
     this.paths,
     this.listenable,
     this.color = const Color(0x99F4EFE6),
@@ -35,6 +37,8 @@ class PlacementGhostOverlay extends StatelessWidget {
   final Size viewport;
   final (int, int)? tile;
   final WallEdge? wallEdge;
+  final List<WallEdge> wallEdges;
+  final List<WallEdge> removeWallEdges;
   final PathStore? paths;
   final Listenable? listenable;
   final Color color;
@@ -63,6 +67,8 @@ class PlacementGhostOverlay extends StatelessWidget {
           viewport: viewport,
           tile: tile,
           wallEdge: wallEdge,
+          wallEdges: wallEdges,
+          removeWallEdges: removeWallEdges,
           paths: paths,
           color: color,
           removing: removing,
@@ -80,6 +86,8 @@ class _GhostPainter extends CustomPainter {
     required this.viewport,
     required this.tile,
     required this.wallEdge,
+    required this.wallEdges,
+    required this.removeWallEdges,
     required this.paths,
     required this.color,
     required this.removing,
@@ -91,13 +99,35 @@ class _GhostPainter extends CustomPainter {
   final Size viewport;
   final (int, int)? tile;
   final WallEdge? wallEdge;
+  final List<WallEdge> wallEdges;
+  final List<WallEdge> removeWallEdges;
   final PathStore? paths;
   final Color color;
   final bool removing;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final edge = removing ? kPlacementGhostRemove : color;
+    if (kind == PlacementGhostKind.wall &&
+        (wallEdges.isNotEmpty || removeWallEdges.isNotEmpty)) {
+      _drawQuads(canvas, _fenceQuads(wallEdges), color, removing: false);
+      _drawQuads(
+        canvas,
+        _fenceQuads(removeWallEdges),
+        kPlacementGhostRemove,
+        removing: true,
+      );
+      return;
+    }
+    _drawQuads(canvas, _quads(), removing ? kPlacementGhostRemove : color,
+        removing: removing);
+  }
+
+  void _drawQuads(
+    Canvas canvas,
+    List<List<Vector3>> quads,
+    Color edge, {
+    required bool removing,
+  }) {
     final fill = Paint()
       ..color = edge.withValues(alpha: removing ? 0.32 : 0.50)
       ..style = PaintingStyle.fill;
@@ -107,7 +137,7 @@ class _GhostPainter extends CustomPainter {
       ..strokeWidth = 1.5
       ..strokeJoin = StrokeJoin.round;
 
-    for (final quad in _quads()) {
+    for (final quad in quads) {
       final path = Path();
       var started = false;
       var ok = true;
@@ -129,6 +159,24 @@ class _GhostPainter extends CustomPainter {
       canvas.drawPath(path, fill);
       canvas.drawPath(path, stroke);
     }
+  }
+
+  List<List<Vector3>> _fenceQuads(List<WallEdge> edges) {
+    final dummy = WallStore(grid: grid);
+    return [
+      for (final edge in edges) _fenceQuad(dummy, edge),
+    ];
+  }
+
+  List<Vector3> _fenceQuad(WallStore store, WallEdge edge) {
+    final a = store.vertexWorld(edge.x0, edge.y0);
+    final b = store.vertexWorld(edge.x1, edge.y1);
+    return [
+      Vector3(a.x, 0, a.z),
+      Vector3(b.x, 0, b.z),
+      Vector3(b.x, kFenceHeight, b.z),
+      Vector3(a.x, kFenceHeight, a.z),
+    ];
   }
 
   List<List<Vector3>> _quads() {
@@ -206,17 +254,7 @@ class _GhostPainter extends CustomPainter {
       case PlacementGhostKind.wall:
         final edge = wallEdge;
         if (edge == null) return const [];
-        final dummy = WallStore(grid: grid);
-        final a = dummy.vertexWorld(edge.x0, edge.y0);
-        final b = dummy.vertexWorld(edge.x1, edge.y1);
-        return [
-          [
-            Vector3(a.x, 0, a.z),
-            Vector3(b.x, 0, b.z),
-            Vector3(b.x, kFenceHeight, b.z),
-            Vector3(a.x, kFenceHeight, a.z),
-          ],
-        ];
+        return [_fenceQuad(WallStore(grid: grid), edge)];
       case PlacementGhostKind.pathSplit:
         final edge = wallEdge;
         if (edge == null) return const [];
@@ -243,6 +281,47 @@ class _GhostPainter extends CustomPainter {
             Vector3(a.x, y, a.z + half),
           ],
         ];
+      case PlacementGhostKind.regionOpening:
+        final edge = wallEdge;
+        if (edge == null) return const [];
+        final dummy = WallStore(grid: grid);
+        final quads = <List<Vector3>>[];
+        for (final (p, q) in wallCutRemnants(dummy, edge)) {
+          quads.add([
+            Vector3(p.x, 0, p.z),
+            Vector3(q.x, 0, q.z),
+            Vector3(q.x, kFenceHeight, q.z),
+            Vector3(p.x, kFenceHeight, p.z),
+          ]);
+        }
+        final pair = edge.separatedTiles;
+        final store = paths;
+        if (pair != null && store != null) {
+          final outdoor = store.contains(pair.$1.$1, pair.$1.$2)
+              ? pair.$1
+              : store.contains(pair.$2.$1, pair.$2.$2)
+                  ? pair.$2
+                  : null;
+          if (outdoor != null) {
+            final toward = outdoor == pair.$1 ? pair.$2 : pair.$1;
+            var mask = 0;
+            if (toward.$1 == outdoor.$1 + 1) mask |= VolumeSide.east.maskBit;
+            if (toward.$1 == outdoor.$1 - 1) mask |= VolumeSide.west.maskBit;
+            if (toward.$2 == outdoor.$2 + 1) mask |= VolumeSide.south.maskBit;
+            if (toward.$2 == outdoor.$2 - 1) mask |= VolumeSide.north.maskBit;
+            quads.addAll(
+              _pathQuads(
+                outdoor.$1,
+                outdoor.$2,
+                pathStubFootprints(
+                  mask,
+                  subtilesPerTile: grid.subtilesPerTile,
+                ),
+              ),
+            );
+          }
+        }
+        return quads;
     }
   }
 

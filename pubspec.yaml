@@ -34,4 +34,6 @@ flutter:
     - assets/crafting_blueprints/house_foo/
     - assets/models/house_foo/steps/
     - assets/gameplay/recordings/
+    - assets/gameplay/movement_profiles/
+    - assets/gameplay/eye_profiles/
     - assets/textures/paper/

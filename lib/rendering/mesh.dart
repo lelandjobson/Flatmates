@@ -14,6 +14,8 @@ class Mesh extends Transformable {
     Vector3? position,
     Vector3? rotation,
     Vector3? scale,
+    bool yawThenPitch = false,
+    double travelYaw = 0,
     this.highlightOnClick = false,
     this.visible = true,
     this.groundPlane = false,
@@ -21,7 +23,13 @@ class Mesh extends Transformable {
   })  : _geometry = geometry,
         _material = material,
         _highlightColor = null,
-        super(position: position, rotation: rotation, scale: scale);
+        super(
+          position: position,
+          rotation: rotation,
+          scale: scale,
+          yawThenPitch: yawThenPitch,
+          travelYaw: travelYaw,
+        );
 
   final String id;
   final String name;

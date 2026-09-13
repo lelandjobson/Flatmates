@@ -1,0 +1,18 @@
+{
+  "id": "faster-hop",
+  "name": "Faster hop",
+  "movementTileRatio": 0.404695398667279,
+  "offset": 0.40771484374999983,
+  "jank": 0.6957433363970585,
+  "jankIntensity": 0.6892233455882352,
+  "smoothness": 0.7,
+  "bendSlowdown": 0.55,
+  "hopHeight": 0.9866871553308824,
+  "tileSpeed": 1.4175091911764706,
+  "startBackup": 0.12,
+  "startSeconds": 0.28,
+  "startTilt": 0.22,
+  "stopSlide": 0.18,
+  "stopSeconds": 0.36,
+  "stopTilt": 0.18
+}

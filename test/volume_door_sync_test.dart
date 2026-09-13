@@ -304,7 +304,7 @@ void main() {
     expect(east.accessibleSides, {VolumeSide.east});
   });
 
-  test('moving a path-backed door keeps it and updates the applique', () {
+  test('a slid path-backed door is recentered on the tile axis', () {
     final volumes = VolumeStore();
     final paths = PathStore(grid: volumes.grid);
     final appliques = VolumeAppliqueStore();
@@ -319,31 +319,32 @@ void main() {
     );
     final volume = volumes.volumes.single;
     final cell = volume.cells.single;
-    expect(
-      volumes.placeDoor(
-        volume: volume,
-        cell: cell,
-        side: VolumeSide.east,
-        originU: 0,
-      ),
-      isTrue,
-    );
+    cell.doorOrigins[VolumeSide.east] = 0;
     appliques.placeOrMoveDoor(
       volume: volume,
       cell: cell,
       side: VolumeSide.east,
-      door: volumeDoorForSide(cell.box, VolumeSide.east, originU: 0)!,
+      door: const VolumeDoor(
+        side: VolumeSide.east,
+        originU: 0,
+        originY: 0,
+        width: kDoorWidthSubtiles,
+        height: kDoorHeightSubtiles,
+      ),
     );
-    syncVolumeDoorsFromPaths(
-      volumes: volumes,
-      paths: paths,
-      appliques: appliques,
+    expect(
+      syncVolumeDoorsFromPaths(
+        volumes: volumes,
+        paths: paths,
+        appliques: appliques,
+      ),
+      isTrue,
     );
-    expect(cell.doorOrigins[VolumeSide.east], 0);
+    expect(cell.doorOrigins[VolumeSide.east], 3);
     expect(
       appliques.doorOn(volumeId: volume.id, tx: 2, ty: 2, side: VolumeSide.east)!
           .originU,
-      0,
+      3,
     );
   });
 }

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:vector_math/vector_math_64.dart';
 
 import 'volume_solid.dart';
@@ -124,6 +126,10 @@ class BoxPrimitive {
   static const int minSubtiles = 4;
   static const int maxHeightSubtiles = 6;
 
+  /// How far a face may pull in from the tile edge. 8→6 on one side, 8→4 when
+  /// opposite faces both inset, matching a centered path corridor.
+  static const int maxInsetSubtiles = 2;
+
   int widthSubtiles;
   int depthSubtiles;
   int heightSubtiles;
@@ -230,6 +236,21 @@ class BoxPrimitive {
     };
   }
 
+  /// Pull faces back onto the tile: at most [maxInsetSubtiles] per edge.
+  void clampToTile({int subtilesPerTile = VolumeGrid.defaultSubtilesPerTile}) {
+    final n = subtilesPerTile;
+    final minEnd = n - maxInsetSubtiles;
+    final startX = originXSubtiles.clamp(0, maxInsetSubtiles);
+    final startZ = originZSubtiles.clamp(0, maxInsetSubtiles);
+    final endX = (originXSubtiles + widthSubtiles).clamp(minEnd, n);
+    final endZ = (originZSubtiles + depthSubtiles).clamp(minEnd, n);
+    originXSubtiles = startX;
+    originZSubtiles = startZ;
+    widthSubtiles = endX - originXSubtiles;
+    depthSubtiles = endZ - originZSubtiles;
+    heightSubtiles = heightSubtiles.clamp(minSubtiles, maxHeightSubtiles);
+  }
+
   /// Move [handle]'s face by [delta] world units, snapping to whole subtles.
   /// The opposite face stays fixed.
   void applyHandleDelta({
@@ -241,23 +262,30 @@ class BoxPrimitive {
   }) {
     final steps = (delta / grid.subtileSize).round();
     final n = grid.subtilesPerTile;
+    final minEnd = n - maxInsetSubtiles;
     switch (handle) {
       case VolumeHandle.posX:
-        widthSubtiles =
-            (widthSubtiles + steps).clamp(minSubtiles, n - originXSubtiles).toInt();
+        final endX = (originXSubtiles + widthSubtiles + steps)
+            .clamp(minEnd, n)
+            .toInt();
+        widthSubtiles = endX - originXSubtiles;
       case VolumeHandle.negX:
-        final maxX = originXSubtiles + widthSubtiles;
-        originXSubtiles =
-            (originXSubtiles - steps).clamp(0, maxX - minSubtiles).toInt();
-        widthSubtiles = maxX - originXSubtiles;
+        final endX = originXSubtiles + widthSubtiles;
+        originXSubtiles = (originXSubtiles - steps)
+            .clamp(0, math.min(maxInsetSubtiles, endX - minSubtiles))
+            .toInt();
+        widthSubtiles = endX - originXSubtiles;
       case VolumeHandle.posZ:
-        depthSubtiles =
-            (depthSubtiles + steps).clamp(minSubtiles, n - originZSubtiles).toInt();
+        final endZ = (originZSubtiles + depthSubtiles + steps)
+            .clamp(minEnd, n)
+            .toInt();
+        depthSubtiles = endZ - originZSubtiles;
       case VolumeHandle.negZ:
-        final maxZ = originZSubtiles + depthSubtiles;
-        originZSubtiles =
-            (originZSubtiles - steps).clamp(0, maxZ - minSubtiles).toInt();
-        depthSubtiles = maxZ - originZSubtiles;
+        final endZ = originZSubtiles + depthSubtiles;
+        originZSubtiles = (originZSubtiles - steps)
+            .clamp(0, math.min(maxInsetSubtiles, endZ - minSubtiles))
+            .toInt();
+        depthSubtiles = endZ - originZSubtiles;
       case VolumeHandle.posY:
         heightSubtiles = (heightSubtiles + steps)
             .clamp(minSubtiles, maxHeightSubtiles)
@@ -324,7 +352,7 @@ class VolumeCell {
   /// Exterior sides on this cell that have a door. A cell may have several.
   final Set<VolumeSide> accessibleSides;
 
-  /// Subtile originU of a placed 2×4 door paper. Missing sides use centering.
+  /// Face-local U of the tile-centered 2×4 door. Always recomputed; not dragged.
   final Map<VolumeSide, int> doorOrigins;
 
   VolumeCell clone() => VolumeCell(

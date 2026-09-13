@@ -88,7 +88,7 @@ class FlatmatePathfinder {
           grid.inBounds(tx, ty) && !BasementSpawn.blocksWalk(tx, ty),
       isPath: paths.contains,
       blockedEdge: (from, to) {
-        if (walls != null && walls.separatesTiles(from, to)) return true;
+        if (walls != null && walls.blocksWalk(from, to)) return true;
         return !canTraverseVolume(volumes, from, to, doors: doors);
       },
     );

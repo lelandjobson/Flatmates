@@ -1,5 +1,6 @@
 import 'package:flatmates/gameplay/flatmates/flatmate_movement.dart';
 import 'package:flatmates/gameplay/flatmates/flatmate_pathfinder.dart';
+import 'package:flatmates/gameplay/flatmates/movement_profile.dart';
 import 'package:flatmates/gameplay/paths/path_store.dart';
 import 'package:flatmates/gameplay/volumes/volume.dart';
 import 'package:flatmates/gameplay/volumes/volume_store.dart';
@@ -65,6 +66,37 @@ void main() {
     );
     expect(path, isNotNull);
     expect(path, isNot(contains((2, 1))));
+  });
+
+  test('a cut fence is walkable while a solid fence still blocks', () {
+    final walls = WallStore(grid: grid);
+    walls.add(WallEdge(2, 1, 2, 2, kind: WallKind.cutFence));
+    final through = FlatmatePathfinder().findOnMap(
+      start: (1, 1),
+      goal: (2, 1),
+      grid: grid,
+      volumes: emptyVolumes(),
+      paths: PathStore(grid: grid),
+      walls: walls,
+    );
+    expect(through, [(1, 1), (2, 1)]);
+
+    walls.uncut(WallEdge(2, 1, 2, 2));
+    final blocked = FlatmatePathfinder().findOnMap(
+      start: (1, 1),
+      goal: (2, 1),
+      grid: grid,
+      volumes: emptyVolumes(),
+      paths: PathStore(grid: grid),
+      walls: walls,
+    );
+    expect(blocked, isNotNull);
+    for (var i = 0; i < blocked!.length - 1; i++) {
+      expect(
+        {blocked[i], blocked[i + 1]},
+        isNot(unorderedEquals([(1, 1), (2, 1)])),
+      );
+    }
   });
 
   test('walls block a crossing so the route detours', () {
@@ -164,14 +196,30 @@ void main() {
   });
 
   test('movement is 50% faster on path tiles', () {
-    final move = FlatmateMovement()..start([(0, 0), (1, 0), (2, 0)]);
+    const profile = MovementProfile(
+      id: 'speed',
+      name: 'Speed',
+      offset: 0,
+      jank: 0,
+      smoothness: 0,
+      bendSlowdown: 0,
+      hopHeight: 0,
+    );
+    final move = FlatmateMovement()
+      ..start(
+        [(0, 0), (1, 0), (2, 0)],
+        grid: grid,
+        profile: profile,
+        flourish: false,
+      );
     var onPath = true;
     move.advance(
       dt: 0.1,
       baseTilesPerSecond: 10,
       onPath: (_, _) => onPath,
+      grid: grid,
     );
-    expect(move.progress, closeTo(1.5, 1e-9));
+    expect(move.distance, closeTo(12, 1e-6));
 
     move.progress = 0;
     onPath = false;
@@ -179,7 +227,8 @@ void main() {
       dt: 0.1,
       baseTilesPerSecond: 10,
       onPath: (_, _) => onPath,
+      grid: grid,
     );
-    expect(move.progress, closeTo(1.0, 1e-9));
+    expect(move.distance, closeTo(8, 1e-6));
   });
 }

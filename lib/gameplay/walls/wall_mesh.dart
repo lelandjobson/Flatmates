@@ -5,6 +5,7 @@ import '../../geometry/geometry.dart';
 import '../../rendering/mesh.dart';
 import '../../rendering/scene/scene.dart';
 import '../../theme/world_theme.dart';
+import '../paths/path_shape.dart';
 import 'wall_edge.dart';
 import 'wall_store.dart';
 
@@ -28,6 +29,51 @@ String wallMeshId(WallEdge edge) =>
   final minZ = a.z < b.z ? a.z : b.z;
   final maxZ = a.z < b.z ? b.z : a.z;
   return (Vector3(x, 0, minZ), Vector3(x, kFenceHeight, maxZ));
+}
+
+/// World-space endpoints of the two remnant segments on a cut wall.
+///
+/// The gap is the centered [kPathWidthSubtiles] corridor so a path does not
+/// intersect the remnants.
+List<(Vector3, Vector3)> wallCutRemnants(
+  WallStore store,
+  WallEdge edge, {
+  int pathWidthSubtiles = kPathWidthSubtiles,
+}) {
+  final a = store.vertexWorld(edge.x0, edge.y0);
+  final b = store.vertexWorld(edge.x1, edge.y1);
+  final n = store.grid.subtilesPerTile;
+  final t = ((n - pathWidthSubtiles) / 2) / n;
+  Vector3 lerp(double u) => Vector3(
+        a.x + (b.x - a.x) * u,
+        0,
+        a.z + (b.z - a.z) * u,
+      );
+  return [(a, lerp(t)), (lerp(1 - t), b)];
+}
+
+Geometry wallCutGeometry({
+  required List<(Vector3, Vector3)> remnants,
+  required String id,
+}) {
+  final vertices = <Vector3>[];
+  final faces = <List<int>>[];
+  for (final (p, q) in remnants) {
+    final i = vertices.length;
+    vertices.addAll([
+      Vector3(p.x, 0, p.z),
+      Vector3(q.x, 0, q.z),
+      Vector3(q.x, kFenceHeight, q.z),
+      Vector3(p.x, kFenceHeight, p.z),
+    ]);
+    faces.add([i, i + 1, i + 2, i + 3]);
+  }
+  return Geometry(
+    id: id,
+    name: 'WallFace',
+    vertices: vertices,
+    faces: faces,
+  );
 }
 
 /// One vertical quad along [edge]. Drawn double-sided so corners meet on a
@@ -63,9 +109,17 @@ void syncWallMeshes(
   for (final edge in store.edges) {
     final id = wallMeshId(edge);
     wanted.add(id);
-    final a = store.vertexWorld(edge.x0, edge.y0);
-    final b = store.vertexWorld(edge.x1, edge.y1);
-    final geometry = wallFaceGeometry(a: a, b: b, id: id);
+    final Geometry geometry;
+    if (edge.kind == WallKind.cutFence) {
+      geometry = wallCutGeometry(
+        remnants: wallCutRemnants(store, edge),
+        id: id,
+      );
+    } else {
+      final a = store.vertexWorld(edge.x0, edge.y0);
+      final b = store.vertexWorld(edge.x1, edge.y1);
+      geometry = wallFaceGeometry(a: a, b: b, id: id);
+    }
     final material = MaterialModel(
       color: wallColor,
       wireframe: false,

@@ -169,6 +169,15 @@ void main() {
     expect(
       visibleWorldAlerts(
         alerts: [alert],
+        createMode: true,
+        lookingInside: (_) => false,
+        showInCreate: (_) => true,
+      ),
+      [alert],
+    );
+    expect(
+      visibleWorldAlerts(
+        alerts: [alert],
         createMode: false,
         lookingInside: (_) => true,
       ),

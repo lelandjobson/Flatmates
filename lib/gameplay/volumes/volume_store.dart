@@ -1,6 +1,7 @@
 import 'package:vector_math/vector_math_64.dart';
 
 import 'volume.dart';
+import 'volume_door.dart';
 
 enum VolumeEditPhase { idle, editing, pickingAccess }
 
@@ -421,27 +422,25 @@ class VolumeStore {
       cell.doorOrigins.remove(side);
     } else {
       cell.accessibleSides.add(side);
+      final door = volumeDoorForSide(cell.box, side);
+      if (door != null) cell.doorOrigins[side] = door.originU;
     }
   }
 
-  /// Place or move a 2×4 door paper on [side] of [cell].
+  /// Place a tile-centered 2×4 door on [side] of [cell].
   bool placeDoor({
     required Volume volume,
     required VolumeCell cell,
     required VolumeSide side,
-    required int originU,
   }) {
     final live = volume.cellAt(cell.tx, cell.ty);
     if (live == null) return false;
-    final faceW = switch (side) {
-      VolumeSide.east || VolumeSide.west => live.box.depthSubtiles,
-      VolumeSide.north || VolumeSide.south => live.box.widthSubtiles,
-    };
-    final maxU = faceW - 2;
-    if (maxU < 0) return false;
-    live.accessibleSides.add(side);
-    live.doorOrigins[side] = originU.clamp(0, maxU);
-    return true;
+    final door = volumeDoorForSide(live.box, side);
+    if (door == null) return false;
+    final added = live.accessibleSides.add(side);
+    final prev = live.doorOrigins[side];
+    live.doorOrigins[side] = door.originU;
+    return added || prev != door.originU;
   }
 
   bool removeDoor({

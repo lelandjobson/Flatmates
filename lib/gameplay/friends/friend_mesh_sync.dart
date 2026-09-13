@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' show Offset;
 
 import 'package:vector_math/vector_math_64.dart' hide Colors;
 
@@ -88,6 +89,77 @@ class FriendMeshLayout {
     );
   }
 
+  /// Local pitch then yaw. Prefer [rotateTravelLean] for friend meshes.
+  static Vector3 rotateYawPitch(Vector3 local, double yaw, double pitch) {
+    return rotateTravelLean(
+      local,
+      bodyYaw: yaw,
+      travelYaw: yaw,
+      lean: pitch,
+    );
+  }
+
+  /// Matches friend mesh `Ry(travelYaw) * Rx(lean) * Ry(bodyYaw - travelYaw)`.
+  static Vector3 rotateTravelLean(
+    Vector3 local, {
+    required double bodyYaw,
+    required double travelYaw,
+    required double lean,
+  }) {
+    final cP = math.cos(lean);
+    final sP = math.sin(lean);
+    final yawed = rotateYaw(local, bodyYaw - travelYaw);
+    final pitched = Vector3(
+      yawed.x,
+      yawed.y * cP - yawed.z * sP,
+      yawed.y * sP + yawed.z * cP,
+    );
+    return rotateYaw(pitched, travelYaw);
+  }
+
+  /// Face-plane offset on the body front: X right, Y up from eye line, Z forward.
+  static Vector3 faceLocalOffset(
+    FriendExpressionConfig scaled,
+    Offset face,
+  ) {
+    return Vector3(
+      face.dx * scaled.eyeSpacing,
+      scaled.eyeHeight + face.dy * scaled.eyeSpacing,
+      scaled.eyeForwardOffset,
+    );
+  }
+
+  static Vector3 faceWorld({
+    required FriendInstance instance,
+    required Offset face,
+    required double tileSize,
+    int subtilesPerTile = VolumeGrid.defaultSubtilesPerTile,
+  }) {
+    final expr = instance.friend.expression;
+    if (expr == null) return Vector3.copy(instance.position);
+    final scaled = scaledExpression(
+      expr,
+      tileSize: tileSize,
+      subtilesPerTile: subtilesPerTile,
+    );
+    return instance.position +
+        rotateTravelLean(
+          faceLocalOffset(scaled, face),
+          bodyYaw: instance.yaw,
+          travelYaw: instance.travelYaw,
+          lean: instance.pitch,
+        );
+  }
+
+  static Vector3 faceNormalWorld(FriendInstance instance) {
+    return rotateTravelLean(
+      Vector3(0, 0, 1),
+      bodyYaw: instance.yaw,
+      travelYaw: instance.travelYaw,
+      lean: instance.pitch,
+    );
+  }
+
   static Vector3 eyeWorld({
     required FriendInstance instance,
     required bool left,
@@ -102,9 +174,11 @@ class FriendMeshLayout {
       subtilesPerTile: subtilesPerTile,
     );
     return instance.position +
-        rotateYaw(
+        rotateTravelLean(
           eyeLocalOffset(scaled: scaled, left: left),
-          instance.yaw,
+          bodyYaw: instance.yaw,
+          travelYaw: instance.travelYaw,
+          lean: instance.pitch,
         );
   }
 }
@@ -144,7 +218,9 @@ void syncFriendMeshes(
         strokeEdges: false,
       ),
       position: instance.position,
-      rotation: Vector3(0, instance.yaw, 0),
+      rotation: Vector3(instance.pitch, instance.yaw, 0),
+      yawThenPitch: true,
+      travelYaw: instance.travelYaw,
     );
   }
 
@@ -164,6 +240,8 @@ void _upsertMesh(
   required MaterialModel material,
   required Vector3 position,
   Vector3? rotation,
+  bool yawThenPitch = false,
+  double travelYaw = 0,
 }) {
   final existing = scene.meshById(id);
   if (existing == null) {
@@ -175,12 +253,16 @@ void _upsertMesh(
         material: material,
         position: Vector3.copy(position),
         rotation: rotation == null ? null : Vector3.copy(rotation),
+        yawThenPitch: yawThenPitch,
+        travelYaw: travelYaw,
       ),
     );
     return;
   }
   existing.geometry = geometry;
   existing.material = material;
+  existing.yawThenPitch = yawThenPitch;
+  existing.travelYaw = travelYaw;
   existing.setPosition(position);
   if (rotation != null) existing.setRotation(rotation);
 }

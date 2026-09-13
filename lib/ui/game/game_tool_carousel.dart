@@ -40,6 +40,7 @@ double carouselItemSlot(int index, double focus, int length) {
 const kHudSelectFill = Color(0xFF141414);
 const kHudGold = Color(0xFFC9A227);
 const kHudBlue = Color(0xFF3D7CC9);
+const kHudSunset = Color(0xFF7A4E9E);
 
 /// Near-black with a slight gold or blue wash. [lift] 0.10 is ~10% less black.
 Color hudTintedBlack(Color tint, {double amount = 0.20, double lift = 0}) {
@@ -52,14 +53,15 @@ Color gameModeFill(GameMode mode, {bool submenu = false}) {
     GameMode.select => Color.lerp(kHudSelectFill, Colors.white, lift)!,
     GameMode.edit => hudTintedBlack(kHudGold, amount: 0.20, lift: lift),
     GameMode.create => hudTintedBlack(kHudBlue, amount: 0.24, lift: lift),
+    GameMode.action => hudTintedBlack(kHudSunset, amount: 0.44, lift: lift),
   };
 }
 
-enum GameMode { select, create, edit }
+enum GameMode { select, create, edit, action }
 
 enum GameEditTool { transform, paint, delete }
 
-enum GameCreateTool { volume, path, wall }
+enum GameCreateTool { volume, path, region }
 
 enum GameSelectViewFilter { all, program }
 
@@ -68,12 +70,14 @@ extension GameModeX on GameMode {
         GameMode.select => Icons.ads_click,
         GameMode.edit => Icons.tune,
         GameMode.create => Icons.add,
+        GameMode.action => Icons.route,
       };
 
   String get label => switch (this) {
         GameMode.select => 'Select',
         GameMode.edit => 'Edit',
         GameMode.create => 'Create',
+        GameMode.action => 'Actions',
       };
 
   Color get fill => gameModeFill(this);
@@ -124,13 +128,13 @@ extension GameCreateToolX on GameCreateTool {
   IconData get icon => switch (this) {
         GameCreateTool.volume => Icons.add_box,
         GameCreateTool.path => Icons.add_road,
-        GameCreateTool.wall => Icons.fence,
+        GameCreateTool.region => Icons.grid_on,
       };
 
   String get label => switch (this) {
         GameCreateTool.volume => 'Volumes',
         GameCreateTool.path => 'Paths',
-        GameCreateTool.wall => 'Walls',
+        GameCreateTool.region => 'Regions',
       };
 
   GameCreateTool stepped(int delta) {
@@ -153,15 +157,19 @@ class HudCarouselItem<T> {
   final Color fill;
 }
 
-List<HudCarouselItem<GameMode>> get kGameModeItems => [
+List<HudCarouselItem<GameMode>> gameModeItems({required bool showAction}) => [
       for (final mode in GameMode.values)
-        HudCarouselItem(
-          value: mode,
-          icon: mode.icon,
-          label: mode.label,
-          fill: mode.fill,
-        ),
+        if (mode != GameMode.action || showAction)
+          HudCarouselItem(
+            value: mode,
+            icon: mode.icon,
+            label: mode.label,
+            fill: mode.fill,
+          ),
     ];
+
+List<HudCarouselItem<GameMode>> get kGameModeItems =>
+    gameModeItems(showAction: false);
 
 List<HudCarouselItem<GameEditTool>> get kGameEditToolItems => [
       for (final tool in GameEditTool.values)
@@ -206,8 +214,8 @@ Widget hudCarouselSubmenuTransition(Widget child, Animation<double> animation) {
   );
 }
 
-/// Center-bottom HUD carousel. The selected icon stays in the middle.
-class HudToolCarousel<T> extends StatefulWidget {
+/// Center-bottom HUD tool row. The group stays centered; slots stay fixed.
+class HudToolCarousel<T> extends StatelessWidget {
   const HudToolCarousel({
     super.key,
     required this.items,
@@ -221,207 +229,102 @@ class HudToolCarousel<T> extends StatefulWidget {
   final ValueChanged<T> onSelect;
   final bool compact;
 
-  @override
-  State<HudToolCarousel<T>> createState() => _HudToolCarouselState<T>();
-}
-
-class _HudToolCarouselState<T> extends State<HudToolCarousel<T>>
-    with SingleTickerProviderStateMixin {
-  double get _slot => widget.compact ? 48.0 : 56.0;
-  double get _icon => widget.compact ? 20.0 : 24.0;
-  double get _button => widget.compact ? 34.0 : 40.0;
-  double get _height => widget.compact ? 58.0 : 72.0;
-
-  late final AnimationController _anim;
-  late final CurvedAnimation _curve;
-  double _from = 0;
-  double _to = 0;
-  double _dragDx = 0;
-
-  double get _focus => _from + (_to - _from) * _curve.value;
-
-  int get _selectedIndex {
-    final selected = widget.selected;
-    if (selected == null) return 0;
-    final index = widget.items.indexWhere((item) => item.value == selected);
-    return index < 0 ? 0 : index;
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _to = widget.items.isEmpty ? 0 : _selectedIndex.toDouble();
-    _from = _to;
-    _anim = AnimationController(
-      vsync: this,
-      duration: kGameToolCarouselDuration,
-    )
-      ..addListener(() {
-        if (mounted) setState(() {});
-      })
-      ..addStatusListener((status) {
-        if (status == AnimationStatus.completed) _normalizeFocus();
-      });
-    _curve = CurvedAnimation(parent: _anim, curve: Curves.easeInOutCubic);
-  }
-
-  @override
-  void dispose() {
-    _curve.dispose();
-    _anim.dispose();
-    super.dispose();
-  }
-
-  @override
-  void didUpdateWidget(covariant HudToolCarousel<T> oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _anim.duration = kGameToolCarouselDuration;
-    if (oldWidget.selected != widget.selected) {
-      _animateTo(_selectedIndex);
-    }
-  }
-
-  void _normalizeFocus() {
-    final n = widget.items.length;
-    if (n <= 0) return;
-    final wrapped = carouselWrapIndex(_to.round(), n).toDouble();
-    if ((_to - wrapped).abs() < 0.001) return;
-    _from = wrapped;
-    _to = wrapped;
-  }
-
-  void _animateTo(int index) {
-    final target = carouselFocusTarget(
-      current: _focus,
-      index: index,
-      length: widget.items.length,
-    );
-    if ((target - _focus).abs() < 0.001) return;
-    _from = _focus;
-    _to = target;
-    _anim.forward(from: 0);
-  }
-
-  void _swipe(int delta) {
-    if (widget.items.isEmpty) return;
-    final next = carouselWrapIndex(
-      _selectedIndex + delta,
-      widget.items.length,
-    );
-    widget.onSelect(widget.items[next].value);
-  }
-
-  double _itemLeft(double center, int i) {
-    final slot = carouselItemSlot(i, _focus, widget.items.length);
-    return center + (slot - _focus) * _slot;
-  }
-
-  void _finishSwipe(DragEndDetails details) {
-    final velocity = details.primaryVelocity ?? 0;
-    if (velocity < -80 || _dragDx < -24) {
-      _swipe(1);
-    } else if (velocity > 80 || _dragDx > 24) {
-      _swipe(-1);
-    }
-  }
+  double get _slot => compact ? 48.0 : 56.0;
+  double get _icon => compact ? 20.0 : 24.0;
+  double get _button => compact ? 34.0 : 40.0;
+  double get _height => compact ? 58.0 : 72.0;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onHorizontalDragStart: (_) => _dragDx = 0,
-      onHorizontalDragUpdate: (details) => _dragDx += details.delta.dx,
-      onHorizontalDragEnd: _finishSwipe,
-      child: SizedBox(
-        height: _height,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final n = widget.items.length;
-            final center = constraints.maxWidth / 2 - _slot / 2;
-            return Stack(
-              clipBehavior: Clip.hardEdge,
-              children: [
-                for (var i = 0; i < n; i++)
-                  Positioned(
-                    key: ValueKey(i),
-                    left: _itemLeft(center, i),
-                    top: 0,
-                    bottom: 0,
-                    width: _slot,
-                    child: _CarouselSlot(
-                      icon: widget.items[i].icon,
-                      label: widget.items[i].label,
-                      fill: widget.items[i].fill,
-                      selected: widget.selected == widget.items[i].value,
-                      iconSize: _icon,
-                      buttonSize: _button,
-                      onTap: () => widget.onSelect(widget.items[i].value),
-                    ),
-                  ),
-              ],
-            );
-          },
+    return SizedBox(
+      height: _height,
+      child: Align(
+        alignment: Alignment.center,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final item in items)
+              SizedBox(
+                key: ValueKey(item.value),
+                width: _slot,
+                child: HudToolButton(
+                  icon: item.icon,
+                  label: item.label,
+                  fill: item.fill,
+                  selected: selected == item.value,
+                  iconSize: _icon,
+                  buttonSize: _button,
+                  onTap: () => onSelect(item.value),
+                ),
+              ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _CarouselSlot extends StatelessWidget {
-  const _CarouselSlot({
+/// Round HUD tool used by the mode carousel and its submenus.
+class HudToolButton extends StatelessWidget {
+  const HudToolButton({
+    super.key,
     required this.icon,
-    required this.label,
     required this.fill,
     required this.selected,
-    required this.iconSize,
-    required this.buttonSize,
     required this.onTap,
+    this.label,
+    this.iconSize = 24,
+    this.buttonSize = 40,
+    this.enabled = true,
+    this.borderColor,
   });
 
   final IconData icon;
-  final String label;
   final Color fill;
   final bool selected;
+  final VoidCallback? onTap;
+  final String? label;
   final double iconSize;
   final double buttonSize;
-  final VoidCallback onTap;
+  final bool enabled;
+  final Color? borderColor;
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: label,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Center(
-          child: AnimatedScale(
-            scale: selected ? kGameToolCarouselScale : 1,
+    final border = borderColor ??
+        (selected ? Color.lerp(fill, Colors.white, 0.45)! : Colors.white24);
+    final button = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: enabled ? onTap : null,
+      child: Center(
+        child: AnimatedScale(
+          scale: selected ? kGameToolCarouselScale : 1,
+          duration: kGameToolCarouselDuration,
+          curve: Curves.easeInOutCubic,
+          child: AnimatedContainer(
             duration: kGameToolCarouselDuration,
             curve: Curves.easeInOutCubic,
-            child: AnimatedContainer(
-              duration: kGameToolCarouselDuration,
-              curve: Curves.easeInOutCubic,
-              width: buttonSize,
-              height: buttonSize,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: fill.withValues(alpha: selected ? 0.92 : 0.72),
-                border: Border.all(
-                  color: selected
-                      ? Color.lerp(fill, Colors.white, 0.45)!
-                      : Colors.white24,
-                  width: selected ? 2 : 1,
-                ),
+            width: buttonSize,
+            height: buttonSize,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: fill.withValues(alpha: selected ? 0.92 : 0.72),
+              border: Border.all(
+                color: border,
+                width: selected || borderColor != null ? 2 : 1,
               ),
-              child: Icon(
-                icon,
-                size: iconSize,
-                color: selected ? Colors.white : Colors.white70,
-              ),
+            ),
+            child: Icon(
+              icon,
+              size: iconSize,
+              color: selected ? Colors.white : Colors.white70,
             ),
           ),
         ),
       ),
     );
+    final label = this.label;
+    if (label == null) return button;
+    return Tooltip(message: label, child: button);
   }
 }

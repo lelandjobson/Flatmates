@@ -206,7 +206,6 @@ void main() {
         volume: first,
         cell: first.cells.single,
         side: VolumeSide.east,
-        originU: 3,
       ),
       isTrue,
     );

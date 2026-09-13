@@ -10,9 +10,6 @@ import 'outline_edges.dart';
 const kWorldOutlineColor = Color(0xB3808080);
 const kWorldOutlineStrokeWidth = 1.6;
 
-/// Same stroke as cubeboy body outlines. Sits outside the white disk.
-const kFriendEyeOutlineStrokeWidth = kWorldOutlineStrokeWidth;
-
 /// Thinner, lighter stroke for door / face paper on top of volume fills.
 const kAppliqueOutlineColor = Color(0xB3A8A8A8);
 const kAppliqueOutlineStrokeWidth = 1.0;
@@ -53,6 +50,7 @@ int paintOutlineEdges({
   double Function(OutlineEdge edge)? opacityFor,
   double? dashLength,
   double? dashGap,
+  bool dashDot = false,
   GroundOcclusion? groundOcclusion,
 }) {
   final stroke = Paint()
@@ -89,6 +87,7 @@ int paintOutlineEdges({
           stroke,
           dashLength: dashLength,
           gapLength: dashGap ?? dashLength,
+          dashDot: dashDot,
         );
       } else {
         canvas.drawLine(a, b, stroke);
@@ -106,6 +105,8 @@ void paintDashedLine(
   Paint paint, {
   double dashLength = 9,
   double gapLength = 5,
+  bool dashDot = false,
+  double dotLength = 2,
 }) {
   final dx = b.dx - a.dx;
   final dy = b.dy - a.dy;
@@ -114,9 +115,13 @@ void paintDashedLine(
   final ux = dx / len;
   final uy = dy / len;
   var t = 0.0;
-  var draw = true;
+  var phase = 0;
   while (t < len) {
-    final next = math.min(t + (draw ? dashLength : gapLength), len);
+    final drawLen = dashDot
+        ? (phase == 0 ? dashLength : (phase == 2 ? dotLength : gapLength))
+        : (phase.isEven ? dashLength : gapLength);
+    final draw = dashDot ? phase.isEven : phase.isEven;
+    final next = math.min(t + drawLen, len);
     if (draw) {
       canvas.drawLine(
         Offset(a.dx + ux * t, a.dy + uy * t),
@@ -125,6 +130,6 @@ void paintDashedLine(
       );
     }
     t = next;
-    draw = !draw;
+    phase = dashDot ? (phase + 1) % 4 : phase + 1;
   }
 }

@@ -157,6 +157,8 @@ void main() {
     expect(reveal.opacityFor(const VolumePartId(2, 3)), 0);
     expect(reveal.opacityFor(const VolumePartId(3, 3)), 0);
     expect(reveal.opacityFor(const VolumePartId(6, 6)), 1);
+    expect(reveal.revealsInterior(2, 2), isTrue);
+    expect(reveal.revealsInterior(6, 6), isFalse);
 
     reveal.update(
       volumes: volumes,

@@ -11,11 +11,25 @@ import '../debug/perf_debug.dart';
 import '../debug/scene_paint_stats.dart';
 import '../crafting/placed_paper.dart';
 import '../gameplay/landscape_cover.dart';
+import '../gameplay/flatmates/bedroom_roster.dart';
+import '../gameplay/flatmates/day_action.dart';
+import '../gameplay/flatmates/day_action_store.dart';
+import '../gameplay/flatmates/day_router.dart';
 import '../gameplay/flatmates/flatmate_pathfinder.dart';
-import '../gameplay/flatmates/flatmate_walk_style.dart';
+import '../gameplay/flatmates/flatmate_range.dart';
+import '../gameplay/flatmates/movement_assignment.dart';
+import '../gameplay/flatmates/movement_profile.dart';
+import '../gameplay/flatmates/movement_profile_io.dart';
+import '../gameplay/flatmates/world_action_bar_layout.dart';
+import '../gameplay/friends/friend_eye_profile_io.dart';
+import '../gameplay/friends/friend_facing.dart';
 import '../gameplay/friends/friend_instance.dart';
 import '../gameplay/friends/friend_instance_store.dart';
 import '../gameplay/friends/friend_mesh_sync.dart';
+import '../gameplay/friends/friend_thought_display.dart';
+import '../gameplay/friends/friend_thought_layout.dart';
+import '../gameplay/friends/friend_trail.dart';
+import '../gameplay/tiles/tile_event_hub.dart';
 import '../gameplay/game_history.dart';
 import '../gameplay/gizmo/gizmo_resolver.dart';
 import '../gameplay/gizmo/gizmo_target.dart';
@@ -31,6 +45,8 @@ import '../gameplay/paths/path_store.dart';
 import '../gameplay/spawns/basement_blur_veil.dart';
 import '../gameplay/spawns/basement_spawn.dart';
 import '../gameplay/spawns/basement_spawn_mesh.dart';
+import '../gameplay/walls/region_opening.dart';
+import '../gameplay/walls/region_tool.dart';
 import '../gameplay/walls/wall_mesh.dart';
 import '../gameplay/walls/wall_edge.dart';
 import '../gameplay/walls/wall_regions.dart';
@@ -43,6 +59,7 @@ import '../gameplay/paper/paper_quote.dart';
 import '../gameplay/paper/paper_wallet.dart';
 import '../gameplay/paint/ground_shadow_model.dart';
 import '../gameplay/alerts/alert_reveal.dart';
+import '../gameplay/alerts/region_alerts.dart';
 import '../gameplay/alerts/volume_alerts.dart';
 import '../gameplay/alerts/world_alert.dart';
 import '../gameplay/alerts/world_alert_layout.dart';
@@ -109,17 +126,26 @@ import '../ui/fm_safe_area.dart';
 import '../ui/fm_screen.dart';
 import '../ui/game/connection_graph_overlay.dart';
 import '../ui/game/crop_box_gizmo.dart';
+import '../ui/game/action_day_strip.dart';
+import '../ui/game/day_action_preview_overlay.dart';
 import '../ui/game/day_advance_overlay.dart';
 import '../ui/game/day_cycle_hud.dart';
+import '../ui/game/flatmate_range_overlay.dart';
+import '../ui/game/friend_wheel.dart';
+import '../ui/game/tile_action_picker_panel.dart';
+import '../ui/game/world_action_bar_overlay.dart';
 import '../ui/game/paper_count_hud.dart';
 import '../ui/game/paper_cost_hover.dart';
 import '../ui/game/paper_fly_overlay.dart';
 import '../ui/game/dev_tools_button.dart';
 import '../ui/game/dev_tools_panel.dart';
 import '../ui/game/frame_stats_hud.dart';
+import '../ui/game/game_view_debug_readout.dart';
 import '../ui/game/flatmate_path_overlay.dart';
 import '../ui/game/friend_eye_overlay.dart';
 import '../ui/game/friend_outline_overlay.dart';
+import '../ui/game/friend_thought_overlay.dart';
+import '../ui/game/friend_trail_overlay.dart';
 import '../ui/game/eraser_filter_panel.dart';
 import '../ui/game/game_focus_tool_column.dart';
 import '../ui/game/game_tool_carousel.dart';
@@ -148,6 +174,8 @@ import '../ui/game/volume_transform_gizmo.dart';
 import '../ui/game/world_alert_overlay.dart';
 import '../ui/game/world_chip_row.dart';
 
+enum _DayProgramStep { idle, pickTile, pickKind }
+
 /// Core 3D game view. Starts from the map bench scene (landscape + look
 /// camera) without the bench tools/assets panel.
 class GameView extends StatefulWidget {
@@ -173,6 +201,16 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   late final PathStore _paths = PathStore(grid: _volumes.grid);
   late final WallStore _walls = WallStore(grid: _volumes.grid);
   final _friends = FriendInstanceStore();
+  final _trails = FriendTrailStore();
+  final _dayPlans = FlatmateDayPlanStore();
+  final _tileEvents = TileEventHub();
+  final _dayRouter = DayRouter();
+  late final _dayWatch = DayPlanWatch(_tileEvents, _dayPlans);
+  String? _actionFriendId;
+  int? _dayProgramSlot;
+  _DayProgramStep _dayProgramStep = _DayProgramStep.idle;
+  (int, int)? _dayProgramTile;
+  bool _dayPreviewPlaying = false;
 
   late final Camera _camera;
   late final MapLookCameraController _look;
@@ -204,12 +242,13 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   VolumeCell? _gizmoHoverCell;
   bool get _isSelectTool => _mode == GameMode.select;
   bool get _isPlaceTool => _mode == GameMode.create;
+  bool get _isActionTool => _mode == GameMode.action;
   bool get _volumesTool =>
       _mode == GameMode.create && _createTool == GameCreateTool.volume;
   bool get _pathsTool =>
       _mode == GameMode.create && _createTool == GameCreateTool.path;
-  bool get _wallsTool =>
-      _mode == GameMode.create && _createTool == GameCreateTool.wall;
+  bool get _regionsTool =>
+      _mode == GameMode.create && _createTool == GameCreateTool.region;
   bool get _worldEraserTool =>
       _mode == GameMode.edit && _editTool == GameEditTool.delete;
   bool get _editPaintTool =>
@@ -270,6 +309,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
 
   GameViewerKind _viewer = GameViewerKind.map3d;
   final _perf = PerfDebugSettings();
+  FriendThoughtDisplay _thoughtDisplay = const FriendThoughtDisplay();
   SceneLayerMask get _layers =>
       SceneLayerMask.forViewer(_viewer).hiding(_perf.hiddenLayers);
   bool get _isPlane2d => _viewer == GameViewerKind.plane2d;
@@ -315,6 +355,9 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   (int, int)? _pathStrokeLast;
   (int, int)? _volumeStrokeLast;
   Vector3? _wallStrokeLast;
+  (int, int)? _regionFillStrokeLast;
+  bool _regionStrokeIsWall = false;
+  (int, int)? _regionToolLastSeed;
   List<WallRegion> _wallRegions = const [];
   GameSnapshot? _wallSessionBefore;
   bool _wallSessionPushed = false;
@@ -334,7 +377,9 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   final _faceLightTweak = _FaceLightTweak();
   bool _gizmoMode = false;
   bool _springyLookPeek = true;
-  FlatmateWalkStyle _flatmateWalkStyle = FlatmateWalkStyle.hop;
+  MovementProfile _movementProfile = MovementProfile.hop;
+  final Map<String, MovementProfile> _friendMovement = {};
+  FriendEyeProfiles _eyeProfiles = FriendEyeProfiles.empty;
   int _dayNumber = 1;
   bool _isNight = false;
   double _dayNightProgress = 0;
@@ -433,9 +478,18 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     final strokePos = _isMapUnlocked ? _viewportCenter : pos;
     _pathStrokeLast = _pathsTool ? _tileAt(strokePos) : null;
     _volumeStrokeLast = _volumesTool ? _tileAt(strokePos) : null;
-    _wallStrokeLast = _wallsTool
-        ? _camera.intersectGround(strokePos, _viewportSize)
-        : null;
+    _regionStrokeIsWall = false;
+    _regionFillStrokeLast = null;
+    _wallStrokeLast = null;
+    if (_regionsTool) {
+      final hit = _camera.intersectGround(strokePos, _viewportSize);
+      if (hit != null && _walls.hitEdgeAtMidpoint(hit) != null) {
+        _regionStrokeIsWall = true;
+        _wallStrokeLast = hit;
+      } else {
+        _regionFillStrokeLast = _tileAt(strokePos);
+      }
+    }
     if (_isPlane2d && !_focusPaintTools) {
       _stickerDragHit = _hitFocusSticker(strokePos);
       if (_stickerDragHit != null) _selectedSticker = _stickerDragHit;
@@ -460,6 +514,8 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     paper: _paper,
     programs: _programs,
     stuff: _stuff,
+    friends: _friends,
+    dayPlans: _dayPlans,
     label: label,
   );
 
@@ -480,6 +536,8 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       paper: _paper,
       programs: _programs,
       stuff: _stuff,
+      friends: _friends,
+      dayPlans: _dayPlans,
     );
   }
 
@@ -563,6 +621,8 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       paper: _paper,
       programs: _programs,
       stuff: _stuff,
+      friends: _friends,
+      dayPlans: _dayPlans,
     );
     _syncWorld();
     _schedulePaintRebake();
@@ -616,6 +676,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
         walls: _walls,
         facePaint: _facePaint,
         friends: _friends,
+        programs: _programs,
         landscape: _grid,
         generator: _landscapeGen,
         paper: _paper,
@@ -659,6 +720,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
         walls: _walls,
         facePaint: _facePaint,
         friends: _friends,
+        programs: _programs,
         landscape: _grid,
         paper: _paper,
       );
@@ -680,6 +742,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     _cancelPendingToolDown();
     _pathStrokeLast = null;
     _wallStrokeLast = null;
+    _regionFillStrokeLast = null;
     _volumeStrokeLast = null;
     _toolDidMove = false;
     if (_flatmateDragging) {
@@ -761,12 +824,12 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     );
 
     _pathGrid = GridMotif.subtileLines(worldSize: _volumes.grid.subtileSize);
+    _flatmateTicker = createTicker(_onFlatmateTick);
     _seedBasementSpawn();
     _syncWorld();
     _scene.addListener(_onSceneChanged);
     _loadPaperTexture();
     _bakeLandscape();
-    _refreshStatus();
     _viewerAnim =
         AnimationController(
             vsync: this,
@@ -791,9 +854,43 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     )..addListener(() {
         if (mounted) setState(() {});
       });
-    _flatmateTicker = createTicker(_onFlatmateTick);
     _paper.addListener(_onPaperChanged);
+    unawaited(_loadMovementProfile());
+    unawaited(_loadEyeProfiles());
   }
+
+  Future<void> _loadMovementProfile() async {
+    final catalog = await MovementProfileIo.list();
+    final assignments = await MovementAssignmentIo.load();
+    final fallback = [
+          for (final p in catalog)
+            if (p.id == 'default') p,
+        ].firstOrNull ??
+        await MovementProfileIo.loadDefault();
+    final mapped = movementPatternsByFriend(
+      assignments: assignments,
+      catalog: catalog,
+      fallback: fallback,
+    );
+    if (!mounted) return;
+    setState(() {
+      _movementProfile = fallback;
+      _friendMovement
+        ..clear()
+        ..addAll(mapped);
+    });
+    _applyMovementProfileToWalkers();
+  }
+
+  Future<void> _loadEyeProfiles() async {
+    final profiles = await FriendEyeProfileIo.load();
+    if (!mounted) return;
+    setState(() => _eyeProfiles = profiles);
+    applyEyeProfiles(_friends, _eyeProfiles);
+  }
+
+  MovementProfile _profileFor(FriendInstance flatmate) =>
+      _friendMovement[flatmate.friend.id] ?? _movementProfile;
 
   void _onPaperChanged() {
     final delta = _paper.held - _lastFlownHeld;
@@ -862,21 +959,24 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
         volumes: _volumes,
         paths: _paths,
         walls: _walls,
+        regions: _wallRegions,
         tx: tile.$1,
         ty: tile.$2,
       );
     }
-    if (_wallsTool) {
+    if (_regionsTool) {
       final hit = _isMapUnlocked
           ? _look.lookAt
           : _camera.intersectGround(_cursorScreen, _viewportSize);
       if (hit == null || !_canEditWorld(hit)) return null;
-      return quoteWallToggleAt(
+      return quoteRegionToolAt(
         paper: _paper,
         volumes: _volumes,
         paths: _paths,
         walls: _walls,
+        regions: _wallRegions,
         hit: hit,
+        lastSeed: _regionToolLastSeed,
       );
     }
     return null;
@@ -1027,9 +1127,23 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     setState(() {});
   }
 
-  void _setFlatmateWalkStyle(FlatmateWalkStyle style) {
-    _flatmateWalkStyle = style;
+  void _setFlatmateGait(String id) {
+    _movementProfile = id == 'slide'
+        ? _movementProfile.copyWith(id: 'slide', name: 'Slide', hopHeight: 0)
+        : _movementProfile.copyWith(id: 'hop', name: 'Hop', hopHeight: 0.85);
+    _applyMovementProfileToWalkers();
     if (mounted) setState(() {});
+  }
+
+  void _applyMovementProfileToWalkers() {
+    for (final flatmate in _friends.instances) {
+      if (flatmate.movement.tiles.length < 2) continue;
+      flatmate.movement.applyProfile(
+        _profileFor(flatmate),
+        _volumes.grid,
+        paths: _paths,
+      );
+    }
   }
 
   @override
@@ -1083,12 +1197,12 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     if (mounted) {
       _refreshHover();
       _updateStuffGhost();
-      setState(_refreshStatus);
+      setState(() {});
     }
   }
 
   void _onSceneChanged() {
-    if (mounted) setState(_refreshStatus);
+    if (mounted) setState(() {});
   }
 
   void _scheduleStream() {
@@ -1099,32 +1213,39 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     unawaited(_streamer.sync(lookTx: tx, lookTy: ty, drawRadius: _cullRadius));
   }
 
-  void _refreshStatus() {
-    if (_error != null) return;
-    if (_baking) return;
+  List<String> _debugReadoutLines() {
     final (tx, ty) = _look.lookAtTile(
       tileSize: _tileWorld,
       tilesSide: _tilesSide,
     );
-    final lockLabel = _viewLocked ? 'locked' : 'unlocked';
-    final hover = _hoverHit?.debugLabel ?? 'none';
-    _status =
-        '${_viewer.name} · $lockLabel · Tile ($tx, $ty) · '
-        'dist ${_look.distance.toStringAsFixed(1)} · ${_look.zoomLabel} · '
-        'hover $hover · faceZoom < ${kSelectVolumeFacesBelowDistance.toStringAsFixed(0)} · '
-        'cull ±$_cullRadius · '
-        'drawn ${_streamer.drawnCount}/${_streamer.placedCount}'
-        '$_ceilingStatus';
+    return [
+      _viewer.name,
+      _viewLocked ? 'locked' : 'unlocked',
+      'tile ($tx, $ty)',
+      'dist ${_look.distance.toStringAsFixed(1)}',
+      _look.zoomLabel,
+      'hover ${_hoverHit?.debugLabel ?? 'none'}',
+      'faceZoom < ${kSelectVolumeFacesBelowDistance.toStringAsFixed(0)}',
+      'cull ±$_cullRadius',
+      'drawn ${_streamer.drawnCount}/${_streamer.placedCount}',
+      if (_ceilingDebugLine case final ceiling?) ceiling,
+      if (_error != null)
+        _error!
+      else if (_baking)
+        'Baking landscape…'
+      else if (_status case final status?)
+        status,
+    ];
   }
 
-  String get _ceilingStatus {
+  String? get _ceilingDebugLine {
     final focus = _ceilingReveal.focus;
-    if (focus == null || !_ceilingReveal.wantsReveal) return '';
-    if (_volumeContents.isLoaded(focus)) return ' · interior';
+    if (focus == null || !_ceilingReveal.wantsReveal) return null;
+    if (_volumeContents.isLoaded(focus)) return 'interior';
     if (_volumeContents.isLoading(focus) || _volumeContents.isQueued(focus)) {
-      return ' · loading interior';
+      return 'loading interior';
     }
-    return '';
+    return null;
   }
 
   /// Roof-off plan of a volume floor. Not the zoom/look-at ceiling cutaway.
@@ -1296,15 +1417,32 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       enabled: _isVolumeInterior,
       grid: _volumes.grid,
     );
-    syncPathMeshes(_scene, _paths, _volumes, color: _theme.path);
+    _wallRegions = computeEnclosedRegions(_walls);
+    _regionToolLastSeed = resolvedLastRegionSeed(
+      _wallRegions,
+      _regionToolLastSeed,
+    );
+    syncRegionOpeningsFromPaths(
+      walls: _walls,
+      paths: _paths,
+      regions: _wallRegions,
+    );
+    syncPathMeshes(
+      _scene,
+      _paths,
+      _volumes,
+      walls: _walls,
+      color: _theme.path,
+    );
     syncBasementSpawnMeshes(
       _scene,
       _volumes.grid,
       pathColor: _theme.path,
       wallColor: _theme.volume,
     );
-    _pathOutlines.rebuild(paths: _paths, volumes: _volumes);
+    _pathOutlines.rebuild(paths: _paths, volumes: _volumes, walls: _walls);
     syncWallMeshes(_scene, _walls, color: _theme.wall);
+    _syncBedroomFriends();
     syncFriendMeshes(_scene, _friends, tileSize: _tileWorld);
     syncStuffMeshes(
       _scene,
@@ -1312,8 +1450,12 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       volumes: _volumes,
       ghost: _stuffGhost,
     );
-    _wallRegions = computeEnclosedRegions(_walls);
-    _graph = ConnectionGraph.build(volumes: _volumes, paths: _paths);
+    _graph = ConnectionGraph.build(
+      volumes: _volumes,
+      paths: _paths,
+      walls: _walls,
+      regions: _wallRegions,
+    );
     _applyLayerVisibility();
     _syncGroundCoverage();
     _scheduleFaceAtlasBake();
@@ -1327,6 +1469,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       grid: grid,
       volumes: _volumes,
       paths: _paths,
+      walls: _walls,
       generator: gen,
     )) {
       _schedulePaintRebake();
@@ -1539,6 +1682,15 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       }
       return false;
     }
+    if (id.startsWith('friend_')) {
+      final instanceId = parseFriendInstanceId(id);
+      final friend = instanceId == null ? null : _friends.byId(instanceId);
+      if (friend == null) return false;
+      final volume = _volumes.volumeById(focusId);
+      if (volume == null) return false;
+      final tile = _volumes.grid.tileAtWorld(friend.position);
+      return tile != null && volume.cellAt(tile.$1, tile.$2) != null;
+    }
     return false;
   }
 
@@ -1565,6 +1717,80 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
           ? _look.lookAt
           : _camera.intersectGround(_cursorScreen, _viewportSize) ??
               _look.lookAt;
+
+  ({
+    PlacementGhostKind kind,
+    WallEdge? wallEdge,
+    List<WallEdge> wallEdges,
+    List<WallEdge> removeWallEdges,
+    bool removing,
+  })? _regionPlacementGhost() {
+    if (!_regionsTool) return null;
+    final edge = _walls.hitEdgeAtMidpoint(_placeAimWorld);
+    if (edge != null) {
+      for (final tile in tilesTouchingWall(edge)) {
+        if (_tileUnbuildable(tile.$1, tile.$2)) {
+          return (
+            kind: PlacementGhostKind.wall,
+            wallEdge: null,
+            wallEdges: const <WallEdge>[],
+            removeWallEdges: const <WallEdge>[],
+            removing: false,
+          );
+        }
+      }
+      final merge = dividerMergeEdges(edge, _wallRegions, _walls);
+      if (merge != null) {
+        return (
+          kind: PlacementGhostKind.wall,
+          wallEdge: null,
+          wallEdges: const <WallEdge>[],
+          removeWallEdges: merge,
+          removing: true,
+        );
+      }
+      if (_paths.connectionAcross(edge)) {
+        return (
+          kind: PlacementGhostKind.pathSplit,
+          wallEdge: edge,
+          wallEdges: const <WallEdge>[],
+          removeWallEdges: const <WallEdge>[],
+          removing: true,
+        );
+      }
+      return (
+        kind: PlacementGhostKind.wall,
+        wallEdge: edge,
+        wallEdges: const <WallEdge>[],
+        removeWallEdges: const <WallEdge>[],
+        removing: _wallCutsConnection(edge),
+      );
+    }
+    final tile = _volumes.grid.tileAtWorld(_placeAimWorld);
+    if (tile == null || _tileUnbuildable(tile.$1, tile.$2)) {
+      return (
+        kind: PlacementGhostKind.wall,
+        wallEdge: null,
+        wallEdges: const <WallEdge>[],
+        removeWallEdges: const <WallEdge>[],
+        removing: false,
+      );
+    }
+    final preview = previewRegionFill(
+      walls: _walls,
+      regions: _wallRegions,
+      tx: tile.$1,
+      ty: tile.$2,
+      lastSeed: _regionToolLastSeed,
+    );
+    return (
+      kind: PlacementGhostKind.wall,
+      wallEdge: null,
+      wallEdges: preview.addEdges,
+      removeWallEdges: preview.removeEdges,
+      removing: preview.removeEdges.isNotEmpty && preview.addEdges.isEmpty,
+    );
+  }
 
   bool get _isMapUnlocked =>
       _viewer == GameViewerKind.map3d && !_viewLocked;
@@ -1747,7 +1973,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
         _atlas?.dispose();
         _atlas = image;
         _baking = false;
-        _refreshStatus();
+        _status = null;
       });
     } catch (e) {
       if (!mounted) return;
@@ -1770,24 +1996,290 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       if (_editing) {
         _finishOpenVolume();
       }
+      final wasRegion = _regionsTool;
       if (_mode == mode) {
         if (mode == GameMode.select) return;
-        if (_wallsTool) _endWallSession();
+        if (_regionsTool) _endWallSession();
         _mode = GameMode.select;
+        if (wasRegion) _regionToolLastSeed = null;
+        _cancelDayProgram();
         return;
       }
       _mode = mode;
-      if (!_wallsTool) _endWallSession();
+      if (!_regionsTool) _endWallSession();
+      if (wasRegion != _regionsTool) _regionToolLastSeed = null;
       _cancelStuffPlacement();
+      if (mode != GameMode.action) {
+        _cancelDayProgram();
+      } else {
+        _actionFriendId ??= _closestActionFriend()?.id;
+      }
     });
+    if (mode == GameMode.action) {
+      _frameActionFriend();
+    }
     _refreshHover();
     _syncVolumeGizmoHover();
+  }
+
+  void _cancelDayProgram() {
+    _dayProgramSlot = null;
+    _dayProgramStep = _DayProgramStep.idle;
+    _dayProgramTile = null;
+  }
+
+  FriendInstance? get _actionFriend {
+    final id = _actionFriendId;
+    if (id == null) return null;
+    return _friends.byId(id);
+  }
+
+  FriendInstance? _closestActionFriend() {
+    if (_friends.instances.isEmpty) return null;
+    FriendInstance? best;
+    var bestDist = double.infinity;
+    final look = _look.lookAt;
+    for (final friend in _friends.instances) {
+      final dx = friend.position.x - look.x;
+      final dz = friend.position.z - look.z;
+      final d = dx * dx + dz * dz;
+      if (d < bestDist) {
+        bestDist = d;
+        best = friend;
+      }
+    }
+    return best;
+  }
+
+  void _selectActionFriend(String id) {
+    if (_friends.byId(id) == null) return;
+    setState(() {
+      _actionFriendId = id;
+      _cancelDayProgram();
+    });
+    _frameActionFriend();
+  }
+
+  void _frameActionFriend() {
+    final friend = _actionFriend;
+    if (friend == null) return;
+    final home = friend.bedroomTile ?? _tileOfFlatmate(friend);
+    if (home == null) return;
+    _look.animateLookAt(_volumes.grid.tileCenter(home.$1, home.$2));
+    _look.animateDistance(_look.maxDistance);
+  }
+
+  bool _indoorFriendInteriorOpen(int tx, int ty) {
+    if (_isVolumeInterior || _isPlane2d || _isFocus3d) return true;
+    return _ceilingReveal.revealsInterior(tx, ty);
+  }
+
+  void _syncBedroomFriends() {
+    BedroomRoster.sync(
+      friends: _friends,
+      volumes: _volumes,
+      programs: _programs,
+      walls: _walls,
+      grid: _volumes.grid,
+      plans: _dayPlans,
+    );
+    final keep = [for (final friend in _friends.instances) friend.id];
+    _dayPlans.prune(keep);
+    _dayWatch.detachMissing(keep);
+    if (_actionFriendId != null && _friends.byId(_actionFriendId!) == null) {
+      _actionFriendId = _closestActionFriend()?.id;
+    }
+    if (_friends.instances.isEmpty) {
+      _actionFriendId = null;
+      _cancelDayProgram();
+      if (_mode == GameMode.action) _mode = GameMode.select;
+    }
+    applyEyeProfiles(_friends, _eyeProfiles);
+    _revalidateDayPlans();
+    if (_friends.instances.isNotEmpty || !_trails.isEmpty) {
+      _ensureFlatmateTicker();
+    } else if (_flatmateTicker.isActive && !_flatmateDragging) {
+      _flatmateTicker.stop();
+    }
+  }
+
+  void _revalidateDayPlans({String? friendId}) {
+    void one(String id) {
+      final friend = _friends.byId(id);
+      final plan = _dayPlans.ensure(id, home: friend?.bedroomTile);
+      _dayRouter.compute(
+        plan,
+        home: friend?.bedroomTile,
+        grid: _volumes.grid,
+        volumes: _volumes,
+        paths: _paths,
+        walls: _walls,
+        regions: _wallRegions,
+        graph: _graph,
+      );
+      _dayWatch.attach(id, (touched) {
+        if (_syncingWorld) return;
+        _revalidateDayPlans(friendId: touched);
+        if (mounted) setState(() {});
+      });
+    }
+
+    if (friendId != null) {
+      one(friendId);
+      return;
+    }
+    for (final friend in _friends.instances) {
+      one(friend.id);
+    }
+  }
+
+  Set<(int, int)> _validDayActionTiles() {
+    final home = _actionFriend?.bedroomTile;
+    if (home == null) return {};
+    return {
+      for (final tile in flatmateRangeTiles(home))
+        if (_volumes.grid.inBounds(tile.$1, tile.$2) &&
+            _dayRouter.canProgramAction(
+              tile: tile,
+              home: home,
+              paths: _paths,
+            ))
+          tile,
+    };
+  }
+
+  void _onDaySlotTap(int index) {
+    final friend = _actionFriend;
+    if (friend == null) return;
+    final plan = _dayPlans.ensure(friend.id, home: friend.bedroomTile);
+    if (index < 0 || index >= plan.slots.length) return;
+    final slot = plan.slots[index];
+    if (slot.locked) return;
+    setState(() {
+      _dayProgramSlot = index;
+      if (slot.isProgrammed) {
+        _dayProgramTile = slot.tile;
+        _dayProgramStep = _DayProgramStep.pickKind;
+      } else {
+        _dayProgramTile = null;
+        _dayProgramStep = _DayProgramStep.pickTile;
+      }
+    });
+    final tile = slot.tile;
+    if (tile != null) {
+      _look.animateLookAt(_volumes.grid.tileCenter(tile.$1, tile.$2));
+    }
+  }
+
+  void _onDayProgramBack() {
+    setState(() {
+      _dayProgramStep = _DayProgramStep.pickTile;
+    });
+  }
+
+  void _assignDayActionKind(DayActionKind kind) {
+    final friend = _actionFriend;
+    final slot = _dayProgramSlot;
+    final tile = _dayProgramTile;
+    if (friend == null || slot == null || tile == null) return;
+    final plan = _dayPlans.ensure(friend.id, home: friend.bedroomTile);
+    _commitAction('program day action', () {
+      return plan.setSlot(
+        slot,
+        DayActionSlot(kind: kind, tile: tile),
+      );
+    });
+    _cancelDayProgram();
+    _revalidateDayPlans(friendId: friend.id);
+    setState(() {});
+  }
+
+  void _onActionModeTap(Offset local) {
+    if (_dayProgramStep != _DayProgramStep.pickTile) return;
+    final tile = _tileAt(local);
+    final home = _actionFriend?.bedroomTile;
+    if (tile == null || home == null) return;
+    if (!_dayRouter.canProgramAction(tile: tile, home: home, paths: _paths)) {
+      _hapticNoOp();
+      return;
+    }
+    setState(() {
+      _dayProgramTile = tile;
+      _dayProgramStep = _DayProgramStep.pickKind;
+    });
+    _look.animateLookAt(_volumes.grid.tileCenter(tile.$1, tile.$2));
+  }
+
+  void _playDayPreview() {
+    final friend = _actionFriend;
+    if (friend == null) return;
+    if (friend.movement.isMoving || _dayPreviewPlaying) {
+      friend.movement.clear();
+      _dayPreviewPlaying = false;
+      _applyFlatmatePose(friend);
+      syncFriendMeshes(_scene, _friends, tileSize: _tileWorld);
+      setState(() {});
+      return;
+    }
+    final plan = _dayPlans.ensure(friend.id, home: friend.bedroomTile);
+    final path = plan.playablePath();
+    if (path.length < 2) return;
+    friend.movement.start(
+      path,
+      grid: _volumes.grid,
+      profile: _profileFor(friend),
+      paths: _paths,
+      seed: friend.id,
+    );
+    _dayPreviewPlaying = true;
+    _applyFlatmatePose(friend);
+    _ensureFlatmateTicker();
+    setState(() {});
+  }
+
+  List<FriendActionBar> _visibleActionBars() {
+    if (!_isActionTool || !_layers.shows(SceneLayer.friends)) {
+      return const [];
+    }
+    return friendActionBars(
+      friends: _friends.instances,
+      plans: _dayPlans,
+      tileSize: _tileWorld,
+      playingFriendId: _dayPreviewPlaying ? _actionFriendId : null,
+    );
+  }
+
+  Widget? _dayActionPickerOverlay() {
+    if (!_isActionTool || _dayProgramStep != _DayProgramStep.pickKind) {
+      return null;
+    }
+    final tile = _dayProgramTile;
+    final friend = _actionFriend;
+    if (tile == null || friend == null) return null;
+    final plan = _dayPlans.byId(friend.id);
+    final selected = _dayProgramSlot == null
+        ? null
+        : plan?.slots[_dayProgramSlot!].kind;
+    final world = _volumes.grid.tileCenter(tile.$1, tile.$2);
+    final screen = _camera.projectToScreen(world, _viewportSize) ??
+        _viewportCenter;
+    final left = (screen.dx + 28).clamp(12.0, _viewportSize.width - 232);
+    final top = (screen.dy - 80).clamp(48.0, _viewportSize.height - 200);
+    return Positioned(
+      left: left,
+      top: top,
+      child: TileActionPickerPanel(
+        selected: selected == DayActionKind.sleep ? null : selected,
+        onSelect: _assignDayActionKind,
+        onBack: _onDayProgramBack,
+      ),
+    );
   }
 
   void _setEditTool(GameEditTool tool) {
     _pendingFocusTimer?.cancel();
     setState(() => _editTool = tool);
-    if (!_wallsTool) _endWallSession();
+    if (!_regionsTool) _endWallSession();
     _refreshHover();
     _syncVolumeGizmoHover();
   }
@@ -1805,18 +2297,32 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       if (_editing && tool != GameCreateTool.volume) {
         _finishOpenVolume();
       }
+      final wasRegion = _createTool == GameCreateTool.region;
       _createTool = tool;
-      if (tool != GameCreateTool.wall) _endWallSession();
+      if (tool != GameCreateTool.region) _endWallSession();
+      if (wasRegion != (tool == GameCreateTool.region)) {
+        _regionToolLastSeed = null;
+      }
     });
     _refreshHover();
   }
 
-  List<WorldAlert> get _worldAlerts => collectVolumeAlerts(
-        volumes: _volumes,
-        programs: _programs,
-        walls: _walls,
-        paths: _paths,
-      );
+  List<WorldAlert> get _worldAlerts => [
+        ...collectVolumeAlerts(
+          volumes: _volumes,
+          programs: _programs,
+          walls: _walls,
+          paths: _paths,
+        ),
+        ...collectRegionAlerts(
+          graph: _graph,
+          regions: _wallRegions,
+          grid: _volumes.grid,
+          paths: _paths,
+          volumes: _volumes,
+          walls: _walls,
+        ),
+      ];
 
   bool get _hasUnresolvedAlerts => _worldAlerts.isNotEmpty;
 
@@ -1830,6 +2336,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
         final volume = id == null ? null : _volumes.volumeById(id);
         return volume != null && _volumeLookingInside(volume);
       },
+      showInCreate: (alert) => alert.hostKey.startsWith('region:'),
     );
   }
 
@@ -1838,9 +2345,11 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       if (_editing && rem.mode != GameMode.create) {
         _finishOpenVolume();
       }
+      final wasRegion = _regionsTool;
       _mode = rem.mode;
       if (rem.createTool != null) _createTool = rem.createTool!;
-      if (!_wallsTool) _endWallSession();
+      if (!_regionsTool) _endWallSession();
+      if (wasRegion != _regionsTool) _regionToolLastSeed = null;
       _cancelStuffPlacement();
       _floorMenuHit = null;
     });
@@ -1852,15 +2361,31 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       final volume =
           rem.volumeId == null ? null : _volumes.volumeById(rem.volumeId!);
       final cell = volume?.cellAt(rem.tx!, rem.ty!);
-      hit = rem.volumeId != null
-          ? SelectableHit.volume(
-              rem.volumeId!,
-              cell: cell,
-              tx: rem.tx,
-              ty: rem.ty,
-              worldPoint: rem.lookAt,
-            )
-          : SelectableHit.tile(rem.tx!, rem.ty!, worldPoint: rem.lookAt);
+      if (rem.volumeId != null) {
+        hit = SelectableHit.volume(
+          rem.volumeId!,
+          cell: cell,
+          tx: rem.tx,
+          ty: rem.ty,
+          worldPoint: rem.lookAt,
+        );
+      } else if (rem.selectKind == SelectableKind.region) {
+        final region = wallRegionContaining(
+          _wallRegions,
+          rem.tx!,
+          rem.ty!,
+        );
+        hit = region != null
+            ? SelectableHit.region(
+                region,
+                tx: rem.tx,
+                ty: rem.ty,
+                worldPoint: rem.lookAt,
+              )
+            : SelectableHit.tile(rem.tx!, rem.ty!, worldPoint: rem.lookAt);
+      } else {
+        hit = SelectableHit.tile(rem.tx!, rem.ty!, worldPoint: rem.lookAt);
+      }
       _setSelectedHit(hit);
     }
     if (rem.openProgramPicker && hit != null) {
@@ -2077,6 +2602,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     _viewer = GameViewerKind.plane2d;
     _syncProgramIconAutohide();
     _viewerReturning = false;
+    if (_regionsTool) _regionToolLastSeed = null;
     _mode = GameMode.select;
     _endWallSession();
     _paintLastCell = null;
@@ -2256,6 +2782,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     _viewer = GameViewerKind.focus3d;
     _syncProgramIconAutohide();
     _viewerReturning = false;
+    if (_regionsTool) _regionToolLastSeed = null;
     _mode = GameMode.select;
     _endWallSession();
     _applyLayerVisibility();
@@ -2367,6 +2894,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     _viewer = GameViewerKind.volumeInterior;
     _syncProgramIconAutohide();
     _viewerReturning = false;
+    if (_regionsTool) _regionToolLastSeed = null;
     _mode = GameMode.select;
     _endWallSession();
     _syncWorld();
@@ -2781,25 +3309,23 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
 
   void _placeAtCrosshair() {
     final center = _viewportCenter;
-    if (_wallsTool) {
+    if (_regionsTool) {
       final hit = _camera.intersectGround(center, _viewportSize);
       if (hit == null || !_canEditWorld(hit)) return;
-      _ensureWallSession();
-      final edge = _walls.hitEdgeAtMidpoint(hit);
-      final removing = _wallCutsConnection(edge);
-      if (_tryWallToggle(hit, removing: removing)) {
-        // haptic handled inside
-      }
+      _applyRegionToolAt(hit);
       final tile = _volumes.grid.tileAtWorld(hit);
-      if (tile != null) {
-        final region = wallRegionContaining(_wallRegions, tile.$1, tile.$2);
-        _setSelectedHit(
-          region != null
-              ? SelectableHit.region(region, tx: tile.$1, ty: tile.$2)
-              : SelectableHit.tile(tile.$1, tile.$2),
-        );
-      }
+      if (tile != null) _selectRegionAtTile(tile.$1, tile.$2);
       setState(() {});
+      return;
+    }
+    if (_pathsTool) {
+      final aim = _volumes.grid.tileAtWorld(_placeAimWorld);
+      if (aim == null || !_canEditTile(aim.$1, aim.$2)) return;
+      if (_commitAction('place path', () => _tryPlacePath(aim.$1, aim.$2))) {
+        _hapticPlace(1);
+        _setSelectedHit(SelectableHit.path(aim.$1, aim.$2));
+        setState(() {});
+      }
       return;
     }
     final tile = _tileAt(center);
@@ -2834,14 +3360,6 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
         _setSelectedHit(SelectableHit.volume(draft.id, cell: cell));
       }
       setState(() {});
-      return;
-    }
-    if (_pathsTool) {
-      if (_commitAction('place path', () => _tryPlacePath(tx, ty))) {
-        _hapticPlace(1);
-        _setSelectedHit(SelectableHit.path(tx, ty));
-        setState(() {});
-      }
       return;
     }
     if (_worldEraserTool) {
@@ -3695,21 +4213,13 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       _dropLoose(FocusStickerKind.door, local);
       return;
     }
-    final pixel = FacePaintStore.pixelAt(
-      world: hit,
-      grid: _volumes.grid,
-      cell: cell,
-      face: key.face,
-    );
-    if (pixel == null) {
-      _dropLoose(FocusStickerKind.door, local, world: hit);
-      return;
-    }
-    final faceW = switch (side) {
-      VolumeSide.east || VolumeSide.west => cell.box.depthSubtiles,
-      VolumeSide.north || VolumeSide.south => cell.box.widthSubtiles,
-    };
-    if (!doorOriginInBounds(originU: pixel.$1, faceWidth: faceW)) {
+    if (FacePaintStore.pixelAt(
+          world: hit,
+          grid: _volumes.grid,
+          cell: cell,
+          face: key.face,
+        ) ==
+        null) {
       _dropLoose(FocusStickerKind.door, local, world: hit);
       return;
     }
@@ -3720,15 +4230,10 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
           volume: volume,
           cell: cell,
           side: side,
-          originU: pixel.$1,
         )) {
           return false;
         }
-        final door = volumeDoorForSide(
-          cell.box,
-          side,
-          originU: pixel.$1,
-        );
+        final door = volumeDoorForSide(cell.box, side);
         if (door != null) {
           _appliques.placeOrMoveDoor(
             volume: volume,
@@ -3780,11 +4285,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
           face: key.face,
         );
         if (pixel != null && cell.accessibleSides.contains(side)) {
-          final door = volumeDoorForSide(
-            cell.box,
-            side,
-            originU: cell.doorOrigins[side],
-          );
+          final door = volumeDoorForSide(cell.box, side);
           if (door != null && door.containsFacePixel(pixel.$1, pixel.$2)) {
             return _FocusStickerSel.door(
               volumeId: volume.id,
@@ -3838,14 +4339,14 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   void _dragSelectedSticker(Offset local) {
     final sel = _stickerDragHit ?? _selectedSticker;
     if (sel == null) return;
+    if (sel.doorVolumeId != null) return;
     final hit = _planeHitAt(local);
-    if (sel.doorVolumeId != null) {
+    if (sel.loose) {
       _looseSticker = _LooseSticker(
         kind: FocusStickerKind.door,
         world: hit ?? Vector3.zero(),
         valid: hit != null && _doorValidAt(hit),
       );
-      _selectedSticker = const _FocusStickerSel.loose();
       setState(() {});
     }
   }
@@ -3864,12 +4365,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       cell: cell,
       face: key.face,
     );
-    if (pixel == null) return false;
-    final faceW = switch (side) {
-      VolumeSide.east || VolumeSide.west => cell.box.depthSubtiles,
-      VolumeSide.north || VolumeSide.south => cell.box.widthSubtiles,
-    };
-    return doorOriginInBounds(originU: pixel.$1, faceWidth: faceW);
+    return pixel != null;
   }
 
   void _commitStickerDrag() {
@@ -3904,12 +4400,8 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
         cell: cell,
         face: key.face,
       );
-      final door = volumeDoorForSide(
-        cell.box,
-        side,
-        originU: pixel?.$1,
-      );
-      if (door != null) {
+      final door = volumeDoorForSide(cell.box, side);
+      if (pixel != null && door != null) {
         return doorWorldCorners(
           grid: _volumes.grid,
           tx: cell.tx,
@@ -3939,11 +4431,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       final volume = _volumes.volumeById(sel.doorVolumeId!);
       final cell = volume?.cellAt(sel.doorTx!, sel.doorTy!);
       if (volume == null || cell == null) return null;
-      final door = volumeDoorForSide(
-        cell.box,
-        sel.doorSide!,
-        originU: cell.doorOrigins[sel.doorSide!],
-      );
+      final door = volumeDoorForSide(cell.box, sel.doorSide!);
       if (door == null) return null;
       return _quadCenter(
         doorWorldCorners(
@@ -3985,8 +4473,10 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       friend: kCubeboyFriend,
       position: center,
     );
+    instance.eyeProfile = _eyeProfiles.forFriend(instance.friend);
     _friends.add(instance);
     syncFriendMeshes(_scene, _friends, tileSize: _tileWorld);
+    _ensureFlatmateTicker();
     _applyLayerVisibility();
     if (_showGizmos) {
       _gizmoSelected = FriendGizmoTarget(instance, tileSize: _tileWorld);
@@ -4066,7 +4556,13 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     final path = _flatmatePreview ??
         (flatmate == null ? null : _routeForFlatmate(flatmate, local));
     if (flatmate != null && path != null && path.length >= 2) {
-      flatmate.movement.start(path);
+      flatmate.movement.start(
+        path,
+        grid: _volumes.grid,
+        profile: _profileFor(flatmate),
+        paths: _paths,
+        seed: flatmate.id,
+      );
       _applyFlatmatePose(flatmate);
       _ensureFlatmateTicker();
     }
@@ -4093,24 +4589,61 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     _lastFlatmateTick = elapsed;
     final dt = (elapsed - last).inMicroseconds / 1e6;
     if (dt <= 0 || dt > 0.25) return;
+    _trails.advance(dt);
     var moving = false;
     for (final flatmate in _friends.instances) {
-      if (!flatmate.movement.isMoving && flatmate.movement.tiles.isEmpty) {
-        continue;
+      if (flatmate.movement.isMoving || flatmate.movement.tiles.isNotEmpty) {
+        final still = flatmate.movement.advance(
+          dt: dt,
+          baseTilesPerSecond: _profileFor(flatmate).tileSpeed,
+          onPath: _paths.contains,
+          grid: _volumes.grid,
+          paths: _paths,
+        );
+        _applyFlatmatePose(flatmate);
+        _trails.record(flatmate);
+        if (!still) {
+          flatmate.movement.clear();
+          if (_dayPreviewPlaying && flatmate.id == _actionFriendId) {
+            _dayPreviewPlaying = false;
+          }
+        }
+        moving = moving || still;
       }
-      final still = flatmate.movement.advance(
-        dt: dt,
-        baseTilesPerSecond: flatmate.friend.stats.tileSpeed,
-        onPath: _paths.contains,
+      flatmate.expression.presenting = flatmate.presenting;
+      flatmate.expression.tick(dt, moving: flatmate.movement.isMoving);
+      flatmate.facing.tick(
+        dt,
+        moving: flatmate.movement.isMoving,
+        travelYaw: flatmate.travelYaw,
+        cameraYaw: FriendFacing.cameraFacingYaw(
+          flatmate.position,
+          _camera.position,
+        ),
       );
-      _applyFlatmatePose(flatmate);
-      if (!still) flatmate.movement.clear();
-      moving = moving || still;
+      flatmate.thought.tick(
+        dt,
+        inView: friendThoughtInView(
+          friend: flatmate,
+          camera: _camera,
+          viewport: _viewportSize,
+          tileSize: _tileWorld,
+          volumes: _volumes,
+          interiorOpen: _indoorFriendInteriorOpen,
+        ),
+        hovered: _hoverHit?.kind == SelectableKind.friend &&
+            _hoverHit?.friendId == flatmate.id,
+      );
     }
     syncFriendMeshes(_scene, _friends, tileSize: _tileWorld);
     _applyLayerVisibility();
     if (mounted) setState(() {});
-    if (!moving && !_flatmateDragging) _flatmateTicker.stop();
+    if (!moving &&
+        !_flatmateDragging &&
+        _friends.instances.isEmpty &&
+        _trails.isEmpty) {
+      _flatmateTicker.stop();
+    }
   }
 
   void _applyFlatmatePose(Flatmate flatmate) {
@@ -4120,12 +4653,15 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
         flatmate.movement.worldPosition(
           _volumes.grid,
           sitY,
-          style: _flatmateWalkStyle,
           swaySeed: flatmate.id,
           bodySize: FriendMeshLayout.worldSize(tileSize: _tileWorld),
+          paths: _paths,
         ),
       );
-      flatmate.yaw = flatmate.movement.facingYaw();
+      flatmate.travelYaw = flatmate.movement.facingYaw();
+      flatmate.pitch = flatmate.movement.pitch;
+    } else {
+      flatmate.pitch = 0;
     }
     if (flatmate.position.y < sitY) flatmate.position.y = sitY;
   }
@@ -4213,6 +4749,14 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       if (dtx != 0 || dty != 0) {
         _facePaint.remapVolumeTiles(target.volume.id, dtx, dty);
         _programs.remapVolumeTiles(target.volume, dtx, dty);
+        BedroomRoster.remapVolume(
+          friends: _friends,
+          volume: target.volume,
+          dtx: dtx,
+          dty: dty,
+          grid: _volumes.grid,
+          plans: _dayPlans,
+        );
         _stuff.remapVolumeTiles(
           target.volume,
           dtx,
@@ -4315,6 +4859,14 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       if (dtx != 0 || dty != 0) {
         _facePaint.remapVolumeTiles(target.volume.id, dtx, dty);
         _programs.remapVolumeTiles(target.volume, dtx, dty);
+        BedroomRoster.remapVolume(
+          friends: _friends,
+          volume: target.volume,
+          dtx: dtx,
+          dty: dty,
+          grid: _volumes.grid,
+          plans: _dayPlans,
+        );
         _stuff.remapVolumeTiles(
           target.volume,
           dtx,
@@ -4347,6 +4899,10 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
   void _onTileTap(Offset local) {
     if (_toolsBlocked || _handleDragging) return;
     if (_tryActivateAlert()) return;
+    if (_isActionTool) {
+      _onActionModeTap(local);
+      return;
+    }
     if (_tryCommitStuffPlacement(local)) return;
     if (_flatmateDown != null) {
       if (_showGizmos) {
@@ -4393,15 +4949,13 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       return;
     }
     if (_editing && !_volumesTool) return;
-    if (_wallsTool) {
+    if (_regionsTool) {
       final hit = _camera.intersectGround(local, _viewportSize);
       if (hit == null || !_canEditWorld(hit)) return;
-      _ensureWallSession();
-      final edge = _walls.hitEdgeAtMidpoint(hit);
-      final removing = _wallCutsConnection(edge);
-      if (_tryWallToggle(hit, removing: removing)) {
-        setState(() {});
-      }
+      _applyRegionToolAt(hit);
+      final tile = _volumes.grid.tileAtWorld(hit);
+      if (tile != null) _selectRegionAtTile(tile.$1, tile.$2);
+      setState(() {});
       return;
     }
     final tile = _tileAt(local);
@@ -4413,7 +4967,9 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       return;
     }
     if (_pathsTool) {
-      if (_commitAction('place path', () => _tryPlacePath(tx, ty))) {
+      final aim = _volumes.grid.tileAtWorld(_placeAimWorld) ?? tile;
+      if (!_canEditTile(aim.$1, aim.$2)) return;
+      if (_commitAction('place path', () => _tryPlacePath(aim.$1, aim.$2))) {
         _hapticPlace(1);
       }
       return;
@@ -4435,8 +4991,23 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       );
 
   bool _tryPlacePath(int tx, int ty) {
+    if (regionOpeningWallAt(
+          tx: tx,
+          ty: ty,
+          paths: _paths,
+          walls: _walls,
+          regions: _wallRegions,
+        ) !=
+        null) {
+      return _paths.openRegionGatesAt(
+        tx,
+        ty,
+        walls: _walls,
+        regions: _wallRegions,
+      );
+    }
     if (!_canPaintPathAt(tx, ty)) return false;
-    return _paths.placeAndJoin(tx, ty, walls: _walls);
+    return _paths.placeAndJoin(tx, ty, walls: _walls, regions: _wallRegions);
   }
 
   void _rekeyAbsorbed(int keeperId) {
@@ -4464,6 +5035,83 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     } else {
       _hapticPlace(1);
     }
+    return true;
+  }
+
+  void _selectRegionAtTile(int tx, int ty) {
+    final region = wallRegionContaining(_wallRegions, tx, ty);
+    _setSelectedHit(
+      region != null
+          ? SelectableHit.region(region, tx: tx, ty: ty)
+          : SelectableHit.tile(tx, ty),
+    );
+  }
+
+  void _applyRegionToolAt(Vector3 hit) {
+    final edge = _walls.hitEdgeAtMidpoint(hit);
+    if (edge != null) {
+      _ensureWallSession();
+      final merge = dividerMergeEdges(edge, _wallRegions, _walls);
+      if (merge != null) {
+        _tryRemoveWalls(merge);
+        return;
+      }
+      final removing = _wallCutsConnection(edge);
+      _tryWallToggle(hit, removing: removing);
+      return;
+    }
+    final tile = _volumes.grid.tileAtWorld(hit);
+    if (tile == null || !_canEditTile(tile.$1, tile.$2)) return;
+    _tryRegionFill(tile.$1, tile.$2);
+  }
+
+  bool _tryRegionFill(int tx, int ty) {
+    final preview = previewRegionFill(
+      walls: _walls,
+      regions: _wallRegions,
+      tx: tx,
+      ty: ty,
+      lastSeed: _regionToolLastSeed,
+    );
+    if (!preview.changed) {
+      _regionToolLastSeed = preview.lastSeed;
+      return false;
+    }
+    _ensureWallSession();
+    final before = _capture('paint walls');
+    applyRegionFillPreview(_walls, preview);
+    for (final edge in preview.addEdges) {
+      _paths.severAcross(edge);
+    }
+    if (!_settlePaper()) {
+      _restoreStores(before);
+      _syncWorld();
+      _hapticNoOp();
+      return false;
+    }
+    _regionToolLastSeed = preview.lastSeed;
+    _recordWallSessionMutation();
+    _syncWorld();
+    _hapticPlace(1);
+    return true;
+  }
+
+  bool _tryRemoveWalls(List<WallEdge> edges) {
+    final before = _capture('paint walls');
+    var changed = false;
+    for (final edge in edges) {
+      if (_walls.remove(edge)) changed = true;
+    }
+    if (!changed) return false;
+    if (!_settlePaper()) {
+      _restoreStores(before);
+      _syncWorld();
+      _hapticNoOp();
+      return false;
+    }
+    _recordWallSessionMutation();
+    _syncWorld();
+    _hapticDelete(edges.length);
     return true;
   }
 
@@ -4516,6 +5164,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       last,
       tile,
       walls: _walls,
+      regions: _wallRegions,
       skippable: (tx, ty) => !_canPaintPathAt(tx, ty),
     )) {
       _pathStrokeLast = tile;
@@ -4560,6 +5209,48 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     setState(() {});
   }
 
+  void _paintRegionFillTo(Offset local) {
+    if (_toolsBlocked) return;
+    final tile = _tileAt(local);
+    if (tile == null || !_canEditTile(tile.$1, tile.$2)) return;
+    final last = _regionFillStrokeLast ?? tile;
+    _ensureWallSession();
+    final beforeFrame = _capture('paint walls');
+    var changed = false;
+    var seed = _regionToolLastSeed;
+    var regions = _wallRegions;
+    for (final step in _bresenham(last, tile)) {
+      if (!_canEditTile(step.$1, step.$2)) continue;
+      final preview = previewRegionFill(
+        walls: _walls,
+        regions: regions,
+        tx: step.$1,
+        ty: step.$2,
+        lastSeed: seed,
+      );
+      seed = preview.lastSeed;
+      if (!preview.changed) continue;
+      applyRegionFillPreview(_walls, preview);
+      for (final edge in preview.addEdges) {
+        _paths.severAcross(edge);
+      }
+      changed = true;
+      regions = computeEnclosedRegions(_walls);
+    }
+    _regionToolLastSeed = seed;
+    _regionFillStrokeLast = tile;
+    if (!changed) return;
+    if (!_settlePaper()) {
+      _restoreStores(beforeFrame);
+      _syncWorld();
+      _hapticNoOp();
+      return;
+    }
+    _recordWallSessionMutation();
+    _syncWorld();
+    _hapticPlace(1);
+    setState(() {});
+  }
 
   void _onHandleDragStart(
     VolumeCell cell,
@@ -4777,6 +5468,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     if (suppress) {
       _pathStrokeLast = null;
       _wallStrokeLast = null;
+      _regionFillStrokeLast = null;
       _volumeStrokeLast = null;
       _endStrokeHistory();
       return;
@@ -4850,11 +5542,15 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
     final wallPainting =
         strokeTools &&
         !_isPlane2d &&
-        _wallsTool &&
+        _regionsTool &&
         (event.kind != PointerDeviceKind.mouse ||
             (_mouseButtons & kPrimaryButton) != 0);
     if (wallPainting) {
-      _paintWallTo(event.localPosition);
+      if (_regionStrokeIsWall) {
+        _paintWallTo(event.localPosition);
+      } else {
+        _paintRegionFillTo(event.localPosition);
+      }
       return;
     }
     final mouse = event.kind == PointerDeviceKind.mouse;
@@ -4879,6 +5575,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       _toolDidMove = false;
       _pathStrokeLast = null;
       _wallStrokeLast = null;
+      _regionFillStrokeLast = null;
       return;
     }
     if (_handleDragging && (_gizmoSelected != null || _gizmoAxis != null)) {
@@ -4886,11 +5583,13 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
       _toolDidMove = false;
       _pathStrokeLast = null;
       _wallStrokeLast = null;
+      _regionFillStrokeLast = null;
       return;
     }
     final moved = _toolDidMove;
     _pathStrokeLast = null;
     _wallStrokeLast = null;
+    _regionFillStrokeLast = null;
     _volumeStrokeLast = null;
     _toolDidMove = false;
     if (_isPlane2d) {
@@ -5057,11 +5756,16 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
             ),
           ),
         ),
-        _StatusChip(
-          status: _error ?? _status,
-          busy: _baking,
-          isError: _error != null,
-        ),
+        if (_devToolsOpen && gameViewDebugReadoutFits(_viewportSize))
+          FmSafePositioned(
+            bottom: kGameViewDebugReadoutBottom,
+            left: kGameViewDebugReadoutLeft,
+            child: GameViewDebugReadout(
+              lines: _debugReadoutLines(),
+              isError: _error != null,
+              busy: _baking,
+            ),
+          ),
         FrameStatsHud(expanded: _perf.showDetails),
         if (_perf.showOverlay)
           Positioned(
@@ -5249,10 +5953,25 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
           ),
         if (_programPickerTarget != null)
           _programPickerOverlay(),
+        if (_dayActionPickerOverlay() case final picker?) picker,
+        if (_isActionTool &&
+            _viewer == GameViewerKind.map3d &&
+            _friends.instances.isNotEmpty)
+          FmSafePositioned(
+            top: 160,
+            left: 12,
+            child: FriendWheel(
+              friends: _friends.instances,
+              selectedId: _actionFriendId,
+              onSelect: _selectActionFriend,
+            ),
+          ),
         if (_stuffPickerTarget != null && _placingStuff == null)
           _stuffPickerOverlay(),
         if (_stuffRotationGizmo() case final gizmo?) gizmo,
-        if (_viewer == GameViewerKind.map3d && _selectedHit != null)
+        if (_viewer == GameViewerKind.map3d &&
+            _selectedHit != null &&
+            !_isActionTool)
           FmSafePositioned(
             top: 200,
             left: 12,
@@ -5276,8 +5995,8 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
               showGizmos: _gizmoMode,
               onShowGizmosChanged: _setGizmoMode,
               onPlaceCubeboy: _placeCubeboy,
-              walkStyle: _flatmateWalkStyle,
-              onWalkStyleChanged: _setFlatmateWalkStyle,
+              gaitId: _movementProfile.hopHeight > 0 ? 'hop' : 'slide',
+              onGaitChanged: _setFlatmateGait,
               nightSwatchId: _nightSwatch.id,
               onNightSwatchChanged: _setNightSwatch,
               dayNightProgress: _dayNightProgress,
@@ -5297,6 +6016,12 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
               faceShadowOpacity: _lighting.shadow.opacity,
               onFaceLightChanged: _onFaceLightChanged,
               onFaceLightReset: _resetFaceLight,
+              showFeelings: _thoughtDisplay.showFeelings,
+              showDesires: _thoughtDisplay.showDesires,
+              onShowFeelingsChanged: (v) =>
+                  setState(() => _thoughtDisplay = _thoughtDisplay.copyWith(showFeelings: v)),
+              onShowDesiresChanged: (v) =>
+                  setState(() => _thoughtDisplay = _thoughtDisplay.copyWith(showDesires: v)),
             ),
           ),
         FmSafePositioned(
@@ -5339,6 +6064,16 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                     onSelect: _setSelectFilter,
                     compact: true,
                   ),
+                GameMode.action => ActionDayStrip(
+                    key: const ValueKey(GameMode.action),
+                    plan: _actionFriend == null
+                        ? null
+                        : _dayPlans.byId(_actionFriend!.id),
+                    playing: _dayPreviewPlaying,
+                    selectedSlot: _dayProgramSlot,
+                    onPlay: _playDayPreview,
+                    onSlotTap: _onDaySlotTap,
+                  ),
               },
             ),
           ),
@@ -5347,7 +6082,9 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
             left: 64,
             right: 64,
             child: HudToolCarousel<GameMode>(
-              items: kGameModeItems,
+              items: gameModeItems(
+                showAction: _friends.instances.isNotEmpty,
+              ),
               selected: _mode,
               onSelect: _setMode,
             ),
@@ -5500,6 +6237,20 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                     ),
                   ),
                 ),
+                if (_layers.shows(SceneLayer.friends))
+                  Positioned.fill(
+                    child: FriendTrailOverlay(
+                      trails: _trails,
+                      camera: _camera,
+                      viewport: _viewportSize,
+                      tileSize: _tileWorld,
+                      friends: _friends,
+                      volumes: _volumes,
+                      interiorOpen: _indoorFriendInteriorOpen,
+                      tileVisible: _focusTileVisible,
+                      listenable: _scene,
+                    ),
+                  ),
                 if (kBasementBlurVeilEnabled &&
                     _layers.shows(SceneLayer.landscape) &&
                     !(_focusCrop != null && !_focusCrop!.includesGround))
@@ -5519,6 +6270,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                       viewport: _viewportSize,
                       tileSize: _tileWorld,
                       volumes: _volumes,
+                      interiorOpen: _indoorFriendInteriorOpen,
                       subtilesPerTile: _volumes.grid.subtilesPerTile,
                       listenable: _scene,
                     ),
@@ -5531,6 +6283,7 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                       viewport: _viewportSize,
                       tileSize: _tileWorld,
                       volumes: _volumes,
+                      interiorOpen: _indoorFriendInteriorOpen,
                       subtilesPerTile: _volumes.grid.subtilesPerTile,
                       listenable: _scene,
                     ),
@@ -5728,7 +6481,37 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                       ),
                     ),
                   ),
-                if (_layers.shows(SceneLayer.volumes))
+                if (_isActionTool && _actionFriend?.bedroomTile != null)
+                  Positioned.fill(
+                    child: FlatmateRangeOverlay(
+                      home: _actionFriend!.bedroomTile!,
+                      color: _actionFriend!.friend.color,
+                      grid: _volumes.grid,
+                      camera: _camera,
+                      viewport: _viewportSize,
+                      listenable: _scene,
+                    ),
+                  ),
+                if (_isActionTool && _actionFriend != null)
+                  Positioned.fill(
+                    child: DayActionPreviewOverlay(
+                      plan: _dayPlans.ensure(
+                        _actionFriend!.id,
+                        home: _actionFriend!.bedroomTile,
+                      ),
+                      grid: _volumes.grid,
+                      camera: _camera,
+                      viewport: _viewportSize,
+                      validTiles: _dayProgramStep == _DayProgramStep.pickTile
+                          ? _validDayActionTiles()
+                          : const {},
+                      pickingTile:
+                          _dayProgramStep == _DayProgramStep.pickTile,
+                      listenable: _scene,
+                    ),
+                  ),
+                if (_layers.shows(SceneLayer.volumes) ||
+                    _layers.shows(SceneLayer.walls))
                   Positioned.fill(
                     child: ListenableBuilder(
                       listenable: _scene,
@@ -5742,6 +6525,37 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                           tileSize: _volumes.grid.tileSize,
                         );
                       },
+                    ),
+                  ),
+                if (_isActionTool &&
+                    _layers.shows(SceneLayer.friends) &&
+                    _viewer == GameViewerKind.map3d)
+                  Positioned.fill(
+                    child: ListenableBuilder(
+                      listenable: _scene,
+                      builder: (context, _) {
+                        return WorldActionBarOverlay(
+                          bars: _visibleActionBars(),
+                          camera: _camera,
+                          viewport: _viewportSize,
+                          pointer: _cursorScreen,
+                          lookAt: _look.lookAt,
+                          tileSize: _volumes.grid.tileSize,
+                        );
+                      },
+                    ),
+                  ),
+                if (_layers.shows(SceneLayer.friends))
+                  Positioned.fill(
+                    child: FriendThoughtOverlay(
+                      friends: _friends,
+                      camera: _camera,
+                      viewport: _viewportSize,
+                      display: _thoughtDisplay,
+                      tileSize: _tileWorld,
+                      volumes: _volumes,
+                      interiorOpen: _indoorFriendInteriorOpen,
+                      listenable: _scene,
                     ),
                   ),
                 if (_viewer == GameViewerKind.map3d &&
@@ -5815,16 +6629,30 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                     !_editing)
                   Positioned.fill(
                     child: PlacementGhostOverlay(
-                      kind: _wallsTool &&
-                              _paths.connectionAcross(
-                                _walls.hitEdgeAtMidpoint(_placeAimWorld),
-                              )
-                          ? PlacementGhostKind.pathSplit
-                          : switch (_createTool) {
-                              GameCreateTool.volume => PlacementGhostKind.volume,
-                              GameCreateTool.path => PlacementGhostKind.path,
-                              GameCreateTool.wall => PlacementGhostKind.wall,
-                            },
+                      kind: () {
+                        final regionGhost = _regionPlacementGhost();
+                        if (regionGhost != null) return regionGhost.kind;
+                        if (_pathsTool) {
+                          final tile =
+                              _volumes.grid.tileAtWorld(_placeAimWorld);
+                          if (tile != null &&
+                              regionOpeningWallAt(
+                                    tx: tile.$1,
+                                    ty: tile.$2,
+                                    paths: _paths,
+                                    walls: _walls,
+                                    regions: _wallRegions,
+                                  ) !=
+                                  null) {
+                            return PlacementGhostKind.regionOpening;
+                          }
+                        }
+                        return switch (_createTool) {
+                          GameCreateTool.volume => PlacementGhostKind.volume,
+                          GameCreateTool.path => PlacementGhostKind.path,
+                          GameCreateTool.region => PlacementGhostKind.wall,
+                        };
+                      }(),
                       grid: _volumes.grid,
                       camera: _camera,
                       viewport: _viewportSize,
@@ -5839,6 +6667,22 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                         return tile;
                       }(),
                       wallEdge: () {
+                        final regionGhost = _regionPlacementGhost();
+                        if (regionGhost != null) return regionGhost.wallEdge;
+                        if (_pathsTool) {
+                          final tile =
+                              _volumes.grid.tileAtWorld(_placeAimWorld);
+                          if (tile != null) {
+                            final opening = regionOpeningWallAt(
+                              tx: tile.$1,
+                              ty: tile.$2,
+                              paths: _paths,
+                              walls: _walls,
+                              regions: _wallRegions,
+                            );
+                            if (opening != null) return opening;
+                          }
+                        }
                         final edge =
                             _walls.hitEdgeAtMidpoint(_placeAimWorld);
                         if (edge == null) return null;
@@ -5849,13 +6693,17 @@ class _GameViewState extends State<GameView> with TickerProviderStateMixin {
                         }
                         return edge;
                       }(),
+                      wallEdges: _regionPlacementGhost()?.wallEdges ?? const [],
+                      removeWallEdges:
+                          _regionPlacementGhost()?.removeWallEdges ?? const [],
                       paths: _paths,
                       listenable: _scene,
                       color: _theme.volume.withValues(alpha: 0.72),
-                      removing: _wallsTool &&
-                          _wallCutsConnection(
-                            _walls.hitEdgeAtMidpoint(_placeAimWorld),
-                          ),
+                      removing: () {
+                        final regionGhost = _regionPlacementGhost();
+                        if (regionGhost != null) return regionGhost.removing;
+                        return false;
+                      }(),
                     ),
                   ),
                 if (_isMapUnlocked)
@@ -5967,37 +6815,3 @@ class _LooseSticker {
   final bool valid;
 }
 
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({
-    required this.status,
-    required this.busy,
-    required this.isError,
-  });
-
-  final String? status;
-  final bool busy;
-  final bool isError;
-
-  @override
-  Widget build(BuildContext context) {
-    return FmSafePositioned(
-      top: 44,
-      left: 88,
-      right: 96,
-      child: IgnorePointer(
-        child: Text(
-          status ?? '',
-          style: TextStyle(
-            color: isError
-                ? Colors.redAccent
-                : busy
-                ? Colors.amberAccent
-                : Colors.white70,
-            fontSize: 12,
-          ),
-          overflow: TextOverflow.ellipsis,
-        ),
-      ),
-    );
-  }
-}

@@ -126,6 +126,15 @@ void main() {
     );
   });
 
+  test('a cut fence still encloses the region', () {
+    final store = WallStore();
+    encloseTile(store, 3, 4);
+    expect(store.cut(WallEdge(4, 4, 4, 5)), isTrue);
+    final regions = computeEnclosedRegions(store);
+    expect(regions, hasLength(1));
+    expect(regions.single.tiles, {(3, 4)});
+  });
+
   test('tileSetOutline is the perimeter of the enclosed tiles', () {
     final outline = tileSetOutline({(2, 2)});
     expect(outline, hasLength(4));

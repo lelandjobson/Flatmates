@@ -5,7 +5,6 @@ import '../../landscape/landscape_generator.dart';
 import '../../landscape/landscape_grid.dart';
 import '../friends/friend_instance.dart';
 import '../friends/friend_instance_store.dart';
-import '../friends/friend_mesh_sync.dart';
 import '../vision/map_vision.dart';
 import '../paint/face_paint_store.dart';
 import '../paper/paper_cost.dart';
@@ -14,6 +13,8 @@ import '../paths/path_store.dart';
 import '../spawns/basement_spawn.dart';
 import '../viewers/world_plane.dart';
 import '../volumes/volume.dart';
+import '../volumes/volume_door.dart';
+import '../volumes/volume_program.dart';
 import '../volumes/volume_store.dart';
 import '../walls/wall_edge.dart';
 import '../walls/wall_store.dart';
@@ -26,13 +27,14 @@ const kDefaultGameRecordingPath = 'assets/gameplay/recordings/default.json';
 /// Generated landscape materials are not stored — only paint / erase, plus
 /// volumes, paths, and face canvases. Coverage voids are rebuilt on apply.
 class GameRecording {
-  const GameRecording({
+  GameRecording({
     required this.nextVolumeId,
     required this.volumes,
     required this.pathTiles,
     required this.pathEdges,
     required this.wallEdges,
     required this.friends,
+    VolumeProgramStore? programs,
     required this.facePaint,
     required this.landscapePaint,
     required this.landscapeErase,
@@ -42,7 +44,7 @@ class GameRecording {
     this.wallPaperCommitted = 0,
     this.paperPersisted = false,
     this.version = currentSchemaVersion,
-  });
+  }) : programs = programs ?? VolumeProgramStore();
 
   static const int currentSchemaVersion = 2;
 
@@ -59,6 +61,7 @@ class GameRecording {
   final Set<PathEdge> pathEdges;
   final Set<WallEdge> wallEdges;
   final List<FriendInstance> friends;
+  final VolumeProgramStore programs;
   final FacePaintStore facePaint;
   final List<(int x, int y, int colorIndex)> landscapePaint;
   final List<(int x, int y)> landscapeErase;
@@ -242,14 +245,8 @@ class GameRecording {
       PathEdge(9, 9, 10, 9),
     };
 
-    const grid = VolumeGrid(
-      tilesSide: MapVisionConfig.defaultWorldTilesSide,
-      tileSize: 8,
-    );
-    final cubeboyAt = grid.tileCenter(
-      8 + MapVisionConfig.game.startingOriginTx,
-      7 + MapVisionConfig.game.startingOriginTy,
-    )..y = FriendMeshLayout.sitOnGroundY(tileSize: grid.tileSize);
+    final programs = VolumeProgramStore()
+      ..assignIndoor(tx: 6, ty: 5, programId: kProgramBedroom);
 
     return GameRecording(
       nextVolumeId: 5,
@@ -262,13 +259,8 @@ class GameRecording {
         ..._encloseTile(2, 13),
         ..._encloseRect(12, 12, 14, 14),
       },
-      friends: [
-        FriendInstance(
-          id: sampleCubeboyId,
-          friend: kCubeboyFriend,
-          position: cubeboyAt,
-        ),
-      ],
+      friends: const [],
+      programs: programs,
       facePaint: paint,
       landscapePaint: const [
         (7, 50, 0),
@@ -334,6 +326,7 @@ class GameRecording {
           ),
       },
       friends: [for (final instance in friends) instance.clone()],
+      programs: _shiftPrograms(programs, dtx, dty),
       facePaint: FacePaintStore.fromCanvases({
         for (final entry in facePaint.canvases.entries)
           FacePaintKey(
@@ -437,6 +430,7 @@ class GameRecording {
     required WallStore walls,
     required FacePaintStore facePaint,
     FriendInstanceStore? friends,
+    VolumeProgramStore? programs,
     LandscapeGrid? landscape,
     PaperWallet? paper,
   }) {
@@ -454,6 +448,7 @@ class GameRecording {
         if (friends != null)
           for (final instance in friends.instances) instance.clone(),
       ],
+      programs: programs?.copy() ?? VolumeProgramStore(),
       facePaint: facePaint.copy(),
       landscapePaint: [
         if (landscape != null)
@@ -485,6 +480,7 @@ class GameRecording {
     required WallStore walls,
     required FacePaintStore facePaint,
     FriendInstanceStore? friends,
+    VolumeProgramStore? programs,
     LandscapeGrid? landscape,
     LandscapeGenerator? generator,
     PaperWallet? paper,
@@ -516,6 +512,7 @@ class GameRecording {
     friends?.restore([
       for (final instance in this.friends) instance.clone(),
     ]);
+    programs?.restoreFrom(this.programs);
     facePaint.restoreFrom(this.facePaint);
     if (landscape != null) {
       if (generator != null) {
@@ -577,6 +574,20 @@ class GameRecording {
               'yaw': instance.yaw,
             },
         ],
+        'programs': {
+          'indoor': [
+            for (final tile in _sortedTiles(
+              programs.indoorAssignments.keys.toSet(),
+            ))
+              [tile.$1, tile.$2, programs.indoorAssignments[tile]],
+          ],
+          'outdoor': [
+            for (final tile in _sortedTiles(
+              programs.outdoorAssignments.keys.toSet(),
+            ))
+              [tile.$1, tile.$2, programs.outdoorAssignments[tile]],
+          ],
+        },
         'facePaint': [
           for (final entry in _sortedFacePaint(facePaint.canvases))
             if (_canvasHasPaint(entry.value))
@@ -662,6 +673,8 @@ class GameRecording {
         if (item is Map) _friendFromJson(item.cast<String, dynamic>()),
     ];
 
+    final programs = _programsFromJson(json['programs']);
+
     final canvases = <FacePaintKey, FaceCanvas>{};
     for (final item in _asList(json['facePaint'])) {
       if (item is! Map) continue;
@@ -720,6 +733,7 @@ class GameRecording {
       pathEdges: edges,
       wallEdges: wallEdges,
       friends: friends,
+      programs: programs,
       facePaint: FacePaintStore.fromCanvases(canvases),
       landscapePaint: paint,
       landscapeErase: erase,
@@ -815,30 +829,30 @@ VolumeCell _cellFromJson(Map<String, dynamic> json) {
   final boxMap = boxJson is Map
       ? boxJson.cast<String, dynamic>()
       : const <String, dynamic>{};
+  final box = BoxPrimitive(
+    widthSubtiles:
+        _int(boxMap['widthSubtiles']) ?? VolumeGrid.defaultSubtilesPerTile,
+    depthSubtiles:
+        _int(boxMap['depthSubtiles']) ?? VolumeGrid.defaultSubtilesPerTile,
+    heightSubtiles:
+        _int(boxMap['heightSubtiles']) ?? BoxPrimitive.maxHeightSubtiles,
+    originXSubtiles: _int(boxMap['originXSubtiles']) ?? 0,
+    originZSubtiles: _int(boxMap['originZSubtiles']) ?? 0,
+  )..clampToTile();
+  final accessibleSides = {
+    for (final item in _asList(json['accessibleSides']))
+      if (item is String)
+        for (final side in VolumeSide.values)
+          if (side.name == item) side,
+  };
   return VolumeCell(
     tx: _int(json['tx']) ?? 0,
     ty: _int(json['ty']) ?? 0,
-    box: BoxPrimitive(
-      widthSubtiles:
-          _int(boxMap['widthSubtiles']) ?? VolumeGrid.defaultSubtilesPerTile,
-      depthSubtiles:
-          _int(boxMap['depthSubtiles']) ?? VolumeGrid.defaultSubtilesPerTile,
-      heightSubtiles:
-          _int(boxMap['heightSubtiles']) ?? BoxPrimitive.maxHeightSubtiles,
-      originXSubtiles: _int(boxMap['originXSubtiles']) ?? 0,
-      originZSubtiles: _int(boxMap['originZSubtiles']) ?? 0,
-    ),
-    accessibleSides: {
-      for (final item in _asList(json['accessibleSides']))
-        if (item is String)
-          for (final side in VolumeSide.values)
-            if (side.name == item) side,
-    },
+    box: box,
+    accessibleSides: accessibleSides,
     doorOrigins: {
-      for (final entry in _asMap(json['doorOrigins']).entries)
-        for (final side in VolumeSide.values)
-          if (side.name == entry.key)
-            side: _int(entry.value) ?? 0,
+      for (final side in accessibleSides)
+        side: tileCenteredDoorFaceU(box, side),
     },
   );
 }
@@ -873,6 +887,49 @@ bool _canvasHasPaint(FaceCanvas canvas) {
     if (id >= 0) return true;
   }
   return false;
+}
+
+VolumeProgramStore _shiftPrograms(
+  VolumeProgramStore programs,
+  int dtx,
+  int dty,
+) {
+  if (dtx == 0 && dty == 0) return programs.copy();
+  final next = VolumeProgramStore();
+  next.restore(
+    indoor: {
+      for (final entry in programs.indoorAssignments.entries)
+        (entry.key.$1 + dtx, entry.key.$2 + dty): entry.value,
+    },
+    outdoor: {
+      for (final entry in programs.outdoorAssignments.entries)
+        (entry.key.$1 + dtx, entry.key.$2 + dty): entry.value,
+    },
+  );
+  return next;
+}
+
+VolumeProgramStore _programsFromJson(Object? json) {
+  final store = VolumeProgramStore();
+  final map = _asMap(json);
+  store.restore(
+    indoor: _programMapFromJson(map['indoor']),
+    outdoor: _programMapFromJson(map['outdoor']),
+  );
+  return store;
+}
+
+Map<(int, int), String> _programMapFromJson(Object? json) {
+  final out = <(int, int), String>{};
+  for (final item in _asList(json)) {
+    if (item is! List || item.length < 3) continue;
+    final tx = _int(item[0]);
+    final ty = _int(item[1]);
+    final id = item[2]?.toString();
+    if (tx == null || ty == null || id == null || id.isEmpty) continue;
+    out[(tx, ty)] = id;
+  }
+  return out;
 }
 
 List<(int, int)> _sortedTiles(Set<(int, int)> tiles) {

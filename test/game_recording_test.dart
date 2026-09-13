@@ -6,13 +6,14 @@ import 'package:flatmates/gameplay/paint/face_paint_store.dart';
 import 'package:flatmates/gameplay/paper/paper_cost.dart';
 import 'package:flatmates/gameplay/paper/paper_wallet.dart';
 import 'package:flatmates/gameplay/paths/path_store.dart';
-import 'package:flatmates/gameplay/friends/friend_instance.dart';
 import 'package:flatmates/gameplay/recording/game_recording.dart';
 import 'package:flatmates/gameplay/recording/game_recording_io.dart';
 import 'package:flatmates/gameplay/spawns/basement_spawn.dart';
 import 'package:flatmates/gameplay/viewers/world_plane.dart';
 import 'package:flatmates/gameplay/vision/map_vision.dart';
 import 'package:flatmates/gameplay/volumes/volume.dart';
+import 'package:flatmates/gameplay/volumes/volume_door.dart';
+import 'package:flatmates/gameplay/volumes/volume_program.dart';
 import 'package:flatmates/gameplay/volumes/volume_store.dart';
 import 'package:flatmates/gameplay/walls/wall_edge.dart';
 import 'package:flatmates/gameplay/walls/wall_regions.dart';
@@ -239,8 +240,8 @@ void main() {
     expect(decoded.facePaint.canvases, isNotEmpty);
     expect(decoded.nextVolumeId, 5);
     expect(decoded.wallEdges, isNotEmpty);
-    expect(decoded.friends, hasLength(1));
-    expect(decoded.friends.single.friend.id, kCubeboyFriend.id);
+    expect(decoded.friends, isEmpty);
+    expect(decoded.programs.indoorAt(6 + ox, 5 + oy), kProgramBedroom);
   });
 
   test('sample walls form four enclosed regions', () {
@@ -319,11 +320,8 @@ void main() {
     expect(fromAsset.version, GameRecording.currentSchemaVersion);
     expect(fromAsset.volumes, isNotEmpty);
     expect(fromAsset.pathTiles, isNotEmpty);
-    expect(fromAsset.friends, isNotEmpty);
-    expect(
-      fromAsset.friends.every((f) => f.friend.id == kCubeboyFriend.id),
-      isTrue,
-    );
+    expect(fromAsset.friends, isEmpty);
+    expect(fromAsset.programs.indoorAt(4, 1), kProgramBedroom);
     expect(
       fromAsset.volumes.any(
         (v) => v.cells.any((c) => BasementSpawn.blocksBuild(c.tx, c.ty)),
@@ -337,6 +335,75 @@ void main() {
     final walls = WallStore(
       grid: VolumeGrid(tilesSide: vision.worldTilesSide, tileSize: 8),
     )..restore(fromAsset.wallEdges);
-    expect(computeEnclosedRegions(walls), isNotEmpty);
+    expect(fromAsset.wallEdges, isNotEmpty);
+    expect(walls.edges, fromAsset.wallEdges);
+    final porch = fromAsset.volumes.single.cells.firstWhere(
+      (c) => c.tx == 3 && c.ty == 0,
+    );
+    expect(porch.box.originXSubtiles, 0);
+    expect(porch.box.originZSubtiles, 2);
+    expect(porch.box.widthSubtiles, 8);
+    expect(porch.box.depthSubtiles, 6);
+    expect(porch.doorOrigins[VolumeSide.north], 3);
+    expect(porch.doorOrigins[VolumeSide.west], 1);
+    for (final cell in fromAsset.volumes.expand((v) => v.cells)) {
+      expect(cell.box.originXSubtiles, inInclusiveRange(0, BoxPrimitive.maxInsetSubtiles));
+      expect(cell.box.originZSubtiles, inInclusiveRange(0, BoxPrimitive.maxInsetSubtiles));
+      expect(
+        cell.box.originXSubtiles + cell.box.widthSubtiles,
+        inInclusiveRange(
+          VolumeGrid.defaultSubtilesPerTile - BoxPrimitive.maxInsetSubtiles,
+          VolumeGrid.defaultSubtilesPerTile,
+        ),
+      );
+      expect(
+        cell.box.originZSubtiles + cell.box.depthSubtiles,
+        inInclusiveRange(
+          VolumeGrid.defaultSubtilesPerTile - BoxPrimitive.maxInsetSubtiles,
+          VolumeGrid.defaultSubtilesPerTile,
+        ),
+      );
+      for (final side in cell.accessibleSides) {
+        expect(cell.doorOrigins[side], tileCenteredDoorFaceU(cell.box, side));
+      }
+    }
+  });
+
+  test('loaded boxes clamp to a 2-subtile inset and recenter doors', () {
+    final decoded = GameRecording.fromJson({
+      'schemaVersion': 2,
+      'nextVolumeId': 2,
+      'volumes': [
+        {
+          'id': 1,
+          'datum': 0,
+          'cells': [
+            {
+              'tx': 0,
+              'ty': 0,
+              'box': {
+                'widthSubtiles': 4,
+                'depthSubtiles': 4,
+                'heightSubtiles': 6,
+                'originXSubtiles': 0,
+                'originZSubtiles': 4,
+              },
+              'accessibleSides': ['east'],
+              'doorOrigins': {'east': 0},
+            },
+          ],
+        },
+      ],
+      'paths': {
+        'tiles': <List<int>>[],
+        'edges': <List<int>>[],
+      },
+    });
+    final cell = decoded.volumes.single.cells.single;
+    expect(cell.box.originXSubtiles, 0);
+    expect(cell.box.widthSubtiles, 6);
+    expect(cell.box.originZSubtiles, 2);
+    expect(cell.box.depthSubtiles, 6);
+    expect(cell.doorOrigins[VolumeSide.east], 1);
   });
 }

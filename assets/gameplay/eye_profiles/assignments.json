@@ -1,0 +1,25 @@
+{
+  "friends": {
+    "b2c9f5e1-7a3d-4f8b-9c6e-1d4a8b2f7e3c": {
+      "spacing": 1.6118138806573281,
+      "size": 0.7328907933728448,
+      "width": 1.0,
+      "height": 1.0,
+      "lift": -0.6
+    },
+    "a7f3e8d2-4b6c-4a9f-8e2d-5c1b3a7f9e4d": {
+      "spacing": 0.9759698275862069,
+      "size": 0.25,
+      "width": 1.0,
+      "height": 0.3856748383620692,
+      "lift": 0.6
+    },
+    "c3d0a6f2-8b4e-5a9c-0d7f-2e5b9c3a8f1d": {
+      "spacing": 2.2,
+      "size": 0.6394211341594825,
+      "width": 1.0,
+      "height": 1.0,
+      "lift": -0.6
+    }
+  }
+}

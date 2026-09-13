@@ -1,6 +1,9 @@
 import 'package:flutter/foundation.dart';
 
 import '../landscape/landscape_grid.dart';
+import 'flatmates/day_action_store.dart';
+import 'friends/friend_instance.dart';
+import 'friends/friend_instance_store.dart';
 import 'paint/face_paint_store.dart';
 import 'paper/paper_wallet.dart';
 import 'paths/path_store.dart';
@@ -29,6 +32,8 @@ class GameSnapshot {
     PaperWallet? paper,
     this.programs,
     this.stuff,
+    this.friends,
+    this.dayPlans,
     this.sessionTouchedIds = const {},
     this.sessionBaseline,
     this.sessionNextId,
@@ -50,6 +55,8 @@ class GameSnapshot {
   final PaperWallet paper;
   final VolumeProgramStore? programs;
   final StuffStore? stuff;
+  final List<FriendInstance>? friends;
+  final FlatmateDayPlanStore? dayPlans;
   final Set<int> sessionTouchedIds;
   final List<Volume>? sessionBaseline;
   final int? sessionNextId;
@@ -75,6 +82,8 @@ class GameSnapshot {
       paper: paper,
       programs: programs,
       stuff: stuff,
+      friends: friends,
+      dayPlans: dayPlans,
       sessionTouchedIds: sessionTouchedIds,
       sessionBaseline: sessionBaseline,
       sessionNextId: sessionNextId,
@@ -95,6 +104,8 @@ class GameSnapshot {
     PaperWallet? paper,
     VolumeProgramStore? programs,
     StuffStore? stuff,
+    FriendInstanceStore? friends,
+    FlatmateDayPlanStore? dayPlans,
     bool noOp = false,
   }) {
     final cloned = <Volume>[
@@ -129,6 +140,10 @@ class GameSnapshot {
       paper: paper?.copy(),
       programs: programs?.copy(),
       stuff: stuff?.copy(),
+      friends: friends == null
+          ? null
+          : [for (final instance in friends.instances) instance.clone()],
+      dayPlans: dayPlans?.copy(),
       sessionTouchedIds: Set<int>.from(volumes.sessionTouchedIds),
       sessionBaseline: volumes.sessionBaseline == null
           ? null
@@ -148,6 +163,8 @@ class GameSnapshot {
     PaperWallet? paper,
     VolumeProgramStore? programs,
     StuffStore? stuff,
+    FriendInstanceStore? friends,
+    FlatmateDayPlanStore? dayPlans,
   }) {
     final clonedVolumes = [for (final volume in this.volumes) volume.clone()];
     Volume? draft;
@@ -194,6 +211,14 @@ class GameSnapshot {
     }
     if (stuff != null && this.stuff != null) {
       stuff.restoreFrom(this.stuff!);
+    }
+    if (friends != null && this.friends != null) {
+      friends.restore([
+        for (final instance in this.friends!) instance.clone(),
+      ]);
+    }
+    if (dayPlans != null && this.dayPlans != null) {
+      dayPlans.restoreFrom(this.dayPlans!);
     }
   }
 }

@@ -6,6 +6,7 @@ import '../../rendering/scene/scene.dart';
 import '../../geometry/geometry.dart';
 import '../../theme/world_theme.dart';
 import '../volumes/volume_store.dart';
+import '../walls/wall_store.dart';
 import 'path_shape.dart';
 import 'path_store.dart';
 
@@ -41,12 +42,17 @@ void syncPathMeshes(
   Scene scene,
   PathStore store,
   VolumeStore volumes, {
+  WallStore? walls,
   Color? color,
 }) {
   final wanted = <String>{};
   final grid = store.grid;
   final s = grid.subtileSize;
-  final byTile = pathFootprintsByTile(volumes: volumes, paths: store);
+  final byTile = pathFootprintsByTile(
+    volumes: volumes,
+    paths: store,
+    walls: walls,
+  );
 
   for (final entry in byTile.entries) {
     final (tx, ty) = entry.key;

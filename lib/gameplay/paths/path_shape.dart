@@ -2,6 +2,8 @@ import '../spawns/basement_spawn.dart';
 import '../volumes/volume.dart';
 import '../volumes/volume_store.dart';
 import '../graph/connection_graph.dart';
+import '../walls/wall_edge.dart';
+import '../walls/wall_store.dart';
 import 'path_store.dart';
 
 /// Axis-aligned subtile footprint of one path mesh piece on a tile.
@@ -208,13 +210,25 @@ PathFootprint? inOutGapFootprint(
   }
 }
 
+int _maskToward((int, int) from, (int, int) to) {
+  final dx = to.$1 - from.$1;
+  final dy = to.$2 - from.$2;
+  if (dx == 1 && dy == 0) return VolumeSide.east.maskBit;
+  if (dx == -1 && dy == 0) return VolumeSide.west.maskBit;
+  if (dy == 1 && dx == 0) return VolumeSide.south.maskBit;
+  if (dy == -1 && dx == 0) return VolumeSide.north.maskBit;
+  return 0;
+}
+
 /// User paths plus derived in_out door paths, keyed by tile.
 ///
 /// Outdoor dest tiles get a centered island and a stub facing the volume.
 /// Inset volumes also get a gap strip on the volume tile that stops at the box.
+/// Cut region openings grow a stub from the outdoor path to the gate.
 Map<(int, int), List<PathFootprint>> pathFootprintsByTile({
   required VolumeStore volumes,
   required PathStore paths,
+  WallStore? walls,
 }) {
   final n = volumes.grid.subtilesPerTile;
   final masks = <(int, int), int>{};
@@ -233,6 +247,22 @@ Map<(int, int), List<PathFootprint>> pathFootprintsByTile({
     final gap = inOutGapFootprint(link.cell, link.side, subtilesPerTile: n);
     if (gap != null) {
       gaps.putIfAbsent((link.cell.tx, link.cell.ty), () => []).add(gap);
+    }
+  }
+  if (walls != null) {
+    for (final edge in walls.edges) {
+      if (edge.kind != WallKind.cutFence) continue;
+      final pair = edge.separatedTiles;
+      if (pair == null) continue;
+      final aPath = paths.contains(pair.$1.$1, pair.$1.$2);
+      final bPath = paths.contains(pair.$2.$1, pair.$2.$2);
+      if (aPath == bPath) continue;
+      final outdoor = aPath ? pair.$1 : pair.$2;
+      final indoor = aPath ? pair.$2 : pair.$1;
+      if (volumes.isOccupied(outdoor.$1, outdoor.$2)) continue;
+      final bit = _maskToward(outdoor, indoor);
+      if (bit == 0) continue;
+      masks[outdoor] = (masks[outdoor] ?? 0) | bit;
     }
   }
   final out = <(int, int), List<PathFootprint>>{};

@@ -3,7 +3,6 @@ import 'package:flatmates/gameplay/friends/friend_instance_store.dart';
 import 'package:flatmates/gameplay/friends/friend_mesh_sync.dart';
 import 'package:flatmates/gameplay/outlines/friend_outline.dart';
 import 'package:flatmates/gameplay/outlines/outline_edges.dart';
-import 'package:flatmates/gameplay/outlines/outline_paint.dart';
 import 'package:flatmates/gameplay/volumes/volume_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math_64.dart';
@@ -84,6 +83,15 @@ void main() {
       ),
       hasLength(12),
     );
+    expect(
+      buildFriendOutlines(
+        friends: friends,
+        tileSize: volumes.grid.tileSize,
+        volumes: volumes,
+        interiorOpen: (tx, ty) => tx == 2 && ty == 2,
+      ),
+      hasLength(24),
+    );
   });
 
   test('inset box on the same tile does not hide a friend outside the AABB', () {
@@ -117,7 +125,4 @@ void main() {
     );
   });
 
-  test('friend eye outlines match body outline stroke', () {
-    expect(kFriendEyeOutlineStrokeWidth, kWorldOutlineStrokeWidth);
-  });
 }

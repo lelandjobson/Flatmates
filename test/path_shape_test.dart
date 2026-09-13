@@ -2,6 +2,8 @@ import 'package:flatmates/gameplay/paths/path_shape.dart';
 import 'package:flatmates/gameplay/paths/path_store.dart';
 import 'package:flatmates/gameplay/volumes/volume.dart';
 import 'package:flatmates/gameplay/volumes/volume_store.dart';
+import 'package:flatmates/gameplay/walls/wall_edge.dart';
+import 'package:flatmates/gameplay/walls/wall_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -133,6 +135,30 @@ void main() {
         ),
       ],
     );
+  });
+
+  test('cut region opening grows a stub from the outdoor path to the wall', () {
+    final volumes = VolumeStore();
+    final paths = PathStore(grid: volumes.grid)..addIsland(3, 2);
+    final walls = WallStore(grid: volumes.grid)
+      ..add(WallEdge(3, 3, 4, 3, kind: WallKind.cutFence));
+    final byTile = pathFootprintsByTile(
+      volumes: volumes,
+      paths: paths,
+      walls: walls,
+    );
+    expect(
+      byTile[(3, 2)],
+      contains(
+        const PathFootprint(
+          originXSubtiles: 2,
+          originZSubtiles: 6,
+          widthSubtiles: 4,
+          depthSubtiles: 2,
+        ),
+      ),
+    );
+    expect(byTile.containsKey((3, 3)), isFalse);
   });
 
   test('already-joined neighbors do not get a second hologram stub', () {

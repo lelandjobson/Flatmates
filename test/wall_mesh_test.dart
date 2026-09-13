@@ -58,4 +58,20 @@ void main() {
     final edge = WallEdge(3, 5, 3, 6);
     expect(wallEdgeFromMeshId(wallMeshId(edge)), edge);
   });
+
+  test('cut fence mesh is two remnant quads with a path-width gap', () {
+    final store = WallStore();
+    final edge = WallEdge(1, 2, 2, 2, kind: WallKind.cutFence);
+    store.add(edge);
+    final remnants = wallCutRemnants(store, edge);
+    expect(remnants, hasLength(2));
+    final firstLen = (remnants[0].$2 - remnants[0].$1).length;
+    final secondLen = (remnants[1].$2 - remnants[1].$1).length;
+    expect(firstLen, closeTo(store.grid.tileSize * 0.25, 0.01));
+    expect(secondLen, closeTo(store.grid.tileSize * 0.25, 0.01));
+    final scene = Scene();
+    syncWallMeshes(scene, store);
+    expect(scene.meshes, hasLength(1));
+    expect(scene.meshes.single.geometry.faces, hasLength(2));
+  });
 }

@@ -4,7 +4,9 @@ import '../paths/path_store.dart';
 import '../volumes/volume_door_sync.dart';
 import '../volumes/volume_solid_sync.dart';
 import '../volumes/volume_store.dart';
+import '../walls/region_tool.dart';
 import '../walls/wall_edge.dart';
+import '../walls/wall_regions.dart';
 import '../walls/wall_store.dart';
 import 'paper_cost.dart';
 import 'paper_wallet.dart';
@@ -113,6 +115,7 @@ int? quotePathPlaceAt({
   required WallStore walls,
   required int tx,
   required int ty,
+  Iterable<WallRegion>? regions,
 }) {
   if (!paths.grid.inBounds(tx, ty)) return null;
   if (!canPaintPathAt(volumes: volumes, paths: paths, tx: tx, ty: ty)) {
@@ -120,7 +123,14 @@ int? quotePathPlaceAt({
   }
   final nextPaths = copyPathStore(paths);
   final nextWalls = copyWallStore(walls);
-  if (!nextPaths.placeAndJoin(tx, ty, walls: nextWalls)) return null;
+  if (!nextPaths.placeAndJoin(
+    tx,
+    ty,
+    walls: nextWalls,
+    regions: regions,
+  )) {
+    return null;
+  }
   return quoteWorld(
     paper,
     volumes: volumes,
@@ -147,6 +157,63 @@ int? quoteWallToggleAt({
 
   if (!nextWalls.toggleAtMidpoint(hit, insteadOfAdd: insteadOfAdd)) {
     return null;
+  }
+  return quoteWorld(
+    paper,
+    volumes: volumes,
+    paths: nextPaths,
+    walls: nextWalls,
+  );
+}
+
+/// Paper delta for the Regions tool at [hit] (fill, divider merge, or wall).
+int? quoteRegionToolAt({
+  required PaperWallet paper,
+  required VolumeStore volumes,
+  required PathStore paths,
+  required WallStore walls,
+  required Iterable<WallRegion> regions,
+  required Vector3 hit,
+  required (int, int)? lastSeed,
+}) {
+  final edge = walls.hitEdgeAtMidpoint(hit);
+  if (edge != null) {
+    final merge = dividerMergeEdges(edge, regions, walls);
+    if (merge != null) {
+      final nextWalls = copyWallStore(walls);
+      for (final wall in merge) {
+        nextWalls.remove(wall);
+      }
+      return quoteWorld(
+        paper,
+        volumes: volumes,
+        paths: paths,
+        walls: nextWalls,
+      );
+    }
+    return quoteWallToggleAt(
+      paper: paper,
+      volumes: volumes,
+      paths: paths,
+      walls: walls,
+      hit: hit,
+    );
+  }
+  final tile = walls.grid.tileAtWorld(hit);
+  if (tile == null) return null;
+  final preview = previewRegionFill(
+    walls: walls,
+    regions: regions,
+    tx: tile.$1,
+    ty: tile.$2,
+    lastSeed: lastSeed,
+  );
+  if (!preview.changed) return null;
+  final nextPaths = copyPathStore(paths);
+  final nextWalls = copyWallStore(walls);
+  applyRegionFillPreview(nextWalls, preview);
+  for (final wall in preview.addEdges) {
+    nextPaths.severAcross(wall);
   }
   return quoteWorld(
     paper,

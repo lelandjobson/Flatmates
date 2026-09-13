@@ -1,6 +1,7 @@
 import 'package:flatmates/crafting/placed_paper.dart';
 import 'package:flatmates/gameplay/graph/connection_graph.dart';
 import 'package:flatmates/gameplay/paint/face_paint_store.dart';
+import 'package:flatmates/gameplay/paths/path_shape.dart';
 import 'package:flatmates/gameplay/paths/path_store.dart';
 import 'package:flatmates/gameplay/viewers/world_plane.dart';
 import 'package:flatmates/gameplay/volumes/volume.dart';
@@ -42,17 +43,41 @@ void main() {
     expect(geom.faces, hasLength(5));
   });
 
-  test('door clamps to a minimum-size face', () {
+  test('door stays on the tile midline when the box is inset', () {
     final box = BoxPrimitive(
       widthSubtiles: 4,
-      depthSubtiles: 4,
+      depthSubtiles: 6,
       heightSubtiles: 4,
+      originXSubtiles: 2,
+      originZSubtiles: 2,
     );
     final door = volumeDoorForSide(box, VolumeSide.south)!;
     expect(door.width, 2);
     expect(door.height, 4);
     expect(door.originU, 1);
     expect(door.originY, 0);
+    expect(tileCenteredDoorFaceU(box, VolumeSide.east), 1);
+  });
+
+  test('door world opening is centered on the tile axis', () {
+    const grid = VolumeGrid(tilesSide: 16, tileSize: 8);
+    final box = BoxPrimitive(
+      widthSubtiles: 6,
+      depthSubtiles: 6,
+      originXSubtiles: 0,
+      originZSubtiles: 2,
+    );
+    final door = volumeDoorForSide(box, VolumeSide.south)!;
+    final corners = doorWorldCorners(
+      grid: grid,
+      tx: 2,
+      ty: 3,
+      box: box,
+      door: door,
+    );
+    final midX = (corners[0].x + corners[1].x) * 0.5;
+    expect(midX, closeTo(grid.tileCenter(2, 3).x, 1e-9));
+    expect(corners[0].y, closeTo(0, 1e-9));
   });
 
   test('door world corners sit on the accessible face', () {
@@ -174,24 +199,19 @@ void main() {
         volume: volume,
         cell: cell,
         side: VolumeSide.east,
-        originU: 1,
       ),
       isTrue,
     );
     expect(cell.accessibleSides, {VolumeSide.east});
-    expect(cell.doorOrigins[VolumeSide.east], 1);
-    final door = volumeDoorForSide(
-      cell.box,
-      VolumeSide.east,
-      originU: cell.doorOrigins[VolumeSide.east],
-    )!;
+    expect(cell.doorOrigins[VolumeSide.east], 3);
+    final door = volumeDoorForSide(cell.box, VolumeSide.east)!;
     expect(door.width, kDoorWidthSubtiles);
     expect(door.height, kDoorHeightSubtiles);
-    expect(door.originU, 1);
+    expect(door.originU, 3);
     expect(door.originY, 0);
-    expect(door.containsFacePixel(1, 0), isTrue);
-    expect(door.containsFacePixel(2, 3), isTrue);
-    expect(door.containsFacePixel(0, 0), isFalse);
+    expect(door.containsFacePixel(3, 0), isTrue);
+    expect(door.containsFacePixel(4, 3), isTrue);
+    expect(door.containsFacePixel(2, 0), isFalse);
 
     expect(
       volumes.removeDoor(volume: volume, cell: cell, side: VolumeSide.east),
@@ -213,7 +233,6 @@ void main() {
         volume: volume,
         cell: cell,
         side: VolumeSide.east,
-        originU: 0,
       ),
       isTrue,
     );
@@ -238,5 +257,35 @@ void main() {
 
     final graph = ConnectionGraph.build(volumes: volumes, paths: paths);
     expect(graph.edges.where((e) => e.kind == JointKind.inOut), hasLength(1));
+    expect(graph.anchors, hasLength(1));
+    expect(graph.anchors.single.kind, GraphAnchorKind.volumeDoor);
+  });
+
+  test('door opening sits on the same plan axis as the graph and path', () {
+    const grid = VolumeGrid(tilesSide: 16, tileSize: 8);
+    final box = BoxPrimitive(
+      widthSubtiles: 6,
+      depthSubtiles: 6,
+      originXSubtiles: 2,
+      originZSubtiles: 0,
+    );
+    final door = volumeDoorForSide(box, VolumeSide.east)!;
+    final corners = doorWorldCorners(
+      grid: grid,
+      tx: 2,
+      ty: 3,
+      box: box,
+      door: door,
+    );
+    final midZ = (corners[0].z + corners[1].z) * 0.5;
+    final tile = grid.tileCenter(2, 3);
+    expect(midZ, closeTo(tile.z, 1e-9));
+    expect(corners[0].x, closeTo(box.worldMax(grid, 2, 3).x, 1e-9));
+
+    final corridorOrigin = (grid.subtilesPerTile - kPathWidthSubtiles) ~/ 2;
+    final corridorMidZ =
+        grid.tileOrigin(2, 3).z + (corridorOrigin + kPathWidthSubtiles / 2) *
+            grid.subtileSize;
+    expect(midZ, closeTo(corridorMidZ, 1e-9));
   });
 }

@@ -2,6 +2,9 @@
 enum WallKind {
   /// Short wooden fence.
   fence,
+
+  /// Same unit edge with a path-width gap. Topology stays closed.
+  cutFence,
 }
 
 /// Undirected unit-length axis-aligned edge between two grid vertices.

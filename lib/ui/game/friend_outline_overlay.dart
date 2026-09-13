@@ -17,6 +17,7 @@ class FriendOutlineOverlay extends StatelessWidget {
     required this.viewport,
     required this.tileSize,
     this.volumes,
+    this.interiorOpen,
     this.subtilesPerTile = VolumeGrid.defaultSubtilesPerTile,
     this.listenable,
     this.color = kWorldOutlineColor,
@@ -27,6 +28,7 @@ class FriendOutlineOverlay extends StatelessWidget {
   final Size viewport;
   final double tileSize;
   final VolumeStore? volumes;
+  final bool Function(int tx, int ty)? interiorOpen;
   final int subtilesPerTile;
   final Scene? listenable;
   final Color color;
@@ -53,6 +55,7 @@ class FriendOutlineOverlay extends StatelessWidget {
           viewport: viewport,
           tileSize: tileSize,
           volumes: volumes,
+          interiorOpen: interiorOpen,
           subtilesPerTile: subtilesPerTile,
           color: color,
         ),
@@ -68,6 +71,7 @@ class _FriendOutlinePainter extends CustomPainter {
     required this.viewport,
     required this.tileSize,
     this.volumes,
+    this.interiorOpen,
     required this.subtilesPerTile,
     required this.color,
   });
@@ -77,6 +81,7 @@ class _FriendOutlinePainter extends CustomPainter {
   final Size viewport;
   final double tileSize;
   final VolumeStore? volumes;
+  final bool Function(int tx, int ty)? interiorOpen;
   final int subtilesPerTile;
   final Color color;
 
@@ -90,6 +95,7 @@ class _FriendOutlinePainter extends CustomPainter {
         tileSize: tileSize,
         subtilesPerTile: subtilesPerTile,
         volumes: volumes,
+        interiorOpen: interiorOpen,
       ),
       camera: camera,
       viewport: viewport,

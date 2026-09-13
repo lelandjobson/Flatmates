@@ -4,6 +4,7 @@ import '../outlines/outline_edges.dart';
 import '../spawns/basement_spawn.dart';
 import '../spawns/basement_spawn_mesh.dart';
 import '../volumes/volume_store.dart';
+import '../walls/wall_store.dart';
 import 'path_mesh.dart';
 import 'path_shape.dart';
 import 'path_store.dart';
@@ -15,8 +16,9 @@ class PathOutlineStore {
   void rebuild({
     required PathStore paths,
     required VolumeStore volumes,
+    WallStore? walls,
   }) {
-    edges = buildPathOutline(paths: paths, volumes: volumes);
+    edges = buildPathOutline(paths: paths, volumes: volumes, walls: walls);
   }
 }
 
@@ -24,13 +26,18 @@ class PathOutlineStore {
 List<OutlineEdge> buildPathOutline({
   required PathStore paths,
   required VolumeStore volumes,
+  WallStore? walls,
 }) {
   final grid = paths.grid;
   final s = grid.subtileSize;
   final y = kPathHeight;
   final up = Vector3(0, 1, 0);
   final quads = <OutlineQuad>[];
-  final byTile = pathFootprintsByTile(volumes: volumes, paths: paths);
+  final byTile = pathFootprintsByTile(
+    volumes: volumes,
+    paths: paths,
+    walls: walls,
+  );
   for (final entry in byTile.entries) {
     final origin = grid.tileOrigin(entry.key.$1, entry.key.$2);
     for (final piece in entry.value) {

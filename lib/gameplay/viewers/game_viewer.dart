@@ -46,6 +46,7 @@ class SceneLayerMask {
     SceneLayer.volumes,
     SceneLayer.walls,
     SceneLayer.volumeTools,
+    SceneLayer.friends,
   });
 
   static SceneLayerMask forViewer(GameViewerKind kind) => switch (kind) {
