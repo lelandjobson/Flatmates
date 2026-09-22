@@ -10,6 +10,7 @@ const kMaxProgramChips = 5;
 const kProgramCirculation = 'circulation';
 const kProgramBedroom = 'bedroom';
 const kProgramStorage = 'storage';
+const kProgramWorkshop = 'workshop';
 const kProgramLeisure = 'leisure';
 const kProgramGarden = 'garden';
 
@@ -49,6 +50,13 @@ const List<ProgramSpec> kProgramCatalog = [
     id: kProgramStorage,
     label: 'Storage',
     icon: Icons.inventory_2_outlined,
+    color: Color(0xFFB8926A),
+    indoor: true,
+  ),
+  ProgramSpec(
+    id: kProgramWorkshop,
+    label: 'Workshop',
+    icon: Icons.handyman_outlined,
     color: Color(0xFF42A5F5),
     indoor: true,
   ),
@@ -199,7 +207,7 @@ class VolumeProgramStore {
     ]);
   }
 
-  List<ProgramSpec> programsPossessedRegion(WallRegion region) {
+  List<ProgramSpec> programsPossessedRegion(Playground region) {
     return sortProgramsByCatalog({
       for (final tile in region.tiles) outdoorAt(tile.$1, tile.$2),
     });

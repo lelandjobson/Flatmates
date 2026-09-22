@@ -1,5 +1,6 @@
 import 'package:flatmates/gameplay/outlines/applique_outline.dart';
 import 'package:flatmates/gameplay/outlines/outline_paint.dart';
+import 'package:flatmates/gameplay/viewers/world_plane.dart';
 import 'package:flatmates/gameplay/volumes/volume.dart';
 import 'package:flatmates/gameplay/volumes/volume_applique.dart';
 import 'package:flatmates/gameplay/volumes/volume_door.dart';
@@ -55,6 +56,90 @@ void main() {
       tileVisible: (tx, ty) => false,
     );
     expect(edges, isEmpty);
+  });
+
+  test('cutaway faces hide door paper the same way walls hide', () {
+    final (volumes, appliques, cell) = _southDoor();
+    final max = cell.box.worldMax(volumes.grid, cell.tx, cell.ty);
+    final min = cell.box.worldMin(volumes.grid, cell.tx, cell.ty);
+    final front = Vector3((min.x + max.x) * 0.5, 4, max.z + 10);
+    expect(
+      visibleAppliquePapers(
+        appliques: appliques.items,
+        volumes: volumes,
+        camera: front,
+        faceHidden: (tx, ty, face) => face == VolumeFace.posZ,
+      ),
+      isEmpty,
+    );
+    expect(
+      buildAppliqueOutline(
+        appliques: appliques.items,
+        volumes: volumes,
+        camera: front,
+        faceHidden: (tx, ty, face) => face == VolumeFace.posZ,
+      ),
+      isEmpty,
+    );
+  });
+
+  test('cutaway still hides a door when the interior is open', () {
+    final (volumes, appliques, cell) = _southDoor();
+    final max = cell.box.worldMax(volumes.grid, cell.tx, cell.ty);
+    final min = cell.box.worldMin(volumes.grid, cell.tx, cell.ty);
+    final front = Vector3((min.x + max.x) * 0.5, 4, max.z + 10);
+    expect(
+      visibleAppliquePapers(
+        appliques: appliques.items,
+        volumes: volumes,
+        camera: front,
+        faceHidden: (tx, ty, face) => face == VolumeFace.posZ,
+        interiorRevealed: (tx, ty) => true,
+      ),
+      isEmpty,
+    );
+  });
+
+  test('open interiors show the inside-face door from the room', () {
+    final (volumes, appliques, cell) = _southDoor();
+    final min = cell.box.worldMin(volumes.grid, cell.tx, cell.ty);
+    final max = cell.box.worldMax(volumes.grid, cell.tx, cell.ty);
+    final midX = (min.x + max.x) * 0.5;
+    final inside = Vector3(midX, 2, min.z + 2);
+    final papers = visibleAppliquePapers(
+      appliques: appliques.items,
+      volumes: volumes,
+      camera: inside,
+      interiorRevealed: (tx, ty) => true,
+    );
+    expect(papers, hasLength(1));
+    expect(papers.single.inward, isTrue);
+    expect(papers.single.face, VolumeFace.negZ);
+    expect(
+      buildAppliqueOutline(
+        appliques: appliques.items,
+        volumes: volumes,
+        camera: inside,
+        interiorRevealed: (tx, ty) => true,
+      ),
+      hasLength(4),
+    );
+  });
+
+  test('closed interiors never show the inside-face door from outside', () {
+    final (volumes, appliques, cell) = _southDoor();
+    final min = cell.box.worldMin(volumes.grid, cell.tx, cell.ty);
+    final max = cell.box.worldMax(volumes.grid, cell.tx, cell.ty);
+    final midX = (min.x + max.x) * 0.5;
+    final behind = Vector3(midX, 4, min.z - 10);
+    expect(
+      visibleAppliquePapers(
+        appliques: appliques.items,
+        volumes: volumes,
+        camera: behind,
+      ),
+      isEmpty,
+    );
   });
 }
 

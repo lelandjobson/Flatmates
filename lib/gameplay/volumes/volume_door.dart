@@ -8,6 +8,9 @@ import 'volume.dart';
 const kDoorWidthSubtiles = 2;
 const kDoorHeightSubtiles = 4;
 
+/// Inset of the inside-face door paper, toward the room from the outer wall.
+const double kDoorInteriorInset = 0.08;
+
 /// 2×4 (4 high) opening on an accessible wall, seated on the floor.
 class VolumeDoor {
   const VolumeDoor({
@@ -142,26 +145,45 @@ bool doorFacesCamera({
       1e-6;
 }
 
-/// Four world corners of the door quad, CCW when viewed from outside.
+/// Flip [exterior] onto the inside of the wall, CCW from the room.
+List<Vector3> inwardFaceCorners(
+  List<Vector3> exterior,
+  VolumeFace outwardFace, {
+  double inset = kDoorInteriorInset,
+}) {
+  final n = outwardFace.worldNormal;
+  return [
+    for (var i = exterior.length - 1; i >= 0; i--)
+      Vector3(
+        exterior[i].x - n.x * inset,
+        exterior[i].y - n.y * inset,
+        exterior[i].z - n.z * inset,
+      ),
+  ];
+}
+
+/// Four world corners of the door quad, CCW from [inward] ? inside : outside.
 List<Vector3> doorWorldCorners({
   required VolumeGrid grid,
   required int tx,
   required int ty,
   required BoxPrimitive box,
   required VolumeDoor door,
+  bool inward = false,
 }) {
   final min = box.worldMin(grid, tx, ty);
   final max = box.worldMax(grid, tx, ty);
   final s = grid.subtileSize;
   final y0 = min.y + door.originY * s;
   final y1 = y0 + door.height * s;
+  late final List<Vector3> exterior;
   switch (door.side) {
     case VolumeSide.east:
       {
         final x = max.x;
         final z0 = min.z + door.originU * s;
         final z1 = z0 + door.width * s;
-        return [
+        exterior = [
           Vector3(x, y0, z0),
           Vector3(x, y0, z1),
           Vector3(x, y1, z1),
@@ -173,7 +195,7 @@ List<Vector3> doorWorldCorners({
         final x = min.x;
         final z0 = min.z + door.originU * s;
         final z1 = z0 + door.width * s;
-        return [
+        exterior = [
           Vector3(x, y0, z1),
           Vector3(x, y0, z0),
           Vector3(x, y1, z0),
@@ -185,7 +207,7 @@ List<Vector3> doorWorldCorners({
         final z = max.z;
         final x0 = min.x + door.originU * s;
         final x1 = x0 + door.width * s;
-        return [
+        exterior = [
           Vector3(x1, y0, z),
           Vector3(x0, y0, z),
           Vector3(x0, y1, z),
@@ -197,7 +219,7 @@ List<Vector3> doorWorldCorners({
         final z = min.z;
         final x0 = min.x + door.originU * s;
         final x1 = x0 + door.width * s;
-        return [
+        exterior = [
           Vector3(x0, y0, z),
           Vector3(x1, y0, z),
           Vector3(x1, y1, z),
@@ -205,4 +227,6 @@ List<Vector3> doorWorldCorners({
         ];
       }
   }
+  if (!inward) return exterior;
+  return inwardFaceCorners(exterior, door.face);
 }

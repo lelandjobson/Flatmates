@@ -26,6 +26,7 @@ class FriendTrailOverlay extends StatelessWidget {
     this.tileVisible,
     this.listenable,
     this.lift = 0.16,
+    this.scale = 1,
   });
 
   final FriendTrailStore trails;
@@ -38,6 +39,9 @@ class FriendTrailOverlay extends StatelessWidget {
   final bool Function(int tx, int ty)? tileVisible;
   final Scene? listenable;
   final double lift;
+
+  /// `0` hides the trail; `1` is the current drawn max.
+  final double scale;
 
   @override
   Widget build(BuildContext context) {
@@ -52,7 +56,7 @@ class FriendTrailOverlay extends StatelessWidget {
   }
 
   Widget _paint() {
-    if (trails.isEmpty) return const SizedBox.shrink();
+    if (scale <= 0 || trails.isEmpty) return const SizedBox.shrink();
     return IgnorePointer(
       child: CustomPaint(
         size: viewport,
@@ -66,6 +70,7 @@ class FriendTrailOverlay extends StatelessWidget {
           interiorOpen: interiorOpen,
           tileVisible: tileVisible,
           lift: lift,
+          scale: scale,
         ),
       ),
     );
@@ -97,6 +102,7 @@ class _TrailPainter extends CustomPainter {
     this.interiorOpen,
     this.tileVisible,
     required this.lift,
+    required this.scale,
   });
 
   final FriendTrailStore trails;
@@ -108,9 +114,10 @@ class _TrailPainter extends CustomPainter {
   final bool Function(int tx, int ty)? interiorOpen;
   final bool Function(int tx, int ty)? tileVisible;
   final double lift;
+  final double scale;
 
   double get _worldWidth =>
-      FriendMeshLayout.worldSize(tileSize: tileSize) * 0.28;
+      FriendMeshLayout.worldSize(tileSize: tileSize) * 0.28 * scale;
 
   double get _skipRadius =>
       FriendMeshLayout.worldSize(tileSize: tileSize) * 0.38;

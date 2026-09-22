@@ -21,7 +21,7 @@ VolumeToolScope volumeToolScope(double distance) {
   return VolumeToolScope.solid;
 }
 
-enum SelectableKind { tile, region, friend, volume, volumeFace, path, stuff }
+enum SelectableKind { tile, playground, friend, volume, volumeFace, path, stuff }
 
 /// One pick of a map entity under a screen ray.
 class SelectableHit {
@@ -34,7 +34,7 @@ class SelectableHit {
     this.face,
     this.friendId,
     this.stuffId,
-    this.region,
+    this.playground,
     this.worldPoint,
   });
 
@@ -46,15 +46,15 @@ class SelectableHit {
         worldPoint: worldPoint,
       );
 
-  factory SelectableHit.region(
-    WallRegion region, {
+  factory SelectableHit.playground(
+    Playground playground, {
     int? tx,
     int? ty,
     Vector3? worldPoint,
   }) =>
       SelectableHit(
-        kind: SelectableKind.region,
-        region: region,
+        kind: SelectableKind.playground,
+        playground: playground,
         tx: tx,
         ty: ty,
         worldPoint: worldPoint,
@@ -131,18 +131,18 @@ class SelectableHit {
   final VolumeFace? face;
   final String? friendId;
   final String? stuffId;
-  final WallRegion? region;
+  final Playground? playground;
   final Vector3? worldPoint;
 
-  /// Volumes, faces, regions, paths, and friends — not bare tiles.
+  /// Volumes, faces, playgrounds, paths, and friends — not bare tiles.
   bool get isCreatedObject => kind != SelectableKind.tile;
 
   String get debugLabel {
     switch (kind) {
       case SelectableKind.tile:
         return 'tile (${tx ?? '?'},${ty ?? '?'})';
-      case SelectableKind.region:
-        return 'region ${region?.tiles.length ?? 0}t';
+      case SelectableKind.playground:
+        return 'playground ${playground?.tiles.length ?? 0}t';
       case SelectableKind.friend:
         return 'friend ${friendId ?? '?'}';
       case SelectableKind.volume:
@@ -160,8 +160,10 @@ class SelectableHit {
     if (other == null || other.kind != kind) return false;
     return switch (kind) {
       SelectableKind.tile => tx == other.tx && ty == other.ty,
-      SelectableKind.region =>
-        region != null && other.region != null && region == other.region,
+      SelectableKind.playground =>
+        playground != null &&
+            other.playground != null &&
+            playground == other.playground,
       SelectableKind.friend => friendId == other.friendId,
       SelectableKind.path => tx == other.tx && ty == other.ty,
       SelectableKind.volume =>

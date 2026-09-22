@@ -2,6 +2,7 @@ import 'package:vector_math/vector_math_64.dart';
 
 import '../paths/path_store.dart';
 import '../volumes/volume_door_sync.dart';
+import '../volumes/volume_program.dart';
 import '../volumes/volume_solid_sync.dart';
 import '../volumes/volume_store.dart';
 import '../walls/region_tool.dart';
@@ -18,6 +19,7 @@ int quoteWorld(
   required VolumeStore volumes,
   required PathStore paths,
   required WallStore walls,
+  VolumeProgramStore? programs,
 }) {
   final volumeCosts = <int, int>{
     for (final volume in volumes.visibleVolumes)
@@ -50,6 +52,14 @@ int quoteWorld(
     need += wallCost - paper.wallCommitted;
   } else {
     refund += paper.wallCommitted - wallCost;
+  }
+  if (programs != null) {
+    final partitionCost = partitionPaperCost(volumes, programs);
+    if (partitionCost > paper.partitionCommitted) {
+      need += partitionCost - paper.partitionCommitted;
+    } else {
+      refund += paper.partitionCommitted - partitionCost;
+    }
   }
   return need - refund;
 }
@@ -91,6 +101,7 @@ int? quoteVolumePaintAt({
   required WallStore walls,
   required int tx,
   required int ty,
+  VolumeProgramStore? programs,
 }) {
   if (!volumes.grid.inBounds(tx, ty) || volumes.isOccupied(tx, ty)) {
     return null;
@@ -104,6 +115,7 @@ int? quoteVolumePaintAt({
     volumes: nextVolumes,
     paths: paths,
     walls: nextWalls,
+    programs: programs,
   );
 }
 
@@ -115,7 +127,8 @@ int? quotePathPlaceAt({
   required WallStore walls,
   required int tx,
   required int ty,
-  Iterable<WallRegion>? regions,
+  Iterable<Playground>? regions,
+  VolumeProgramStore? programs,
 }) {
   if (!paths.grid.inBounds(tx, ty)) return null;
   if (!canPaintPathAt(volumes: volumes, paths: paths, tx: tx, ty: ty)) {
@@ -136,6 +149,7 @@ int? quotePathPlaceAt({
     volumes: volumes,
     paths: nextPaths,
     walls: nextWalls,
+    programs: programs,
   );
 }
 
@@ -146,6 +160,7 @@ int? quoteWallToggleAt({
   required PathStore paths,
   required WallStore walls,
   required Vector3 hit,
+  VolumeProgramStore? programs,
 }) {
   final nextPaths = copyPathStore(paths);
   final nextWalls = copyWallStore(walls);
@@ -163,18 +178,20 @@ int? quoteWallToggleAt({
     volumes: volumes,
     paths: nextPaths,
     walls: nextWalls,
+    programs: programs,
   );
 }
 
-/// Paper delta for the Regions tool at [hit] (fill, divider merge, or wall).
+/// Paper delta for the Playgrounds tool at [hit] (fill, divider merge, or wall).
 int? quoteRegionToolAt({
   required PaperWallet paper,
   required VolumeStore volumes,
   required PathStore paths,
   required WallStore walls,
-  required Iterable<WallRegion> regions,
+  required Iterable<Playground> regions,
   required Vector3 hit,
   required (int, int)? lastSeed,
+  VolumeProgramStore? programs,
 }) {
   final edge = walls.hitEdgeAtMidpoint(hit);
   if (edge != null) {
@@ -189,6 +206,7 @@ int? quoteRegionToolAt({
         volumes: volumes,
         paths: paths,
         walls: nextWalls,
+        programs: programs,
       );
     }
     return quoteWallToggleAt(
@@ -197,6 +215,7 @@ int? quoteRegionToolAt({
       paths: paths,
       walls: walls,
       hit: hit,
+      programs: programs,
     );
   }
   final tile = walls.grid.tileAtWorld(hit);
@@ -220,5 +239,6 @@ int? quoteRegionToolAt({
     volumes: volumes,
     paths: nextPaths,
     walls: nextWalls,
+    programs: programs,
   );
 }

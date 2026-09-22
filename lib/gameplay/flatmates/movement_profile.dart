@@ -17,6 +17,7 @@ class MovementProfile {
     this.stopSlide = 0.18,
     this.stopSeconds = 0.36,
     this.stopTilt = 0.18,
+    this.rotationInertia = 0,
   });
 
   /// Hop gait on every tile, slight right lane, light meander.
@@ -81,7 +82,7 @@ class MovementProfile {
   /// Forward lean at launch, in radians.
   final double startTilt;
 
-  /// How far the body slides past the stop tile, in tiles.
+  /// `0` last station is dest; `1` last station is the shared-edge mid.
   final double stopSlide;
 
   /// Brake-slide duration in seconds.
@@ -89,6 +90,9 @@ class MovementProfile {
 
   /// Backward lean while braking, in radians.
   final double stopTilt;
+
+  /// `0` snap yaw to the path tangent; `1` max turn 90° per second.
+  final double rotationInertia;
 
   static MovementProfile byId(String id) {
     for (final preset in presets) {
@@ -114,6 +118,7 @@ class MovementProfile {
     double? stopSlide,
     double? stopSeconds,
     double? stopTilt,
+    double? rotationInertia,
   }) {
     return MovementProfile(
       id: id ?? this.id,
@@ -132,6 +137,7 @@ class MovementProfile {
       stopSlide: stopSlide ?? this.stopSlide,
       stopSeconds: stopSeconds ?? this.stopSeconds,
       stopTilt: stopTilt ?? this.stopTilt,
+      rotationInertia: rotationInertia ?? this.rotationInertia,
     );
   }
 
@@ -150,9 +156,10 @@ class MovementProfile {
       startBackup: startBackup.clamp(0, 0.5),
       startSeconds: startSeconds.clamp(0.05, 0.8),
       startTilt: startTilt.clamp(0, 0.45),
-      stopSlide: stopSlide.clamp(0, 0.6),
+      stopSlide: stopSlide.clamp(0, 1),
       stopSeconds: stopSeconds.clamp(0.05, 1),
       stopTilt: stopTilt.clamp(0, 0.45),
+      rotationInertia: rotationInertia.clamp(0, 1),
     );
   }
 
@@ -173,6 +180,7 @@ class MovementProfile {
         'stopSlide': stopSlide,
         'stopSeconds': stopSeconds,
         'stopTilt': stopTilt,
+        'rotationInertia': rotationInertia,
       };
 
   factory MovementProfile.fromJson(Map<String, dynamic> json) {
@@ -199,6 +207,7 @@ class MovementProfile {
       stopSlide: read('stopSlide', 0.18),
       stopSeconds: read('stopSeconds', 0.36),
       stopTilt: read('stopTilt', 0.18),
+      rotationInertia: read('rotationInertia', 0),
     ).clamped();
   }
 
@@ -220,7 +229,8 @@ class MovementProfile {
       other.startTilt == startTilt &&
       other.stopSlide == stopSlide &&
       other.stopSeconds == stopSeconds &&
-      other.stopTilt == stopTilt;
+      other.stopTilt == stopTilt &&
+      other.rotationInertia == rotationInertia;
 
   @override
   int get hashCode => Object.hash(
@@ -240,6 +250,7 @@ class MovementProfile {
         stopSlide,
         stopSeconds,
         stopTilt,
+        rotationInertia,
       );
 }
 

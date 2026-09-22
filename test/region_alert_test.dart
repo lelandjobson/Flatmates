@@ -22,12 +22,12 @@ void encloseTile(WallStore store, int tx, int ty) {
   store.add(WallEdge(tx, ty, tx, ty + 1));
 }
 
-({ConnectionGraph graph, List<WallRegion> regions}) _syncLikeGame({
+({ConnectionGraph graph, List<Playground> regions}) _syncLikeGame({
   required VolumeStore volumes,
   required WallStore walls,
   required PathStore paths,
 }) {
-  final regions = computeEnclosedRegions(walls);
+  final regions = computeEnclosedPlaygrounds(walls);
   syncRegionOpeningsFromPaths(
     walls: walls,
     paths: paths,
@@ -48,7 +48,7 @@ ConnectionGraph _graph({
   required VolumeStore volumes,
   required WallStore walls,
   required PathStore paths,
-  required List<WallRegion> regions,
+  required List<Playground> regions,
 }) {
   return ConnectionGraph.build(
     volumes: volumes,
@@ -60,7 +60,7 @@ ConnectionGraph _graph({
 
 List<WorldAlert> _alerts({
   required ConnectionGraph graph,
-  required List<WallRegion> regions,
+  required List<Playground> regions,
   required VolumeStore volumes,
   required PathStore paths,
   required WallStore walls,
@@ -80,7 +80,7 @@ void main() {
     final volumes = VolumeStore();
     final walls = WallStore(grid: volumes.grid);
     encloseTile(walls, 2, 2);
-    final regions = computeEnclosedRegions(walls);
+    final regions = computeEnclosedPlaygrounds(walls);
     final paths = PathStore(grid: volumes.grid);
     final graph = _graph(
       volumes: volumes,
@@ -107,7 +107,7 @@ void main() {
     );
     expect(
       alerts.single.primary.remediation.selectKind,
-      SelectableKind.region,
+      SelectableKind.playground,
     );
   });
 
@@ -116,7 +116,7 @@ void main() {
     final walls = WallStore(grid: volumes.grid);
     encloseTile(walls, 2, 2);
     expect(walls.cut(WallEdge(3, 2, 3, 3)), isTrue);
-    final regions = computeEnclosedRegions(walls);
+    final regions = computeEnclosedPlaygrounds(walls);
     final paths = PathStore(grid: volumes.grid)..addIsland(3, 2);
     final graph = _graph(
       volumes: volumes,
@@ -143,7 +143,7 @@ void main() {
     encloseTile(walls, 1, 1);
     encloseTile(walls, 5, 5);
     expect(walls.cut(WallEdge(6, 5, 6, 6)), isTrue);
-    final regions = computeEnclosedRegions(walls);
+    final regions = computeEnclosedPlaygrounds(walls);
     final paths = PathStore(grid: volumes.grid)..addIsland(6, 5);
     final graph = _graph(
       volumes: volumes,
@@ -159,7 +159,7 @@ void main() {
       volumes: volumes,
     );
     expect(alerts, hasLength(1));
-    final closed = wallRegionContaining(regions, 1, 1)!;
+    final closed = playgroundContaining(regions, 1, 1)!;
     expect(alerts.single.hostKey, regionHostKey(closed));
   });
 
@@ -167,7 +167,7 @@ void main() {
     final volumes = VolumeStore();
     final walls = WallStore(grid: volumes.grid);
     encloseTile(walls, 2, 2);
-    final regions = computeEnclosedRegions(walls);
+    final regions = computeEnclosedPlaygrounds(walls);
     final paths = PathStore(grid: volumes.grid)..addIsland(3, 2);
     expect(
       gateCandidateTile(
@@ -249,7 +249,7 @@ void main() {
   });
 
   test('graph anchors still clear the alert when the subgraph copy is empty', () {
-    final region = WallRegion({(2, 2)});
+    final region = Playground({(2, 2)});
     final id = ConnectionGraph.regionSubgraphId(region);
     final inner = GraphNode(
       x: 2,
@@ -345,7 +345,7 @@ void main() {
         alerts: alerts,
         createMode: true,
         lookingInside: (_) => false,
-        showInCreate: (alert) => alert.hostKey.startsWith('region:'),
+        showInCreate: (alert) => alert.hostKey.startsWith('playground:'),
       ),
       alerts,
     );

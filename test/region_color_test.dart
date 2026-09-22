@@ -37,7 +37,7 @@ void main() {
     final store = WallStore();
     encloseTile(store, 2, 2);
     encloseTile(store, 3, 2);
-    final regions = computeEnclosedRegions(store);
+    final regions = computeEnclosedPlaygrounds(store);
     expect(regions, hasLength(2));
     final adj = regionAdjacency(regions);
     expect(adj[0], {1});
@@ -50,7 +50,7 @@ void main() {
     final store = WallStore();
     encloseTile(store, 0, 0);
     encloseTile(store, 5, 5);
-    final regions = computeEnclosedRegions(store);
+    final regions = computeEnclosedPlaygrounds(store);
     final adj = regionAdjacency(regions);
     expect(adj[0], isEmpty);
     expect(adj[1], isEmpty);
@@ -61,13 +61,13 @@ void main() {
   test('expanding a region keeps its color', () {
     final store = WallStore();
     encloseTile(store, 1, 1);
-    final first = computeEnclosedRegions(store);
+    final first = computeEnclosedPlaygrounds(store);
     final before = assignRegionColors(first);
     store.add(WallEdge(2, 1, 3, 1));
     store.add(WallEdge(3, 1, 3, 2));
     store.add(WallEdge(2, 2, 3, 2));
     store.remove(WallEdge(2, 1, 2, 2));
-    final grown = computeEnclosedRegions(store);
+    final grown = computeEnclosedPlaygrounds(store);
     expect(grown, hasLength(1));
     expect(grown.single.tiles, {(1, 1), (2, 1)});
     final after = assignRegionColors(
@@ -83,7 +83,7 @@ void main() {
     encloseTile(store, 0, 0);
     encloseTile(store, 1, 0);
     encloseTile(store, 2, 0);
-    final regions = computeEnclosedRegions(store);
+    final regions = computeEnclosedPlaygrounds(store);
     expect(regions, hasLength(3));
     final colors = assignRegionColors(regions);
     final adj = regionAdjacency(regions);
@@ -97,17 +97,17 @@ void main() {
   test('a new neighbor does not steal the grown room color', () {
     final store = WallStore();
     encloseTile(store, 1, 1);
-    final first = computeEnclosedRegions(store);
+    final first = computeEnclosedPlaygrounds(store);
     final before = assignRegionColors(first);
     encloseTile(store, 2, 1);
-    final two = computeEnclosedRegions(store);
+    final two = computeEnclosedPlaygrounds(store);
     final after = assignRegionColors(
       two,
       previousRegions: first,
       previous: before,
     );
-    final kept = wallRegionContaining(two, 1, 1);
-    final other = wallRegionContaining(two, 2, 1);
+    final kept = playgroundContaining(two, 1, 1);
+    final other = playgroundContaining(two, 2, 1);
     expect(kept, isNotNull);
     expect(other, isNotNull);
     final keptIndex = two.indexWhere((r) => r == kept);

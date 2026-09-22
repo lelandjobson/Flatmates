@@ -27,7 +27,7 @@ Set<(int, int)> landscapePixelsForTiles(
   return out;
 }
 
-/// Overnight regen. Open ground and each walled region are exclusive targets.
+/// Overnight regen. Open ground and each playground are exclusive targets.
 ///
 /// Open ground refills erased cells from neighboring landscape materials.
 /// Walled regions never receive landscape regen; erased cells there grow
@@ -38,7 +38,7 @@ class MorningLandscapeCA {
   static int run({
     required LandscapeGrid grid,
     required LandscapeGenerator generator,
-    required Iterable<WallRegion> regions,
+    required Iterable<Playground> regions,
     required int subtilesPerTile,
     int originTile = 0,
     int generations = generationsPerDay,

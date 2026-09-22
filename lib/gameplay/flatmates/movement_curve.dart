@@ -44,6 +44,7 @@ class MovementCurve {
     required this.tiles,
     required this.profile,
     required this.tileSize,
+    required this.pathHalfWidth,
     required this.medianPoints,
     required this.knots,
     required this.points,
@@ -57,6 +58,7 @@ class MovementCurve {
   final List<(int, int)> tiles;
   final MovementProfile profile;
   final double tileSize;
+  final double pathHalfWidth;
   final List<Offset> medianPoints;
   final List<MovementKnot> knots;
   final List<Offset> points;
@@ -148,6 +150,70 @@ class MovementCurve {
     return tileDistances.last;
   }
 
+  /// Route-tile index whose station is nearest [distance].
+  int destTileIndexForDistance(double distance) {
+    if (tiles.isEmpty || tileDistances.isEmpty) return 0;
+    final d = isClosed ? _wrap(distance) : distance.clamp(0.0, totalLength);
+    var best = tiles.length - 1;
+    var bestErr = double.infinity;
+    for (var i = 0; i < tileDistances.length; i++) {
+      final err = (tileDistances[i] - d).abs();
+      if (err < bestErr) {
+        bestErr = err;
+        best = i;
+      }
+    }
+    return best.clamp(0, tiles.length - 1);
+  }
+
+  /// Midpoint of the shared 4-connected edge into [destIndex].
+  Offset arrivalEdgeMid(int destIndex) {
+    final dest = _tileAt(destIndex);
+    final prev = _prevTile(destIndex);
+    final a = _centerOf(prev);
+    final b = _centerOf(dest);
+    return Offset((a.dx + b.dx) * 0.5, (a.dy + b.dy) * 0.5);
+  }
+
+  /// Dest tile center plus the profile side offset (lane dest).
+  Offset offsetDest(int destIndex) {
+    final dest = _tileAt(destIndex);
+    final prev = _prevTile(destIndex);
+    final center = _centerOf(dest);
+    final incoming = center - _centerOf(prev);
+    final right = movementFacingRight(incoming);
+    return center + right * (profile.offset * pathHalfWidth);
+  }
+
+  /// `u = 0` edge mid, `u = 1` offset dest.
+  Offset arrivalPoint(int destIndex, double u) {
+    return Offset.lerp(
+      arrivalEdgeMid(destIndex),
+      offsetDest(destIndex),
+      u.clamp(0.0, 1.0),
+    )!;
+  }
+
+  /// Arc length of the closest curve point to [point].
+  double closestDistance(Offset point) {
+    if (points.length < 2 || totalLength < _eps) return 0;
+    return Polyline2D(points).closestParameter(point) * totalLength;
+  }
+
+  (int, int) _tileAt(int index) {
+    if (tiles.isEmpty) return (0, 0);
+    return tiles[index.clamp(0, tiles.length - 1)];
+  }
+
+  (int, int) _prevTile(int destIndex) {
+    if (destIndex > 0) return tiles[destIndex - 1];
+    if (isClosed && tiles.length >= 3) return tiles[tiles.length - 2];
+    return _tileAt(destIndex);
+  }
+
+  Offset _centerOf((int, int) tile) =>
+      Offset((tile.$1 + 0.5) * tileSize, (tile.$2 + 0.5) * tileSize);
+
   double _wrap(double distance) {
     if (totalLength < _eps) return 0;
     if (!isClosed) return distance.clamp(0.0, totalLength);
@@ -171,6 +237,7 @@ MovementCurve buildMovementCurve({
       tiles: const [],
       profile: clamped,
       tileSize: grid.tileSize,
+      pathHalfWidth: movementPathHalfWidth(grid),
       medianPoints: const [],
       knots: const [],
       points: const [],
@@ -197,6 +264,7 @@ MovementCurve buildMovementCurve({
       tiles: List<(int, int)>.from(tiles),
       profile: clamped,
       tileSize: grid.tileSize,
+      pathHalfWidth: movementPathHalfWidth(grid),
       medianPoints: median,
       knots: [
         MovementKnot(
@@ -275,6 +343,7 @@ MovementCurve buildMovementCurve({
     tiles: List<(int, int)>.from(tiles),
     profile: clamped,
     tileSize: grid.tileSize,
+    pathHalfWidth: halfW,
     medianPoints: median,
     knots: offsetKnots,
     points: points,

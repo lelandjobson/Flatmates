@@ -57,22 +57,6 @@ class _MovementLabViewState extends State<MovementLabView>
   static const _tilesSide = 6;
   static const _tileWorld = 8.0;
 
-  static const _loopTiles = <(int, int)>[
-    (-2, -2),
-    (-1, -2),
-    (0, -2),
-    (1, -2),
-    (1, -1),
-    (1, 0),
-    (1, 1),
-    (0, 1),
-    (-1, 1),
-    (-2, 1),
-    (-2, 0),
-    (-2, -1),
-    (-2, -2),
-  ];
-
   final _volumes = VolumeStore(
     grid: const VolumeGrid(tilesSide: _tilesSide, tileSize: _tileWorld),
   );
@@ -89,6 +73,8 @@ class _MovementLabViewState extends State<MovementLabView>
   late final Ticker _ticker;
 
   MovementProfile _profile = MovementProfile.hop;
+  MovementLabTrack _track = kMovementLabTracks.first;
+  double _trailScale = 1;
   MovementAssignments _assignments = MovementAssignments.empty;
   FriendEyeProfiles _eyeProfiles = FriendEyeProfiles.empty;
   List<MovementProfile> _saved = const [];
@@ -116,9 +102,9 @@ class _MovementLabViewState extends State<MovementLabView>
   double get _worldSize => _tilesSide * _tileWorld;
   double get _mapHalf => _worldSize * 0.5;
 
-  List<(int, int)> get _forwardTiles => List<(int, int)>.from(_loopTiles);
+  List<(int, int)> get _forwardTiles => List<(int, int)>.from(_track.tiles);
 
-  List<(int, int)> get _reverseTiles => _reversedLoop(_loopTiles);
+  List<(int, int)> get _reverseTiles => _reversedLoop(_track.tiles);
 
   List<(int, int)> get _activeTiles =>
       _reversed ? _reverseTiles : _forwardTiles;
@@ -167,7 +153,7 @@ class _MovementLabViewState extends State<MovementLabView>
       );
     _gridMotif = GridMotif.subtileLines(worldSize: _volumes.grid.subtileSize);
 
-    for (final tile in _loopTiles.toSet()) {
+    for (final tile in _track.tiles.toSet()) {
       _paths.placeAndJoin(tile.$1, tile.$2);
     }
     syncPathMeshes(
@@ -195,8 +181,8 @@ class _MovementLabViewState extends State<MovementLabView>
 
   FriendInstance _makeFriend(Friend friend) {
     final start = _volumes.grid.tileCenter(
-      _loopTiles.first.$1,
-      _loopTiles.first.$2,
+      _track.tiles.first.$1,
+      _track.tiles.first.$2,
     );
     start.y = FriendMeshLayout.sitOnGroundY(tileSize: _tileWorld);
     final instance = FriendInstance(
@@ -261,6 +247,7 @@ class _MovementLabViewState extends State<MovementLabView>
       }
       final tilesChanged = !_sameTiles(instance.movement.tiles, _activeTiles);
       if (isNew || restart || tilesChanged) {
+        final startFrom = Offset(instance.position.x, instance.position.z);
         instance.movement.start(
           _activeTiles,
           grid: _volumes.grid,
@@ -268,9 +255,11 @@ class _MovementLabViewState extends State<MovementLabView>
           paths: _paths,
           seed: instance.id,
           loop: true,
+          startFrom: startFrom,
         );
         if (visible.length > 1) {
           instance.movement.progress = i / visible.length;
+          instance.movement.captureStartFrom(startFrom, entryAtDistance: true);
         }
       } else {
         instance.movement.applyProfile(
@@ -286,7 +275,9 @@ class _MovementLabViewState extends State<MovementLabView>
 
   void _startVisibleFriends() {
     for (final friend in _friends.instances) {
-      friend.movement.requestStart();
+      friend.movement.requestStart(
+        startFrom: Offset(friend.position.x, friend.position.z),
+      );
       _applyPose(friend);
     }
     syncFriendMeshes(_scene, _friends, tileSize: _tileWorld);
@@ -304,8 +295,11 @@ class _MovementLabViewState extends State<MovementLabView>
 
   void _startFriend(String friendId) {
     final instance = _friends.byId(_labId(friendTemplateById(friendId)));
-    instance?.movement.requestStart();
-    if (instance != null) _applyPose(instance);
+    if (instance == null) return;
+    instance.movement.requestStart(
+      startFrom: Offset(instance.position.x, instance.position.z),
+    );
+    _applyPose(instance);
     syncFriendMeshes(_scene, _friends, tileSize: _tileWorld);
     setState(() {});
   }
@@ -316,6 +310,31 @@ class _MovementLabViewState extends State<MovementLabView>
     if (instance != null) _applyPose(instance);
     syncFriendMeshes(_scene, _friends, tileSize: _tileWorld);
     setState(() {});
+  }
+
+  void _cycleTrack(int delta) {
+    final i = kMovementLabTracks.indexWhere((t) => t.id == _track.id);
+    final next = (i + delta) % kMovementLabTracks.length;
+    _setTrack(kMovementLabTracks[next < 0 ? next + kMovementLabTracks.length : next]);
+  }
+
+  void _setTrack(MovementLabTrack track) {
+    if (track.id == _track.id) return;
+    setState(() => _track = track);
+    _paths.restore(tiles: {}, edges: {});
+    for (final tile in track.tiles.toSet()) {
+      _paths.placeAndJoin(tile.$1, tile.$2);
+    }
+    syncPathMeshes(
+      _scene,
+      _paths,
+      _volumes,
+      color: WorldTheme.paperDiorama.path,
+    );
+    _pathOutlines.rebuild(paths: _paths, volumes: _volumes);
+    _trails.clear();
+    _syncLabFriends(restart: true);
+    unawaited(_bakeLandscape());
   }
 
   void _rebuildCurves() {
@@ -364,7 +383,7 @@ class _MovementLabViewState extends State<MovementLabView>
           paths: _paths,
         );
         _applyPose(friend);
-        _trails.record(friend);
+        if (_trailScale > 0) _trails.record(friend);
         friend.expression.presenting = friend.presenting;
         friend.expression.tick(dt, moving: friend.movement.isMoving);
         friend.facing.tick(
@@ -375,6 +394,7 @@ class _MovementLabViewState extends State<MovementLabView>
             friend.position,
             _camera.position,
           ),
+          rotationInertia: _liveProfileFor(friend.friend).rotationInertia,
         );
         friend.thought.tick(
           dt,
@@ -595,6 +615,8 @@ class _MovementLabViewState extends State<MovementLabView>
           right: 12,
           child: _LabPanel(
             profile: _profile,
+            trackName: _track.name,
+            trailScale: _trailScale,
             saved: _saved,
             nameController: _nameController,
             status: _status,
@@ -606,6 +628,9 @@ class _MovementLabViewState extends State<MovementLabView>
             onPlayPause: () => setState(() => _playing = !_playing),
             onStart: _startVisibleFriends,
             onStop: _stopVisibleFriends,
+            onTrackPrev: () => _cycleTrack(-1),
+            onTrackNext: () => _cycleTrack(1),
+            onTrailScale: (v) => setState(() => _trailScale = v),
             onReverse: () {
               setState(() => _reversed = !_reversed);
               _syncLabFriends(restart: true);
@@ -750,6 +775,7 @@ class _MovementLabViewState extends State<MovementLabView>
                   tileSize: _tileWorld,
                   friends: _friends,
                   listenable: _scene,
+                  scale: _trailScale,
                 ),
                 FriendEyeOverlay(
                   friends: _friends,
@@ -780,6 +806,64 @@ class _MovementLabViewState extends State<MovementLabView>
     );
   }
 }
+
+class MovementLabTrack {
+  const MovementLabTrack({
+    required this.id,
+    required this.name,
+    required this.tiles,
+  });
+
+  final String id;
+  final String name;
+  final List<(int, int)> tiles;
+}
+
+const kDonutTrack = MovementLabTrack(
+  id: 'donut',
+  name: 'Donut',
+  tiles: [
+    (-2, -2),
+    (-1, -2),
+    (0, -2),
+    (1, -2),
+    (1, -1),
+    (1, 0),
+    (1, 1),
+    (0, 1),
+    (-1, 1),
+    (-2, 1),
+    (-2, 0),
+    (-2, -1),
+    (-2, -2),
+  ],
+);
+
+const kHairpinTrack = MovementLabTrack(
+  id: 'hairpin',
+  name: 'Hairpin',
+  tiles: [
+    (-2, -2),
+    (-1, -2),
+    (0, -2),
+    (1, -2),
+    (1, -1),
+    (1, 0),
+    (1, 1),
+    (0, 1),
+    (0, 0),
+    (0, -1),
+    (-1, -1),
+    (-1, 0),
+    (-1, 1),
+    (-2, 1),
+    (-2, 0),
+    (-2, -1),
+    (-2, -2),
+  ],
+);
+
+const kMovementLabTracks = [kDonutTrack, kHairpinTrack];
 
 bool _sameTiles(List<(int, int)> a, List<(int, int)> b) {
   if (a.length != b.length) return false;
@@ -964,6 +1048,8 @@ class _FriendCascade extends StatelessWidget {
 class _LabPanel extends StatelessWidget {
   const _LabPanel({
     required this.profile,
+    required this.trackName,
+    required this.trailScale,
     required this.saved,
     required this.nameController,
     required this.status,
@@ -975,6 +1061,9 @@ class _LabPanel extends StatelessWidget {
     required this.onPlayPause,
     required this.onStart,
     required this.onStop,
+    required this.onTrackPrev,
+    required this.onTrackNext,
+    required this.onTrailScale,
     required this.onReverse,
     required this.onShowCurve,
     required this.onSave,
@@ -985,6 +1074,8 @@ class _LabPanel extends StatelessWidget {
   });
 
   final MovementProfile profile;
+  final String trackName;
+  final double trailScale;
   final List<MovementProfile> saved;
   final TextEditingController nameController;
   final String? status;
@@ -996,6 +1087,9 @@ class _LabPanel extends StatelessWidget {
   final VoidCallback onPlayPause;
   final VoidCallback onStart;
   final VoidCallback onStop;
+  final VoidCallback onTrackPrev;
+  final VoidCallback onTrackNext;
+  final ValueChanged<double> onTrailScale;
   final VoidCallback onReverse;
   final ValueChanged<bool> onShowCurve;
   final VoidCallback onSave;
@@ -1042,6 +1136,28 @@ class _LabPanel extends StatelessWidget {
                   _chip('Stop', onStop),
                   _chip('Reverse', onReverse, selected: reversed),
                 ],
+              ),
+              Row(
+                children: [
+                  _chip('⟨', onTrackPrev),
+                  Expanded(
+                    child: Text(
+                      trackName,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  _chip('⟩', onTrackNext),
+                ],
+              ),
+              _slider(
+                label: 'Trail scale',
+                value: trailScale,
+                onChanged: onTrailScale,
               ),
               Row(
                 children: [
@@ -1141,6 +1257,12 @@ class _LabPanel extends StatelessWidget {
                     onProfileChanged(profile.copyWith(tileSpeed: v)),
               ),
               _slider(
+                label: 'Rotation inertia',
+                value: profile.rotationInertia,
+                onChanged: (v) =>
+                    onProfileChanged(profile.copyWith(rotationInertia: v)),
+              ),
+              _slider(
                 label: 'Start backup',
                 value: profile.startBackup,
                 max: 0.5,
@@ -1165,7 +1287,6 @@ class _LabPanel extends StatelessWidget {
               _slider(
                 label: 'Stop slide',
                 value: profile.stopSlide,
-                max: 0.6,
                 onChanged: (v) =>
                     onProfileChanged(profile.copyWith(stopSlide: v)),
               ),

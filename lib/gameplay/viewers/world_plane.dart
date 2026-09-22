@@ -178,6 +178,22 @@ extension VolumeFaceX on VolumeFace {
         VolumeFace.negZ => Vector3(0, 0, -1),
       };
 
+  VolumeFace get opposite => switch (this) {
+        VolumeFace.posX => VolumeFace.negX,
+        VolumeFace.negX => VolumeFace.posX,
+        VolumeFace.posY => VolumeFace.negY,
+        VolumeFace.negY => VolumeFace.posY,
+        VolumeFace.posZ => VolumeFace.negZ,
+        VolumeFace.negZ => VolumeFace.posZ,
+      };
+
+  /// Vertical facade. Floors and roofs look down / up.
+  bool get isWall =>
+      this == VolumeFace.posX ||
+      this == VolumeFace.negX ||
+      this == VolumeFace.posZ ||
+      this == VolumeFace.negZ;
+
   (Vector3 origin, Vector3 normal) originAndNormal(Vector3 min, Vector3 max) {
     final midX = (min.x + max.x) * 0.5;
     final midY = (min.y + max.y) * 0.5;

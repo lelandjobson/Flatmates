@@ -19,19 +19,25 @@ void main() {
     startBackup: 0.2,
     startSeconds: 0.4,
     startTilt: 0.3,
-    stopSlide: 0.2,
+    stopSlide: 0,
     stopSeconds: 0.4,
     stopTilt: 0.25,
   );
 
-  FlatmateMovement openWalk({bool flourish = false, bool loop = false}) {
+  FlatmateMovement openWalk({
+    bool flourish = false,
+    bool loop = false,
+    MovementProfile? gait,
+    Offset? startFrom,
+  }) {
     return FlatmateMovement()
       ..start(
         const [(0, 0), (1, 0), (2, 0), (3, 0)],
         grid: grid,
-        profile: profile,
+        profile: gait ?? profile,
         flourish: flourish,
         loop: loop,
+        startFrom: startFrom,
       );
   }
 
@@ -98,7 +104,28 @@ void main() {
     expect(move.phase, MovementPhase.moving);
   });
 
-  test('settle leans back then returns to rest', () {
+  test('start flourish begins from the supplied world point', () {
+    const from = Offset(1.5, 3);
+    final move = openWalk(flourish: true, startFrom: from);
+    expect(move.phase, MovementPhase.starting);
+    expect(move.distance, 0);
+    final first = move.worldPosition(grid, sitY);
+    expect(first.x, closeTo(from.dx, 1e-6));
+    expect(first.z, closeTo(from.dy, 1e-6));
+    step(move, dt: profile.startSeconds / 2);
+    expect(move.distance, 0);
+    expect(move.overlayAlong, lessThan(0));
+    expect(move.pitch, greaterThan(0));
+    step(move, dt: profile.startSeconds);
+    expect(move.phase, MovementPhase.moving);
+    expect(move.overlayAlong, 0);
+    final landed = move.worldPosition(grid, sitY);
+    final onCurve = move.curve!.pointAtDistance(move.distance);
+    expect(landed.x, closeTo(onCurve.dx, 1e-6));
+    expect(landed.z, closeTo(onCurve.dy, 1e-6));
+  });
+
+  test('settle leans back without overshooting the dest', () {
     final move = openWalk();
     move.distance = 3;
     move.requestStop();
@@ -107,12 +134,63 @@ void main() {
     }
     step(move, dt: profile.stopSeconds / 2);
     expect(move.pitch, lessThan(0));
-    expect(move.overlayAlong, greaterThan(0));
+    expect(move.overlayAlong, 0);
     step(move, dt: profile.stopSeconds);
     expect(move.phase, MovementPhase.idle);
     expect(move.isMoving, isFalse);
     expect(move.overlayAlong, 0);
     expect(move.pitch, 0);
+  });
+
+  test('stopSlide 0 stays at dest through settle', () {
+    final move = openWalk();
+    move.distance = 3;
+    move.requestStop();
+    while (move.phase != MovementPhase.settling) {
+      step(move, dt: 0.05);
+    }
+    final dest = move.curve!.offsetDest(1);
+    final parked = move.worldPosition(grid, sitY);
+    expect(parked.x, closeTo(dest.dx, 1e-4));
+    expect(parked.z, closeTo(dest.dy, 1e-4));
+    step(move, dt: profile.stopSeconds);
+    final ended = move.worldPosition(grid, sitY);
+    expect(ended.x, closeTo(dest.dx, 1e-4));
+    expect(ended.z, closeTo(dest.dy, 1e-4));
+  });
+
+  test('stopSlide 1 eases from the shared-edge mid to offset dest', () {
+    const slide = MovementProfile(
+      id: 'slide-in',
+      name: 'Slide in',
+      offset: 0,
+      jank: 0,
+      smoothness: 0,
+      bendSlowdown: 0,
+      hopHeight: 0,
+      tileSpeed: 2.5,
+      stopSlide: 1,
+      stopSeconds: 0.4,
+      stopTilt: 0.25,
+    );
+    final move = openWalk(gait: slide);
+    move.distance = 3;
+    move.requestStop();
+    while (move.phase != MovementPhase.settling) {
+      step(move, dt: 0.05);
+    }
+    final edge = move.curve!.arrivalEdgeMid(1);
+    final dest = move.curve!.offsetDest(1);
+    final start = move.worldPosition(grid, sitY);
+    expect(start.x, closeTo(edge.dx, 0.2));
+    expect(start.z, closeTo(edge.dy, 0.2));
+    expect(move.overlayAlong, 0);
+    step(move, dt: slide.stopSeconds);
+    expect(move.phase, MovementPhase.idle);
+    final ended = move.worldPosition(grid, sitY);
+    expect(ended.x, closeTo(dest.dx, 1e-4));
+    expect(ended.z, closeTo(dest.dy, 1e-4));
+    expect(ended.x, greaterThan(start.x));
   });
 
   test('open path settles on the last tile then is idle', () {
@@ -127,16 +205,10 @@ void main() {
     expect(move.isMoving, isFalse);
     expect(move.overlayAlong, 0);
     expect(move.pitch, 0);
-  });
-
-  test('start flourish begins from the first tile without moving distance', () {
-    final move = openWalk(flourish: true);
-    expect(move.phase, MovementPhase.starting);
-    expect(move.distance, 0);
-    step(move, dt: profile.startSeconds / 2);
-    expect(move.distance, 0);
-    expect(move.overlayAlong, lessThan(0));
-    expect(move.pitch, greaterThan(0));
+    final dest = move.curve!.offsetDest(move.tiles.length - 1);
+    final pos = move.worldPosition(grid, sitY);
+    expect(pos.x, closeTo(dest.dx, 1e-4));
+    expect(pos.z, closeTo(dest.dy, 1e-4));
   });
 
   test('start and stop requests are ignored in the wrong phase', () {

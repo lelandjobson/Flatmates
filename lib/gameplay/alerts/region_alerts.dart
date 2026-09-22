@@ -20,7 +20,7 @@ import 'world_alert.dart';
 /// copied subgraph list or drifted subgraph id cannot keep the alert up
 /// after an opening is already on the graph.
 bool regionSubgraphConnectedToPath(
-  WallRegion region,
+  Playground region,
   ConnectionGraph graph, {
   WallStore? walls,
   PathStore? paths,
@@ -40,7 +40,7 @@ bool regionSubgraphConnectedToPath(
   return false;
 }
 
-bool _regionOpeningJoins(GraphAnchor anchor, WallRegion region) {
+bool _regionOpeningJoins(GraphAnchor anchor, Playground region) {
   if (anchor.kind != GraphAnchorKind.regionOpening) return false;
   final id = ConnectionGraph.regionSubgraphId(region);
   if (anchor.innerSubgraphId == id || anchor.outerSubgraphId == id) {
@@ -51,13 +51,13 @@ bool _regionOpeningJoins(GraphAnchor anchor, WallRegion region) {
   return innerIn != outerIn;
 }
 
-String regionHostKey(WallRegion region) =>
-    'region:${ConnectionGraph.regionSubgraphId(region)}';
+String regionHostKey(Playground region) =>
+    'playground:${ConnectionGraph.regionSubgraphId(region)}';
 
 /// One sandwich per enclosed yard whose subgraph has no path attachment.
 List<WorldAlert> collectRegionAlerts({
   required ConnectionGraph graph,
-  required Iterable<WallRegion> regions,
+  required Iterable<Playground> regions,
   required VolumeGrid grid,
   required PathStore paths,
   VolumeStore? volumes,
@@ -79,7 +79,7 @@ List<WorldAlert> collectRegionAlerts({
 }
 
 WorldAlert? regionAlertFor({
-  required WallRegion region,
+  required Playground region,
   required ConnectionGraph graph,
   required VolumeGrid grid,
   required PathStore paths,
@@ -119,7 +119,7 @@ WorldAlert? regionAlertFor({
           select: true,
           tx: tile.$1,
           ty: tile.$2,
-          selectKind: SelectableKind.region,
+          selectKind: SelectableKind.playground,
         ),
       ),
     ],
@@ -128,7 +128,7 @@ WorldAlert? regionAlertFor({
 
 /// Outdoor tile where a path (or gate click) would attach this region.
 (int, int) gateCandidateTile({
-  required WallRegion region,
+  required Playground region,
   required PathStore paths,
   VolumeStore? volumes,
 }) {

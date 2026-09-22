@@ -21,13 +21,43 @@ void main() {
     expect(isFocusClick(const Offset(50, 50), viewport), isFalse);
   });
 
-  test('tiles cannot focus; created objects can', () {
+  test('only wall faces can click-focus; looking-down tiles cannot', () {
     expect(canFocusHit(SelectableHit.tile(1, 1)), isFalse);
-    expect(canFocusHit(SelectableHit.volume(2)), isTrue);
-    expect(canFocusHit(SelectableHit.path(3, 4)), isTrue);
+    expect(canFocusHit(SelectableHit.volume(2)), isFalse);
+    expect(canFocusHit(SelectableHit.path(3, 4)), isFalse);
     expect(
       canFocusHit(
-        SelectableHit.region(WallRegion({(1, 1)}), tx: 1, ty: 1),
+        SelectableHit.playground(Playground({(1, 1)}), tx: 1, ty: 1),
+      ),
+      isFalse,
+    );
+    expect(
+      canFocusHit(
+        SelectableHit.volumeFace(
+          2,
+          face: VolumeFace.posY,
+          cell: VolumeCell(tx: 1, ty: 1, box: BoxPrimitive()),
+        ),
+      ),
+      isFalse,
+    );
+    expect(
+      canFocusHit(
+        SelectableHit.volumeFace(
+          2,
+          face: VolumeFace.negY,
+          cell: VolumeCell(tx: 1, ty: 1, box: BoxPrimitive()),
+        ),
+      ),
+      isFalse,
+    );
+    expect(
+      canFocusHit(
+        SelectableHit.volumeFace(
+          2,
+          face: VolumeFace.posX,
+          cell: VolumeCell(tx: 1, ty: 1, box: BoxPrimitive()),
+        ),
       ),
       isTrue,
     );
@@ -35,7 +65,7 @@ void main() {
       canFocusHit(
         SelectableHit.volumeFace(
           2,
-          face: VolumeFace.posY,
+          face: VolumeFace.negZ,
           cell: VolumeCell(tx: 1, ty: 1, box: BoxPrimitive()),
         ),
       ),

@@ -20,11 +20,11 @@ void main() {
 
   test('create tools wrap around the scalable list', () {
     expect(GameCreateTool.volume.stepped(1), GameCreateTool.path);
-    expect(GameCreateTool.path.stepped(1), GameCreateTool.region);
-    expect(GameCreateTool.region.stepped(1), GameCreateTool.volume);
-    expect(GameCreateTool.region.stepped(-1), GameCreateTool.path);
-    expect(GameCreateTool.region.icon, Icons.grid_on);
-    expect(GameCreateTool.region.label, 'Regions');
+    expect(GameCreateTool.path.stepped(1), GameCreateTool.playground);
+    expect(GameCreateTool.playground.stepped(1), GameCreateTool.volume);
+    expect(GameCreateTool.playground.stepped(-1), GameCreateTool.path);
+    expect(GameCreateTool.playground.icon, Icons.grid_on);
+    expect(GameCreateTool.playground.label, 'Playgrounds');
   });
 
   test('create and edit lists stay independently listed', () {

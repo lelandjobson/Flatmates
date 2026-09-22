@@ -49,4 +49,11 @@ void main() {
     expect(center.y, closeTo(5, 1e-9));
     expect(center.z, closeTo(-3, 1e-9));
   });
+
+  test('vertical faces are walls; floors and roofs are not', () {
+    expect(VolumeFace.posX.isWall, isTrue);
+    expect(VolumeFace.negZ.isWall, isTrue);
+    expect(VolumeFace.posY.isWall, isFalse);
+    expect(VolumeFace.negY.isWall, isFalse);
+  });
 }

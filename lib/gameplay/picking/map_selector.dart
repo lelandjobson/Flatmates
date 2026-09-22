@@ -26,7 +26,7 @@ class MapSelector {
     required double distance,
     required VolumeStore volumes,
     required FriendInstanceStore friends,
-    required Iterable<WallRegion> regions,
+    required Iterable<Playground> regions,
     StuffStore? stuff,
     PathStore? paths,
     bool Function(int tx, int ty)? skipTile,
@@ -90,9 +90,9 @@ class MapSelector {
     if (paths != null && paths.contains(tile.$1, tile.$2)) {
       return SelectableHit.path(tile.$1, tile.$2, worldPoint: ground);
     }
-    final region = wallRegionContaining(regions, tile.$1, tile.$2);
+    final region = playgroundContaining(regions, tile.$1, tile.$2);
     if (region != null) {
-      return SelectableHit.region(
+      return SelectableHit.playground(
         region,
         tx: tile.$1,
         ty: tile.$2,

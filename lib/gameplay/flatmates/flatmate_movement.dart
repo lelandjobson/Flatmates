@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui';
 
 import 'package:vector_math/vector_math_64.dart';
 
@@ -27,6 +28,12 @@ class FlatmateMovement {
   double pitch = 0;
   bool stopRequested = false;
   double? stopDistance;
+
+  Offset? _startFrom;
+  Offset? _startEntry;
+  Offset _startTangent = const Offset(1, 0);
+  int? _stopDestIndex;
+  double _stopU0 = 1;
 
   bool get isMoving =>
       phase == MovementPhase.starting ||
@@ -58,6 +65,9 @@ class FlatmateMovement {
     }
     distance = t.clamp(0.0, 1.0) * built.totalLength;
     _pendingProgress = null;
+    if (phase == MovementPhase.starting) {
+      _retargetStartEntry();
+    }
   }
 
   (int, int)? get currentTile {
@@ -76,6 +86,7 @@ class FlatmateMovement {
     String seed = '',
     bool loop = false,
     bool flourish = true,
+    Offset? startFrom,
   }) {
     tiles = List<(int, int)>.from(path);
     this.profile = profile ?? this.profile;
@@ -92,7 +103,18 @@ class FlatmateMovement {
       phase = MovementPhase.idle;
       return;
     }
-    phase = flourish ? MovementPhase.starting : MovementPhase.moving;
+    _bindStartPose(startFrom);
+    if (flourish) {
+      phase = MovementPhase.starting;
+    } else {
+      _landOnCurve();
+      phase = MovementPhase.moving;
+    }
+  }
+
+  /// Aim the start flourish at the current curve slot while keeping [startFrom].
+  void captureStartFrom(Offset startFrom, {bool entryAtDistance = false}) {
+    _bindStartPose(startFrom, entryAtDistance: entryAtDistance);
   }
 
   void applyProfile(
@@ -103,6 +125,13 @@ class FlatmateMovement {
     this.profile = profile;
     if (tiles.length >= 2) {
       _rebuild(grid, paths: paths, keepFraction: true);
+    }
+    if (phase == MovementPhase.starting) {
+      _retargetStartEntry();
+    }
+    if ((phase == MovementPhase.stopping || phase == MovementPhase.settling) &&
+        _stopDestIndex != null) {
+      _recomputeStopDistance();
     }
   }
 
@@ -117,16 +146,18 @@ class FlatmateMovement {
   }
 
   /// Begin walking from the current curve distance. Does not lerp onto a tile.
-  void requestStart() {
+  void requestStart({Offset? startFrom}) {
     if (!canRequestStart) return;
     overlayAlong = 0;
     pitch = 0;
     phaseT = 0;
     stopRequested = false;
     stopDistance = null;
+    _stopDestIndex = null;
     if (tiles.length >= 3 && tiles.first == tiles.last) {
       loop = true;
     }
+    _bindStartPose(startFrom);
     phase = MovementPhase.starting;
   }
 
@@ -194,11 +225,23 @@ class FlatmateMovement {
       final c = grid.tileCenter(tiles.first.$1, tiles.first.$2);
       return Vector3(c.x, sitY, c.z);
     }
+    if (phase == MovementPhase.starting) {
+      final from = _startFrom ?? built.pointAtDistance(distance);
+      final entry = _startEntry ?? built.pointAtDistance(distance);
+      final p = Offset.lerp(from, entry, phaseT.clamp(0.0, 1.0))!;
+      final backup = _startTangent * overlayAlong;
+      return Vector3(p.dx + backup.dx, sitY, p.dy + backup.dy);
+    }
+    if (phase == MovementPhase.settling && _stopDestIndex != null) {
+      final t = phaseT.clamp(0.0, 1.0);
+      final ease = 1 - (1 - t) * (1 - t);
+      final u = _stopU0 + (1 - _stopU0) * ease;
+      final p = built.arrivalPoint(_stopDestIndex!, u);
+      return Vector3(p.dx, sitY, p.dy);
+    }
     final p = built.pointAtDistance(distance);
     final tangent = built.tangentAtDistance(distance);
-    final plant = (phase == MovementPhase.starting ||
-            phase == MovementPhase.settling) &&
-        phaseT > 0;
+    final plant = phase == MovementPhase.settling && phaseT > 0;
     final hop = plant ? 0.0 : built.hopHeightAtDistance(distance, bodySize);
     return Vector3(
       p.dx + tangent.dx * overlayAlong,
@@ -258,6 +301,54 @@ class FlatmateMovement {
     pitch = 0;
     stopRequested = false;
     stopDistance = null;
+    _startFrom = null;
+    _startEntry = null;
+    _startTangent = const Offset(1, 0);
+    _stopDestIndex = null;
+    _stopU0 = 1;
+  }
+
+  void _bindStartPose(Offset? startFrom, {bool entryAtDistance = false}) {
+    final built = curve;
+    if (built == null || built.points.isEmpty) {
+      _startFrom = startFrom;
+      _startEntry = startFrom;
+      _startTangent = const Offset(1, 0);
+      return;
+    }
+    if (startFrom != null) {
+      _startFrom = startFrom;
+      if (entryAtDistance) {
+        _startEntry = built.pointAtDistance(distance);
+        _startTangent = built.tangentAtDistance(distance);
+      } else {
+        final d = built.closestDistance(startFrom);
+        _startEntry = built.pointAtDistance(d);
+        _startTangent = built.tangentAtDistance(d);
+      }
+      return;
+    }
+    final here = built.pointAtDistance(distance);
+    _startFrom = here;
+    _startEntry = here;
+    _startTangent = built.tangentAtDistance(distance);
+  }
+
+  void _retargetStartEntry() {
+    final built = curve;
+    if (built == null || built.points.isEmpty) return;
+    _startEntry = built.pointAtDistance(distance);
+    _startTangent = built.tangentAtDistance(distance);
+  }
+
+  void _landOnCurve() {
+    final built = curve;
+    if (built == null || built.points.isEmpty) return;
+    final target = _startEntry ?? built.pointAtDistance(distance);
+    distance = built.closestDistance(target);
+    overlayAlong = 0;
+    pitch = 0;
+    phaseT = 0;
   }
 
   void _commitStopStation() {
@@ -273,7 +364,25 @@ class FlatmateMovement {
     if (loop && built.isClosed && target + 1e-6 < wrapped) {
       target += built.totalLength;
     }
-    stopDistance = target;
+    _stopDestIndex = built.destTileIndexForDistance(target);
+    _stopU0 = (1 - profile.stopSlide.clamp(0.0, 1.0));
+    _recomputeStopDistance();
+  }
+
+  void _recomputeStopDistance() {
+    final built = curve;
+    final destIndex = _stopDestIndex;
+    if (built == null || destIndex == null || built.totalLength < 1e-9) {
+      stopDistance = distance;
+      return;
+    }
+    var stopAt = built.closestDistance(built.arrivalPoint(destIndex, _stopU0));
+    if (loop && built.isClosed) {
+      final wrapped =
+          (distance % built.totalLength + built.totalLength) % built.totalLength;
+      if (stopAt + 1e-6 < wrapped) stopAt += built.totalLength;
+    }
+    stopDistance = stopAt;
   }
 
   void _tickStarting(double dt) {
@@ -281,9 +390,7 @@ class FlatmateMovement {
     phaseT = (phaseT + dt / dur).clamp(0.0, 1.0);
     _applyStartOverlay(phaseT);
     if (phaseT < 1) return;
-    overlayAlong = 0;
-    pitch = 0;
-    phaseT = 0;
+    _landOnCurve();
     if (stopRequested) {
       _commitStopStation();
       phase = MovementPhase.stopping;
@@ -311,8 +418,10 @@ class FlatmateMovement {
       }
       return;
     }
-    if (distance >= built.totalLength - 1e-6) {
-      distance = built.totalLength;
+    _armOpenPathArrival(built);
+    final target = stopDistance ?? built.totalLength;
+    if (distance + 1e-6 >= target) {
+      distance = target;
       _beginSettle();
     }
   }
@@ -349,7 +458,13 @@ class FlatmateMovement {
     pitch = 0;
     phaseT = 0;
     stopRequested = false;
+    final built = curve;
+    final destIndex = _stopDestIndex;
+    if (built != null && destIndex != null) {
+      distance = built.closestDistance(built.offsetDest(destIndex));
+    }
     stopDistance = null;
+    _stopDestIndex = null;
     phase = MovementPhase.idle;
   }
 
@@ -357,7 +472,21 @@ class FlatmateMovement {
     overlayAlong = 0;
     pitch = 0;
     phaseT = 0;
+    final built = curve;
+    if (_stopDestIndex == null && built != null) {
+      _stopDestIndex = built.destTileIndexForDistance(distance);
+      _stopU0 = 1 - profile.stopSlide.clamp(0.0, 1.0);
+    }
     phase = MovementPhase.settling;
+  }
+
+  void _armOpenPathArrival(MovementCurve built) {
+    if (stopDistance != null) return;
+    _stopDestIndex = tiles.length - 1;
+    _stopU0 = 1 - profile.stopSlide.clamp(0.0, 1.0);
+    stopDistance = built.closestDistance(
+      built.arrivalPoint(_stopDestIndex!, _stopU0),
+    );
   }
 
   void _advanceDistance({
@@ -383,9 +512,8 @@ class FlatmateMovement {
   }
 
   void _applyStopOverlay(double t) {
-    final tile = curve?.tileSize ?? 8;
+    overlayAlong = 0;
     final wave = math.sin(math.pi * t.clamp(0.0, 1.0));
-    overlayAlong = profile.stopSlide * tile * wave;
     pitch = -profile.stopTilt * wave;
   }
 }

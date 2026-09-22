@@ -28,6 +28,7 @@ void main() {
         grid: grid,
         profile: hopProfile(hopHeight: hopHeight),
         seed: 'cubeboy',
+        flourish: false,
       );
   }
 
@@ -77,6 +78,7 @@ void main() {
           grid: grid,
           profile: hopProfile(),
           seed: 'heading',
+          flourish: false,
         )
         ..progress = 0.5;
       final start = grid.tileCenter(path[0].$1, path[0].$2);
@@ -104,6 +106,7 @@ void main() {
         [(0, 0), (0, 1)],
         grid: grid,
         profile: hopProfile(hopHeight: 0),
+        flourish: false,
       );
     expect(south.facingYaw(), closeTo(0, 1e-6));
   });

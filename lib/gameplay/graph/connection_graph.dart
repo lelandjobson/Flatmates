@@ -110,7 +110,7 @@ class RegionOutLink {
     required this.outTy,
   });
 
-  final WallRegion region;
+  final Playground region;
   final WallEdge wall;
   final int inTx;
   final int inTy;
@@ -381,7 +381,7 @@ class ConnectionGraph {
 
   /// Cut region openings that have an outdoor path on the far side.
   static Iterable<RegionOutLink> regionOutLinks({
-    required Iterable<WallRegion> regions,
+    required Iterable<Playground> regions,
     required WallStore walls,
     required PathStore paths,
   }) sync* {
@@ -410,7 +410,7 @@ class ConnectionGraph {
 
   static String volumeSubgraphId(int volumeId) => 'v$volumeId';
 
-  static String regionSubgraphId(WallRegion region) {
+  static String regionSubgraphId(Playground region) {
     final tiles = region.tiles.toList()
       ..sort((a, b) => a.$1 != b.$1 ? a.$1.compareTo(b.$1) : a.$2.compareTo(b.$2));
     final first = tiles.isEmpty ? (0, 0) : tiles.first;
@@ -421,7 +421,7 @@ class ConnectionGraph {
     required VolumeStore volumes,
     required PathStore paths,
     WallStore? walls,
-    List<WallRegion> regions = const [],
+    List<Playground> regions = const [],
   }) {
     final nodeMap = <(int, int, int, NodeKind, String?), GraphNode>{};
     final edgeSet = <GraphEdge>{};
@@ -466,7 +466,7 @@ class ConnectionGraph {
       return anchor;
     }
 
-    final regionAt = <(int, int), WallRegion>{};
+    final regionAt = <(int, int), Playground>{};
     for (final region in regions) {
       for (final tile in region.tiles) {
         if (volumes.isOccupied(tile.$1, tile.$2)) continue;

@@ -32,7 +32,7 @@ void main() {
     );
   });
 
-  test('start turn goes to a path-aligned heading', () {
+  test('start turn snaps to the path tangent when inertia is 0', () {
     final facing = FriendFacing(seed: 'a', yaw: 0.2);
     facing.tick(
       0.2,
@@ -40,7 +40,7 @@ void main() {
       travelYaw: math.pi / 2,
       cameraYaw: 0,
     );
-    expect(facing.yaw, closeTo(0, 1e-6));
+    expect(facing.yaw, closeTo(math.pi / 2, 1e-6));
   });
 
   test('after stop, waits before turning to the camera', () {

@@ -43,7 +43,7 @@ List<SelectionActionSpec> inferSelectionActions({
           icon: Icons.filter_center_focus,
         ),
       ];
-    case SelectableKind.region:
+    case SelectableKind.playground:
       return const [
         SelectionActionSpec(
           id: SelectionActionId.isolate,

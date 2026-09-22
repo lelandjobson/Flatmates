@@ -30,7 +30,7 @@ class DayRouter {
     required VolumeStore volumes,
     required PathStore paths,
     WallStore? walls,
-    List<WallRegion>? regions,
+    List<Playground>? regions,
     ConnectionGraph? graph,
     bool goalNeedsPath = true,
   }) {
@@ -62,7 +62,7 @@ class DayRouter {
     required VolumeStore volumes,
     required PathStore paths,
     WallStore? walls,
-    List<WallRegion>? regions,
+    List<Playground>? regions,
     ConnectionGraph? graph,
   }) {
     if (home != null) plan.bindHome(home);

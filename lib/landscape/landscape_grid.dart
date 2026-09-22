@@ -112,7 +112,7 @@ class LandscapeGrid {
   /// Flood 4-connected pixels that share [x],[y]'s landscape material.
   ///
   /// Stops at a different material, void, or when [allow] rejects a pixel.
-  /// Used to fill one like-material pocket inside a walled region.
+  /// Used to fill one like-material pocket inside a playground.
   bool fillConnectedMaterial(
     int x,
     int y,

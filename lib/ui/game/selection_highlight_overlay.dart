@@ -45,7 +45,7 @@ bool highlightUsesFloorStyle(SelectableHit target) {
   if (target.kind == SelectableKind.volumeFace) {
     return target.face == VolumeFace.negY;
   }
-  return target.kind == SelectableKind.region ||
+  return target.kind == SelectableKind.playground ||
       target.kind == SelectableKind.tile;
 }
 
@@ -352,8 +352,8 @@ class _HighlightPainter extends CustomPainter {
         final ty = target.ty;
         if (tx == null || ty == null) return const [];
         return [_tileQuad(volumes.grid, tx, ty)];
-      case SelectableKind.region:
-        final region = target.region;
+      case SelectableKind.playground:
+        final region = target.playground;
         if (region == null) return const [];
         return [
           for (final tile in region.tiles)
@@ -396,8 +396,8 @@ class _HighlightPainter extends CustomPainter {
         final ty = target.ty;
         if (tx == null || ty == null) return const [];
         return [_tileQuad(volumes.grid, tx, ty)];
-      case SelectableKind.region:
-        final region = target.region;
+      case SelectableKind.playground:
+        final region = target.playground;
         if (region == null) return const [];
         return [
           for (final tile in region.tiles)

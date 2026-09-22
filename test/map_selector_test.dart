@@ -130,7 +130,7 @@ void main() {
       distance: 40,
       volumes: volumes,
       friends: friends,
-      regions: [WallRegion({(tx, ty)})],
+      regions: [Playground({(tx, ty)})],
       paths: paths,
     );
     expect(hit, isNotNull);

@@ -4,6 +4,7 @@ import 'package:flatmates/gameplay/volumes/volume_box_mesh.dart';
 import 'package:flatmates/gameplay/volumes/volume_ceiling_reveal.dart';
 import 'package:flatmates/gameplay/volumes/volume_content_loader.dart';
 import 'package:flatmates/gameplay/volumes/volume_datum.dart';
+import 'package:flatmates/gameplay/volumes/volume_outline.dart';
 import 'package:flatmates/gameplay/volumes/volume_store.dart';
 import 'package:flatmates/gameplay/volumes/volume_wall_cutaway.dart';
 import 'package:flatmates/rendering/scene/scene.dart';
@@ -227,6 +228,54 @@ void main() {
     expect(reveal.hidesFace(2, 2, VolumeFace.negX), isFalse);
     expect(reveal.hidesHandle(2, 2, VolumeHandle.posX), isTrue);
     expect(reveal.hidesHandle(2, 2, VolumeHandle.negX), isFalse);
+  });
+
+  test('opened tiles hide outer wall outline curves', () async {
+    final volumes = _cellAt(2, 2);
+    final loader = VolumeContentLoader(loadPart: (_) async {});
+    addTearDown(loader.dispose);
+    final reveal = VolumeCeilingReveal(
+      loader: loader,
+      fadeDuration: Duration.zero,
+    );
+    addTearDown(reveal.dispose);
+    final look = volumes.grid.tileCenter(2, 2);
+    reveal.update(
+      volumes: volumes,
+      lookAt: look,
+      distance: 18,
+      enabled: true,
+      cameraPosition: look + Vector3(12, 6, 0),
+      currentDatum: 0,
+    );
+    await Future<void>.delayed(Duration.zero);
+    final outline = buildVolumeOutline(volumes.volumes.single, volumes.grid);
+    expect(outline.edges, isNotEmpty);
+    final eastX = volumes.grid.tileOrigin(2, 2).x + volumes.grid.tileSize;
+    final eastEdges = outline.edges.where(
+      (edge) =>
+          (edge.a.x - eastX).abs() < 1e-6 && (edge.b.x - eastX).abs() < 1e-6,
+    );
+    expect(eastEdges, isNotEmpty);
+    for (final edge in outline.edges) {
+      expect(
+        reveal.outlineOpacityFor(edge, volumes.grid),
+        0,
+        reason: 'opened tile must hide wall/roof silhouette edges',
+      );
+    }
+
+    reveal.update(
+      volumes: volumes,
+      lookAt: look,
+      distance: 33,
+      enabled: true,
+      cameraPosition: look + Vector3(12, 6, 0),
+      currentDatum: 0,
+    );
+    for (final edge in outline.edges) {
+      expect(reveal.outlineOpacityFor(edge, volumes.grid), 1);
+    }
   });
 
   test('below-datum volumes stay intact while a higher story is current',

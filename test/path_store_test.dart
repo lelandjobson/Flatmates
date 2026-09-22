@@ -99,7 +99,7 @@ void main() {
     walls.add(WallEdge(4, 2, 4, 3));
     walls.add(WallEdge(3, 3, 4, 3));
     walls.add(WallEdge(3, 2, 3, 3));
-    final regions = computeEnclosedRegions(walls);
+    final regions = computeEnclosedPlaygrounds(walls);
     expect(regions.single.tiles, {(3, 2)});
     final paths = PathStore()..addIsland(4, 2);
     expect(
@@ -110,7 +110,7 @@ void main() {
     expect(paths.contains(4, 2), isTrue);
     expect(paths.hasEdge(3, 2, 4, 2), isFalse);
     expect(walls.lookup(WallEdge(4, 2, 4, 3))?.kind, WallKind.cutFence);
-    expect(computeEnclosedRegions(walls).single.tiles, {(3, 2)});
+    expect(computeEnclosedPlaygrounds(walls).single.tiles, {(3, 2)});
   });
 
   test('placeAndJoin on the approach path still cuts the region wall', () {
@@ -119,7 +119,7 @@ void main() {
     walls.add(WallEdge(4, 2, 4, 3));
     walls.add(WallEdge(3, 3, 4, 3));
     walls.add(WallEdge(3, 2, 3, 3));
-    final regions = computeEnclosedRegions(walls);
+    final regions = computeEnclosedPlaygrounds(walls);
     final paths = PathStore()..addIsland(4, 2);
     expect(
       paths.placeAndJoin(4, 2, walls: walls, regions: regions),

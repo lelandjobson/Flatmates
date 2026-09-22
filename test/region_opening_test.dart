@@ -21,7 +21,7 @@ void main() {
   test('stroke across a yard cuts both sides and skips interior tiles', () {
     final walls = WallStore();
     encloseRect(walls, 2, 2, 5, 3);
-    final regions = computeEnclosedRegions(walls);
+    final regions = computeEnclosedPlaygrounds(walls);
     expect(regions.single.tiles, {(2, 2), (3, 2), (4, 2)});
     final paths = PathStore();
     expect(
@@ -41,13 +41,13 @@ void main() {
     expect(paths.hasEdge(1, 2, 2, 2), isFalse);
     expect(walls.lookup(WallEdge(2, 2, 2, 3))?.kind, WallKind.cutFence);
     expect(walls.lookup(WallEdge(5, 2, 5, 3))?.kind, WallKind.cutFence);
-    expect(computeEnclosedRegions(walls).single.tiles, {(2, 2), (3, 2), (4, 2)});
+    expect(computeEnclosedPlaygrounds(walls).single.tiles, {(2, 2), (3, 2), (4, 2)});
   });
 
   test('removing the approach path restores a solid fence', () {
     final walls = WallStore();
     encloseRect(walls, 3, 2, 4, 3);
-    final regions = computeEnclosedRegions(walls);
+    final regions = computeEnclosedPlaygrounds(walls);
     final paths = PathStore()..addIsland(4, 2);
     expect(
       paths.placeAndJoin(3, 2, walls: walls, regions: regions),
@@ -69,7 +69,7 @@ void main() {
   test('paintStroke starting on the yard tile cuts and does not pave', () {
     final walls = WallStore();
     encloseRect(walls, 3, 2, 4, 3);
-    final regions = computeEnclosedRegions(walls);
+    final regions = computeEnclosedPlaygrounds(walls);
     final paths = PathStore()..addIsland(4, 2);
     expect(
       paths.paintStroke((3, 2), (3, 2), walls: walls, regions: regions),
@@ -89,7 +89,7 @@ void main() {
     walls.add(WallEdge(4, 3, 5, 3));
     walls.add(WallEdge(4, 4, 5, 4));
     walls.add(WallEdge(5, 3, 5, 4));
-    final regions = computeEnclosedRegions(walls);
+    final regions = computeEnclosedPlaygrounds(walls);
     expect(
       regions.any((region) => region.tiles.containsAll({(3, 3), (4, 3)})),
       isTrue,
@@ -114,13 +114,13 @@ void main() {
     expect(paths.contains(3, 3), isFalse);
     expect(paths.contains(3, 2), isTrue);
     expect(walls.lookup(WallEdge(3, 3, 4, 3))?.kind, WallKind.cutFence);
-    expect(computeEnclosedRegions(walls).single.tiles, {(3, 3), (4, 3)});
+    expect(computeEnclosedPlaygrounds(walls).single.tiles, {(3, 3), (4, 3)});
   });
 
   test('regionOpeningWallAt finds the gate from either side', () {
     final walls = WallStore();
     encloseRect(walls, 3, 2, 4, 3);
-    final regions = computeEnclosedRegions(walls);
+    final regions = computeEnclosedPlaygrounds(walls);
     final paths = PathStore()..addIsland(4, 2);
     expect(
       regionOpeningWallAt(

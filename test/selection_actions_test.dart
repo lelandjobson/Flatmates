@@ -18,7 +18,7 @@ void main() {
   test('tile and path only expose isolate; region also exposes program', () {
     expect(ids(SelectableHit.tile(2, 3)), [SelectionActionId.isolate]);
     expect(
-      ids(SelectableHit.region(WallRegion({(1, 1), (1, 2)}), tx: 1, ty: 1)),
+      ids(SelectableHit.playground(Playground({(1, 1), (1, 2)}), tx: 1, ty: 1)),
       [SelectionActionId.isolate, SelectionActionId.program],
     );
     expect(ids(SelectableHit.path(4, 5)), [SelectionActionId.isolate]);

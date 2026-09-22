@@ -120,6 +120,8 @@ void main() {
     expect(decoded.volumePaperCommitted, recording.volumePaperCommitted);
     expect(decoded.pathPaperCommitted, 1);
     expect(decoded.wallPaperCommitted, 1);
+    expect(decoded.partitionPaperCommitted, 0);
+    expect(decoded.partitionPaperPersisted, isTrue);
 
     final restored = PaperWallet();
     decoded.applyTo(
@@ -132,6 +134,68 @@ void main() {
     expect(restored.held, recording.paperHeld);
     expect(restored.pathCommitted, 1);
     expect(restored.wallCommitted, 1);
+    expect(restored.partitionCommitted, 0);
+  });
+
+  test('old saves grandfather partition cost without debiting held', () {
+    final volumes = emptyVolumes();
+    expect(volumes.paintAt(2, 2), isTrue);
+    expect(volumes.paintAt(3, 2), isTrue);
+    final held = kStartingPaper - 34;
+    final decoded = GameRecording.fromJson({
+      'schemaVersion': 2,
+      'nextVolumeId': 2,
+      'volumes': [
+        {
+          'id': volumes.volumes.single.id,
+          'datum': 0,
+          'cells': [
+            for (final cell in volumes.volumes.single.cells)
+              {
+                'tx': cell.tx,
+                'ty': cell.ty,
+                'box': {
+                  'widthSubtiles': cell.box.widthSubtiles,
+                  'depthSubtiles': cell.box.depthSubtiles,
+                  'heightSubtiles': cell.box.heightSubtiles,
+                  'originXSubtiles': cell.box.originXSubtiles,
+                  'originZSubtiles': cell.box.originZSubtiles,
+                },
+                'accessibleSides': <String>[],
+                'doorOrigins': <String, int>{},
+              },
+          ],
+        },
+      ],
+      'paths': {'tiles': <List<int>>[], 'edges': <List<int>>[]},
+      'walls': {'edges': <List<int>>[]},
+      'programs': {
+        'indoor': [
+          [2, 2, kProgramBedroom],
+        ],
+        'outdoor': <List<dynamic>>[],
+      },
+      'paper': {
+        'held': held,
+        'volumes': {'${volumes.volumes.single.id}': 34},
+        'path': 0,
+        'walls': 0,
+      },
+    });
+    expect(decoded.partitionPaperPersisted, isFalse);
+    expect(decoded.paperPersisted, isTrue);
+
+    final paper = PaperWallet();
+    decoded.applyTo(
+      volumes: emptyVolumes(),
+      paths: PathStore(),
+      walls: WallStore(),
+      facePaint: FacePaintStore(),
+      programs: VolumeProgramStore(),
+      paper: paper,
+    );
+    expect(paper.held, held);
+    expect(paper.partitionCommitted, 2);
   });
 
   test('applyTo replaces live content and landscape paint', () {
@@ -249,7 +313,7 @@ void main() {
       grid: VolumeGrid(tilesSide: vision.worldTilesSide, tileSize: 8),
     );
     walls.restore(GameRecording.sample().wallEdges);
-    final regions = computeEnclosedRegions(walls);
+    final regions = computeEnclosedPlaygrounds(walls);
     expect(regions, hasLength(4));
   });
 

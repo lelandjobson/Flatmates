@@ -61,7 +61,7 @@ enum GameMode { select, create, edit, action }
 
 enum GameEditTool { transform, paint, delete }
 
-enum GameCreateTool { volume, path, region }
+enum GameCreateTool { volume, path, playground }
 
 enum GameSelectViewFilter { all, program }
 
@@ -128,13 +128,13 @@ extension GameCreateToolX on GameCreateTool {
   IconData get icon => switch (this) {
         GameCreateTool.volume => Icons.add_box,
         GameCreateTool.path => Icons.add_road,
-        GameCreateTool.region => Icons.grid_on,
+        GameCreateTool.playground => Icons.grid_on,
       };
 
   String get label => switch (this) {
         GameCreateTool.volume => 'Volumes',
         GameCreateTool.path => 'Paths',
-        GameCreateTool.region => 'Regions',
+        GameCreateTool.playground => 'Playgrounds',
       };
 
   GameCreateTool stepped(int delta) {

@@ -2,9 +2,9 @@ import '../volumes/volume.dart';
 import 'wall_edge.dart';
 import 'wall_store.dart';
 
-/// One bounded inner face of the wall arrangement.
-class WallRegion {
-  WallRegion(Set<(int, int)> tiles) : tiles = Set<(int, int)>.from(tiles);
+/// Outdoor yard enclosed by walls. Playgrounds are created, not indoor rooms.
+class Playground {
+  Playground(Set<(int, int)> tiles) : tiles = Set<(int, int)>.from(tiles);
 
   final Set<(int, int)> tiles;
 
@@ -12,7 +12,7 @@ class WallRegion {
 
   @override
   bool operator ==(Object other) =>
-      other is WallRegion &&
+      other is Playground &&
       other.tiles.length == tiles.length &&
       other.tiles.containsAll(tiles);
 
@@ -28,10 +28,10 @@ class WallRegion {
 ///
 /// The unbounded outer face is wound opposite the inner faces (negative
 /// signed area in x/z) and is discarded. Each remaining face is its own
-/// region — two rooms that share a wall stay separate, as do nested yards.
+/// playground — two yards that share a wall stay separate, as do nested yards.
 ///
 /// See https://www.boost.org/doc/libs/1_87_0/libs/graph/doc/planar_face_traversal.html
-List<WallRegion> computeEnclosedRegions(WallStore store) {
+List<Playground> computeEnclosedPlaygrounds(WallStore store) {
   if (store.edges.isEmpty) return const [];
 
   final halfEdges = <_HalfEdge>[];
@@ -63,7 +63,7 @@ List<WallRegion> computeEnclosedRegions(WallStore store) {
     he.next = destOut[(i - 1 + destOut.length) % destOut.length];
   }
 
-  final regions = <WallRegion>[];
+  final regions = <Playground>[];
   for (final start in halfEdges) {
     if (start.visited) continue;
     final walk = <_HalfEdge>[];
@@ -91,18 +91,18 @@ List<WallRegion> computeEnclosedRegions(WallStore store) {
     // The outer face can pick up in-bounds seeds just outside a cycle; those
     // components reach the map rim. Inner faces never do.
     if (_reachesMapExterior(store, tiles)) continue;
-    regions.add(WallRegion(tiles));
+    regions.add(Playground(tiles));
   }
   return regions;
 }
 
-Set<(int, int)> enclosedTilesOf(Iterable<WallRegion> regions) {
+Set<(int, int)> enclosedTilesOf(Iterable<Playground> regions) {
   return {for (final region in regions) ...region.tiles};
 }
 
 /// Enclosed region that contains tile ([tx], [ty]), if any.
-WallRegion? wallRegionContaining(
-  Iterable<WallRegion> regions,
+Playground? playgroundContaining(
+  Iterable<Playground> regions,
   int tx,
   int ty,
 ) {
@@ -113,17 +113,17 @@ WallRegion? wallRegionContaining(
 }
 
 /// Region that uses [wall] as an outline segment, if any.
-WallRegion? regionBoundedByWall(WallEdge wall, Iterable<WallRegion> regions) {
+Playground? regionBoundedByWall(WallEdge wall, Iterable<Playground> regions) {
   final pair = wall.separatedTiles;
   if (pair == null) return null;
-  final a = wallRegionContaining(regions, pair.$1.$1, pair.$1.$2);
-  final b = wallRegionContaining(regions, pair.$2.$1, pair.$2.$2);
+  final a = playgroundContaining(regions, pair.$1.$1, pair.$1.$2);
+  final b = playgroundContaining(regions, pair.$2.$1, pair.$2.$2);
   if (a != null && b == null) return a;
   if (b != null && a == null) return b;
   return a ?? b;
 }
 
-bool wallBoundsRegion(WallEdge wall, Iterable<WallRegion> regions) =>
+bool wallBoundsRegion(WallEdge wall, Iterable<Playground> regions) =>
     regionBoundedByWall(wall, regions) != null;
 
 /// Perimeter segments of [tiles] in vertex space (unit grid edges).

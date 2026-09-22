@@ -1,7 +1,10 @@
 import '../paths/path_shape.dart';
 import '../paths/path_store.dart';
 import '../volumes/volume.dart';
+import '../volumes/volume_partition.dart';
+import '../volumes/volume_program.dart';
 import '../volumes/volume_solid.dart';
+import '../volumes/volume_store.dart';
 
 /// One paper sheet covers a 4×4 subtile square.
 const int kPaperSheetSubtiles = 16;
@@ -62,3 +65,16 @@ int pathPaperCost(
     );
 
 int wallPaperCost(int edgeCount) => edgeCount;
+
+/// Sheets for one punched partition wall (ceil leftover fragments).
+int partitionEdgePaperCost(ProgramPartition partition) =>
+    papersForArea(partition.netArea);
+
+/// Sum of per-edge sheet counts so joining a room refunds that wall exactly.
+int partitionPaperCost(VolumeStore volumes, VolumeProgramStore programs) {
+  var total = 0;
+  for (final partition in collectProgramPartitions(volumes, programs)) {
+    total += partitionEdgePaperCost(partition);
+  }
+  return total;
+}

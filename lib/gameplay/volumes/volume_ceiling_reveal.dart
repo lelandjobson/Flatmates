@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/scheduler.dart';
 import 'package:vector_math/vector_math_64.dart';
 
@@ -120,7 +122,9 @@ class VolumeCeilingReveal {
   bool hidesHandle(int tx, int ty, VolumeHandle handle) =>
       featureOpacityForHandle(tx, ty, handle) <= kVolumeFeatureHiddenOpacity;
 
-  /// Roof edges fade with the ceiling. Cutaway wall edges follow wall opacity.
+  /// Roof edges fade with the ceiling. Looking into a tile also hides its
+  /// outer wall silhouette, including perimeter edges that sit on the tile
+  /// boundary (those would otherwise resolve to the empty neighbor).
   double outlineOpacityFor(OutlineEdge edge, VolumeGrid grid) {
     if (edge.faces.isEmpty) return 1;
     final mid = Vector3(
@@ -128,19 +132,60 @@ class VolumeCeilingReveal {
       (edge.a.y + edge.b.y) * 0.5,
       (edge.a.z + edge.b.z) * 0.5,
     );
-    final tile = grid.tileAtWorld(mid);
-    if (tile == null) return 1;
-    if (edge.faces.every((face) => face.normal.y > 0.85)) {
-      return opacityFor(VolumePartId(tile.$1, tile.$2));
+    var opacity = 1.0;
+    var anyVolume = false;
+    for (final tile in _outlineTiles(edge, mid, grid)) {
+      if (_volumes?.volumeAt(tile.$1, tile.$2) == null) continue;
+      anyVolume = true;
+      final ceiling = opacityFor(VolumePartId(tile.$1, tile.$2));
+      if (ceiling < opacity) opacity = ceiling;
     }
-    final n = edge.faces.first.normal;
-    final face = n.x.abs() > 0.85
-        ? (n.x > 0 ? VolumeFace.posX : VolumeFace.negX)
-        : n.z.abs() > 0.85
-            ? (n.z > 0 ? VolumeFace.posZ : VolumeFace.negZ)
-            : null;
-    if (face == null) return 1;
-    return featureOpacityForFace(tile.$1, tile.$2, face);
+    return anyVolume ? opacity : 1;
+  }
+
+  /// Tiles that own [edge]. Perimeter samples are pushed inward so a wall on
+  /// x = tileMax still counts as the occupied cell, not the neighbor. Corner
+  /// edges combine both face normals so they do not slide onto a diagonal.
+  Set<(int, int)> _outlineTiles(
+    OutlineEdge edge,
+    Vector3 mid,
+    VolumeGrid grid,
+  ) {
+    const inset = 0.25;
+    final tiles = <(int, int)>{};
+    void add(Vector3 point) {
+      final tile = grid.tileAtWorld(point);
+      if (tile != null) tiles.add(tile);
+    }
+
+    add(mid);
+    var ix = 0.0;
+    var iy = 0.0;
+    var iz = 0.0;
+    for (final face in edge.faces) {
+      add(face.center);
+      add(
+        Vector3(
+          mid.x - face.normal.x * inset,
+          mid.y - face.normal.y * inset,
+          mid.z - face.normal.z * inset,
+        ),
+      );
+      ix -= face.normal.x;
+      iy -= face.normal.y;
+      iz -= face.normal.z;
+    }
+    final len = math.sqrt(ix * ix + iy * iy + iz * iz);
+    if (len > 1e-8) {
+      add(
+        Vector3(
+          mid.x + ix / len * inset,
+          mid.y + iy / len * inset,
+          mid.z + iz / len * inset,
+        ),
+      );
+    }
+    return tiles;
   }
 
   void update({

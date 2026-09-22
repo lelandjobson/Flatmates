@@ -4,6 +4,7 @@ import 'package:vector_math/vector_math_64.dart' hide Colors;
 import '../../gameplay/outlines/applique_outline.dart';
 import '../../gameplay/outlines/outline_paint.dart';
 import '../../gameplay/picking/focus_sticker.dart';
+import '../../gameplay/viewers/world_plane.dart';
 import '../../gameplay/volumes/volume.dart';
 import '../../gameplay/volumes/volume_applique.dart';
 import '../../gameplay/volumes/volume_door.dart';
@@ -22,6 +23,8 @@ class VolumeDoorOverlay extends StatelessWidget {
     required this.viewport,
     this.listenable,
     this.tileVisible,
+    this.faceHidden,
+    this.interiorRevealed,
     this.selectedVolumeId,
     this.selectedTx,
     this.selectedTy,
@@ -37,6 +40,8 @@ class VolumeDoorOverlay extends StatelessWidget {
   final Size viewport;
   final Listenable? listenable;
   final bool Function(int tx, int ty)? tileVisible;
+  final bool Function(int tx, int ty, VolumeFace face)? faceHidden;
+  final bool Function(int tx, int ty)? interiorRevealed;
   final int? selectedVolumeId;
   final int? selectedTx;
   final int? selectedTy;
@@ -67,6 +72,8 @@ class VolumeDoorOverlay extends StatelessWidget {
           camera: camera,
           viewport: viewport,
           tileVisible: tileVisible,
+          faceHidden: faceHidden,
+          interiorRevealed: interiorRevealed,
           selectedVolumeId: selectedVolumeId,
           selectedTx: selectedTx,
           selectedTy: selectedTy,
@@ -87,6 +94,8 @@ class _DoorAppliquePainter extends CustomPainter {
     required this.camera,
     required this.viewport,
     this.tileVisible,
+    this.faceHidden,
+    this.interiorRevealed,
     this.selectedVolumeId,
     this.selectedTx,
     this.selectedTy,
@@ -101,6 +110,8 @@ class _DoorAppliquePainter extends CustomPainter {
   final Camera camera;
   final Size viewport;
   final bool Function(int tx, int ty)? tileVisible;
+  final bool Function(int tx, int ty, VolumeFace face)? faceHidden;
+  final bool Function(int tx, int ty)? interiorRevealed;
   final int? selectedVolumeId;
   final int? selectedTx;
   final int? selectedTy;
@@ -117,31 +128,23 @@ class _DoorAppliquePainter extends CustomPainter {
         if (layer != 0) return layer;
         return a.id.compareTo(b.id);
       });
-    for (final piece in ordered) {
-      final visible = tileVisible;
-      if (visible != null && !visible(piece.tx, piece.ty)) continue;
-      final volume = volumes.volumeById(piece.volumeId);
-      final cell = volume?.cellAt(piece.tx, piece.ty);
-      if (volume == null || cell == null) continue;
+    final papers = visibleAppliquePapers(
+      appliques: ordered,
+      volumes: volumes,
+      camera: camera.position,
+      tileVisible: tileVisible,
+      faceHidden: faceHidden,
+      interiorRevealed: interiorRevealed,
+    );
+    for (final paper in papers) {
+      final piece = paper.piece;
       final selected = piece.kind == VolumeAppliqueKind.door &&
           piece.volumeId == selectedVolumeId &&
           piece.tx == selectedTx &&
           piece.ty == selectedTy &&
           piece.side == selectedSide;
       if (selected && draftCorners != null) continue;
-      final corners = appliqueWorldCorners(
-        grid: volumes.grid,
-        cell: cell,
-        piece: piece,
-      );
-      if (!doorFacesCamera(
-        face: piece.face,
-        corners: corners,
-        cameraPosition: camera.position,
-      )) {
-        continue;
-      }
-      final pts = _project(corners);
+      final pts = _project(paper.corners);
       if (pts == null) continue;
       canvas.drawPath(
         Path()..addPolygon(pts, true),
@@ -199,6 +202,8 @@ class _DoorAppliquePainter extends CustomPainter {
       volumes: volumes,
       camera: camera.position,
       tileVisible: tileVisible,
+      faceHidden: faceHidden,
+      interiorRevealed: interiorRevealed,
     );
     if (edges.isEmpty) return;
     paintOutlineEdges(

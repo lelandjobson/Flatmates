@@ -23,6 +23,7 @@ void main() {
       stopSlide: 0.25,
       stopSeconds: 0.4,
       stopTilt: 0.15,
+      rotationInertia: 0.4,
     );
     final copy = MovementProfile.fromJson(original.toJson());
     expect(copy, original);
@@ -43,6 +44,7 @@ void main() {
       'stopSlide': 9,
       'stopSeconds': 0,
       'stopTilt': 2,
+      'rotationInertia': 4,
     });
     expect(profile.movementTileRatio, 3);
     expect(profile.offset, 0);
@@ -52,9 +54,10 @@ void main() {
     expect(profile.startBackup, 0.5);
     expect(profile.startSeconds, 0.05);
     expect(profile.startTilt, 0.45);
-    expect(profile.stopSlide, 0.6);
+    expect(profile.stopSlide, 1);
     expect(profile.stopSeconds, 0.05);
     expect(profile.stopTilt, 0.45);
+    expect(profile.rotationInertia, 1);
   });
 
   test('slug strips punctuation', () {

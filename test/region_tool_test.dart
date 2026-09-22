@@ -24,7 +24,7 @@ void main() {
     expect(result.lastSeed, (3, 4));
     expect(result.addEdges, hasLength(4));
     expect(result.removeEdges, isEmpty);
-    final regions = computeEnclosedRegions(store);
+    final regions = computeEnclosedPlaygrounds(store);
     expect(regions, hasLength(1));
     expect(regions.single.tiles, {(3, 4)});
   });
@@ -38,7 +38,7 @@ void main() {
       ty: 4,
       lastSeed: null,
     );
-    final regions = computeEnclosedRegions(store);
+    final regions = computeEnclosedPlaygrounds(store);
     final second = applyRegionFill(
       walls: store,
       regions: regions,
@@ -49,7 +49,7 @@ void main() {
     expect(second.changed, isTrue);
     expect(second.lastSeed, first.lastSeed);
     expect(store.contains(WallEdge(4, 4, 4, 5)), isFalse);
-    final next = computeEnclosedRegions(store);
+    final next = computeEnclosedPlaygrounds(store);
     expect(next, hasLength(1));
     expect(next.single.tiles, {(3, 4), (4, 4)});
   });
@@ -64,7 +64,7 @@ void main() {
       lastSeed: null,
     );
     encloseTile(store, 3, 0);
-    final regions = computeEnclosedRegions(store);
+    final regions = computeEnclosedPlaygrounds(store);
     expect(regions, hasLength(2));
     final extra = applyRegionFill(
       walls: store,
@@ -76,17 +76,17 @@ void main() {
     expect(extra.changed, isTrue);
     expect(extra.lastSeed, first.lastSeed);
     expect(store.contains(WallEdge(4, 0, 4, 1)), isTrue);
-    final next = computeEnclosedRegions(store);
+    final next = computeEnclosedPlaygrounds(store);
     expect(next, hasLength(3));
-    expect(wallRegionContaining(next, 0, 0)?.tiles, {(0, 0)});
-    expect(wallRegionContaining(next, 3, 0)?.tiles, {(3, 0)});
-    expect(wallRegionContaining(next, 4, 0)?.tiles, {(4, 0)});
+    expect(playgroundContaining(next, 0, 0)?.tiles, {(0, 0)});
+    expect(playgroundContaining(next, 3, 0)?.tiles, {(3, 0)});
+    expect(playgroundContaining(next, 4, 0)?.tiles, {(4, 0)});
   });
 
   test('last null next to an existing region adopts and merges', () {
     final store = WallStore();
     encloseTile(store, 0, 0);
-    final regions = computeEnclosedRegions(store);
+    final regions = computeEnclosedPlaygrounds(store);
     final result = applyRegionFill(
       walls: store,
       regions: regions,
@@ -97,7 +97,7 @@ void main() {
     expect(result.changed, isTrue);
     expect(result.lastSeed, (1, 0));
     expect(store.contains(WallEdge(1, 0, 1, 1)), isFalse);
-    final next = computeEnclosedRegions(store);
+    final next = computeEnclosedPlaygrounds(store);
     expect(next, hasLength(1));
     expect(next.single.tiles, {(0, 0), (1, 0)});
   });
@@ -106,7 +106,7 @@ void main() {
     final store = WallStore();
     encloseTile(store, 2, 1);
     encloseTile(store, 3, 2);
-    final regions = computeEnclosedRegions(store);
+    final regions = computeEnclosedPlaygrounds(store);
     expect(regions, hasLength(2));
     final result = applyRegionFill(
       walls: store,
@@ -118,16 +118,16 @@ void main() {
     expect(result.changed, isTrue);
     expect(store.contains(WallEdge(2, 2, 3, 2)), isFalse);
     expect(store.contains(WallEdge(3, 2, 3, 3)), isTrue);
-    final next = computeEnclosedRegions(store);
+    final next = computeEnclosedPlaygrounds(store);
     expect(next, hasLength(2));
-    expect(wallRegionContaining(next, 2, 1)?.tiles, {(2, 1), (2, 2)});
-    expect(wallRegionContaining(next, 3, 2)?.tiles, {(3, 2)});
+    expect(playgroundContaining(next, 2, 1)?.tiles, {(2, 1), (2, 2)});
+    expect(playgroundContaining(next, 3, 2)?.tiles, {(3, 2)});
   });
 
   test('fill on an enclosed tile adopts when last is null and no-ops when set', () {
     final store = WallStore();
     encloseTile(store, 5, 5);
-    final regions = computeEnclosedRegions(store);
+    final regions = computeEnclosedPlaygrounds(store);
     final adopt = previewRegionFill(
       walls: store,
       regions: regions,
@@ -164,7 +164,7 @@ void main() {
     final horizontal = WallEdge(1, 1, 2, 1);
     store.add(vertical);
     store.add(horizontal);
-    final regions = computeEnclosedRegions(store);
+    final regions = computeEnclosedPlaygrounds(store);
     expect(regions, hasLength(2));
     final merge = dividerMergeEdges(vertical, regions, store);
     expect(merge, isNotNull);
@@ -175,11 +175,11 @@ void main() {
   test('resolved last seed clears when that tile is no longer enclosed', () {
     final store = WallStore();
     encloseTile(store, 1, 1);
-    final regions = computeEnclosedRegions(store);
+    final regions = computeEnclosedPlaygrounds(store);
     expect(resolvedLastRegionSeed(regions, (1, 1)), (1, 1));
     expect(store.remove(WallEdge(1, 1, 2, 1)), isTrue);
     expect(
-      resolvedLastRegionSeed(computeEnclosedRegions(store), (1, 1)),
+      resolvedLastRegionSeed(computeEnclosedPlaygrounds(store), (1, 1)),
       isNull,
     );
   });
@@ -194,7 +194,7 @@ void main() {
       lastSeed: null,
     );
     encloseTile(store, 2, 0);
-    final regions = computeEnclosedRegions(store);
+    final regions = computeEnclosedPlaygrounds(store);
     final result = applyRegionFill(
       walls: store,
       regions: regions,
@@ -205,8 +205,8 @@ void main() {
     expect(result.lastSeed, first.lastSeed);
     expect(store.contains(WallEdge(1, 0, 1, 1)), isFalse);
     expect(store.contains(WallEdge(2, 0, 2, 1)), isTrue);
-    final next = computeEnclosedRegions(store);
-    expect(wallRegionContaining(next, 0, 0)?.tiles, {(0, 0), (1, 0)});
-    expect(wallRegionContaining(next, 2, 0)?.tiles, {(2, 0)});
+    final next = computeEnclosedPlaygrounds(store);
+    expect(playgroundContaining(next, 0, 0)?.tiles, {(0, 0), (1, 0)});
+    expect(playgroundContaining(next, 2, 0)?.tiles, {(2, 0)});
   });
 }

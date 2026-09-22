@@ -99,7 +99,7 @@ ErasePreview _primaryOnly({
         }
       case SelectableKind.path:
         if (filter.paths) return ErasePreview(hits: [primary]);
-      case SelectableKind.region:
+      case SelectableKind.playground:
       case SelectableKind.tile:
       case SelectableKind.friend:
       case SelectableKind.stuff:

@@ -42,6 +42,49 @@ void main() {
     );
   });
 
+  test('program selection drops when the floor closes or the tile leaves view',
+      () {
+    expect(
+      keepProgramSelection(floorVisible: true, tileInView: true),
+      isTrue,
+    );
+    expect(
+      keepProgramSelection(floorVisible: false, tileInView: true),
+      isFalse,
+    );
+    expect(
+      keepProgramSelection(floorVisible: true, tileInView: false),
+      isFalse,
+    );
+    expect(
+      programTileOnScreen(
+        screenX: 12,
+        screenY: 20,
+        viewportWidth: 400,
+        viewportHeight: 300,
+      ),
+      isTrue,
+    );
+    expect(
+      programTileOnScreen(
+        screenX: -4,
+        screenY: 20,
+        viewportWidth: 400,
+        viewportHeight: 300,
+      ),
+      isFalse,
+    );
+    expect(
+      programTileOnScreen(
+        screenX: 12,
+        screenY: 20,
+        viewportWidth: 0,
+        viewportHeight: 0,
+      ),
+      isTrue,
+    );
+  });
+
   test('floors are visible in interior viewers or when the ceiling is down', () {
     expect(
       volumeFloorVisible(interiorViewer: true, ceilingHidesFloor: true),

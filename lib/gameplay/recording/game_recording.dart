@@ -42,6 +42,8 @@ class GameRecording {
     this.volumePaperCommitted = const {},
     this.pathPaperCommitted = 0,
     this.wallPaperCommitted = 0,
+    this.partitionPaperCommitted = 0,
+    this.partitionPaperPersisted = false,
     this.paperPersisted = false,
     this.version = currentSchemaVersion,
   }) : programs = programs ?? VolumeProgramStore();
@@ -69,6 +71,8 @@ class GameRecording {
   final Map<int, int> volumePaperCommitted;
   final int pathPaperCommitted;
   final int wallPaperCommitted;
+  final int partitionPaperCommitted;
+  final bool partitionPaperPersisted;
   final bool paperPersisted;
 
   factory GameRecording.empty() => GameRecording(
@@ -470,6 +474,8 @@ class GameRecording {
           : Map<int, int>.from(paper.volumeCommitted),
       pathPaperCommitted: paper?.pathCommitted ?? 0,
       wallPaperCommitted: paper?.wallCommitted ?? 0,
+      partitionPaperCommitted: paper?.partitionCommitted ?? 0,
+      partitionPaperPersisted: paper != null,
       paperPersisted: paper != null,
     );
   }
@@ -533,10 +539,18 @@ class GameRecording {
       restored.volumeCommitted.addAll(volumePaperCommitted);
       restored.pathCommitted = pathPaperCommitted;
       restored.wallCommitted = wallPaperCommitted;
+      restored.partitionCommitted = partitionPaperPersisted
+          ? partitionPaperCommitted
+          : partitionPaperCost(volumes, programs ?? this.programs);
       paper.restoreFrom(restored);
     } else {
       paper.restoreFrom(PaperWallet());
-      paper.settleWorld(volumes: volumes, paths: paths, walls: walls);
+      paper.settleWorld(
+        volumes: volumes,
+        paths: paths,
+        walls: walls,
+        programs: programs ?? this.programs,
+      );
     }
   }
 
@@ -617,6 +631,7 @@ class GameRecording {
             },
             'path': pathPaperCommitted,
             'walls': wallPaperCommitted,
+            'partitions': partitionPaperCommitted,
           },
       };
 
@@ -743,6 +758,10 @@ class GameRecording {
       volumePaperCommitted: volumePaper,
       pathPaperCommitted: paperMap == null ? 0 : (_int(paperMap['path']) ?? 0),
       wallPaperCommitted: paperMap == null ? 0 : (_int(paperMap['walls']) ?? 0),
+      partitionPaperCommitted:
+          paperMap == null ? 0 : (_int(paperMap['partitions']) ?? 0),
+      partitionPaperPersisted:
+          paperMap != null && paperMap.containsKey('partitions'),
       paperPersisted: paperMap != null,
     );
     if (version >= 2) return loaded;

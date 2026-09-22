@@ -91,10 +91,10 @@ class FocusRegion {
     );
   }
 
-  /// Enclosed wall-region tiles plus [pad] tiles of context on every side.
-  factory FocusRegion.aroundWallRegion({
+  /// Enclosed playground tiles plus [pad] tiles of context on every side.
+  factory FocusRegion.aroundPlayground({
     required VolumeGrid grid,
-    required WallRegion region,
+    required Playground region,
     int pad = 1,
   }) {
     return FocusRegion.aroundTiles(
@@ -169,22 +169,22 @@ class FocusRegion {
 
 /// Isolation rectangle for a map click or look-at.
 ///
-/// Prefers the [volume] bbox, then the wall region that contains [tx],[ty],
+/// Prefers the [volume] bbox, then the playground that contains [tx],[ty],
 /// then the tile and its neighbors. Always a padded rectangle.
 FocusRegion isolateFocusRegion({
   required VolumeGrid grid,
   required int tx,
   required int ty,
   Volume? volume,
-  Iterable<WallRegion> wallRegions = const [],
+  Iterable<Playground> playgrounds = const [],
   int pad = 1,
 }) {
   if (volume != null && volume.cells.isNotEmpty) {
     return FocusRegion.aroundVolume(grid: grid, volume: volume, pad: pad);
   }
-  for (final region in wallRegions) {
+  for (final region in playgrounds) {
     if (region.tiles.contains((tx, ty))) {
-      return FocusRegion.aroundWallRegion(
+      return FocusRegion.aroundPlayground(
         grid: grid,
         region: region,
         pad: pad,

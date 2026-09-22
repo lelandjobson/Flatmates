@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui';
 
+import '../viewers/world_plane.dart';
 import 'selectable.dart';
 
 /// Fraction of screen width used as the focus-click radius.
@@ -22,8 +23,9 @@ bool isFocusClick(Offset local, Size viewport) {
   return (local - center).distance <= focusClickRadius(viewport.width);
 }
 
-/// Created objects (including paths and regions) can enter a viewer.
-bool canFocusHit(SelectableHit hit) => hit.isCreatedObject;
+/// Wall faces can enter a viewer. Looking-down tiles, floors, and roofs cannot.
+bool canFocusHit(SelectableHit hit) =>
+    hit.kind == SelectableKind.volumeFace && (hit.face?.isWall ?? false);
 
 /// A second center click on the current selection, or a double-tap, focuses.
 bool shouldEnterFocus({

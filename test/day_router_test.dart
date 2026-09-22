@@ -173,7 +173,7 @@ void main() {
     walls.add(WallEdge(5, 3, 6, 3));
     walls.add(WallEdge(5, 2, 5, 3));
     expect(walls.cut(WallEdge(5, 2, 5, 3)), isTrue);
-    final regions = computeEnclosedRegions(walls);
+    final regions = computeEnclosedPlaygrounds(walls);
     expect(regions.single.tiles, {(5, 2)});
     final paths = PathStore(grid: grid)
       ..connect(3, 2, 4, 2);
@@ -213,7 +213,7 @@ void main() {
     walls.add(WallEdge(6, 2, 6, 3));
     expect(walls.cut(WallEdge(3, 2, 3, 3)), isTrue);
     expect(walls.cut(WallEdge(6, 2, 6, 3)), isTrue);
-    final regions = computeEnclosedRegions(walls);
+    final regions = computeEnclosedPlaygrounds(walls);
     expect(regions.single.tiles, {(3, 2), (4, 2), (5, 2)});
     final paths = PathStore(grid: grid)
       ..addIsland(2, 2)

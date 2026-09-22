@@ -68,12 +68,12 @@ void main() {
   });
 
   test('wall region click isolates the region bbox plus one tile', () {
-    final yard = WallRegion({(2, 2), (3, 2), (2, 3), (3, 3)});
+    final yard = Playground({(2, 2), (3, 2), (2, 3), (3, 3)});
     final region = isolateFocusRegion(
       grid: grid,
       tx: 3,
       ty: 2,
-      wallRegions: [yard],
+      playgrounds: [yard],
     );
     expect(region.minTx, 1);
     expect(region.minTy, 1);
@@ -84,7 +84,7 @@ void main() {
   });
 
   test('C-shaped wall region still isolates a rectangle', () {
-    final mouth = WallRegion({
+    final mouth = Playground({
       (2, 1),
       (3, 1),
       (4, 1),
@@ -97,7 +97,7 @@ void main() {
       grid: grid,
       tx: 4,
       ty: 1,
-      wallRegions: [mouth],
+      playgrounds: [mouth],
     );
     expect(region.contains(3, 2), isTrue);
     expect(region.contains(4, 2), isTrue);
@@ -122,13 +122,13 @@ void main() {
         VolumeCell(tx: 3, ty: 2, box: BoxPrimitive()),
       ],
     );
-    final yard = WallRegion({(1, 1), (2, 1), (3, 1), (1, 2), (2, 2), (3, 2)});
+    final yard = Playground({(1, 1), (2, 1), (3, 1), (1, 2), (2, 2), (3, 2)});
     final region = isolateFocusRegion(
       grid: grid,
       tx: 2,
       ty: 2,
       volume: volume,
-      wallRegions: [yard],
+      playgrounds: [yard],
     );
     expect(region.minTx, 1);
     expect(region.maxTx, 4);

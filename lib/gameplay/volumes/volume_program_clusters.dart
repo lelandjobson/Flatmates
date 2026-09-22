@@ -61,7 +61,7 @@ List<ProgramCluster> indoorProgramClusters({
 }
 
 List<ProgramCluster> outdoorProgramClusters({
-  required Iterable<WallRegion> regions,
+  required Iterable<Playground> regions,
   required VolumeProgramStore programs,
   required VolumeGrid grid,
   required WallStore walls,
@@ -113,7 +113,7 @@ Vector3 volumeTopCenter(Volume volume, VolumeGrid grid) {
   return Vector3((minX + maxX) * 0.5, maxY + 0.8, (minZ + maxZ) * 0.5);
 }
 
-Vector3 regionTopCenter(WallRegion region, VolumeGrid grid) {
+Vector3 regionTopCenter(Playground region, VolumeGrid grid) {
   final c = _regionCentroid(region.tiles, grid);
   return Vector3(c.x, 1.2, c.z);
 }

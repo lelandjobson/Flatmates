@@ -82,7 +82,7 @@ class PathStore {
     int bx,
     int by, {
     required WallStore walls,
-    required Iterable<WallRegion> regions,
+    required Iterable<Playground> regions,
   }) {
     final wall = PathEdge(ax, ay, bx, by).crossingWall;
     return walls.contains(wall) && wallBoundsRegion(wall, regions);
@@ -96,7 +96,7 @@ class PathStore {
     int tx,
     int ty, {
     required WallStore walls,
-    required Iterable<WallRegion> regions,
+    required Iterable<Playground> regions,
   }) {
     for (final side in VolumeSide.values) {
       final (dx, dy) = side.tileDelta;
@@ -108,8 +108,8 @@ class PathStore {
       final therePath = contains(nx, ny);
       if (herePath == therePath) continue;
       final bounds = wallBoundsRegion(wall, regions);
-      final hereIn = wallRegionContaining(regions, tx, ty) != null;
-      final thereIn = wallRegionContaining(regions, nx, ny) != null;
+      final hereIn = playgroundContaining(regions, tx, ty) != null;
+      final thereIn = playgroundContaining(regions, nx, ny) != null;
       if (bounds || hereIn || thereIn) return wall;
     }
     return null;
@@ -120,7 +120,7 @@ class PathStore {
     int tx,
     int ty, {
     required WallStore walls,
-    required Iterable<WallRegion> regions,
+    required Iterable<Playground> regions,
   }) {
     final wall = gateWallAt(tx, ty, walls: walls, regions: regions);
     if (wall == null) return false;
@@ -144,7 +144,7 @@ class PathStore {
     int ty, {
     bool Function(int tx, int ty)? blocked,
     WallStore? walls,
-    Iterable<WallRegion>? regions,
+    Iterable<Playground>? regions,
   }) {
     if (!grid.inBounds(tx, ty)) return false;
     if (blocked?.call(tx, ty) ?? false) return false;
@@ -208,7 +208,7 @@ class PathStore {
     int by, {
     bool Function(int tx, int ty)? blocked,
     WallStore? walls,
-    Iterable<WallRegion>? regions,
+    Iterable<Playground>? regions,
   }) {
     final edge = PathEdge(ax, ay, bx, by);
     if (!edge.isOrtho) return false;
@@ -219,8 +219,8 @@ class PathStore {
         regions != null &&
         _opensRegion(ax, ay, bx, by, walls: walls, regions: regions)) {
       var changed = walls.cut(edge.crossingWall);
-      final aIn = wallRegionContaining(regions, ax, ay) != null;
-      final bIn = wallRegionContaining(regions, bx, by) != null;
+      final aIn = playgroundContaining(regions, ax, ay) != null;
+      final bIn = playgroundContaining(regions, bx, by) != null;
       if (!aIn && tiles.add((ax, ay))) changed = true;
       if (!bIn && tiles.add((bx, by))) changed = true;
       return changed;
@@ -241,7 +241,7 @@ class PathStore {
     bool Function(int tx, int ty)? blocked,
     bool Function(int tx, int ty)? skippable,
     WallStore? walls,
-    Iterable<WallRegion>? regions,
+    Iterable<Playground>? regions,
   }) {
     bool skip(int tx, int ty) => skippable?.call(tx, ty) ?? false;
     bool block(int tx, int ty) => blocked?.call(tx, ty) ?? false;
@@ -253,7 +253,7 @@ class PathStore {
     var crossingYard = false;
 
     bool inRegion(int tx, int ty) =>
-        regions != null && wallRegionContaining(regions, tx, ty) != null;
+        regions != null && playgroundContaining(regions, tx, ty) != null;
 
     bool openGate(int tx, int ty) {
       if (walls == null || regions == null) return false;

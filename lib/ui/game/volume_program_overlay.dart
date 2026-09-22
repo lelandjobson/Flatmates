@@ -8,7 +8,7 @@ import '../../gameplay/walls/wall_regions.dart';
 import '../../gameplay/walls/wall_store.dart';
 import '../../rendering/scene/camera.dart';
 
-/// Colored floor / region outlines and camera-rest program icons.
+/// Colored floor / playground outlines and camera-rest program icons.
 class VolumeProgramOverlay extends StatelessWidget {
   const VolumeProgramOverlay({
     super.key,
@@ -28,7 +28,7 @@ class VolumeProgramOverlay extends StatelessWidget {
   final VolumeProgramStore programs;
   final VolumeStore volumes;
   final WallStore walls;
-  final List<WallRegion> regions;
+  final List<Playground> regions;
   final Camera camera;
   final Size viewport;
   final Listenable? listenable;
@@ -87,7 +87,7 @@ class _ProgramPainter extends CustomPainter {
   final VolumeProgramStore programs;
   final VolumeStore volumes;
   final WallStore walls;
-  final List<WallRegion> regions;
+  final List<Playground> regions;
   final Camera camera;
   final Size viewport;
   final bool Function(int tx, int ty)? hideFloorAt;

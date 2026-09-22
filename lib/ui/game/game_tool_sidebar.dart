@@ -90,7 +90,7 @@ class GameToolSidebar extends StatelessWidget {
         const SizedBox(height: 2),
         _ToolBtn(
           icon: Icons.grid_on,
-          tooltip: 'Regions',
+          tooltip: 'Playgrounds',
           active: wallsActive,
           onTap: onToggleWalls,
         ),

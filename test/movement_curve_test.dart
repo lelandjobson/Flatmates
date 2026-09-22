@@ -210,6 +210,23 @@ void main() {
     expect(movementFacingRight(const Offset(1, 0)).dy, closeTo(1, 1e-9));
     expect(movementFacingRight(const Offset(0, 1)).dx, closeTo(-1, 1e-9));
   });
+
+  test('arrival line runs from the shared-edge mid to the offset dest', () {
+    const tiles = <(int, int)>[(0, 0), (1, 0)];
+    final center = build(tiles, clean());
+    final prev = grid.tileCenter(0, 0);
+    final dest = grid.tileCenter(1, 0);
+    expect(center.arrivalEdgeMid(1).dx, closeTo((prev.x + dest.x) * 0.5, 1e-6));
+    expect(center.arrivalEdgeMid(1).dy, closeTo(prev.z, 1e-6));
+    expect(center.offsetDest(1).dx, closeTo(dest.x, 1e-6));
+    expect(center.offsetDest(1).dy, closeTo(dest.z, 1e-6));
+    expect(center.arrivalPoint(1, 0), center.arrivalEdgeMid(1));
+    expect(center.arrivalPoint(1, 1), center.offsetDest(1));
+
+    final right = build(tiles, clean(offset: 1));
+    final half = movementPathHalfWidth(grid);
+    expect(right.offsetDest(1).dy, closeTo(dest.z + half, 1e-6));
+  });
 }
 
 double _distanceToPolyline(Offset p, List<Offset> knots) {

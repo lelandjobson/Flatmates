@@ -103,7 +103,7 @@ void main() {
     final filled = MorningLandscapeCA.run(
       grid: g,
       generator: gen(),
-      regions: [WallRegion({(1, 1)})],
+      regions: [Playground({(1, 1)})],
       subtilesPerTile: 4,
     );
     expect(filled, greaterThan(0));
@@ -124,7 +124,7 @@ void main() {
     MorningLandscapeCA.run(
       grid: g,
       generator: gen(),
-      regions: [WallRegion({(1, 1)})],
+      regions: [Playground({(1, 1)})],
       subtilesPerTile: 4,
     );
     expect(g.isEmpty(5, 5), isTrue);

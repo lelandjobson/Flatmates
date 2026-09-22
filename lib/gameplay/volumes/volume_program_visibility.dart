@@ -35,3 +35,25 @@ bool volumeFloorVisible({
   required bool ceilingHidesFloor,
 }) =>
     interiorViewer || !ceilingHidesFloor;
+
+/// Keep a program picker / floor menu only while its floor is shown and the
+/// selected tile still sits in view.
+bool keepProgramSelection({
+  required bool floorVisible,
+  required bool tileInView,
+}) =>
+    floorVisible && tileInView;
+
+/// Whether a projected tile center still falls inside the game viewport.
+bool programTileOnScreen({
+  required double screenX,
+  required double screenY,
+  required double viewportWidth,
+  required double viewportHeight,
+}) {
+  if (viewportWidth <= 0 || viewportHeight <= 0) return true;
+  return screenX >= 0 &&
+      screenY >= 0 &&
+      screenX <= viewportWidth &&
+      screenY <= viewportHeight;
+}

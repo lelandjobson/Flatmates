@@ -84,7 +84,7 @@ void main() {
     walls.add(WallEdge(2, 3, 2, 4));
     walls.add(WallEdge(2, 2, 2, 3));
     expect(walls.cut(WallEdge(4, 2, 4, 3)), isTrue);
-    final regions = computeEnclosedRegions(walls);
+    final regions = computeEnclosedPlaygrounds(walls);
     expect(regions.single.tiles, {(2, 2), (3, 2), (2, 3), (3, 3)});
     final paths = PathStore(grid: volumes.grid)..addIsland(4, 2);
     final graph = ConnectionGraph.build(
@@ -181,7 +181,7 @@ void main() {
     walls.add(WallEdge(3, 3, 4, 3));
     walls.add(WallEdge(3, 2, 3, 3));
     expect(walls.cut(WallEdge(4, 2, 4, 3)), isTrue);
-    final regions = computeEnclosedRegions(walls);
+    final regions = computeEnclosedPlaygrounds(walls);
     final paths = PathStore(grid: volumes.grid)..addIsland(4, 2);
     expect(
       ConnectionGraph.build(
@@ -215,7 +215,7 @@ void main() {
     walls.add(WallEdge(6, 2, 6, 3));
     expect(walls.cut(WallEdge(3, 2, 3, 3)), isTrue);
     expect(walls.cut(WallEdge(6, 2, 6, 3)), isTrue);
-    final regions = computeEnclosedRegions(walls);
+    final regions = computeEnclosedPlaygrounds(walls);
     expect(regions.single.tiles, {(3, 2), (4, 2), (5, 2)});
     final paths = PathStore(grid: volumes.grid)
       ..addIsland(2, 2)

@@ -330,11 +330,12 @@ class VolumeAppliqueStore {
   }
 }
 
-/// World quad of an applique, CCW from outside. Doors reuse [doorWorldCorners].
+/// World quad of an applique. [inward] sits the paper on the room side.
 List<Vector3> appliqueWorldCorners({
   required VolumeGrid grid,
   required VolumeCell cell,
   required VolumeApplique piece,
+  bool inward = false,
 }) {
   if (piece.kind == VolumeAppliqueKind.door && piece.side != null) {
     final door = VolumeDoor(
@@ -350,6 +351,7 @@ List<Vector3> appliqueWorldCorners({
       ty: cell.ty,
       box: cell.box,
       door: door,
+      inward: inward,
     );
   }
   final min = cell.box.worldMin(grid, cell.tx, cell.ty);
@@ -359,7 +361,7 @@ List<Vector3> appliqueWorldCorners({
   final u1 = (piece.originU + piece.width) * s;
   final v0 = piece.originV * s;
   final v1 = (piece.originV + piece.height) * s;
-  return switch (piece.face) {
+  final exterior = switch (piece.face) {
     VolumeFace.posX => [
         Vector3(max.x, min.y + v0, min.z + u0),
         Vector3(max.x, min.y + v0, min.z + u1),
@@ -397,4 +399,6 @@ List<Vector3> appliqueWorldCorners({
         Vector3(min.x + u0, min.y, min.z + v0),
       ],
   };
+  if (!inward) return exterior;
+  return inwardFaceCorners(exterior, piece.face);
 }

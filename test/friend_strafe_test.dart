@@ -1,5 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flatmates/gameplay/flatmates/flatmate_movement.dart';
 import 'package:flatmates/gameplay/flatmates/movement_profile.dart';
+import 'package:flatmates/gameplay/friends/friend_facing.dart';
 import 'package:flatmates/gameplay/friends/friend_instance.dart';
 import 'package:flatmates/gameplay/volumes/volume.dart';
 import 'package:flatmates/geometry/transformable.dart';
@@ -19,7 +22,7 @@ void main() {
     hopHeight: 0,
   );
 
-  test('body yaw stays put while travel yaw follows the path', () {
+  test('inertia 0 snaps body yaw to the path tangent', () {
     final friend = FriendInstance(
       id: 'strafe-1',
       friend: kCubeboyFriend,
@@ -34,7 +37,12 @@ void main() {
     );
     friend.travelYaw = friend.movement.facingYaw();
     friend.pitch = friend.movement.pitch;
-    expect(friend.yaw, 0.4);
+    friend.facing.tick(
+      0.016,
+      moving: true,
+      travelYaw: friend.travelYaw,
+    );
+    expect(friend.yaw, closeTo(friend.travelYaw, 1e-6));
     expect(friend.travelYaw, isNot(closeTo(0.4, 0.05)));
 
     friend.movement.advance(
@@ -45,7 +53,30 @@ void main() {
     );
     friend.travelYaw = friend.movement.facingYaw();
     friend.pitch = friend.movement.pitch;
-    expect(friend.yaw, 0.4);
+    friend.facing.tick(
+      0.016,
+      moving: true,
+      travelYaw: friend.travelYaw,
+    );
+    expect(friend.yaw, closeTo(friend.travelYaw, 1e-6));
+  });
+
+  test('inertia 1 does not finish 90 degrees in 0.2s and does in 1s', () {
+    final facing = FriendFacing(seed: 'slow-turn', yaw: 0);
+    facing.tick(
+      0.2,
+      moving: true,
+      travelYaw: math.pi / 2,
+      rotationInertia: 1,
+    );
+    expect(facing.yaw.abs(), lessThan(math.pi / 2 - 0.2));
+    facing.tick(
+      0.8,
+      moving: true,
+      travelYaw: math.pi / 2,
+      rotationInertia: 1,
+    );
+    expect(facing.yaw, closeTo(math.pi / 2, 1e-6));
   });
 
   test('zero lean is just body yaw, regardless of travel yaw', () {

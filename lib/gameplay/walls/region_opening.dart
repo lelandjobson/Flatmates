@@ -3,11 +3,11 @@ import 'wall_edge.dart';
 import 'wall_regions.dart';
 import 'wall_store.dart';
 
-/// True when the unit wall on this ortho step encloses a [WallRegion].
+/// True when the unit wall on this ortho step encloses a [Playground].
 bool wouldOpenRegion({
   required WallEdge wall,
   required WallStore walls,
-  required Iterable<WallRegion> regions,
+  required Iterable<Playground> regions,
 }) {
   if (!walls.contains(wall)) return false;
   return wallBoundsRegion(wall, regions);
@@ -17,15 +17,15 @@ bool wouldOpenRegion({
 bool syncRegionOpeningsFromPaths({
   required WallStore walls,
   required PathStore paths,
-  required Iterable<WallRegion> regions,
+  required Iterable<Playground> regions,
 }) {
   var changed = false;
   for (final edge in List<WallEdge>.from(walls.edges)) {
     if (edge.kind != WallKind.cutFence) continue;
     final pair = edge.separatedTiles;
     if (pair == null) continue;
-    final aReg = wallRegionContaining(regions, pair.$1.$1, pair.$1.$2);
-    final bReg = wallRegionContaining(regions, pair.$2.$1, pair.$2.$2);
+    final aReg = playgroundContaining(regions, pair.$1.$1, pair.$1.$2);
+    final bReg = playgroundContaining(regions, pair.$2.$1, pair.$2.$2);
     final outdoor = aReg == null
         ? pair.$1
         : bReg == null
@@ -51,7 +51,7 @@ WallEdge? regionOpeningWallAt({
   required int ty,
   required PathStore paths,
   required WallStore walls,
-  required Iterable<WallRegion> regions,
+  required Iterable<Playground> regions,
 }) {
   return paths.gateWallAt(tx, ty, walls: walls, regions: regions);
 }

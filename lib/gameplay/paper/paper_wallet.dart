@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../paths/path_store.dart';
+import '../volumes/volume_program.dart';
 import '../volumes/volume_store.dart';
 import '../walls/wall_store.dart';
 import 'paper_cost.dart';
@@ -16,6 +17,7 @@ class PaperWallet extends ChangeNotifier {
   final Map<int, int> volumeCommitted = {};
   int pathCommitted = 0;
   int wallCommitted = 0;
+  int partitionCommitted = 0;
   int stuffCommitted = 0;
 
   int get held => _held;
@@ -25,6 +27,7 @@ class PaperWallet extends ChangeNotifier {
     next.volumeCommitted.addAll(volumeCommitted);
     next.pathCommitted = pathCommitted;
     next.wallCommitted = wallCommitted;
+    next.partitionCommitted = partitionCommitted;
     next.stuffCommitted = stuffCommitted;
     return next;
   }
@@ -36,6 +39,7 @@ class PaperWallet extends ChangeNotifier {
       ..addAll(other.volumeCommitted);
     pathCommitted = other.pathCommitted;
     wallCommitted = other.wallCommitted;
+    partitionCommitted = other.partitionCommitted;
     stuffCommitted = other.stuffCommitted;
     notifyListeners();
   }
@@ -54,6 +58,10 @@ class PaperWallet extends ChangeNotifier {
         wallCommitted = v;
       }, next);
 
+  bool settlePartitions(int next) => _settleScalar(() => partitionCommitted, (v) {
+        partitionCommitted = v;
+      }, next);
+
   bool settleStuff(int next) => _settleScalar(() => stuffCommitted, (v) {
         stuffCommitted = v;
       }, next);
@@ -63,6 +71,7 @@ class PaperWallet extends ChangeNotifier {
     required VolumeStore volumes,
     required PathStore paths,
     required WallStore walls,
+    VolumeProgramStore? programs,
     int stuffCost = 0,
   }) {
     final volumeCosts = <int, int>{
@@ -71,11 +80,16 @@ class PaperWallet extends ChangeNotifier {
     };
     final pathCost = pathPaperCost(paths, subtilesPerTile: volumes.grid.subtilesPerTile);
     final wallCost = wallPaperCost(walls.edges.length);
+    final partitionCost = partitionPaperCost(
+      volumes,
+      programs ?? VolumeProgramStore(),
+    );
 
     final backup = copy();
     if (!settleVolumes(volumeCosts) ||
         !settlePath(pathCost) ||
         !settleWalls(wallCost) ||
+        !settlePartitions(partitionCost) ||
         !settleStuff(stuffCost)) {
       restoreFrom(backup);
       return false;

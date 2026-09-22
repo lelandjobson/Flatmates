@@ -13,10 +13,10 @@ import '../../rendering/scene/camera.dart';
 import '../../rendering/scene/grid_motif.dart';
 
 const kWorldBorderColor = Color(0xFF40C4FF);
-const kWallRegionFadeColor = Color(kRegionAlertArgb);
-const kWallRegionFadeMs = 300;
-const kWallRegionDashLength = 8.0;
-const kWallRegionDashGap = 5.0;
+const kPlaygroundFadeColor = Color(kRegionAlertArgb);
+const kPlaygroundFadeMs = 300;
+const kPlaygroundDashLength = 8.0;
+const kPlaygroundDashGap = 5.0;
 const _kGridY = 0.05;
 const _kOutlineY = 0.08;
 
@@ -94,9 +94,9 @@ class _WorldBorderPainter extends CustomPainter {
       oldDelegate.camera != camera || oldDelegate.viewport != viewport;
 }
 
-/// Dashed region borders plus floor dots; departed tiles blink red then vanish.
-class WallRegionOverlay extends StatefulWidget {
-  const WallRegionOverlay({
+/// Dashed playground borders plus floor dots; departed tiles blink red then vanish.
+class PlaygroundOverlay extends StatefulWidget {
+  const PlaygroundOverlay({
     super.key,
     required this.regions,
     required this.store,
@@ -106,7 +106,7 @@ class WallRegionOverlay extends StatefulWidget {
     this.tileVisible,
   });
 
-  final List<WallRegion> regions;
+  final List<Playground> regions;
   final WallStore store;
   final Camera camera;
   final Size viewport;
@@ -114,12 +114,12 @@ class WallRegionOverlay extends StatefulWidget {
   final bool Function(int tx, int ty)? tileVisible;
 
   @override
-  State<WallRegionOverlay> createState() => _WallRegionOverlayState();
+  State<PlaygroundOverlay> createState() => _PlaygroundOverlayState();
 }
 
-class _WallRegionOverlayState extends State<WallRegionOverlay>
+class _PlaygroundOverlayState extends State<PlaygroundOverlay>
     with SingleTickerProviderStateMixin {
-  List<WallRegion> _live = const [];
+  List<Playground> _live = const [];
   Set<(int, int)> _liveTiles = {};
   RegionColorAssignment _colors = const RegionColorAssignment([]);
   final List<_FadingTiles> _fading = [];
@@ -129,7 +129,7 @@ class _WallRegionOverlayState extends State<WallRegionOverlay>
   @override
   void initState() {
     super.initState();
-    _live = List<WallRegion>.from(widget.regions);
+    _live = List<Playground>.from(widget.regions);
     _liveTiles = enclosedTilesOf(_live);
     _colors = assignRegionColors(_live);
     _grid = GridMotif.subtileDots(
@@ -140,7 +140,7 @@ class _WallRegionOverlayState extends State<WallRegionOverlay>
   }
 
   @override
-  void didUpdateWidget(covariant WallRegionOverlay oldWidget) {
+  void didUpdateWidget(covariant PlaygroundOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
     final next = widget.regions;
     final nextTiles = enclosedTilesOf(next);
@@ -154,7 +154,7 @@ class _WallRegionOverlayState extends State<WallRegionOverlay>
       previousRegions: _live,
       previous: _colors,
     );
-    _live = List<WallRegion>.from(next);
+    _live = List<Playground>.from(next);
     _liveTiles = nextTiles;
   }
 
@@ -193,7 +193,7 @@ class _WallRegionOverlayState extends State<WallRegionOverlay>
     return IgnorePointer(
       child: CustomPaint(
         size: widget.viewport,
-        painter: _WallRegionPainter(
+        painter: _PlaygroundPainter(
           live: _live,
           colors: _colors,
           fading: List<_FadingTiles>.from(_fading),
@@ -215,9 +215,9 @@ class _FadingTiles {
   final DateTime started;
 
   double get t =>
-      DateTime.now().difference(started).inMilliseconds / kWallRegionFadeMs;
+      DateTime.now().difference(started).inMilliseconds / kPlaygroundFadeMs;
 
-  /// Blink once, then fade out. Total time is [kWallRegionFadeMs].
+  /// Blink once, then fade out. Total time is [kPlaygroundFadeMs].
   double get opacity {
     final u = t.clamp(0.0, 1.0);
     if (u < 0.27) return 1;
@@ -227,8 +227,8 @@ class _FadingTiles {
   }
 }
 
-class _WallRegionPainter extends CustomPainter {
-  _WallRegionPainter({
+class _PlaygroundPainter extends CustomPainter {
+  _PlaygroundPainter({
     required this.live,
     required this.colors,
     required this.fading,
@@ -239,7 +239,7 @@ class _WallRegionPainter extends CustomPainter {
     this.tileVisible,
   });
 
-  final List<WallRegion> live;
+  final List<Playground> live;
   final RegionColorAssignment colors;
   final List<_FadingTiles> fading;
   final WallStore store;
@@ -277,7 +277,7 @@ class _WallRegionPainter extends CustomPainter {
       _drawOutline(
         canvas,
         fade.tiles,
-        kWallRegionFadeColor.withValues(alpha: fade.opacity),
+        kPlaygroundFadeColor.withValues(alpha: fade.opacity),
         fade.opacity,
       );
     }
@@ -341,13 +341,13 @@ class _WallRegionPainter extends CustomPainter {
       sa,
       sb,
       paint,
-      dashLength: kWallRegionDashLength,
-      gapLength: kWallRegionDashGap,
+      dashLength: kPlaygroundDashLength,
+      gapLength: kPlaygroundDashGap,
     );
   }
 
   @override
-  bool shouldRepaint(covariant _WallRegionPainter oldDelegate) =>
+  bool shouldRepaint(covariant _PlaygroundPainter oldDelegate) =>
       oldDelegate.live != live ||
       oldDelegate.colors != colors ||
       oldDelegate.fading != fading ||

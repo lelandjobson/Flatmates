@@ -100,6 +100,67 @@ void main() {
     expect(corners[2].y, closeTo(4 * grid.subtileSize, 1e-9));
   });
 
+  test('inward door sits on the room side of the wall', () {
+    const grid = VolumeGrid(tilesSide: 16, tileSize: 8);
+    final box = BoxPrimitive();
+    final door = volumeDoorForSide(box, VolumeSide.east)!;
+    final outer = doorWorldCorners(
+      grid: grid,
+      tx: 0,
+      ty: 0,
+      box: box,
+      door: door,
+    );
+    final inner = doorWorldCorners(
+      grid: grid,
+      tx: 0,
+      ty: 0,
+      box: box,
+      door: door,
+      inward: true,
+    );
+    final max = box.worldMax(grid, 0, 0);
+    final min = box.worldMin(grid, 0, 0);
+    expect(inner, hasLength(4));
+    for (final c in inner) {
+      expect(c.x, closeTo(max.x - kDoorInteriorInset, 1e-9));
+    }
+    final inside = Vector3(min.x + 4, 2, min.z + 4);
+    final outside = Vector3(max.x + 10, 2, min.z + 4);
+    expect(
+      doorFacesCamera(
+        face: VolumeFace.negX,
+        corners: inner,
+        cameraPosition: inside,
+      ),
+      isTrue,
+    );
+    expect(
+      doorFacesCamera(
+        face: VolumeFace.posX,
+        corners: outer,
+        cameraPosition: inside,
+      ),
+      isFalse,
+    );
+    expect(
+      doorFacesCamera(
+        face: VolumeFace.posX,
+        corners: outer,
+        cameraPosition: outside,
+      ),
+      isTrue,
+    );
+    expect(
+      doorFacesCamera(
+        face: VolumeFace.negX,
+        corners: inner,
+        cameraPosition: outside,
+      ),
+      isFalse,
+    );
+  });
+
   test('door paper is hidden when the camera is behind the volume', () {
     const grid = VolumeGrid(tilesSide: 16, tileSize: 8);
     final box = BoxPrimitive();

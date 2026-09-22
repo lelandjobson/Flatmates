@@ -5,6 +5,7 @@ import 'package:flatmates/gameplay/volumes/volume_store.dart';
 import 'package:flatmates/gameplay/walls/wall_edge.dart';
 import 'package:flatmates/gameplay/walls/wall_regions.dart';
 import 'package:flatmates/gameplay/walls/wall_store.dart';
+import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -28,7 +29,7 @@ void main() {
   test('outdoor tiles default to circulation', () {
     final programs = VolumeProgramStore();
     expect(programs.outdoorAt(1, 1), kProgramCirculation);
-    final region = WallRegion({(1, 1), (1, 2), (2, 1), (2, 2)});
+    final region = Playground({(1, 1), (1, 2), (2, 1), (2, 2)});
     expect(programs.outdoorRegionProgram(region.tiles), kProgramCirculation);
     expect(
       programs.assignOutdoorRegion(region.tiles, kProgramGarden),
@@ -197,12 +198,13 @@ void main() {
     expect(clusters, hasLength(2));
   });
 
-  test('catalog order is bedroom, storage, leisure, garden', () {
+  test('catalog order is bedroom, storage, workshop, leisure, garden', () {
     expect(
       kProgramCatalog.map((s) => s.id),
       [
         kProgramBedroom,
         kProgramStorage,
+        kProgramWorkshop,
         kProgramLeisure,
         kProgramGarden,
       ],
@@ -210,11 +212,16 @@ void main() {
     expect(programsForSurface(outdoor: false).map((s) => s.id), [
       kProgramBedroom,
       kProgramStorage,
+      kProgramWorkshop,
       kProgramLeisure,
     ]);
     expect(programsForSurface(outdoor: true).map((s) => s.id), [
       kProgramLeisure,
       kProgramGarden,
     ]);
+    expect(programById(kProgramWorkshop)!.indoor, isTrue);
+    expect(programById(kProgramWorkshop)!.outdoor, isFalse);
+    expect(programById(kProgramStorage)!.color, const Color(0xFFB8926A));
+    expect(programById(kProgramWorkshop)!.color, const Color(0xFF42A5F5));
   });
 }

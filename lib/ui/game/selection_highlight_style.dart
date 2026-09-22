@@ -11,7 +11,7 @@ class SelectionHighlightStyle {
 
   static const SelectionHighlightStyle standard = SelectionHighlightStyle();
 
-  /// Flat floor / region pick — thin enough that program outlines stay readable.
+  /// Flat floor / playground pick — thin enough that program outlines stay readable.
   static const SelectionHighlightStyle floor = SelectionHighlightStyle(
     fill: Color(0x14FFFFFF),
     outline: Color(0x99FFFFFF),

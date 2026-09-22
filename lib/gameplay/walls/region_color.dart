@@ -63,7 +63,7 @@ class RegionColorAssignment {
 }
 
 /// Orthogonal neighbors: a shared side, whether or not a wall is there.
-List<Set<int>> regionAdjacency(List<WallRegion> regions) {
+List<Set<int>> regionAdjacency(List<Playground> regions) {
   final owner = <(int, int), int>{};
   for (var i = 0; i < regions.length; i++) {
     for (final tile in regions[i].tiles) {
@@ -85,8 +85,8 @@ List<Set<int>> regionAdjacency(List<WallRegion> regions) {
 
 /// Greedy coloring. Prefers a prior region's color when tiles still overlap.
 RegionColorAssignment assignRegionColors(
-  List<WallRegion> regions, {
-  List<WallRegion>? previousRegions,
+  List<Playground> regions, {
+  List<Playground>? previousRegions,
   RegionColorAssignment? previous,
 }) {
   final n = regions.length;
@@ -141,7 +141,7 @@ int _pickColor(Set<int> used, int? preferred) {
   return preferred ?? 0;
 }
 
-int? _bestOverlap(WallRegion next, List<WallRegion> previous) {
+int? _bestOverlap(Playground next, List<Playground> previous) {
   var best = -1;
   var bestCount = 0;
   for (var i = 0; i < previous.length; i++) {
@@ -157,7 +157,7 @@ int? _bestOverlap(WallRegion next, List<WallRegion> previous) {
   return bestCount > 0 ? best : null;
 }
 
-String _regionKey(WallRegion region) {
+String _regionKey(Playground region) {
   var minTx = 1 << 30;
   var minTy = 1 << 30;
   for (final (tx, ty) in region.tiles) {

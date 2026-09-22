@@ -27,17 +27,17 @@ class RegionFillPreview {
 
 /// Seed stays if that tile is still enclosed; otherwise last region is gone.
 (int, int)? resolvedLastRegionSeed(
-  Iterable<WallRegion> regions,
+  Iterable<Playground> regions,
   (int, int)? seed,
 ) {
   if (seed == null) return null;
-  return wallRegionContaining(regions, seed.$1, seed.$2) == null ? null : seed;
+  return playgroundContaining(regions, seed.$1, seed.$2) == null ? null : seed;
 }
 
 /// Walls whose [WallEdge.separatedTiles] sit in [a] and [b] (including cuts).
 List<WallEdge> wallsDividingRegions(
-  WallRegion a,
-  WallRegion b,
+  Playground a,
+  Playground b,
   WallStore store,
 ) {
   final out = <WallEdge>{};
@@ -57,14 +57,14 @@ List<WallEdge> wallsDividingRegions(
 /// Null when [edge] is missing or does not sit between two distinct regions.
 List<WallEdge>? dividerMergeEdges(
   WallEdge edge,
-  Iterable<WallRegion> regions,
+  Iterable<Playground> regions,
   WallStore store,
 ) {
   if (!store.contains(edge)) return null;
   final pair = edge.separatedTiles;
   if (pair == null) return null;
-  final a = wallRegionContaining(regions, pair.$1.$1, pair.$1.$2);
-  final b = wallRegionContaining(regions, pair.$2.$1, pair.$2.$2);
+  final a = playgroundContaining(regions, pair.$1.$1, pair.$1.$2);
+  final b = playgroundContaining(regions, pair.$2.$1, pair.$2.$2);
   if (a == null || b == null || a == b) return null;
   final walls = wallsDividingRegions(a, b, store);
   if (walls.isEmpty) return null;
@@ -74,13 +74,13 @@ List<WallEdge>? dividerMergeEdges(
 /// Edges to add/remove and the next last-region seed for a fill at [tx],[ty].
 RegionFillPreview previewRegionFill({
   required WallStore walls,
-  required Iterable<WallRegion> regions,
+  required Iterable<Playground> regions,
   required int tx,
   required int ty,
   required (int, int)? lastSeed,
 }) {
   final tile = (tx, ty);
-  final existing = wallRegionContaining(regions, tx, ty);
+  final existing = playgroundContaining(regions, tx, ty);
   if (existing != null) {
     return RegionFillPreview(
       addEdges: const [],
@@ -92,15 +92,15 @@ RegionFillPreview previewRegionFill({
 
   final last = lastSeed == null
       ? null
-      : wallRegionContaining(regions, lastSeed.$1, lastSeed.$2);
+      : playgroundContaining(regions, lastSeed.$1, lastSeed.$2);
 
-  WallRegion? firstNeighbor;
+  Playground? firstNeighbor;
   var touchesLast = false;
   var hasOtherNeighbor = false;
   for (final (dx, dy) in kRegionNeighborDeltas) {
     final n = (tx + dx, ty + dy);
     if (!walls.grid.inBounds(n.$1, n.$2)) continue;
-    final region = wallRegionContaining(regions, n.$1, n.$2);
+    final region = playgroundContaining(regions, n.$1, n.$2);
     if (region == null) continue;
     firstNeighbor ??= region;
     if (last != null && region == last) {
@@ -110,7 +110,7 @@ RegionFillPreview previewRegionFill({
     }
   }
 
-  WallRegion? mergeTarget;
+  Playground? mergeTarget;
   (int, int)? newSeed;
   if (last != null && touchesLast) {
     mergeTarget = last;
@@ -162,7 +162,7 @@ void applyRegionFillPreview(WallStore walls, RegionFillPreview preview) {
 /// Preview, then mutate [walls]. Caller severs paths and syncs the world.
 RegionFillPreview applyRegionFill({
   required WallStore walls,
-  required Iterable<WallRegion> regions,
+  required Iterable<Playground> regions,
   required int tx,
   required int ty,
   required (int, int)? lastSeed,

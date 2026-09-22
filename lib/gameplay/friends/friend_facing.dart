@@ -7,7 +7,7 @@ const double kFacePauseMax = 2.0;
 const double kFaceTurnSpeed = 10;
 const double kFaceRetrigger = 25 * math.pi / 180;
 
-/// Body yaw turns: path-aligned at walk start, camera-facing after a stop pause.
+/// Body yaw follows the path tangent while moving, then faces the camera after a stop pause.
 class FriendFacing {
   FriendFacing({required this.seed, this.yaw = 0})
       : _rng = math.Random(seed.hashCode);
@@ -63,14 +63,31 @@ class FriendFacing {
     return d;
   }
 
+  /// Steer [yaw] toward [target]. [inertia] 0 snaps; 1 is 90° per second.
+  static double steerToward(
+    double yaw,
+    double target,
+    double dt,
+    double inertia,
+  ) {
+    if (inertia <= 0) return wrapYaw(target);
+    if (dt <= 0) return wrapYaw(yaw);
+    final delta = shortestDelta(yaw, target);
+    final rate = (math.pi / 2) / inertia;
+    final step = rate * dt;
+    if (delta.abs() <= step || delta.abs() < 1e-6) return wrapYaw(target);
+    return wrapYaw(yaw + delta.sign * step);
+  }
+
   void tick(
     double dt, {
     required bool moving,
     required double travelYaw,
     double? cameraYaw,
+    double rotationInertia = 0,
   }) {
     if (moving && !_wasMoving) {
-      _target = nearestPathAlign(yaw, travelYaw);
+      _target = null;
       _pause = 0;
     } else if (!moving && _wasMoving) {
       _scheduleCameraFace(cameraYaw);
@@ -84,13 +101,18 @@ class FriendFacing {
     }
     _wasMoving = moving;
 
-    if (!moving && _pause > 0) {
+    if (moving) {
+      yaw = steerToward(yaw, travelYaw, dt, rotationInertia);
+      return;
+    }
+
+    if (_pause > 0) {
       _pause -= dt;
       if (_pause <= 0) {
         _pause = 0;
         _target = cameraYaw;
       }
-    } else if (!moving && _target != null && cameraYaw != null) {
+    } else if (_target != null && cameraYaw != null) {
       _target = cameraYaw;
     }
 
@@ -100,10 +122,8 @@ class FriendFacing {
     final step = kFaceTurnSpeed * dt;
     if (delta.abs() <= step || delta.abs() < 1e-3) {
       yaw = wrapYaw(target);
-      if (!moving) {
-        _target = null;
-        _aimedCameraYaw = yaw;
-      }
+      _target = null;
+      _aimedCameraYaw = yaw;
       return;
     }
     yaw = wrapYaw(yaw + delta.sign * step);
