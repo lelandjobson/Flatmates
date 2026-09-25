@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "craft": "craft_min",
+  "foldedModel": "folded.obj",
+  "steps": [
+    { "craftingStep": 1, "model": "steps/1.obj" },
+    { "craftingStep": 2, "model": "steps/2.obj" }
+  ],
+  "faces": [
+    {
+      "id": "s1_p0_i0_f0",
+      "flatmates.surfaceId": "0",
+      "flatmates.pieceKey": "piece",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Box::1",
+      "flatmates.transformType": "movement",
+      "flatLoops": [[[0, 0, 0], [10, 0, 0], [10, 10, 0], [0, 10, 0], [0, 0, 0]]],
+      "transform": {
+        "type": "movement",
+        "forward": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+        "inverse": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 5, 1]
+      }
+    },
+    {
+      "id": "s1_p0_i0_f1",
+      "flatmates.surfaceId": "1",
+      "flatmates.foldParentSurfaceId": "0",
+      "flatmates.pieceKey": "piece",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Box::2",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [[[10, 0, 0], [20, 0, 0], [20, 10, 0], [10, 10, 0]]],
+      "transform": {
+        "type": "rotation",
+        "axis": [10, 0, 0, 10, 10, 0],
+        "angleRadians": "1.5707963267948966"
+      }
+    },
+    {
+      "id": "s2_p0_i0_f2",
+      "flatmates.surfaceId": "2",
+      "flatmates.pieceKey": "piece",
+      "flatmates.islandId": "1",
+      "flatmates.craftingStep": "2",
+      "flatmates.layer": "Box::3",
+      "flatmates.transformType": "movement",
+      "flatLoops": [[[0, 20, 0], [10, 20, 0], [10, 30, 0], [0, 30, 0]]],
+      "transform": {
+        "type": "movement",
+        "inverse": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "flatmates.role": "fold",
+      "flatmates.craftingStep": "1",
+      "faceA": "s1_p0_i0_f0",
+      "faceB": "s1_p0_i0_f1",
+      "curve": [[10, 0, 0], [10, 10, 0]]
+    },
+    {
+      "flatmates.role": "cut",
+      "flatmates.craftingStep": "1",
+      "faceA": "s1_p0_i0_f1",
+      "faceB": "s1_p0_i0_f1",
+      "curve": [[20, 0, 0], [20, 10, 0]]
+    }
+  ]
+}

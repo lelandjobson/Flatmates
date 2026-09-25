@@ -1,0 +1,9 @@
+---
+description: Consult Boost.Geometry before inventing intersection or polygon math.
+globs: lib/{geometry,papercut}/**/*.dart
+alwaysApply: false
+---
+
+# Boost.Geometry
+
+When an intersection, offset, buffer, or robustness question comes up, read `/Users/lelandjobson/Documents/GitHub/boost/libs/geometry` first. Cartesian line intersection is `strategies/cartesian/intersection.hpp` (`cartesian_segments`, Cramer's rule). Port the idea into Dart. Do not add a Boost dependency.

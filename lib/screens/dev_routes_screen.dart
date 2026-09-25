@@ -4,6 +4,9 @@ import 'package:go_router/go_router.dart';
 import '../router/app_router.dart';
 import '../ui/fm_screen.dart';
 
+/// Route names listed in the dev menu. Every other [GoRoute] stays registered.
+const kDevMenuRouteNames = {'papercut_puzzles', 'craft_editor'};
+
 class DevRoutesScreen extends StatelessWidget {
   const DevRoutesScreen({super.key});
 
@@ -11,7 +14,7 @@ class DevRoutesScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final routes = router.configuration.routes
         .whereType<GoRoute>()
-        .where((r) => r.name != 'dev_routes')
+        .where((r) => kDevMenuRouteNames.contains(r.name))
         .toList();
 
     return FmScreen(
@@ -23,7 +26,7 @@ class DevRoutesScreen extends StatelessWidget {
       content: ListView.separated(
         padding: const EdgeInsets.all(16),
         itemCount: routes.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 8),
+        separatorBuilder: (_, _) => const SizedBox(height: 8),
         itemBuilder: (context, index) {
           final route = routes[index];
           return SizedBox(

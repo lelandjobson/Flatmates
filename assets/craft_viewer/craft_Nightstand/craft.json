@@ -1,0 +1,5287 @@
+{
+  "version": 1,
+  "craft": "craft_Nightstand",
+  "foldedModel": "folded.obj",
+  "steps": [
+    {
+      "craftingStep": 1,
+      "model": "steps/1.obj"
+    },
+    {
+      "craftingStep": 2,
+      "model": "steps/2.obj"
+    },
+    {
+      "craftingStep": 3,
+      "model": "steps/3.obj"
+    },
+    {
+      "craftingStep": 4,
+      "model": "steps/4.obj"
+    }
+  ],
+  "faces": [
+    {
+      "flatmates.surfaceId": "5",
+      "flatmates.sourceObjectIds": "58924d7a-de34-4d27-be82-a2c48748b613",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "58924d7a-de34-4d27-be82-a2c48748b613#0",
+      "flatmates.islandId": "1",
+      "flatmates.craftingStep": "4",
+      "flatmates.selfSimId": "7",
+      "flatmates.layer": "Nightstand::4",
+      "flatmates.attachmentPolicy": "loose",
+      "flatmates.foldParentSurfaceId": "3",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            15.555991234440487,
+            98.019937122920552,
+            0.0
+          ],
+          [
+            11.64574856558696,
+            98.019937122920552,
+            0.0
+          ],
+          [
+            11.64574856558696,
+            93.4096092112976,
+            0.0
+          ],
+          [
+            15.555991234440487,
+            93.4096092112976,
+            0.0
+          ],
+          [
+            15.555991234440487,
+            98.019937122920552,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          15.555991234440487,
+          93.4096092112976,
+          0.0,
+          15.555991234440487,
+          98.019937122920552,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s4_p0_i1_f5"
+    },
+    {
+      "flatmates.surfaceId": "4",
+      "flatmates.sourceObjectIds": "58924d7a-de34-4d27-be82-a2c48748b613",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "58924d7a-de34-4d27-be82-a2c48748b613#0",
+      "flatmates.islandId": "1",
+      "flatmates.craftingStep": "4",
+      "flatmates.selfSimId": "7",
+      "flatmates.layer": "Nightstand::4",
+      "flatmates.attachmentPolicy": "loose",
+      "flatmates.foldParentSurfaceId": "1",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            5.0,
+            98.019937122920552,
+            0.0
+          ],
+          [
+            5.0,
+            93.4096092112976,
+            0.0
+          ],
+          [
+            8.9102426688535274,
+            93.4096092112976,
+            0.0
+          ],
+          [
+            8.9102426688535274,
+            98.019937122920552,
+            0.0
+          ],
+          [
+            5.0,
+            98.019937122920552,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          8.9102426688535274,
+          98.019937122920552,
+          0.0,
+          8.9102426688535274,
+          93.4096092112976,
+          0.0
+        ],
+        "angleRadians": "-1.5707963267948966"
+      },
+      "id": "s4_p0_i1_f4"
+    },
+    {
+      "flatmates.surfaceId": "3",
+      "flatmates.sourceObjectIds": "58924d7a-de34-4d27-be82-a2c48748b613",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "58924d7a-de34-4d27-be82-a2c48748b613#0",
+      "flatmates.islandId": "1",
+      "flatmates.craftingStep": "4",
+      "flatmates.selfSimId": "7",
+      "flatmates.layer": "Nightstand::4",
+      "flatmates.attachmentPolicy": "loose",
+      "flatmates.transformType": "movement",
+      "flatLoops": [
+        [
+          [
+            18.291497131173919,
+            93.4096092112976,
+            0.0
+          ],
+          [
+            18.291497131173919,
+            98.019937122920552,
+            0.0
+          ],
+          [
+            15.555991234440487,
+            98.019937122920552,
+            0.0
+          ],
+          [
+            15.555991234440487,
+            93.4096092112976,
+            0.0
+          ],
+          [
+            18.291497131173919,
+            93.4096092112976,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "movement",
+        "forward": [
+          0.0,
+          0.0,
+          -1.0,
+          36.416945714432394,
+          0.0,
+          -1.0,
+          0.0,
+          85.376866399082843,
+          -1.0,
+          0.0,
+          0.0,
+          -6.3804830375971591,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "inverse": [
+          0.0,
+          0.0,
+          -1.0,
+          -6.3804830375971591,
+          0.0,
+          -1.0,
+          0.0,
+          85.376866399082843,
+          -1.0,
+          0.0,
+          0.0,
+          36.416945714432394,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "id": "s4_p0_i1_f3"
+    },
+    {
+      "flatmates.surfaceId": "2",
+      "flatmates.sourceObjectIds": "58924d7a-de34-4d27-be82-a2c48748b613",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "58924d7a-de34-4d27-be82-a2c48748b613#0",
+      "flatmates.islandId": "1",
+      "flatmates.craftingStep": "4",
+      "flatmates.selfSimId": "7",
+      "flatmates.layer": "Nightstand::4",
+      "flatmates.attachmentPolicy": "loose",
+      "flatmates.foldParentSurfaceId": "3",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            18.291497131173919,
+            89.499366542444079,
+            0.0
+          ],
+          [
+            18.291497131173919,
+            93.4096092112976,
+            0.0
+          ],
+          [
+            15.555991234440487,
+            93.4096092112976,
+            0.0
+          ],
+          [
+            15.555991234440487,
+            89.499366542444079,
+            0.0
+          ],
+          [
+            18.291497131173919,
+            89.499366542444079,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          18.291497131173919,
+          93.4096092112976,
+          0.0,
+          15.555991234440487,
+          93.4096092112976,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s4_p0_i1_f2"
+    },
+    {
+      "flatmates.surfaceId": "1",
+      "flatmates.sourceObjectIds": "58924d7a-de34-4d27-be82-a2c48748b613",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "58924d7a-de34-4d27-be82-a2c48748b613#0",
+      "flatmates.islandId": "1",
+      "flatmates.craftingStep": "4",
+      "flatmates.selfSimId": "7",
+      "flatmates.layer": "Nightstand::4",
+      "flatmates.attachmentPolicy": "loose",
+      "flatmates.foldParentSurfaceId": "5",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            8.9102426688535274,
+            98.019937122920552,
+            0.0
+          ],
+          [
+            8.9102426688535274,
+            93.4096092112976,
+            0.0
+          ],
+          [
+            11.64574856558696,
+            93.4096092112976,
+            0.0
+          ],
+          [
+            11.64574856558696,
+            98.019937122920552,
+            0.0
+          ],
+          [
+            8.9102426688535274,
+            98.019937122920552,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          11.64574856558696,
+          98.019937122920552,
+          0.0,
+          11.64574856558696,
+          93.4096092112976,
+          0.0
+        ],
+        "angleRadians": "-1.5707963267948966"
+      },
+      "id": "s4_p0_i1_f1"
+    },
+    {
+      "flatmates.surfaceId": "0",
+      "flatmates.sourceObjectIds": "58924d7a-de34-4d27-be82-a2c48748b613",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "58924d7a-de34-4d27-be82-a2c48748b613#0",
+      "flatmates.islandId": "1",
+      "flatmates.craftingStep": "4",
+      "flatmates.selfSimId": "7",
+      "flatmates.layer": "Nightstand::4",
+      "flatmates.attachmentPolicy": "loose",
+      "flatmates.foldParentSurfaceId": "3",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            18.291497131173919,
+            98.019937122920552,
+            0.0
+          ],
+          [
+            18.291497131173919,
+            101.93017979177408,
+            0.0
+          ],
+          [
+            15.555991234440487,
+            101.93017979177408,
+            0.0
+          ],
+          [
+            15.555991234440487,
+            98.019937122920552,
+            0.0
+          ],
+          [
+            18.291497131173919,
+            98.019937122920552,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          18.291497131173919,
+          98.019937122920552,
+          0.0,
+          15.555991234440487,
+          98.019937122920552,
+          0.0
+        ],
+        "angleRadians": "-1.5707963267948966"
+      },
+      "id": "s4_p0_i1_f0"
+    },
+    {
+      "flatmates.surfaceId": "4",
+      "flatmates.sourceObjectIds": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "3",
+      "flatmates.selfSimId": "6",
+      "flatmates.layer": "Nightstand::3",
+      "flatmates.transformType": "movement",
+      "flatLoops": [
+        [
+          [
+            6.5383667155287029,
+            59.087817585802178,
+            -3.5527136788005009E-15
+          ],
+          [
+            24.637802973144673,
+            59.087817585802178,
+            -3.5527136788005009E-15
+          ],
+          [
+            24.637802973144673,
+            77.960999826915383,
+            -3.5527136788005009E-15
+          ],
+          [
+            6.5383667155287029,
+            77.960999826915383,
+            -3.5527136788005009E-15
+          ],
+          [
+            6.5383667155287029,
+            59.087817585802178,
+            -3.5527136788005009E-15
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "movement",
+        "forward": [
+          0.0,
+          -1.0,
+          0.0,
+          8.322746004304431,
+          1.0,
+          0.0,
+          0.0,
+          68.1894380117723,
+          0.0,
+          0.0,
+          1.0,
+          -18.125448583258482,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "inverse": [
+          0.0,
+          1.0,
+          0.0,
+          -68.1894380117723,
+          -1.0,
+          0.0,
+          0.0,
+          8.322746004304431,
+          0.0,
+          0.0,
+          1.0,
+          18.125448583258478,
+          0.0,
+          0.0,
+          0.0,
+          0.99999999999999989
+        ]
+      },
+      "id": "s3_p1_i0_f4"
+    },
+    {
+      "flatmates.surfaceId": "3",
+      "flatmates.sourceObjectIds": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "3",
+      "flatmates.selfSimId": "6",
+      "flatmates.layer": "Nightstand::3",
+      "flatmates.foldParentSurfaceId": "4",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            5.0,
+            77.960999826915383,
+            -3.5527136788005009E-15
+          ],
+          [
+            5.0,
+            59.087817585802178,
+            -3.5527136788005009E-15
+          ],
+          [
+            6.5383667155287029,
+            59.087817585802178,
+            -3.5527136788005009E-15
+          ],
+          [
+            6.5383667155287029,
+            77.960999826915383,
+            -3.5527136788005009E-15
+          ],
+          [
+            5.0,
+            77.960999826915383,
+            -3.5527136788005009E-15
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          6.5383667155287029,
+          77.960999826915383,
+          -3.5527136788005009E-15,
+          6.5383667155287029,
+          59.087817585802178,
+          -3.5527136788005009E-15
+        ],
+        "angleRadians": "-1.5707963267948966"
+      },
+      "id": "s3_p1_i0_f3"
+    },
+    {
+      "flatmates.surfaceId": "2",
+      "flatmates.sourceObjectIds": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "3",
+      "flatmates.selfSimId": "6",
+      "flatmates.layer": "Nightstand::3",
+      "flatmates.foldParentSurfaceId": "4",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            24.637802973144673,
+            79.499366542444079,
+            -3.5527136788005009E-15
+          ],
+          [
+            6.5383667155287029,
+            79.499366542444079,
+            -3.5527136788005009E-15
+          ],
+          [
+            6.5383667155287029,
+            77.960999826915383,
+            -3.5527136788005009E-15
+          ],
+          [
+            24.637802973144673,
+            77.960999826915383,
+            -3.5527136788005009E-15
+          ],
+          [
+            24.637802973144673,
+            79.499366542444079,
+            -3.5527136788005009E-15
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          24.637802973144673,
+          77.960999826915383,
+          -3.5527136788005009E-15,
+          6.5383667155287029,
+          77.960999826915383,
+          -3.5527136788005009E-15
+        ],
+        "angleRadians": "-1.5707963267948966"
+      },
+      "id": "s3_p1_i0_f2"
+    },
+    {
+      "flatmates.surfaceId": "1",
+      "flatmates.sourceObjectIds": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "3",
+      "flatmates.selfSimId": "6",
+      "flatmates.layer": "Nightstand::3",
+      "flatmates.foldParentSurfaceId": "4",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            26.176169688673376,
+            59.087817585802178,
+            -3.5527136788005009E-15
+          ],
+          [
+            26.176169688673376,
+            77.960999826915383,
+            -3.5527136788005009E-15
+          ],
+          [
+            24.637802973144673,
+            77.960999826915383,
+            -3.5527136788005009E-15
+          ],
+          [
+            24.637802973144673,
+            59.087817585802178,
+            -3.5527136788005009E-15
+          ],
+          [
+            26.176169688673376,
+            59.087817585802178,
+            -3.5527136788005009E-15
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          24.637802973144673,
+          59.087817585802178,
+          -3.5527136788005009E-15,
+          24.637802973144673,
+          77.960999826915383,
+          -3.5527136788005009E-15
+        ],
+        "angleRadians": "-1.5707963267948966"
+      },
+      "id": "s3_p1_i0_f1"
+    },
+    {
+      "flatmates.surfaceId": "0",
+      "flatmates.sourceObjectIds": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "3",
+      "flatmates.selfSimId": "6",
+      "flatmates.layer": "Nightstand::3",
+      "flatmates.foldParentSurfaceId": "4",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            6.5383667155287029,
+            57.549450870273475,
+            -3.5527136788005009E-15
+          ],
+          [
+            24.637802973144673,
+            57.549450870273475,
+            -3.5527136788005009E-15
+          ],
+          [
+            24.637802973144673,
+            59.087817585802178,
+            -3.5527136788005009E-15
+          ],
+          [
+            6.5383667155287029,
+            59.087817585802178,
+            -3.5527136788005009E-15
+          ],
+          [
+            6.5383667155287029,
+            57.549450870273475,
+            -3.5527136788005009E-15
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          6.5383667155287029,
+          59.087817585802178,
+          -3.5527136788005009E-15,
+          24.637802973144673,
+          59.087817585802178,
+          -3.5527136788005009E-15
+        ],
+        "angleRadians": "-1.5707963267948966"
+      },
+      "id": "s3_p1_i0_f0"
+    },
+    {
+      "flatmates.surfaceId": "5",
+      "flatmates.sourceObjectIds": "33c563f4-22a8-45f2-a621-99e8493f22d0",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "33c563f4-22a8-45f2-a621-99e8493f22d0#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "2",
+      "flatmates.selfSimId": "5",
+      "flatmates.layer": "Nightstand::2",
+      "flatmates.transformType": "movement",
+      "flatLoops": [
+        [
+          [
+            6.4479094799188061,
+            28.338117879367246,
+            -3.5527136788005009E-15
+          ],
+          [
+            23.483083911381833,
+            28.338117879367246,
+            -3.5527136788005009E-15
+          ],
+          [
+            23.483083911381833,
+            46.101541390354669,
+            -3.5527136788005009E-15
+          ],
+          [
+            6.4479094799188061,
+            46.101541390354669,
+            -3.5527136788005009E-15
+          ],
+          [
+            6.4479094799188061,
+            28.338117879367246,
+            -3.5527136788005009E-15
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "movement",
+        "forward": [
+          0.0,
+          -1.0,
+          0.0,
+          7.7001578565483282,
+          1.0,
+          0.0,
+          0.0,
+          36.884858880827082,
+          0.0,
+          0.0,
+          1.0,
+          -18.080219965453534,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "inverse": [
+          0.0,
+          1.0,
+          0.0,
+          -36.884858880827082,
+          -1.0,
+          0.0,
+          0.0,
+          7.7001578565483282,
+          0.0,
+          0.0,
+          1.0,
+          18.080219965453534,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "id": "s2_p2_i0_f5"
+    },
+    {
+      "flatmates.surfaceId": "4",
+      "flatmates.sourceObjectIds": "33c563f4-22a8-45f2-a621-99e8493f22d0",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "33c563f4-22a8-45f2-a621-99e8493f22d0#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "2",
+      "flatmates.selfSimId": "5",
+      "flatmates.layer": "Nightstand::2",
+      "flatmates.foldParentSurfaceId": "1",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            41.966167822763666,
+            28.338117879367246,
+            -3.5527136788005009E-15
+          ],
+          [
+            41.966167822763666,
+            46.101541390354669,
+            -3.5527136788005009E-15
+          ],
+          [
+            24.930993391300639,
+            46.101541390354669,
+            -3.5527136788005009E-15
+          ],
+          [
+            24.930993391300639,
+            28.338117879367246,
+            -3.5527136788005009E-15
+          ],
+          [
+            41.966167822763666,
+            28.338117879367246,
+            -3.5527136788005009E-15
+          ]
+        ],
+        [
+          [
+            37.2981072788382,
+            30.168061022155413,
+            -7.1054273576010019E-15
+          ],
+          [
+            37.2981072788382,
+            33.200025435080406,
+            -7.1054273576010019E-15
+          ],
+          [
+            40.211247065637423,
+            33.200025435080406,
+            -7.1054273576010019E-15
+          ],
+          [
+            40.211247065637423,
+            30.168061022155413,
+            -7.1054273576010019E-15
+          ],
+          [
+            37.2981072788382,
+            30.168061022155413,
+            -7.1054273576010019E-15
+          ]
+        ],
+        [
+          [
+            29.599053935226095,
+            30.168061022155413,
+            -7.1054273576010019E-15
+          ],
+          [
+            26.685914148426868,
+            30.168061022155413,
+            -7.1054273576010019E-15
+          ],
+          [
+            26.685914148426868,
+            33.200025435080406,
+            -7.1054273576010019E-15
+          ],
+          [
+            29.599053935226095,
+            33.200025435080406,
+            -7.1054273576010019E-15
+          ],
+          [
+            29.599053935226095,
+            30.168061022155413,
+            -7.1054273576010019E-15
+          ]
+        ],
+        [
+          [
+            40.211247065637423,
+            41.239633834641523,
+            -7.1054273576010019E-15
+          ],
+          [
+            37.2981072788382,
+            41.239633834641523,
+            -7.1054273576010019E-15
+          ],
+          [
+            37.2981072788382,
+            44.2715982475665,
+            -7.1054273576010019E-15
+          ],
+          [
+            40.211247065637423,
+            44.2715982475665,
+            -7.1054273576010019E-15
+          ],
+          [
+            40.211247065637423,
+            41.239633834641523,
+            -7.1054273576010019E-15
+          ]
+        ],
+        [
+          [
+            29.599053935226095,
+            41.239633834641523,
+            -7.1054273576010019E-15
+          ],
+          [
+            26.685914148426868,
+            41.239633834641523,
+            -7.1054273576010019E-15
+          ],
+          [
+            26.685914148426868,
+            44.2715982475665,
+            -7.1054273576010019E-15
+          ],
+          [
+            29.599053935226095,
+            44.2715982475665,
+            -7.1054273576010019E-15
+          ],
+          [
+            29.599053935226095,
+            41.239633834641523,
+            -7.1054273576010019E-15
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          24.930993391300632,
+          28.338117879367246,
+          -3.5527136788005009E-15,
+          24.930993391300632,
+          46.101541390354669,
+          -3.5527136788005009E-15
+        ],
+        "angleRadians": "-1.5707963267948966"
+      },
+      "id": "s2_p2_i0_f4"
+    },
+    {
+      "flatmates.surfaceId": "3",
+      "flatmates.sourceObjectIds": "33c563f4-22a8-45f2-a621-99e8493f22d0",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "33c563f4-22a8-45f2-a621-99e8493f22d0#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "2",
+      "flatmates.selfSimId": "5",
+      "flatmates.layer": "Nightstand::2",
+      "flatmates.foldParentSurfaceId": "5",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            5.0,
+            46.101541390354669,
+            -3.5527136788005009E-15
+          ],
+          [
+            5.0,
+            28.338117879367246,
+            -3.5527136788005009E-15
+          ],
+          [
+            6.4479094799188061,
+            28.338117879367246,
+            -3.5527136788005009E-15
+          ],
+          [
+            6.4479094799188061,
+            46.101541390354669,
+            -3.5527136788005009E-15
+          ],
+          [
+            5.0,
+            46.101541390354669,
+            -3.5527136788005009E-15
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          6.4479094799188061,
+          46.101541390354669,
+          -3.5527136788005009E-15,
+          6.4479094799188061,
+          28.338117879367246,
+          -3.5527136788005009E-15
+        ],
+        "angleRadians": "-1.5707963267948966"
+      },
+      "id": "s2_p2_i0_f3"
+    },
+    {
+      "flatmates.surfaceId": "2",
+      "flatmates.sourceObjectIds": "33c563f4-22a8-45f2-a621-99e8493f22d0",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "33c563f4-22a8-45f2-a621-99e8493f22d0#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "2",
+      "flatmates.selfSimId": "5",
+      "flatmates.layer": "Nightstand::2",
+      "flatmates.foldParentSurfaceId": "5",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            23.483083911381833,
+            47.549450870273475,
+            -3.5527136788005009E-15
+          ],
+          [
+            6.4479094799188061,
+            47.549450870273475,
+            -3.5527136788005009E-15
+          ],
+          [
+            6.4479094799188061,
+            46.101541390354669,
+            -3.5527136788005009E-15
+          ],
+          [
+            23.483083911381833,
+            46.101541390354669,
+            -3.5527136788005009E-15
+          ],
+          [
+            23.483083911381833,
+            47.549450870273475,
+            -3.5527136788005009E-15
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          23.483083911381833,
+          46.101541390354669,
+          -3.5527136788005009E-15,
+          6.4479094799188061,
+          46.101541390354669,
+          -3.5527136788005009E-15
+        ],
+        "angleRadians": "-1.5707963267948966"
+      },
+      "id": "s2_p2_i0_f2"
+    },
+    {
+      "flatmates.surfaceId": "1",
+      "flatmates.sourceObjectIds": "33c563f4-22a8-45f2-a621-99e8493f22d0",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "33c563f4-22a8-45f2-a621-99e8493f22d0#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "2",
+      "flatmates.selfSimId": "5",
+      "flatmates.layer": "Nightstand::2",
+      "flatmates.foldParentSurfaceId": "5",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            24.930993391300639,
+            28.338117879367246,
+            -3.5527136788005009E-15
+          ],
+          [
+            24.930993391300639,
+            46.101541390354669,
+            -3.5527136788005009E-15
+          ],
+          [
+            23.483083911381833,
+            46.101541390354669,
+            -3.5527136788005009E-15
+          ],
+          [
+            23.483083911381833,
+            28.338117879367246,
+            -3.5527136788005009E-15
+          ],
+          [
+            24.930993391300639,
+            28.338117879367246,
+            -3.5527136788005009E-15
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          23.483083911381833,
+          28.338117879367246,
+          -3.5527136788005009E-15,
+          23.483083911381833,
+          46.101541390354669,
+          -3.5527136788005009E-15
+        ],
+        "angleRadians": "-1.5707963267948966"
+      },
+      "id": "s2_p2_i0_f1"
+    },
+    {
+      "flatmates.surfaceId": "0",
+      "flatmates.sourceObjectIds": "33c563f4-22a8-45f2-a621-99e8493f22d0",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "33c563f4-22a8-45f2-a621-99e8493f22d0#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "2",
+      "flatmates.selfSimId": "5",
+      "flatmates.layer": "Nightstand::2",
+      "flatmates.foldParentSurfaceId": "5",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            6.4479094799188061,
+            26.89020839944844,
+            -3.5527136788005009E-15
+          ],
+          [
+            23.483083911381833,
+            26.89020839944844,
+            -3.5527136788005009E-15
+          ],
+          [
+            23.483083911381833,
+            28.338117879367246,
+            -3.5527136788005009E-15
+          ],
+          [
+            6.4479094799188061,
+            28.338117879367246,
+            -3.5527136788005009E-15
+          ],
+          [
+            6.4479094799188061,
+            26.89020839944844,
+            -3.5527136788005009E-15
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          6.4479094799188061,
+          28.338117879367246,
+          -3.5527136788005009E-15,
+          23.483083911381833,
+          28.338117879367246,
+          -3.5527136788005009E-15
+        ],
+        "angleRadians": "-1.5707963267948966"
+      },
+      "id": "s2_p2_i0_f0"
+    },
+    {
+      "flatmates.surfaceId": "4",
+      "flatmates.sourceObjectIds": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "4",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.foldParentSurfaceId": "0",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            84.632310485534731,
+            10.94510419972422,
+            3.5527136788005009E-15
+          ],
+          [
+            87.545450272333952,
+            10.94510419972422,
+            3.5527136788005009E-15
+          ],
+          [
+            87.545450272333952,
+            13.977068612649198,
+            3.5527136788005009E-15
+          ],
+          [
+            84.632310485534731,
+            13.977068612649198,
+            3.5527136788005009E-15
+          ],
+          [
+            84.632310485534731,
+            10.94510419972422,
+            3.5527136788005009E-15
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          84.632310485534731,
+          10.94510419972422,
+          3.5527136788005009E-15,
+          84.632310485534731,
+          13.977068612649198,
+          3.5527136788005009E-15
+        ],
+        "angleRadians": "-1.5707963267948966"
+      },
+      "id": "s1_p3_i0_f4"
+    },
+    {
+      "flatmates.surfaceId": "3",
+      "flatmates.sourceObjectIds": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "4",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.foldParentSurfaceId": "0",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            84.632310485534731,
+            8.0319644129249923,
+            3.5527136788005009E-15
+          ],
+          [
+            84.632310485534731,
+            10.94510419972422,
+            3.5527136788005009E-15
+          ],
+          [
+            68.0,
+            10.945104199724206,
+            3.5527136788005009E-15
+          ],
+          [
+            68.0,
+            8.0319644129249781,
+            3.5527136788005009E-15
+          ],
+          [
+            84.632310485534731,
+            8.0319644129249923,
+            3.5527136788005009E-15
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          84.632310485534731,
+          10.94510419972422,
+          3.5527136788005009E-15,
+          68.0,
+          10.945104199724206,
+          3.5527136788005009E-15
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p3_i0_f3"
+    },
+    {
+      "flatmates.surfaceId": "2",
+      "flatmates.sourceObjectIds": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "4",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.foldParentSurfaceId": "3",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            84.632310485534731,
+            5.0000000000000142,
+            3.5527136788005009E-15
+          ],
+          [
+            84.632310485534731,
+            8.0319644129249923,
+            3.5527136788005009E-15
+          ],
+          [
+            68.0,
+            8.0319644129249781,
+            3.5527136788005009E-15
+          ],
+          [
+            68.0,
+            5.0,
+            3.5527136788005009E-15
+          ],
+          [
+            84.632310485534731,
+            5.0000000000000142,
+            3.5527136788005009E-15
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          84.632310485534731,
+          8.0319644129249852,
+          3.5527136788005009E-15,
+          68.0,
+          8.031964412924971,
+          3.5527136788005009E-15
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p3_i0_f2"
+    },
+    {
+      "flatmates.surfaceId": "1",
+      "flatmates.sourceObjectIds": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "4",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.foldParentSurfaceId": "0",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            84.632310485534731,
+            13.977068612649198,
+            3.5527136788005009E-15
+          ],
+          [
+            84.632310485534731,
+            16.890208399448426,
+            3.5527136788005009E-15
+          ],
+          [
+            68.0,
+            16.890208399448412,
+            3.5527136788005009E-15
+          ],
+          [
+            68.0,
+            13.977068612649184,
+            3.5527136788005009E-15
+          ],
+          [
+            84.632310485534731,
+            13.977068612649198,
+            3.5527136788005009E-15
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          84.632310485534731,
+          13.977068612649198,
+          3.5527136788005009E-15,
+          68.0,
+          13.977068612649184,
+          3.5527136788005009E-15
+        ],
+        "angleRadians": "-1.5707963267948966"
+      },
+      "id": "s1_p3_i0_f1"
+    },
+    {
+      "flatmates.surfaceId": "0",
+      "flatmates.sourceObjectIds": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "4",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.transformType": "movement",
+      "flatLoops": [
+        [
+          [
+            84.632310485534731,
+            10.94510419972422,
+            3.5527136788005009E-15
+          ],
+          [
+            84.632310485534731,
+            13.977068612649198,
+            3.5527136788005009E-15
+          ],
+          [
+            68.0,
+            13.977068612649184,
+            3.5527136788005009E-15
+          ],
+          [
+            68.0,
+            10.945104199724206,
+            3.5527136788005009E-15
+          ],
+          [
+            84.632310485534731,
+            10.94510419972422,
+            3.5527136788005009E-15
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "movement",
+        "forward": [
+          0.0,
+          0.0,
+          -1.0,
+          84.632310485534731,
+          1.0,
+          0.0,
+          0.0,
+          6.5903292459097642,
+          0.0,
+          -1.0,
+          0.0,
+          -14.028005297707271,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "inverse": [
+          0.0,
+          1.0,
+          0.0,
+          -6.5903292459097642,
+          0.0,
+          0.0,
+          -1.0,
+          -14.028005297707271,
+          -1.0,
+          0.0,
+          0.0,
+          84.632310485534731,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "id": "s1_p3_i0_f0"
+    },
+    {
+      "flatmates.surfaceId": "4",
+      "flatmates.sourceObjectIds": "caf6172d-d555-4758-bd02-386715d349fd",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "caf6172d-d555-4758-bd02-386715d349fd#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "3",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.foldParentSurfaceId": "0",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            63.632310485534731,
+            10.94510419972422,
+            0.0
+          ],
+          [
+            66.545450272333952,
+            10.94510419972422,
+            0.0
+          ],
+          [
+            66.545450272333952,
+            13.977068612649212,
+            0.0
+          ],
+          [
+            63.632310485534731,
+            13.977068612649212,
+            0.0
+          ],
+          [
+            63.632310485534731,
+            10.94510419972422,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          63.632310485534731,
+          10.94510419972422,
+          0.0,
+          63.632310485534731,
+          13.977068612649212,
+          0.0
+        ],
+        "angleRadians": "-1.5707963267948966"
+      },
+      "id": "s1_p4_i0_f4"
+    },
+    {
+      "flatmates.surfaceId": "3",
+      "flatmates.sourceObjectIds": "caf6172d-d555-4758-bd02-386715d349fd",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "caf6172d-d555-4758-bd02-386715d349fd#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "3",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.foldParentSurfaceId": "0",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            63.632310485534731,
+            8.0319644129249959,
+            0.0
+          ],
+          [
+            63.632310485534731,
+            10.94510419972422,
+            0.0
+          ],
+          [
+            47.0,
+            10.94510419972422,
+            3.5527136788005009E-15
+          ],
+          [
+            47.0,
+            8.0319644129249923,
+            3.5527136788005009E-15
+          ],
+          [
+            63.632310485534731,
+            8.0319644129249959,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          63.632310485534731,
+          10.94510419972422,
+          0.0,
+          47.0,
+          10.94510419972422,
+          3.5527136788005009E-15
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p4_i0_f3"
+    },
+    {
+      "flatmates.surfaceId": "2",
+      "flatmates.sourceObjectIds": "caf6172d-d555-4758-bd02-386715d349fd",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "caf6172d-d555-4758-bd02-386715d349fd#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "3",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.foldParentSurfaceId": "3",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            63.632310485534731,
+            5.0000000000000036,
+            0.0
+          ],
+          [
+            63.632310485534731,
+            8.0319644129249959,
+            0.0
+          ],
+          [
+            47.0,
+            8.0319644129249923,
+            3.5527136788005009E-15
+          ],
+          [
+            47.0,
+            5.0,
+            3.5527136788005009E-15
+          ],
+          [
+            63.632310485534731,
+            5.0000000000000036,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          63.632310485534731,
+          8.0319644129249959,
+          0.0,
+          47.0,
+          8.0319644129249923,
+          3.5527136788005009E-15
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p4_i0_f2"
+    },
+    {
+      "flatmates.surfaceId": "1",
+      "flatmates.sourceObjectIds": "caf6172d-d555-4758-bd02-386715d349fd",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "caf6172d-d555-4758-bd02-386715d349fd#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "3",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.foldParentSurfaceId": "0",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            63.632310485534731,
+            13.977068612649212,
+            0.0
+          ],
+          [
+            63.632310485534731,
+            16.890208399448436,
+            0.0
+          ],
+          [
+            47.0,
+            16.89020839944844,
+            3.5527136788005009E-15
+          ],
+          [
+            47.0,
+            13.977068612649212,
+            3.5527136788005009E-15
+          ],
+          [
+            63.632310485534731,
+            13.977068612649212,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          63.632310485534731,
+          13.977068612649212,
+          0.0,
+          47.0,
+          13.977068612649212,
+          3.5527136788005009E-15
+        ],
+        "angleRadians": "-1.5707963267948966"
+      },
+      "id": "s1_p4_i0_f1"
+    },
+    {
+      "flatmates.surfaceId": "0",
+      "flatmates.sourceObjectIds": "caf6172d-d555-4758-bd02-386715d349fd",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "caf6172d-d555-4758-bd02-386715d349fd#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "3",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.transformType": "movement",
+      "flatLoops": [
+        [
+          [
+            63.632310485534731,
+            10.94510419972422,
+            0.0
+          ],
+          [
+            63.632310485534731,
+            13.977068612649212,
+            0.0
+          ],
+          [
+            47.0,
+            13.977068612649212,
+            3.5527136788005009E-15
+          ],
+          [
+            47.0,
+            10.94510419972422,
+            3.5527136788005009E-15
+          ],
+          [
+            63.632310485534731,
+            10.94510419972422,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "movement",
+        "forward": [
+          0.0,
+          0.0,
+          -1.0,
+          63.632310485534731,
+          1.0,
+          0.0,
+          0.0,
+          17.661902058395889,
+          0.0,
+          -1.0,
+          0.0,
+          -14.028005297707271,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "inverse": [
+          0.0,
+          1.0,
+          0.0,
+          -17.661902058395889,
+          0.0,
+          0.0,
+          -1.0,
+          -14.028005297707269,
+          -1.0,
+          0.0,
+          0.0,
+          63.632310485534717,
+          0.0,
+          0.0,
+          0.0,
+          0.99999999999999989
+        ]
+      },
+      "id": "s1_p4_i0_f0"
+    },
+    {
+      "flatmates.surfaceId": "4",
+      "flatmates.sourceObjectIds": "60ba2c62-652d-4ff1-ad01-4769a1dacee6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "60ba2c62-652d-4ff1-ad01-4769a1dacee6#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "2",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.foldParentSurfaceId": "0",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            42.632310485534738,
+            10.945104199724216,
+            0.0
+          ],
+          [
+            45.545450272333966,
+            10.945104199724216,
+            0.0
+          ],
+          [
+            45.545450272333966,
+            13.977068612649195,
+            0.0
+          ],
+          [
+            42.632310485534738,
+            13.977068612649195,
+            0.0
+          ],
+          [
+            42.632310485534738,
+            10.945104199724216,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          42.632310485534738,
+          10.945104199724216,
+          -4.4408920985006262E-16,
+          42.632310485534738,
+          13.977068612649195,
+          -4.4408920985006262E-16
+        ],
+        "angleRadians": "-1.5707963267948966"
+      },
+      "id": "s1_p5_i0_f4"
+    },
+    {
+      "flatmates.surfaceId": "3",
+      "flatmates.sourceObjectIds": "60ba2c62-652d-4ff1-ad01-4769a1dacee6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "60ba2c62-652d-4ff1-ad01-4769a1dacee6#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "2",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.foldParentSurfaceId": "0",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            42.632310485534738,
+            8.0319644129249923,
+            -4.4408920985006262E-16
+          ],
+          [
+            42.632310485534738,
+            10.945104199724216,
+            -4.4408920985006262E-16
+          ],
+          [
+            26.000000000000011,
+            10.945104199724231,
+            4.4408920985006262E-16
+          ],
+          [
+            26.000000000000007,
+            8.0319644129250065,
+            4.4408920985006262E-16
+          ],
+          [
+            42.632310485534738,
+            8.0319644129249923,
+            -4.4408920985006262E-16
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          42.632310485534738,
+          10.945104199724216,
+          -4.4408920985006262E-16,
+          26.000000000000011,
+          10.945104199724231,
+          4.4408920985006262E-16
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p5_i0_f3"
+    },
+    {
+      "flatmates.surfaceId": "2",
+      "flatmates.sourceObjectIds": "60ba2c62-652d-4ff1-ad01-4769a1dacee6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "60ba2c62-652d-4ff1-ad01-4769a1dacee6#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "2",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.foldParentSurfaceId": "3",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            42.632310485534731,
+            5.0000000000000142,
+            -8.8817841970012523E-16
+          ],
+          [
+            42.632310485534738,
+            8.0319644129249923,
+            -8.8817841970012523E-16
+          ],
+          [
+            26.000000000000007,
+            8.0319644129250065,
+            0.0
+          ],
+          [
+            26.000000000000007,
+            5.0000000000000284,
+            0.0
+          ],
+          [
+            42.632310485534731,
+            5.0000000000000142,
+            -8.8817841970012523E-16
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          42.632310485534738,
+          8.0319644129249923,
+          -4.4408920985006262E-16,
+          26.000000000000007,
+          8.0319644129250065,
+          4.4408920985006262E-16
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p5_i0_f2"
+    },
+    {
+      "flatmates.surfaceId": "1",
+      "flatmates.sourceObjectIds": "60ba2c62-652d-4ff1-ad01-4769a1dacee6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "60ba2c62-652d-4ff1-ad01-4769a1dacee6#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "2",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.foldParentSurfaceId": "0",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            42.632310485534738,
+            13.977068612649195,
+            -4.4408920985006262E-16
+          ],
+          [
+            42.632310485534738,
+            16.890208399448419,
+            -4.4408920985006262E-16
+          ],
+          [
+            26.000000000000014,
+            16.890208399448433,
+            4.4408920985006262E-16
+          ],
+          [
+            26.000000000000011,
+            13.977068612649209,
+            4.4408920985006262E-16
+          ],
+          [
+            42.632310485534738,
+            13.977068612649195,
+            -4.4408920985006262E-16
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          42.632310485534738,
+          13.977068612649195,
+          -4.4408920985006262E-16,
+          26.000000000000011,
+          13.977068612649209,
+          4.4408920985006262E-16
+        ],
+        "angleRadians": "-1.5707963267948966"
+      },
+      "id": "s1_p5_i0_f1"
+    },
+    {
+      "flatmates.surfaceId": "0",
+      "flatmates.sourceObjectIds": "60ba2c62-652d-4ff1-ad01-4769a1dacee6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "60ba2c62-652d-4ff1-ad01-4769a1dacee6#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "2",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.transformType": "movement",
+      "flatLoops": [
+        [
+          [
+            42.632310485534738,
+            10.945104199724216,
+            -4.4408920985006262E-16
+          ],
+          [
+            42.632310485534738,
+            13.977068612649195,
+            -4.4408920985006262E-16
+          ],
+          [
+            26.000000000000011,
+            13.977068612649209,
+            4.4408920985006262E-16
+          ],
+          [
+            26.000000000000011,
+            10.945104199724231,
+            4.4408920985006262E-16
+          ],
+          [
+            42.632310485534738,
+            10.945104199724216,
+            -4.4408920985006262E-16
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "movement",
+        "forward": [
+          0.0,
+          0.0,
+          -1.0,
+          42.632310485534738,
+          1.0,
+          0.0,
+          0.0,
+          6.5903292459097891,
+          0.0,
+          -1.0,
+          0.0,
+          -3.4158121672959423,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "inverse": [
+          0.0,
+          1.0,
+          0.0,
+          -6.5903292459097891,
+          0.0,
+          0.0,
+          -1.0,
+          -3.4158121672959427,
+          -1.0,
+          0.0,
+          0.0,
+          42.632310485534745,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "id": "s1_p5_i0_f0"
+    },
+    {
+      "flatmates.surfaceId": "4",
+      "flatmates.sourceObjectIds": "6051aaed-9338-4656-a577-b36d3ee5bd6c",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "6051aaed-9338-4656-a577-b36d3ee5bd6c#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "1",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.foldParentSurfaceId": "0",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            21.632310485534727,
+            10.945104199724216,
+            0.0
+          ],
+          [
+            24.545450272333952,
+            10.945104199724216,
+            0.0
+          ],
+          [
+            24.545450272333952,
+            13.977068612649209,
+            0.0
+          ],
+          [
+            21.632310485534727,
+            13.977068612649209,
+            0.0
+          ],
+          [
+            21.632310485534727,
+            10.945104199724216,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          21.632310485534727,
+          10.945104199724216,
+          -4.4408920985006262E-16,
+          21.632310485534727,
+          13.977068612649209,
+          -4.4408920985006262E-16
+        ],
+        "angleRadians": "-1.5707963267948966"
+      },
+      "id": "s1_p6_i0_f4"
+    },
+    {
+      "flatmates.surfaceId": "3",
+      "flatmates.sourceObjectIds": "6051aaed-9338-4656-a577-b36d3ee5bd6c",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "6051aaed-9338-4656-a577-b36d3ee5bd6c#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "1",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.foldParentSurfaceId": "0",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            21.632310485534727,
+            8.0319644129249923,
+            -4.4408920985006262E-16
+          ],
+          [
+            21.632310485534727,
+            10.945104199724216,
+            -4.4408920985006262E-16
+          ],
+          [
+            5.0,
+            10.945104199724216,
+            4.4408920985006262E-16
+          ],
+          [
+            5.0,
+            8.0319644129249923,
+            4.4408920985006262E-16
+          ],
+          [
+            21.632310485534727,
+            8.0319644129249923,
+            -4.4408920985006262E-16
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          21.632310485534727,
+          10.945104199724216,
+          -4.4408920985006262E-16,
+          5.0,
+          10.945104199724216,
+          4.4408920985006262E-16
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p6_i0_f3"
+    },
+    {
+      "flatmates.surfaceId": "2",
+      "flatmates.sourceObjectIds": "6051aaed-9338-4656-a577-b36d3ee5bd6c",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "6051aaed-9338-4656-a577-b36d3ee5bd6c#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "1",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.foldParentSurfaceId": "3",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            21.632310485534727,
+            5.0,
+            -8.8817841970012523E-16
+          ],
+          [
+            21.632310485534727,
+            8.0319644129249923,
+            -8.8817841970012523E-16
+          ],
+          [
+            5.0,
+            8.0319644129249923,
+            0.0
+          ],
+          [
+            5.0,
+            5.0,
+            0.0
+          ],
+          [
+            21.632310485534727,
+            5.0,
+            -8.8817841970012523E-16
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          21.632310485534727,
+          8.0319644129249923,
+          -4.4408920985006262E-16,
+          5.0,
+          8.0319644129249923,
+          4.4408920985006262E-16
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p6_i0_f2"
+    },
+    {
+      "flatmates.surfaceId": "1",
+      "flatmates.sourceObjectIds": "6051aaed-9338-4656-a577-b36d3ee5bd6c",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "6051aaed-9338-4656-a577-b36d3ee5bd6c#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "1",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.foldParentSurfaceId": "0",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            21.632310485534727,
+            13.977068612649209,
+            -4.4408920985006262E-16
+          ],
+          [
+            21.632310485534727,
+            16.890208399448433,
+            -4.4408920985006262E-16
+          ],
+          [
+            5.0,
+            16.890208399448433,
+            4.4408920985006262E-16
+          ],
+          [
+            5.0,
+            13.977068612649209,
+            4.4408920985006262E-16
+          ],
+          [
+            21.632310485534727,
+            13.977068612649209,
+            -4.4408920985006262E-16
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          21.632310485534727,
+          13.977068612649209,
+          -4.4408920985006262E-16,
+          5.0,
+          13.977068612649209,
+          4.4408920985006262E-16
+        ],
+        "angleRadians": "-1.5707963267948966"
+      },
+      "id": "s1_p6_i0_f1"
+    },
+    {
+      "flatmates.surfaceId": "0",
+      "flatmates.sourceObjectIds": "6051aaed-9338-4656-a577-b36d3ee5bd6c",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "6051aaed-9338-4656-a577-b36d3ee5bd6c#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "1",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.transformType": "movement",
+      "flatLoops": [
+        [
+          [
+            21.632310485534727,
+            10.945104199724216,
+            -4.4408920985006262E-16
+          ],
+          [
+            21.632310485534727,
+            13.977068612649209,
+            -4.4408920985006262E-16
+          ],
+          [
+            5.0,
+            13.977068612649209,
+            4.4408920985006262E-16
+          ],
+          [
+            5.0,
+            10.945104199724216,
+            4.4408920985006262E-16
+          ],
+          [
+            21.632310485534727,
+            10.945104199724216,
+            -4.4408920985006262E-16
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "movement",
+        "forward": [
+          0.0,
+          0.0,
+          -1.0,
+          21.632310485534727,
+          1.0,
+          0.0,
+          0.0,
+          17.661902058395885,
+          0.0,
+          -1.0,
+          0.0,
+          -3.4158121672959423,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "inverse": [
+          0.0,
+          1.0,
+          0.0,
+          -17.661902058395885,
+          0.0,
+          0.0,
+          -1.0,
+          -3.4158121672959427,
+          -1.0,
+          0.0,
+          0.0,
+          21.632310485534727,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "id": "s1_p6_i0_f0"
+    }
+  ],
+  "edges": [
+    {
+      "flatmates.sourceObjectIds": "58924d7a-de34-4d27-be82-a2c48748b613",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "58924d7a-de34-4d27-be82-a2c48748b613#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "10",
+      "flatmates.surfaceIdA": "3",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "4",
+      "flatmates.selfSimId": "7",
+      "flatmates.layer": "Nightstand::4",
+      "flatmates.treatment": "glue",
+      "flatmates.attachmentPolicy": "loose",
+      "curve": [
+        [
+          5.0,
+          93.4096092112976,
+          0.0
+        ],
+        [
+          5.0,
+          98.019937122920552,
+          0.0
+        ]
+      ],
+      "faceA": "s4_p0_i1_f3",
+      "faceB": "s4_p0_i1_f4",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.sourceObjectIds": "58924d7a-de34-4d27-be82-a2c48748b613",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "58924d7a-de34-4d27-be82-a2c48748b613#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "10",
+      "flatmates.surfaceIdA": "3",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "4",
+      "flatmates.selfSimId": "7",
+      "flatmates.layer": "Nightstand::4",
+      "flatmates.treatment": "glue",
+      "flatmates.attachmentPolicy": "loose",
+      "curve": [
+        [
+          18.291497131173919,
+          93.4096092112976,
+          0.0
+        ],
+        [
+          18.291497131173919,
+          98.019937122920552,
+          0.0
+        ]
+      ],
+      "faceA": "s4_p0_i1_f3",
+      "faceB": "s4_p0_i1_f4",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.sourceObjectIds": "58924d7a-de34-4d27-be82-a2c48748b613",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "58924d7a-de34-4d27-be82-a2c48748b613#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "9",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "5",
+      "flatmates.craftingStep": "4",
+      "flatmates.selfSimId": "7",
+      "flatmates.layer": "Nightstand::4",
+      "flatmates.treatment": "glue",
+      "flatmates.attachmentPolicy": "loose",
+      "curve": [
+        [
+          11.64574856558696,
+          93.4096092112976,
+          0.0
+        ],
+        [
+          15.555991234440487,
+          93.4096092112976,
+          0.0
+        ]
+      ],
+      "faceA": "s4_p0_i1_f2",
+      "faceB": "s4_p0_i1_f5",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.sourceObjectIds": "58924d7a-de34-4d27-be82-a2c48748b613",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "58924d7a-de34-4d27-be82-a2c48748b613#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "9",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "5",
+      "flatmates.craftingStep": "4",
+      "flatmates.selfSimId": "7",
+      "flatmates.layer": "Nightstand::4",
+      "flatmates.treatment": "glue",
+      "flatmates.attachmentPolicy": "loose",
+      "curve": [
+        [
+          15.555991234440487,
+          89.499366542444079,
+          0.0
+        ],
+        [
+          15.555991234440487,
+          93.4096092112976,
+          0.0
+        ]
+      ],
+      "faceA": "s4_p0_i1_f2",
+      "faceB": "s4_p0_i1_f5",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.sourceObjectIds": "58924d7a-de34-4d27-be82-a2c48748b613",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "58924d7a-de34-4d27-be82-a2c48748b613#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "7",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "4",
+      "flatmates.selfSimId": "7",
+      "flatmates.layer": "Nightstand::4",
+      "flatmates.treatment": "glue",
+      "flatmates.attachmentPolicy": "loose",
+      "curve": [
+        [
+          8.9102426688535274,
+          93.4096092112976,
+          0.0
+        ],
+        [
+          5.0,
+          93.4096092112976,
+          0.0
+        ]
+      ],
+      "faceA": "s4_p0_i1_f2",
+      "faceB": "s4_p0_i1_f4",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.sourceObjectIds": "58924d7a-de34-4d27-be82-a2c48748b613",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "58924d7a-de34-4d27-be82-a2c48748b613#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "7",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "4",
+      "flatmates.selfSimId": "7",
+      "flatmates.layer": "Nightstand::4",
+      "flatmates.treatment": "glue",
+      "flatmates.attachmentPolicy": "loose",
+      "curve": [
+        [
+          18.291497131173919,
+          89.499366542444079,
+          0.0
+        ],
+        [
+          18.291497131173919,
+          93.4096092112976,
+          0.0
+        ]
+      ],
+      "faceA": "s4_p0_i1_f2",
+      "faceB": "s4_p0_i1_f4",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.sourceObjectIds": "58924d7a-de34-4d27-be82-a2c48748b613",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "58924d7a-de34-4d27-be82-a2c48748b613#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "5",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "2",
+      "flatmates.craftingStep": "4",
+      "flatmates.selfSimId": "7",
+      "flatmates.layer": "Nightstand::4",
+      "flatmates.treatment": "glue",
+      "flatmates.attachmentPolicy": "loose",
+      "curve": [
+        [
+          18.291497131173919,
+          89.499366542444079,
+          0.0
+        ],
+        [
+          15.555991234440487,
+          89.499366542444079,
+          0.0
+        ]
+      ],
+      "faceA": "s4_p0_i1_f1",
+      "faceB": "s4_p0_i1_f2",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.sourceObjectIds": "58924d7a-de34-4d27-be82-a2c48748b613",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "58924d7a-de34-4d27-be82-a2c48748b613#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "5",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "2",
+      "flatmates.craftingStep": "4",
+      "flatmates.selfSimId": "7",
+      "flatmates.layer": "Nightstand::4",
+      "flatmates.treatment": "glue",
+      "flatmates.attachmentPolicy": "loose",
+      "curve": [
+        [
+          8.9102426688535274,
+          93.4096092112976,
+          0.0
+        ],
+        [
+          11.64574856558696,
+          93.4096092112976,
+          0.0
+        ]
+      ],
+      "faceA": "s4_p0_i1_f1",
+      "faceB": "s4_p0_i1_f2",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.sourceObjectIds": "58924d7a-de34-4d27-be82-a2c48748b613",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "58924d7a-de34-4d27-be82-a2c48748b613#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "2",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "5",
+      "flatmates.craftingStep": "4",
+      "flatmates.selfSimId": "7",
+      "flatmates.layer": "Nightstand::4",
+      "flatmates.treatment": "glue",
+      "flatmates.attachmentPolicy": "loose",
+      "curve": [
+        [
+          15.555991234440487,
+          98.019937122920552,
+          0.0
+        ],
+        [
+          11.64574856558696,
+          98.019937122920552,
+          0.0
+        ]
+      ],
+      "faceA": "s4_p0_i1_f0",
+      "faceB": "s4_p0_i1_f5",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.sourceObjectIds": "58924d7a-de34-4d27-be82-a2c48748b613",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "58924d7a-de34-4d27-be82-a2c48748b613#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "2",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "5",
+      "flatmates.craftingStep": "4",
+      "flatmates.selfSimId": "7",
+      "flatmates.layer": "Nightstand::4",
+      "flatmates.treatment": "glue",
+      "flatmates.attachmentPolicy": "loose",
+      "curve": [
+        [
+          15.555991234440487,
+          98.019937122920552,
+          0.0
+        ],
+        [
+          15.555991234440487,
+          101.93017979177408,
+          0.0
+        ]
+      ],
+      "faceA": "s4_p0_i1_f0",
+      "faceB": "s4_p0_i1_f5",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.sourceObjectIds": "58924d7a-de34-4d27-be82-a2c48748b613",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "58924d7a-de34-4d27-be82-a2c48748b613#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "1",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "1",
+      "flatmates.craftingStep": "4",
+      "flatmates.selfSimId": "7",
+      "flatmates.layer": "Nightstand::4",
+      "flatmates.treatment": "glue",
+      "flatmates.attachmentPolicy": "loose",
+      "curve": [
+        [
+          8.9102426688535274,
+          98.019937122920552,
+          0.0
+        ],
+        [
+          11.64574856558696,
+          98.019937122920552,
+          0.0
+        ]
+      ],
+      "faceA": "s4_p0_i1_f0",
+      "faceB": "s4_p0_i1_f1",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.sourceObjectIds": "58924d7a-de34-4d27-be82-a2c48748b613",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "58924d7a-de34-4d27-be82-a2c48748b613#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "1",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "1",
+      "flatmates.craftingStep": "4",
+      "flatmates.selfSimId": "7",
+      "flatmates.layer": "Nightstand::4",
+      "flatmates.treatment": "glue",
+      "flatmates.attachmentPolicy": "loose",
+      "curve": [
+        [
+          18.291497131173919,
+          101.93017979177408,
+          0.0
+        ],
+        [
+          15.555991234440487,
+          101.93017979177408,
+          0.0
+        ]
+      ],
+      "faceA": "s4_p0_i1_f0",
+      "faceB": "s4_p0_i1_f1",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.sourceObjectIds": "58924d7a-de34-4d27-be82-a2c48748b613",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "58924d7a-de34-4d27-be82-a2c48748b613#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "0",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "4",
+      "flatmates.selfSimId": "7",
+      "flatmates.layer": "Nightstand::4",
+      "flatmates.treatment": "glue",
+      "flatmates.attachmentPolicy": "loose",
+      "curve": [
+        [
+          5.0,
+          98.019937122920552,
+          0.0
+        ],
+        [
+          8.9102426688535274,
+          98.019937122920552,
+          0.0
+        ]
+      ],
+      "faceA": "s4_p0_i1_f0",
+      "faceB": "s4_p0_i1_f4",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.sourceObjectIds": "58924d7a-de34-4d27-be82-a2c48748b613",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "58924d7a-de34-4d27-be82-a2c48748b613#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "0",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "4",
+      "flatmates.selfSimId": "7",
+      "flatmates.layer": "Nightstand::4",
+      "flatmates.treatment": "glue",
+      "flatmates.attachmentPolicy": "loose",
+      "curve": [
+        [
+          18.291497131173919,
+          98.019937122920552,
+          0.0
+        ],
+        [
+          18.291497131173919,
+          101.93017979177408,
+          0.0
+        ]
+      ],
+      "faceA": "s4_p0_i1_f0",
+      "faceB": "s4_p0_i1_f4",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.sourceObjectIds": "58924d7a-de34-4d27-be82-a2c48748b613",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "58924d7a-de34-4d27-be82-a2c48748b613#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "11",
+      "flatmates.surfaceIdA": "3",
+      "flatmates.surfaceIdB": "5",
+      "flatmates.craftingStep": "4",
+      "flatmates.selfSimId": "7",
+      "flatmates.layer": "Nightstand::4",
+      "flatmates.attachmentPolicy": "loose",
+      "curve": [
+        [
+          15.555991234440487,
+          93.4096092112976,
+          0.0
+        ],
+        [
+          15.555991234440487,
+          98.019937122920552,
+          0.0
+        ]
+      ],
+      "faceA": "s4_p0_i1_f3",
+      "faceB": "s4_p0_i1_f5",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.sourceObjectIds": "58924d7a-de34-4d27-be82-a2c48748b613",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "58924d7a-de34-4d27-be82-a2c48748b613#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "4",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "4",
+      "flatmates.selfSimId": "7",
+      "flatmates.layer": "Nightstand::4",
+      "flatmates.attachmentPolicy": "loose",
+      "curve": [
+        [
+          8.9102426688535274,
+          98.019937122920552,
+          0.0
+        ],
+        [
+          8.9102426688535274,
+          93.4096092112976,
+          0.0
+        ]
+      ],
+      "faceA": "s4_p0_i1_f1",
+      "faceB": "s4_p0_i1_f4",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.sourceObjectIds": "58924d7a-de34-4d27-be82-a2c48748b613",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "58924d7a-de34-4d27-be82-a2c48748b613#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "8",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "3",
+      "flatmates.craftingStep": "4",
+      "flatmates.selfSimId": "7",
+      "flatmates.layer": "Nightstand::4",
+      "flatmates.attachmentPolicy": "loose",
+      "curve": [
+        [
+          18.291497131173919,
+          93.4096092112976,
+          0.0
+        ],
+        [
+          15.555991234440487,
+          93.4096092112976,
+          0.0
+        ]
+      ],
+      "faceA": "s4_p0_i1_f2",
+      "faceB": "s4_p0_i1_f3",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.sourceObjectIds": "58924d7a-de34-4d27-be82-a2c48748b613",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "58924d7a-de34-4d27-be82-a2c48748b613#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "6",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "5",
+      "flatmates.craftingStep": "4",
+      "flatmates.selfSimId": "7",
+      "flatmates.layer": "Nightstand::4",
+      "flatmates.attachmentPolicy": "loose",
+      "curve": [
+        [
+          11.64574856558696,
+          98.019937122920552,
+          0.0
+        ],
+        [
+          11.64574856558696,
+          93.4096092112976,
+          0.0
+        ]
+      ],
+      "faceA": "s4_p0_i1_f1",
+      "faceB": "s4_p0_i1_f5",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.sourceObjectIds": "58924d7a-de34-4d27-be82-a2c48748b613",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "58924d7a-de34-4d27-be82-a2c48748b613#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "3",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "3",
+      "flatmates.craftingStep": "4",
+      "flatmates.selfSimId": "7",
+      "flatmates.layer": "Nightstand::4",
+      "flatmates.attachmentPolicy": "loose",
+      "curve": [
+        [
+          18.291497131173919,
+          98.019937122920552,
+          0.0
+        ],
+        [
+          15.555991234440487,
+          98.019937122920552,
+          0.0
+        ]
+      ],
+      "faceA": "s4_p0_i1_f0",
+      "faceB": "s4_p0_i1_f3",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.sourceObjectIds": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "8",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "3",
+      "flatmates.craftingStep": "3",
+      "flatmates.selfSimId": "6",
+      "flatmates.layer": "Nightstand::3",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          5.0,
+          77.960999826915383,
+          0.0
+        ],
+        [
+          6.5383667155287029,
+          77.960999826915383,
+          0.0
+        ]
+      ],
+      "faceA": "s3_p1_i0_f2",
+      "faceB": "s3_p1_i0_f3",
+      "pieceIndex": 1
+    },
+    {
+      "flatmates.sourceObjectIds": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "8",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "3",
+      "flatmates.craftingStep": "3",
+      "flatmates.selfSimId": "6",
+      "flatmates.layer": "Nightstand::3",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          6.5383667155287029,
+          79.499366542444079,
+          0.0
+        ],
+        [
+          6.5383667155287029,
+          77.960999826915383,
+          0.0
+        ]
+      ],
+      "faceA": "s3_p1_i0_f2",
+      "faceB": "s3_p1_i0_f3",
+      "pieceIndex": 1
+    },
+    {
+      "flatmates.sourceObjectIds": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "5",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "2",
+      "flatmates.craftingStep": "3",
+      "flatmates.selfSimId": "6",
+      "flatmates.layer": "Nightstand::3",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          24.637802973144673,
+          79.499366542444079,
+          0.0
+        ],
+        [
+          24.637802973144673,
+          77.960999826915383,
+          0.0
+        ]
+      ],
+      "faceA": "s3_p1_i0_f1",
+      "faceB": "s3_p1_i0_f2",
+      "pieceIndex": 1
+    },
+    {
+      "flatmates.sourceObjectIds": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "5",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "2",
+      "flatmates.craftingStep": "3",
+      "flatmates.selfSimId": "6",
+      "flatmates.layer": "Nightstand::3",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          26.176169688673376,
+          77.960999826915383,
+          0.0
+        ],
+        [
+          24.637802973144673,
+          77.960999826915383,
+          0.0
+        ]
+      ],
+      "faceA": "s3_p1_i0_f1",
+      "faceB": "s3_p1_i0_f2",
+      "pieceIndex": 1
+    },
+    {
+      "flatmates.sourceObjectIds": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "3",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "3",
+      "flatmates.craftingStep": "3",
+      "flatmates.selfSimId": "6",
+      "flatmates.layer": "Nightstand::3",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          5.0,
+          59.087817585802178,
+          0.0
+        ],
+        [
+          6.5383667155287029,
+          59.087817585802178,
+          0.0
+        ]
+      ],
+      "faceA": "s3_p1_i0_f0",
+      "faceB": "s3_p1_i0_f3",
+      "pieceIndex": 1
+    },
+    {
+      "flatmates.sourceObjectIds": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "3",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "3",
+      "flatmates.craftingStep": "3",
+      "flatmates.selfSimId": "6",
+      "flatmates.layer": "Nightstand::3",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          6.5383667155287029,
+          57.549450870273475,
+          0.0
+        ],
+        [
+          6.5383667155287029,
+          59.087817585802178,
+          0.0
+        ]
+      ],
+      "faceA": "s3_p1_i0_f0",
+      "faceB": "s3_p1_i0_f3",
+      "pieceIndex": 1
+    },
+    {
+      "flatmates.sourceObjectIds": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "1",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "1",
+      "flatmates.craftingStep": "3",
+      "flatmates.selfSimId": "6",
+      "flatmates.layer": "Nightstand::3",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          26.176169688673376,
+          59.087817585802178,
+          0.0
+        ],
+        [
+          24.637802973144673,
+          59.087817585802178,
+          0.0
+        ]
+      ],
+      "faceA": "s3_p1_i0_f0",
+      "faceB": "s3_p1_i0_f1",
+      "pieceIndex": 1
+    },
+    {
+      "flatmates.sourceObjectIds": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "1",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "1",
+      "flatmates.craftingStep": "3",
+      "flatmates.selfSimId": "6",
+      "flatmates.layer": "Nightstand::3",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          24.637802973144673,
+          57.549450870273475,
+          0.0
+        ],
+        [
+          24.637802973144673,
+          59.087817585802178,
+          0.0
+        ]
+      ],
+      "faceA": "s3_p1_i0_f0",
+      "faceB": "s3_p1_i0_f1",
+      "pieceIndex": 1
+    },
+    {
+      "flatmates.sourceObjectIds": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "11",
+      "flatmates.surfaceIdA": "3",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "3",
+      "flatmates.selfSimId": "6",
+      "flatmates.layer": "Nightstand::3",
+      "curve": [
+        [
+          6.5383667155287029,
+          77.960999826915383,
+          -3.5527136788005009E-15
+        ],
+        [
+          6.5383667155287029,
+          59.087817585802178,
+          -3.5527136788005009E-15
+        ]
+      ],
+      "faceA": "s3_p1_i0_f3",
+      "faceB": "s3_p1_i0_f4",
+      "pieceIndex": 1
+    },
+    {
+      "flatmates.sourceObjectIds": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "9",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "3",
+      "flatmates.selfSimId": "6",
+      "flatmates.layer": "Nightstand::3",
+      "curve": [
+        [
+          24.637802973144673,
+          77.960999826915383,
+          -3.5527136788005009E-15
+        ],
+        [
+          6.5383667155287029,
+          77.960999826915383,
+          -3.5527136788005009E-15
+        ]
+      ],
+      "faceA": "s3_p1_i0_f2",
+      "faceB": "s3_p1_i0_f4",
+      "pieceIndex": 1
+    },
+    {
+      "flatmates.sourceObjectIds": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "6",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "3",
+      "flatmates.selfSimId": "6",
+      "flatmates.layer": "Nightstand::3",
+      "curve": [
+        [
+          24.637802973144673,
+          59.087817585802178,
+          -3.5527136788005009E-15
+        ],
+        [
+          24.637802973144673,
+          77.960999826915383,
+          -3.5527136788005009E-15
+        ]
+      ],
+      "faceA": "s3_p1_i0_f1",
+      "faceB": "s3_p1_i0_f4",
+      "pieceIndex": 1
+    },
+    {
+      "flatmates.sourceObjectIds": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "92c9c8c3-aa1c-4f57-9c68-9c32259ab7d6#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "2",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "3",
+      "flatmates.selfSimId": "6",
+      "flatmates.layer": "Nightstand::3",
+      "curve": [
+        [
+          6.5383667155287029,
+          59.087817585802178,
+          -3.5527136788005009E-15
+        ],
+        [
+          24.637802973144673,
+          59.087817585802178,
+          -3.5527136788005009E-15
+        ]
+      ],
+      "faceA": "s3_p1_i0_f0",
+      "faceB": "s3_p1_i0_f4",
+      "pieceIndex": 1
+    },
+    {
+      "flatmates.sourceObjectIds": "33c563f4-22a8-45f2-a621-99e8493f22d0",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "33c563f4-22a8-45f2-a621-99e8493f22d0#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "10",
+      "flatmates.surfaceIdA": "3",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "2",
+      "flatmates.selfSimId": "5",
+      "flatmates.layer": "Nightstand::2",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          41.966167822763666,
+          46.101541390354669,
+          0.0
+        ],
+        [
+          41.966167822763666,
+          28.338117879367246,
+          0.0
+        ]
+      ],
+      "faceA": "s2_p2_i0_f3",
+      "faceB": "s2_p2_i0_f4",
+      "pieceIndex": 2
+    },
+    {
+      "flatmates.sourceObjectIds": "33c563f4-22a8-45f2-a621-99e8493f22d0",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "33c563f4-22a8-45f2-a621-99e8493f22d0#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "10",
+      "flatmates.surfaceIdA": "3",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "2",
+      "flatmates.selfSimId": "5",
+      "flatmates.layer": "Nightstand::2",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          5.0,
+          46.101541390354669,
+          0.0
+        ],
+        [
+          5.0,
+          28.338117879367246,
+          0.0
+        ]
+      ],
+      "faceA": "s2_p2_i0_f3",
+      "faceB": "s2_p2_i0_f4",
+      "pieceIndex": 2
+    },
+    {
+      "flatmates.sourceObjectIds": "33c563f4-22a8-45f2-a621-99e8493f22d0",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "33c563f4-22a8-45f2-a621-99e8493f22d0#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "8",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "3",
+      "flatmates.craftingStep": "2",
+      "flatmates.selfSimId": "5",
+      "flatmates.layer": "Nightstand::2",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          5.0,
+          46.101541390354669,
+          0.0
+        ],
+        [
+          6.4479094799188061,
+          46.101541390354669,
+          0.0
+        ]
+      ],
+      "faceA": "s2_p2_i0_f2",
+      "faceB": "s2_p2_i0_f3",
+      "pieceIndex": 2
+    },
+    {
+      "flatmates.sourceObjectIds": "33c563f4-22a8-45f2-a621-99e8493f22d0",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "33c563f4-22a8-45f2-a621-99e8493f22d0#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "8",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "3",
+      "flatmates.craftingStep": "2",
+      "flatmates.selfSimId": "5",
+      "flatmates.layer": "Nightstand::2",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          6.4479094799188061,
+          47.549450870273475,
+          0.0
+        ],
+        [
+          6.4479094799188061,
+          46.101541390354669,
+          0.0
+        ]
+      ],
+      "faceA": "s2_p2_i0_f2",
+      "faceB": "s2_p2_i0_f3",
+      "pieceIndex": 2
+    },
+    {
+      "flatmates.sourceObjectIds": "33c563f4-22a8-45f2-a621-99e8493f22d0",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "33c563f4-22a8-45f2-a621-99e8493f22d0#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "7",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "2",
+      "flatmates.selfSimId": "5",
+      "flatmates.layer": "Nightstand::2",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          24.930993391300639,
+          46.101541390354669,
+          0.0
+        ],
+        [
+          41.966167822763666,
+          46.101541390354669,
+          0.0
+        ]
+      ],
+      "faceA": "s2_p2_i0_f2",
+      "faceB": "s2_p2_i0_f4",
+      "pieceIndex": 2
+    },
+    {
+      "flatmates.sourceObjectIds": "33c563f4-22a8-45f2-a621-99e8493f22d0",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "33c563f4-22a8-45f2-a621-99e8493f22d0#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "7",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "2",
+      "flatmates.selfSimId": "5",
+      "flatmates.layer": "Nightstand::2",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          23.483083911381833,
+          47.549450870273475,
+          0.0
+        ],
+        [
+          6.4479094799188061,
+          47.549450870273475,
+          0.0
+        ]
+      ],
+      "faceA": "s2_p2_i0_f2",
+      "faceB": "s2_p2_i0_f4",
+      "pieceIndex": 2
+    },
+    {
+      "flatmates.sourceObjectIds": "33c563f4-22a8-45f2-a621-99e8493f22d0",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "33c563f4-22a8-45f2-a621-99e8493f22d0#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "5",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "2",
+      "flatmates.craftingStep": "2",
+      "flatmates.selfSimId": "5",
+      "flatmates.layer": "Nightstand::2",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          23.483083911381833,
+          47.549450870273475,
+          0.0
+        ],
+        [
+          23.483083911381833,
+          46.101541390354669,
+          0.0
+        ]
+      ],
+      "faceA": "s2_p2_i0_f1",
+      "faceB": "s2_p2_i0_f2",
+      "pieceIndex": 2
+    },
+    {
+      "flatmates.sourceObjectIds": "33c563f4-22a8-45f2-a621-99e8493f22d0",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "33c563f4-22a8-45f2-a621-99e8493f22d0#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "5",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "2",
+      "flatmates.craftingStep": "2",
+      "flatmates.selfSimId": "5",
+      "flatmates.layer": "Nightstand::2",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          24.930993391300639,
+          46.101541390354669,
+          0.0
+        ],
+        [
+          23.483083911381833,
+          46.101541390354669,
+          0.0
+        ]
+      ],
+      "faceA": "s2_p2_i0_f1",
+      "faceB": "s2_p2_i0_f2",
+      "pieceIndex": 2
+    },
+    {
+      "flatmates.sourceObjectIds": "33c563f4-22a8-45f2-a621-99e8493f22d0",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "33c563f4-22a8-45f2-a621-99e8493f22d0#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "3",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "3",
+      "flatmates.craftingStep": "2",
+      "flatmates.selfSimId": "5",
+      "flatmates.layer": "Nightstand::2",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          5.0,
+          28.338117879367246,
+          0.0
+        ],
+        [
+          6.4479094799188061,
+          28.338117879367246,
+          0.0
+        ]
+      ],
+      "faceA": "s2_p2_i0_f0",
+      "faceB": "s2_p2_i0_f3",
+      "pieceIndex": 2
+    },
+    {
+      "flatmates.sourceObjectIds": "33c563f4-22a8-45f2-a621-99e8493f22d0",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "33c563f4-22a8-45f2-a621-99e8493f22d0#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "3",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "3",
+      "flatmates.craftingStep": "2",
+      "flatmates.selfSimId": "5",
+      "flatmates.layer": "Nightstand::2",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          6.4479094799188061,
+          26.89020839944844,
+          0.0
+        ],
+        [
+          6.4479094799188061,
+          28.338117879367246,
+          0.0
+        ]
+      ],
+      "faceA": "s2_p2_i0_f0",
+      "faceB": "s2_p2_i0_f3",
+      "pieceIndex": 2
+    },
+    {
+      "flatmates.sourceObjectIds": "33c563f4-22a8-45f2-a621-99e8493f22d0",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "33c563f4-22a8-45f2-a621-99e8493f22d0#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "1",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "1",
+      "flatmates.craftingStep": "2",
+      "flatmates.selfSimId": "5",
+      "flatmates.layer": "Nightstand::2",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          24.930993391300639,
+          28.338117879367246,
+          0.0
+        ],
+        [
+          23.483083911381833,
+          28.338117879367246,
+          0.0
+        ]
+      ],
+      "faceA": "s2_p2_i0_f0",
+      "faceB": "s2_p2_i0_f1",
+      "pieceIndex": 2
+    },
+    {
+      "flatmates.sourceObjectIds": "33c563f4-22a8-45f2-a621-99e8493f22d0",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "33c563f4-22a8-45f2-a621-99e8493f22d0#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "1",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "1",
+      "flatmates.craftingStep": "2",
+      "flatmates.selfSimId": "5",
+      "flatmates.layer": "Nightstand::2",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          23.483083911381833,
+          26.89020839944844,
+          0.0
+        ],
+        [
+          23.483083911381833,
+          28.338117879367246,
+          0.0
+        ]
+      ],
+      "faceA": "s2_p2_i0_f0",
+      "faceB": "s2_p2_i0_f1",
+      "pieceIndex": 2
+    },
+    {
+      "flatmates.sourceObjectIds": "33c563f4-22a8-45f2-a621-99e8493f22d0",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "33c563f4-22a8-45f2-a621-99e8493f22d0#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "0",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "2",
+      "flatmates.selfSimId": "5",
+      "flatmates.layer": "Nightstand::2",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          41.966167822763666,
+          28.338117879367246,
+          0.0
+        ],
+        [
+          24.930993391300639,
+          28.338117879367246,
+          0.0
+        ]
+      ],
+      "faceA": "s2_p2_i0_f0",
+      "faceB": "s2_p2_i0_f4",
+      "pieceIndex": 2
+    },
+    {
+      "flatmates.sourceObjectIds": "33c563f4-22a8-45f2-a621-99e8493f22d0",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "33c563f4-22a8-45f2-a621-99e8493f22d0#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "0",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "2",
+      "flatmates.selfSimId": "5",
+      "flatmates.layer": "Nightstand::2",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          6.4479094799188061,
+          26.89020839944844,
+          0.0
+        ],
+        [
+          23.483083911381833,
+          26.89020839944844,
+          0.0
+        ]
+      ],
+      "faceA": "s2_p2_i0_f0",
+      "faceB": "s2_p2_i0_f4",
+      "pieceIndex": 2
+    },
+    {
+      "flatmates.sourceObjectIds": "33c563f4-22a8-45f2-a621-99e8493f22d0",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "33c563f4-22a8-45f2-a621-99e8493f22d0#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "4",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "2",
+      "flatmates.selfSimId": "5",
+      "flatmates.layer": "Nightstand::2",
+      "curve": [
+        [
+          24.930993391300639,
+          28.338117879367246,
+          -3.5527136788005009E-15
+        ],
+        [
+          24.930993391300639,
+          46.101541390354669,
+          -3.5527136788005009E-15
+        ]
+      ],
+      "faceA": "s2_p2_i0_f1",
+      "faceB": "s2_p2_i0_f4",
+      "pieceIndex": 2
+    },
+    {
+      "flatmates.sourceObjectIds": "33c563f4-22a8-45f2-a621-99e8493f22d0",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "33c563f4-22a8-45f2-a621-99e8493f22d0#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "11",
+      "flatmates.surfaceIdA": "3",
+      "flatmates.surfaceIdB": "5",
+      "flatmates.craftingStep": "2",
+      "flatmates.selfSimId": "5",
+      "flatmates.layer": "Nightstand::2",
+      "curve": [
+        [
+          6.4479094799188061,
+          46.101541390354669,
+          -3.5527136788005009E-15
+        ],
+        [
+          6.4479094799188061,
+          28.338117879367246,
+          -3.5527136788005009E-15
+        ]
+      ],
+      "faceA": "s2_p2_i0_f3",
+      "faceB": "s2_p2_i0_f5",
+      "pieceIndex": 2
+    },
+    {
+      "flatmates.sourceObjectIds": "33c563f4-22a8-45f2-a621-99e8493f22d0",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "33c563f4-22a8-45f2-a621-99e8493f22d0#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "9",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "5",
+      "flatmates.craftingStep": "2",
+      "flatmates.selfSimId": "5",
+      "flatmates.layer": "Nightstand::2",
+      "curve": [
+        [
+          23.483083911381833,
+          46.101541390354669,
+          -3.5527136788005009E-15
+        ],
+        [
+          6.4479094799188061,
+          46.101541390354669,
+          -3.5527136788005009E-15
+        ]
+      ],
+      "faceA": "s2_p2_i0_f2",
+      "faceB": "s2_p2_i0_f5",
+      "pieceIndex": 2
+    },
+    {
+      "flatmates.sourceObjectIds": "33c563f4-22a8-45f2-a621-99e8493f22d0",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "33c563f4-22a8-45f2-a621-99e8493f22d0#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "6",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "5",
+      "flatmates.craftingStep": "2",
+      "flatmates.selfSimId": "5",
+      "flatmates.layer": "Nightstand::2",
+      "curve": [
+        [
+          23.483083911381833,
+          28.338117879367246,
+          -3.5527136788005009E-15
+        ],
+        [
+          23.483083911381833,
+          46.101541390354669,
+          -3.5527136788005009E-15
+        ]
+      ],
+      "faceA": "s2_p2_i0_f1",
+      "faceB": "s2_p2_i0_f5",
+      "pieceIndex": 2
+    },
+    {
+      "flatmates.sourceObjectIds": "33c563f4-22a8-45f2-a621-99e8493f22d0",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "33c563f4-22a8-45f2-a621-99e8493f22d0#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "2",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "5",
+      "flatmates.craftingStep": "2",
+      "flatmates.selfSimId": "5",
+      "flatmates.layer": "Nightstand::2",
+      "curve": [
+        [
+          6.4479094799188061,
+          28.338117879367246,
+          -3.5527136788005009E-15
+        ],
+        [
+          23.483083911381833,
+          28.338117879367246,
+          -3.5527136788005009E-15
+        ]
+      ],
+      "faceA": "s2_p2_i0_f0",
+      "faceB": "s2_p2_i0_f5",
+      "pieceIndex": 2
+    },
+    {
+      "flatmates.sourceObjectIds": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "10",
+      "flatmates.surfaceIdA": "3",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "4",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          87.545450272333952,
+          10.94510419972422,
+          0.0
+        ],
+        [
+          84.632310485534731,
+          10.94510419972422,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p3_i0_f3",
+      "faceB": "s1_p3_i0_f4",
+      "pieceIndex": 3
+    },
+    {
+      "flatmates.sourceObjectIds": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "10",
+      "flatmates.surfaceIdA": "3",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "4",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          84.632310485534731,
+          8.0319644129249923,
+          0.0
+        ],
+        [
+          84.632310485534731,
+          10.94510419972422,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p3_i0_f3",
+      "faceB": "s1_p3_i0_f4",
+      "pieceIndex": 3
+    },
+    {
+      "flatmates.sourceObjectIds": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "7",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "4",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          87.545450272333952,
+          13.977068612649198,
+          0.0
+        ],
+        [
+          87.545450272333952,
+          10.94510419972422,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p3_i0_f2",
+      "faceB": "s1_p3_i0_f4",
+      "pieceIndex": 3
+    },
+    {
+      "flatmates.sourceObjectIds": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "7",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "4",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          84.632310485534731,
+          5.0000000000000142,
+          0.0
+        ],
+        [
+          84.632310485534731,
+          8.0319644129249923,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p3_i0_f2",
+      "faceB": "s1_p3_i0_f4",
+      "pieceIndex": 3
+    },
+    {
+      "flatmates.sourceObjectIds": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "5",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "4",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          84.632310485534731,
+          5.0000000000000142,
+          0.0
+        ],
+        [
+          68.0,
+          5.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p3_i0_f1",
+      "faceB": "s1_p3_i0_f2",
+      "pieceIndex": 3
+    },
+    {
+      "flatmates.sourceObjectIds": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "5",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "4",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          84.632310485534731,
+          16.890208399448426,
+          0.0
+        ],
+        [
+          68.0,
+          16.890208399448412,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p3_i0_f1",
+      "faceB": "s1_p3_i0_f2",
+      "pieceIndex": 3
+    },
+    {
+      "flatmates.sourceObjectIds": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "4",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "4",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          84.632310485534731,
+          13.977068612649198,
+          0.0
+        ],
+        [
+          87.545450272333952,
+          13.977068612649198,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p3_i0_f1",
+      "faceB": "s1_p3_i0_f4",
+      "pieceIndex": 3
+    },
+    {
+      "flatmates.sourceObjectIds": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "4",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "4",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          84.632310485534731,
+          13.977068612649198,
+          0.0
+        ],
+        [
+          84.632310485534731,
+          16.890208399448426,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p3_i0_f1",
+      "faceB": "s1_p3_i0_f4",
+      "pieceIndex": 3
+    },
+    {
+      "flatmates.sourceObjectIds": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "0",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "4",
+      "flatmates.layer": "Nightstand::1",
+      "curve": [
+        [
+          84.632310485534731,
+          10.94510419972422,
+          3.5527136788005009E-15
+        ],
+        [
+          84.632310485534731,
+          13.977068612649198,
+          3.5527136788005009E-15
+        ]
+      ],
+      "faceA": "s1_p3_i0_f0",
+      "faceB": "s1_p3_i0_f4",
+      "pieceIndex": 3
+    },
+    {
+      "flatmates.sourceObjectIds": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "3",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "4",
+      "flatmates.layer": "Nightstand::1",
+      "curve": [
+        [
+          84.632310485534731,
+          10.94510419972422,
+          3.5527136788005009E-15
+        ],
+        [
+          68.0,
+          10.945104199724206,
+          3.5527136788005009E-15
+        ]
+      ],
+      "faceA": "s1_p3_i0_f0",
+      "faceB": "s1_p3_i0_f3",
+      "pieceIndex": 3
+    },
+    {
+      "flatmates.sourceObjectIds": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "8",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "4",
+      "flatmates.layer": "Nightstand::1",
+      "curve": [
+        [
+          84.632310485534731,
+          8.0319644129249923,
+          3.5527136788005009E-15
+        ],
+        [
+          68.0,
+          8.0319644129249781,
+          3.5527136788005009E-15
+        ]
+      ],
+      "faceA": "s1_p3_i0_f2",
+      "faceB": "s1_p3_i0_f3",
+      "pieceIndex": 3
+    },
+    {
+      "flatmates.sourceObjectIds": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "432ea3ad-5eb9-4ff9-bfc9-3e038a023792#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "1",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "4",
+      "flatmates.layer": "Nightstand::1",
+      "curve": [
+        [
+          84.632310485534731,
+          13.977068612649198,
+          3.5527136788005009E-15
+        ],
+        [
+          68.0,
+          13.977068612649184,
+          3.5527136788005009E-15
+        ]
+      ],
+      "faceA": "s1_p3_i0_f0",
+      "faceB": "s1_p3_i0_f1",
+      "pieceIndex": 3
+    },
+    {
+      "flatmates.sourceObjectIds": "caf6172d-d555-4758-bd02-386715d349fd",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "caf6172d-d555-4758-bd02-386715d349fd#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "10",
+      "flatmates.surfaceIdA": "3",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "3",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          66.545450272333952,
+          10.94510419972422,
+          0.0
+        ],
+        [
+          63.632310485534731,
+          10.94510419972422,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p4_i0_f3",
+      "faceB": "s1_p4_i0_f4",
+      "pieceIndex": 4
+    },
+    {
+      "flatmates.sourceObjectIds": "caf6172d-d555-4758-bd02-386715d349fd",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "caf6172d-d555-4758-bd02-386715d349fd#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "10",
+      "flatmates.surfaceIdA": "3",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "3",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          63.632310485534731,
+          8.0319644129249959,
+          0.0
+        ],
+        [
+          63.632310485534731,
+          10.94510419972422,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p4_i0_f3",
+      "faceB": "s1_p4_i0_f4",
+      "pieceIndex": 4
+    },
+    {
+      "flatmates.sourceObjectIds": "caf6172d-d555-4758-bd02-386715d349fd",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "caf6172d-d555-4758-bd02-386715d349fd#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "7",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "3",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          66.545450272333952,
+          13.977068612649212,
+          0.0
+        ],
+        [
+          66.545450272333952,
+          10.94510419972422,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p4_i0_f2",
+      "faceB": "s1_p4_i0_f4",
+      "pieceIndex": 4
+    },
+    {
+      "flatmates.sourceObjectIds": "caf6172d-d555-4758-bd02-386715d349fd",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "caf6172d-d555-4758-bd02-386715d349fd#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "7",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "3",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          63.632310485534731,
+          5.0000000000000036,
+          0.0
+        ],
+        [
+          63.632310485534731,
+          8.0319644129249959,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p4_i0_f2",
+      "faceB": "s1_p4_i0_f4",
+      "pieceIndex": 4
+    },
+    {
+      "flatmates.sourceObjectIds": "caf6172d-d555-4758-bd02-386715d349fd",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "caf6172d-d555-4758-bd02-386715d349fd#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "5",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "3",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          63.632310485534731,
+          5.0000000000000036,
+          0.0
+        ],
+        [
+          47.0,
+          5.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p4_i0_f1",
+      "faceB": "s1_p4_i0_f2",
+      "pieceIndex": 4
+    },
+    {
+      "flatmates.sourceObjectIds": "caf6172d-d555-4758-bd02-386715d349fd",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "caf6172d-d555-4758-bd02-386715d349fd#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "5",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "3",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          63.632310485534731,
+          16.890208399448436,
+          0.0
+        ],
+        [
+          47.0,
+          16.89020839944844,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p4_i0_f1",
+      "faceB": "s1_p4_i0_f2",
+      "pieceIndex": 4
+    },
+    {
+      "flatmates.sourceObjectIds": "caf6172d-d555-4758-bd02-386715d349fd",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "caf6172d-d555-4758-bd02-386715d349fd#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "4",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "3",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          63.632310485534731,
+          13.977068612649212,
+          0.0
+        ],
+        [
+          66.545450272333952,
+          13.977068612649212,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p4_i0_f1",
+      "faceB": "s1_p4_i0_f4",
+      "pieceIndex": 4
+    },
+    {
+      "flatmates.sourceObjectIds": "caf6172d-d555-4758-bd02-386715d349fd",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "caf6172d-d555-4758-bd02-386715d349fd#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "4",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "3",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          63.632310485534731,
+          13.977068612649212,
+          0.0
+        ],
+        [
+          63.632310485534731,
+          16.890208399448436,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p4_i0_f1",
+      "faceB": "s1_p4_i0_f4",
+      "pieceIndex": 4
+    },
+    {
+      "flatmates.sourceObjectIds": "caf6172d-d555-4758-bd02-386715d349fd",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "caf6172d-d555-4758-bd02-386715d349fd#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "0",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "3",
+      "flatmates.layer": "Nightstand::1",
+      "curve": [
+        [
+          63.632310485534731,
+          10.94510419972422,
+          0.0
+        ],
+        [
+          63.632310485534731,
+          13.977068612649212,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p4_i0_f0",
+      "faceB": "s1_p4_i0_f4",
+      "pieceIndex": 4
+    },
+    {
+      "flatmates.sourceObjectIds": "caf6172d-d555-4758-bd02-386715d349fd",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "caf6172d-d555-4758-bd02-386715d349fd#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "3",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "3",
+      "flatmates.layer": "Nightstand::1",
+      "curve": [
+        [
+          63.632310485534731,
+          10.94510419972422,
+          0.0
+        ],
+        [
+          47.0,
+          10.94510419972422,
+          3.5527136788005009E-15
+        ]
+      ],
+      "faceA": "s1_p4_i0_f0",
+      "faceB": "s1_p4_i0_f3",
+      "pieceIndex": 4
+    },
+    {
+      "flatmates.sourceObjectIds": "caf6172d-d555-4758-bd02-386715d349fd",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "caf6172d-d555-4758-bd02-386715d349fd#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "8",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "3",
+      "flatmates.layer": "Nightstand::1",
+      "curve": [
+        [
+          63.632310485534731,
+          8.0319644129249959,
+          0.0
+        ],
+        [
+          47.0,
+          8.0319644129249923,
+          3.5527136788005009E-15
+        ]
+      ],
+      "faceA": "s1_p4_i0_f2",
+      "faceB": "s1_p4_i0_f3",
+      "pieceIndex": 4
+    },
+    {
+      "flatmates.sourceObjectIds": "caf6172d-d555-4758-bd02-386715d349fd",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "caf6172d-d555-4758-bd02-386715d349fd#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "1",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "3",
+      "flatmates.layer": "Nightstand::1",
+      "curve": [
+        [
+          63.632310485534731,
+          13.977068612649212,
+          0.0
+        ],
+        [
+          47.0,
+          13.977068612649212,
+          3.5527136788005009E-15
+        ]
+      ],
+      "faceA": "s1_p4_i0_f0",
+      "faceB": "s1_p4_i0_f1",
+      "pieceIndex": 4
+    },
+    {
+      "flatmates.sourceObjectIds": "60ba2c62-652d-4ff1-ad01-4769a1dacee6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "60ba2c62-652d-4ff1-ad01-4769a1dacee6#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "10",
+      "flatmates.surfaceIdA": "3",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "2",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          45.545450272333966,
+          10.945104199724216,
+          0.0
+        ],
+        [
+          42.632310485534738,
+          10.945104199724216,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p5_i0_f3",
+      "faceB": "s1_p5_i0_f4",
+      "pieceIndex": 5
+    },
+    {
+      "flatmates.sourceObjectIds": "60ba2c62-652d-4ff1-ad01-4769a1dacee6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "60ba2c62-652d-4ff1-ad01-4769a1dacee6#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "10",
+      "flatmates.surfaceIdA": "3",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "2",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          42.632310485534738,
+          8.0319644129249923,
+          0.0
+        ],
+        [
+          42.632310485534738,
+          10.945104199724216,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p5_i0_f3",
+      "faceB": "s1_p5_i0_f4",
+      "pieceIndex": 5
+    },
+    {
+      "flatmates.sourceObjectIds": "60ba2c62-652d-4ff1-ad01-4769a1dacee6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "60ba2c62-652d-4ff1-ad01-4769a1dacee6#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "7",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "2",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          45.545450272333966,
+          13.977068612649195,
+          0.0
+        ],
+        [
+          45.545450272333966,
+          10.945104199724216,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p5_i0_f2",
+      "faceB": "s1_p5_i0_f4",
+      "pieceIndex": 5
+    },
+    {
+      "flatmates.sourceObjectIds": "60ba2c62-652d-4ff1-ad01-4769a1dacee6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "60ba2c62-652d-4ff1-ad01-4769a1dacee6#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "7",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "2",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          42.632310485534731,
+          5.0000000000000151,
+          0.0
+        ],
+        [
+          42.632310485534738,
+          8.0319644129249923,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p5_i0_f2",
+      "faceB": "s1_p5_i0_f4",
+      "pieceIndex": 5
+    },
+    {
+      "flatmates.sourceObjectIds": "60ba2c62-652d-4ff1-ad01-4769a1dacee6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "60ba2c62-652d-4ff1-ad01-4769a1dacee6#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "5",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "2",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          42.632310485534731,
+          5.0000000000000151,
+          0.0
+        ],
+        [
+          26.000000000000007,
+          5.0000000000000284,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p5_i0_f1",
+      "faceB": "s1_p5_i0_f2",
+      "pieceIndex": 5
+    },
+    {
+      "flatmates.sourceObjectIds": "60ba2c62-652d-4ff1-ad01-4769a1dacee6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "60ba2c62-652d-4ff1-ad01-4769a1dacee6#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "5",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "2",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          42.632310485534745,
+          16.890208399448419,
+          0.0
+        ],
+        [
+          26.000000000000018,
+          16.890208399448433,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p5_i0_f1",
+      "faceB": "s1_p5_i0_f2",
+      "pieceIndex": 5
+    },
+    {
+      "flatmates.sourceObjectIds": "60ba2c62-652d-4ff1-ad01-4769a1dacee6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "60ba2c62-652d-4ff1-ad01-4769a1dacee6#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "4",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "2",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          42.632310485534738,
+          13.977068612649195,
+          0.0
+        ],
+        [
+          45.545450272333966,
+          13.977068612649195,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p5_i0_f1",
+      "faceB": "s1_p5_i0_f4",
+      "pieceIndex": 5
+    },
+    {
+      "flatmates.sourceObjectIds": "60ba2c62-652d-4ff1-ad01-4769a1dacee6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "60ba2c62-652d-4ff1-ad01-4769a1dacee6#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "4",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "2",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          42.632310485534745,
+          13.977068612649196,
+          0.0
+        ],
+        [
+          42.632310485534745,
+          16.890208399448419,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p5_i0_f1",
+      "faceB": "s1_p5_i0_f4",
+      "pieceIndex": 5
+    },
+    {
+      "flatmates.sourceObjectIds": "60ba2c62-652d-4ff1-ad01-4769a1dacee6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "60ba2c62-652d-4ff1-ad01-4769a1dacee6#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "0",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "2",
+      "flatmates.layer": "Nightstand::1",
+      "curve": [
+        [
+          42.632310485534738,
+          10.945104199724216,
+          -4.4408920985006262E-16
+        ],
+        [
+          42.632310485534738,
+          13.977068612649195,
+          -4.4408920985006262E-16
+        ]
+      ],
+      "faceA": "s1_p5_i0_f0",
+      "faceB": "s1_p5_i0_f4",
+      "pieceIndex": 5
+    },
+    {
+      "flatmates.sourceObjectIds": "60ba2c62-652d-4ff1-ad01-4769a1dacee6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "60ba2c62-652d-4ff1-ad01-4769a1dacee6#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "3",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "2",
+      "flatmates.layer": "Nightstand::1",
+      "curve": [
+        [
+          42.632310485534738,
+          10.945104199724216,
+          -4.4408920985006262E-16
+        ],
+        [
+          26.000000000000011,
+          10.945104199724231,
+          4.4408920985006262E-16
+        ]
+      ],
+      "faceA": "s1_p5_i0_f0",
+      "faceB": "s1_p5_i0_f3",
+      "pieceIndex": 5
+    },
+    {
+      "flatmates.sourceObjectIds": "60ba2c62-652d-4ff1-ad01-4769a1dacee6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "60ba2c62-652d-4ff1-ad01-4769a1dacee6#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "8",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "2",
+      "flatmates.layer": "Nightstand::1",
+      "curve": [
+        [
+          42.632310485534738,
+          8.0319644129249923,
+          -4.4408920985006262E-16
+        ],
+        [
+          26.000000000000007,
+          8.0319644129250065,
+          4.4408920985006262E-16
+        ]
+      ],
+      "faceA": "s1_p5_i0_f2",
+      "faceB": "s1_p5_i0_f3",
+      "pieceIndex": 5
+    },
+    {
+      "flatmates.sourceObjectIds": "60ba2c62-652d-4ff1-ad01-4769a1dacee6",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "60ba2c62-652d-4ff1-ad01-4769a1dacee6#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "1",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "2",
+      "flatmates.layer": "Nightstand::1",
+      "curve": [
+        [
+          42.632310485534738,
+          13.977068612649195,
+          -4.4408920985006262E-16
+        ],
+        [
+          26.000000000000011,
+          13.977068612649209,
+          4.4408920985006262E-16
+        ]
+      ],
+      "faceA": "s1_p5_i0_f0",
+      "faceB": "s1_p5_i0_f1",
+      "pieceIndex": 5
+    },
+    {
+      "flatmates.sourceObjectIds": "6051aaed-9338-4656-a577-b36d3ee5bd6c",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "6051aaed-9338-4656-a577-b36d3ee5bd6c#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "10",
+      "flatmates.surfaceIdA": "3",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "1",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          24.545450272333952,
+          10.945104199724216,
+          0.0
+        ],
+        [
+          21.632310485534727,
+          10.945104199724216,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p6_i0_f3",
+      "faceB": "s1_p6_i0_f4",
+      "pieceIndex": 6
+    },
+    {
+      "flatmates.sourceObjectIds": "6051aaed-9338-4656-a577-b36d3ee5bd6c",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "6051aaed-9338-4656-a577-b36d3ee5bd6c#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "10",
+      "flatmates.surfaceIdA": "3",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "1",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          21.632310485534727,
+          8.0319644129249923,
+          0.0
+        ],
+        [
+          21.632310485534727,
+          10.945104199724216,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p6_i0_f3",
+      "faceB": "s1_p6_i0_f4",
+      "pieceIndex": 6
+    },
+    {
+      "flatmates.sourceObjectIds": "6051aaed-9338-4656-a577-b36d3ee5bd6c",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "6051aaed-9338-4656-a577-b36d3ee5bd6c#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "7",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "1",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          24.545450272333952,
+          13.977068612649209,
+          0.0
+        ],
+        [
+          24.545450272333952,
+          10.945104199724216,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p6_i0_f2",
+      "faceB": "s1_p6_i0_f4",
+      "pieceIndex": 6
+    },
+    {
+      "flatmates.sourceObjectIds": "6051aaed-9338-4656-a577-b36d3ee5bd6c",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "6051aaed-9338-4656-a577-b36d3ee5bd6c#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "7",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "1",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          21.632310485534727,
+          5.0,
+          0.0
+        ],
+        [
+          21.632310485534727,
+          8.0319644129249923,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p6_i0_f2",
+      "faceB": "s1_p6_i0_f4",
+      "pieceIndex": 6
+    },
+    {
+      "flatmates.sourceObjectIds": "6051aaed-9338-4656-a577-b36d3ee5bd6c",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "6051aaed-9338-4656-a577-b36d3ee5bd6c#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "5",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "1",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          21.632310485534727,
+          5.0,
+          0.0
+        ],
+        [
+          5.0,
+          4.9999999999999991,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p6_i0_f1",
+      "faceB": "s1_p6_i0_f2",
+      "pieceIndex": 6
+    },
+    {
+      "flatmates.sourceObjectIds": "6051aaed-9338-4656-a577-b36d3ee5bd6c",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "6051aaed-9338-4656-a577-b36d3ee5bd6c#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "5",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "1",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          21.632310485534727,
+          16.890208399448433,
+          0.0
+        ],
+        [
+          5.0,
+          16.890208399448433,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p6_i0_f1",
+      "faceB": "s1_p6_i0_f2",
+      "pieceIndex": 6
+    },
+    {
+      "flatmates.sourceObjectIds": "6051aaed-9338-4656-a577-b36d3ee5bd6c",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "6051aaed-9338-4656-a577-b36d3ee5bd6c#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "4",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "1",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          21.632310485534727,
+          13.977068612649209,
+          0.0
+        ],
+        [
+          24.545450272333952,
+          13.977068612649209,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p6_i0_f1",
+      "faceB": "s1_p6_i0_f4",
+      "pieceIndex": 6
+    },
+    {
+      "flatmates.sourceObjectIds": "6051aaed-9338-4656-a577-b36d3ee5bd6c",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "6051aaed-9338-4656-a577-b36d3ee5bd6c#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.sourceEdgeIndex": "4",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "1",
+      "flatmates.layer": "Nightstand::1",
+      "flatmates.treatment": "glue",
+      "curve": [
+        [
+          21.632310485534727,
+          13.977068612649209,
+          0.0
+        ],
+        [
+          21.632310485534727,
+          16.890208399448433,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p6_i0_f1",
+      "faceB": "s1_p6_i0_f4",
+      "pieceIndex": 6
+    },
+    {
+      "flatmates.sourceObjectIds": "6051aaed-9338-4656-a577-b36d3ee5bd6c",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "6051aaed-9338-4656-a577-b36d3ee5bd6c#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "0",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "1",
+      "flatmates.layer": "Nightstand::1",
+      "curve": [
+        [
+          21.632310485534727,
+          10.945104199724216,
+          -4.4408920985006262E-16
+        ],
+        [
+          21.632310485534727,
+          13.977068612649209,
+          -4.4408920985006262E-16
+        ]
+      ],
+      "faceA": "s1_p6_i0_f0",
+      "faceB": "s1_p6_i0_f4",
+      "pieceIndex": 6
+    },
+    {
+      "flatmates.sourceObjectIds": "6051aaed-9338-4656-a577-b36d3ee5bd6c",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "6051aaed-9338-4656-a577-b36d3ee5bd6c#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "3",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "1",
+      "flatmates.layer": "Nightstand::1",
+      "curve": [
+        [
+          21.632310485534727,
+          10.945104199724216,
+          -4.4408920985006262E-16
+        ],
+        [
+          5.0,
+          10.945104199724216,
+          4.4408920985006262E-16
+        ]
+      ],
+      "faceA": "s1_p6_i0_f0",
+      "faceB": "s1_p6_i0_f3",
+      "pieceIndex": 6
+    },
+    {
+      "flatmates.sourceObjectIds": "6051aaed-9338-4656-a577-b36d3ee5bd6c",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "6051aaed-9338-4656-a577-b36d3ee5bd6c#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "8",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "1",
+      "flatmates.layer": "Nightstand::1",
+      "curve": [
+        [
+          21.632310485534727,
+          8.0319644129249923,
+          -4.4408920985006262E-16
+        ],
+        [
+          5.0,
+          8.0319644129249923,
+          4.4408920985006262E-16
+        ]
+      ],
+      "faceA": "s1_p6_i0_f2",
+      "faceB": "s1_p6_i0_f3",
+      "pieceIndex": 6
+    },
+    {
+      "flatmates.sourceObjectIds": "6051aaed-9338-4656-a577-b36d3ee5bd6c",
+      "flatmates.brepIndex": "0",
+      "flatmates.groupId": "craft_Nightstand",
+      "flatmates.pieceKey": "6051aaed-9338-4656-a577-b36d3ee5bd6c#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.sourceEdgeIndex": "1",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.selfSimId": "1",
+      "flatmates.layer": "Nightstand::1",
+      "curve": [
+        [
+          21.632310485534727,
+          13.977068612649209,
+          -4.4408920985006262E-16
+        ],
+        [
+          5.0,
+          13.977068612649209,
+          4.4408920985006262E-16
+        ]
+      ],
+      "faceA": "s1_p6_i0_f0",
+      "faceB": "s1_p6_i0_f1",
+      "pieceIndex": 6
+    }
+  ]
+}

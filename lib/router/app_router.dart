@@ -16,6 +16,8 @@ import '../screens/landscape_tiles_debug_view.dart';
 import '../screens/game_view.dart';
 import '../screens/expression_lab_view.dart';
 import '../screens/movement_lab_view.dart';
+import '../screens/craft_editor_view.dart';
+import '../screens/papercut_puzzles_view.dart';
 import '../screens/test_3d_map_view.dart';
 
 /// Swap between '/dev-routes' and '/' to start at the dev menu or title screen.
@@ -108,6 +110,16 @@ final router = GoRouter(
       path: '/expression-lab',
       name: 'expression_lab',
       builder: (context, state) => const ExpressionLabView(),
+    ),
+    GoRoute(
+      path: '/papercut-puzzles',
+      name: 'papercut_puzzles',
+      builder: (context, state) => const PapercutPuzzlesView(),
+    ),
+    GoRoute(
+      path: '/craft-editor',
+      name: 'craft_editor',
+      builder: (context, state) => const CraftEditorView(),
     ),
   ],
 );

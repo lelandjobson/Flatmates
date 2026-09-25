@@ -32,6 +32,7 @@ flutter:
     - assets/crafts/
     - assets/crafts/img/
     - assets/crafting_blueprints/house_foo/
+    - assets/craft_viewer/craft_Nightstand/
     - assets/models/house_foo/steps/
     - assets/gameplay/recordings/
     - assets/gameplay/movement_profiles/
