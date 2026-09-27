@@ -96,6 +96,51 @@ ScissorMarch? placeOnRing(Offset point, List<Offset> ring) {
   return ScissorMarch(path: [point], direction: direction);
 }
 
+/// Closest unit-grid point on any closed outline. There is no distance cutoff.
+Offset? closestGridEdgePoint(
+  Offset point,
+  List<List<Offset>> rings,
+  double spacing,
+) {
+  Offset? best;
+  var bestDistance = double.infinity;
+  for (final ring in rings) {
+    for (final vertex in pieceEdgeGridPoints(ring, spacing)) {
+      final distance = (vertex - point).distance;
+      if (distance >= bestDistance) continue;
+      best = vertex;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+/// Closest point on any closed outline. There is no distance cutoff.
+Offset? closestOutlinePoint(Offset point, List<List<Offset>> rings) {
+  Offset? best;
+  var bestDistance = double.infinity;
+  for (final ring in rings) {
+    if (ring.length < 2) continue;
+    for (var i = 0; i < ring.length; i++) {
+      final closest = _closestOnSegment(point, ring[i], ring[(i + 1) % ring.length]);
+      final distance = (closest - point).distance;
+      if (distance >= bestDistance) continue;
+      best = closest;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+Offset _closestOnSegment(Offset point, Offset a, Offset b) {
+  final delta = b - a;
+  final len2 = delta.dx * delta.dx + delta.dy * delta.dy;
+  if (len2 < 1e-12) return a;
+  final t = (((point.dx - a.dx) * delta.dx + (point.dy - a.dy) * delta.dy) / len2)
+      .clamp(0.0, 1.0);
+  return Offset(a.dx + delta.dx * t, a.dy + delta.dy * t);
+}
+
 /// Grid points along a piece outline.
 List<Offset> pieceEdgeGridPoints(List<Offset> ring, double spacing) {
   if (spacing <= 0 || ring.length < 2) return const [];

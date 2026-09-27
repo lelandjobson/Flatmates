@@ -2,7 +2,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import 'package:vector_math/vector_math_64.dart' hide Colors;
 
 import '../geometry/polygon_union.dart';
 import '../gridcraft/blueprint.dart';
@@ -10,6 +12,10 @@ import '../gridcraft/edit.dart';
 import '../gridcraft/level_io.dart';
 import '../gridcraft/painter.dart';
 import '../gridcraft/scissor.dart';
+import '../gridcraft/scissor_glyph.dart';
+import '../gridcraft/tool_animation.dart';
+import '../gridcraft/tool_animation_io.dart';
+import '../gridcraft/tool_flight.dart';
 import '../gridcraft/twin_ls.dart';
 import '../papercut/camera.dart';
 import '../papercut/models.dart';
@@ -26,6 +32,7 @@ enum _GridTool { scissors, straightEdge }
 enum _Stamp { paint, rectangle, circle }
 
 const Duration _kTurnDuration = Duration(milliseconds: 750);
+const Duration _kFocusDuration = Duration(milliseconds: 320);
 
 /// Grid-locked puzzle play and a paint editor for blueprint steps.
 class GridPuzzleView extends StatefulWidget {
@@ -45,6 +52,15 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   late AnimationController _turnAnim;
   late AnimationController _splitAnim;
   late AnimationController _rollNudge;
+  late AnimationController _flightAnim;
+  late AnimationController _focusAnim;
+  final ToolFlight _flight = ToolFlight();
+  Offset _focusFrom = Offset.zero;
+  Offset _focusTo = Offset.zero;
+  bool _armingCut = false;
+  Offset? _armedFrom;
+  Offset? _armedTo;
+  ToolAnimation _scissors = ScissorToolAnimation();
   final FocusNode _keys = FocusNode();
   List<Offset> _splitFrom = const [];
   List<Offset> _splitTo = const [];
@@ -75,10 +91,12 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   Set<int> _selected = {};
   double? _rulerX;
   bool _rolling = false;
+  Offset? _strokeDirection;
   bool _needsFrame = true;
   double _rollStart = 0;
   double _moved = 0;
   double _gestureScale = 1;
+  bool _zoomed = false;
   Size _viewport = Size.zero;
 
   LevelStore get _levelsStore => widget.store ?? _store;
@@ -99,18 +117,42 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       ..addListener(_onTurnTick)
       ..addStatusListener(_onTurnStatus);
     _splitAnim = AnimationController(vsync: this, duration: _kTurnDuration)
-      ..addListener(_onSplitTick);
+      ..addListener(_onSplitTick)
+      ..addStatusListener(_onSplitStatus);
     _rollNudge = AnimationController(vsync: this, duration: _kTurnDuration)
       ..addListener(_onRollNudge);
+    _flightAnim = AnimationController(vsync: this, duration: kArriveDuration)
+      ..addListener(_followCut)
+      ..addStatusListener(_onFlightStatus);
+    _focusAnim = AnimationController(vsync: this, duration: _kFocusDuration)
+      ..addListener(_onFocusTick)
+      ..addStatusListener(_onFocusStatus);
     _loadStep(0, _blueprint);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _keys.requestFocus();
+      if (!mounted) return;
+      _keys.requestFocus();
+      _syncFlight();
     });
     _refreshLevels();
+    _loadToolAnimations();
+  }
+
+  Future<void> _loadToolAnimations() async {
+    final tools = await ToolAnimationStore().load();
+    if (!mounted) return;
+    ToolAnimation? scissors;
+    for (final tool in tools) {
+      if (tool.id == 'scissors') scissors = tool;
+    }
+    final chosen = scissors;
+    if (chosen == null) return;
+    setState(() => _scissors = chosen);
   }
 
   @override
   void dispose() {
+    _focusAnim.dispose();
+    _flightAnim.dispose();
     _rollNudge.dispose();
     _keys.dispose();
     _splitAnim.dispose();
@@ -122,6 +164,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   }
 
   void _onCamera() {
+    _syncFlight();
     if (mounted) setState(() {});
   }
 
@@ -136,6 +179,13 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   void _loadStep(int index, GridBlueprint blueprint) {
     if (_turnAnim.isAnimating) _turnAnim.stop();
     if (_splitAnim.isAnimating) _splitAnim.stop();
+    if (_flightAnim.isAnimating) _flightAnim.stop();
+    if (_focusAnim.isAnimating) _focusAnim.stop();
+    _armingCut = false;
+    _armedFrom = null;
+    _armedTo = null;
+    _flight.reset();
+    _strokeDirection = null;
     _turnFromStep = null;
     _blueprint = blueprint;
     _stepIndex = index.clamp(0, blueprint.steps.length - 1);
@@ -149,6 +199,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _rulerX = _snap(_step.paper.center.dx, _step.gridSpacing);
     _needsFrame = true;
     _frame();
+    _syncFlight();
   }
 
   PapercutSheet _freshSheet(GridStep step) {
@@ -181,18 +232,83 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   double _snap(double value, double spacing) =>
       (value / spacing).roundToDouble() * spacing;
 
+  bool get _cutting => _flight.phase == ToolFlightPhase.cut || _armingCut;
+
   void _onScissorTap(Offset world) {
-    if (_march != null) {
-      _commitMarch();
+    if (_cutting) return;
+    if (_march == null) {
+      final edge = _nearestEdge(world);
+      if (edge == null) return;
+      final placed = _place(edge);
+      if (placed == null) return;
+      setState(() {
+        _marchBase = _sheet;
+        _march = placed;
+      });
+    }
+    final ghost = _scissorGhost(world);
+    if (ghost == null) {
+      _pinScissor();
+      _syncFlight();
       return;
     }
-    final edge = _nearestEdge(world);
-    if (edge == null) return;
-    setState(() {
-      _marchBase = _sheet;
-      _march = _place(edge);
-    });
-    _pinScissor();
+    _startCut();
+  }
+
+  void _startCut() {
+    final ghost = _scissorGhost(_aimWorld());
+    if (ghost == null) return;
+    final from = _shown(ghost.$1);
+    final to = _shown(ghost.$2);
+    final delta = to - from;
+    if (delta.distance < 1e-6) return;
+    _strokeDirection = delta / delta.distance;
+    _armedFrom = from;
+    _armedTo = to;
+    _armingCut = true;
+    _animateFocus(from);
+  }
+
+  /// Eases [lookAt] onto [point]. A point already under the crosshair finishes
+  /// immediately. The cut itself starts when this arrival completes.
+  void _animateFocus(Offset point) {
+    if ((_camera.lookAt - point).distance < 1e-3) {
+      if (_focusAnim.isAnimating) _focusAnim.stop();
+      _camera.focusOn(point);
+      _finishFocus();
+      return;
+    }
+    _focusFrom = _camera.lookAt;
+    _focusTo = point;
+    _focusAnim.forward(from: 0);
+  }
+
+  void _onFocusTick() {
+    if (!_armingCut) return;
+    final t = Curves.easeInOutCubic.transform(_focusAnim.value);
+    _camera.focusOn(Offset.lerp(_focusFrom, _focusTo, t)!);
+  }
+
+  void _onFocusStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    _finishFocus();
+  }
+
+  void _finishFocus() {
+    if (!_armingCut) return;
+    final from = _armedFrom;
+    final to = _armedTo;
+    final direction = _strokeDirection;
+    _armingCut = false;
+    if (from == null || to == null || direction == null) return;
+    _flight.beginCut(
+      from: from,
+      to: to,
+      direction: direction,
+      t: _flightAnim.value,
+      present: (_march?.path.length ?? 1) <= 1,
+    );
+    _playFlight(kCutDuration);
   }
 
   Offset _screenUp() =>
@@ -211,18 +327,23 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _camera.focusOn(_shown(march.position));
   }
 
+  /// Keeps the crosshair on the blade while a stroke is in progress.
+  void _followCut() {
+    if (_flight.phase != ToolFlightPhase.cut || _viewport.width < 2) return;
+    _camera.focusOn(_flight.pose(_flightAnim.value).tip);
+  }
+
   Offset? _nearestEdge(Offset aim) {
     Offset? best;
-    var bestDistance = _step.gridSpacing * 0.75;
+    var bestDistance = double.infinity;
     for (final piece in _sheet.pieces) {
-      for (final point in pieceEdgeGridPoints(piece.vertices, _step.gridSpacing)) {
-        final shown = point + piece.separation;
-        final distance = (shown - aim).distance;
-        if (distance < bestDistance) {
-          best = point;
-          bestDistance = distance;
-        }
-      }
+      final shown = [for (final vertex in piece.vertices) vertex + piece.separation];
+      final hit = closestGridEdgePoint(aim, [shown], _step.gridSpacing);
+      if (hit == null) continue;
+      final distance = (hit - aim).distance;
+      if (distance >= bestDistance) continue;
+      best = hit - piece.separation;
+      bestDistance = distance;
     }
     return best;
   }
@@ -245,17 +366,20 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     return aim;
   }
 
-  void _commitMarch() {
+  /// True when the cut split a piece off. Null when the cut did not apply.
+  bool? _commitMarch() {
     final march = _march;
     final base = _marchBase;
-    if (march == null || base == null) return;
+    if (march == null || base == null) return null;
     final commit = commitScissor(
       march: march,
       step: _step,
       base: base,
-      direction: _screenUp(),
+      direction: _strokeDirection ?? _screenUp(),
     );
-    if (commit == null) return;
+    _strokeDirection = null;
+    if (commit == null) return null;
+    _pushUndo();
     final split = commit.march == null;
     final spread = split
         ? spreadPieces(base, commit.sheet, _step.gridSpacing)
@@ -267,11 +391,12 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     });
     if (!split) {
       _pinScissor();
-      return;
+      return false;
     }
     _splitFrom = [for (final piece in commit.sheet.pieces) piece.separation];
     _splitTo = [for (final piece in spread.pieces) piece.separation];
     _splitAnim.forward(from: 0);
+    return true;
   }
 
   void _onSplitTick() {
@@ -304,7 +429,6 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       sheet: _sheet,
     );
     if (span == null) return;
-    if (!_locked) _undo.add(_sheet);
     final next = _fold
         ? applyPapercutCrease(
             _sheet,
@@ -315,6 +439,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
           )
         : applyPapercutCut(_sheet, [span.$1, span.$2]);
     if (next == null) return;
+    if (!_locked) _pushUndo();
     setState(() => _sheet = next);
   }
 
@@ -338,6 +463,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       _showMarch(origin, radians);
     });
     _pinScissor();
+    _syncFlight();
   }
 
   void _onTurnStatus(AnimationStatus status) {
@@ -361,6 +487,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       _turnFromBase = null;
     });
     _pinScissor();
+    _syncFlight();
   }
 
   void _showMarch(Offset origin, double radians) {
@@ -382,6 +509,13 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   void _clear() {
     _turnAnim.stop();
     _splitAnim.stop();
+    if (_flightAnim.isAnimating) _flightAnim.stop();
+    if (_focusAnim.isAnimating) _focusAnim.stop();
+    _armingCut = false;
+    _armedFrom = null;
+    _armedTo = null;
+    _flight.reset();
+    _strokeDirection = null;
     _turnFromStep = null;
     final steps = [..._blueprint.steps];
     steps[_stepIndex] = _baseline;
@@ -394,6 +528,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       _painted = {};
       _selected = {};
     });
+    _syncFlight();
   }
 
   void _toggleEdit() {
@@ -404,6 +539,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       _stampAnchor = null;
       if (!_editing) _selected = {};
     });
+    _syncFlight();
   }
 
   void _paintCell(Offset world) {
@@ -463,18 +599,26 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     await _refreshLevels();
   }
 
+  void _pushUndo() {
+    _undo.add(_sheet.clone());
+    if (_undo.length > 40) _undo.removeAt(0);
+  }
+
   void _undoLast() {
     if (_locked || _undo.isEmpty) return;
+    _splitAnim.stop();
     setState(() {
       _sheet = _undo.removeLast();
       _march = null;
       _marchBase = null;
     });
+    _syncFlight();
   }
 
   /// Side taps and arrow keys. Right is counterclockwise.
   void _nudgeRoll({required bool counterclockwise}) {
     if (_editing || _tool != _GridTool.scissors) return;
+    if (_cutting) return;
     _animateQuarter(counterclockwise);
   }
 
@@ -545,7 +689,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                     onScaleUpdate: _onScaleUpdate,
                     onScaleEnd: _onScaleEnd,
                     child: AnimatedBuilder(
-                      animation: _flash,
+                      animation: Listenable.merge([_flash, _flightAnim]),
                       builder: (context, _) {
                         final aim = _aimWorld();
                         return CustomPaint(
@@ -563,7 +707,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                             selected: _selected,
                             painted: _painted,
                             ghostCells: _editing ? _stampGhost(aim) : const {},
-                            ghostCut: _editing ? null : _scissorGhost(aim),
+                            ghostCut: _displayGhost(aim),
                           ),
                           child: const SizedBox.expand(),
                         );
@@ -572,11 +716,29 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                   ),
                 ),
               ),
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: AnimatedBuilder(
+                    animation: _flightAnim,
+                    builder: (context, _) {
+                      return CustomPaint(
+                        painter: ScissorGlyphPainter(
+                          camera: _camera,
+                          pose: _flight.pose(_flightAnim.value),
+                          tool: _scissors,
+                        ),
+                        child: const SizedBox.expand(),
+                      );
+                    },
+                  ),
+                ),
+              ),
               const Positioned.fill(
                 child: IgnorePointer(child: ViewCrosshair()),
               ),
               FmSafePositioned(top: 8, left: 8, right: 8, child: _topBar()),
               FmSafePositioned(left: 0, right: 0, bottom: 8, child: _toolbar()),
+              FmSafePositioned(left: 8, bottom: 8, child: _undoButton()),
             ],
           );
         },
@@ -594,6 +756,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _rollStart = _camera.roll;
     _moved = 0;
     _gestureScale = 1;
+    _zoomed = false;
     _stampAnchor = null;
   }
 
@@ -603,7 +766,11 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     final delta = local - previous;
     _lastFocal = local;
     _moved += delta.distance;
+    if (details.pointerCount >= 2 || (details.scale - 1).abs() > 0.02) {
+      _zoomed = true;
+    }
     if (_rolling && details.pointerCount < 2) {
+      if (_cutting) return;
       _camera.setRoll(_rollStart + (local.dx - _rollAnchor) * 0.01);
       _pinScissor();
       return;
@@ -632,6 +799,13 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   }
 
   void _onScaleEnd(ScaleEndDetails details) {
+    if (_zoomed) {
+      if (_rolling) {
+        _camera.setRoll(PapercutCamera.snapRoll(_camera.roll));
+        _pinScissor();
+      }
+      return;
+    }
     if (_rolling) {
       _camera.setRoll(PapercutCamera.snapRoll(_camera.roll));
       _pinScissor();
@@ -655,6 +829,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     }
     if (_moved > 12) return;
     if (_tool == _GridTool.scissors) {
+      if (_cutting) return;
       final x = _lastFocal?.dx ?? _viewport.width / 2;
       final side = _viewport.width * 0.3;
       if (x < side) {
@@ -697,6 +872,118 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     return (from, end);
   }
 
+  (Offset, Offset)? _displayGhost(Offset? aim) {
+    if (_editing) return null;
+    final ghost = _scissorGhost(aim);
+    if (ghost == null) return null;
+    if (_flight.phase != ToolFlightPhase.cut) return ghost;
+    return (_toModel(_flight.pose(_flightAnim.value).tip), ghost.$2);
+  }
+
+  void _syncFlight() {
+    final march = _march;
+    _flight.presented = march == null || march.path.length <= 1;
+    if (!mounted || _viewport.width < 2) return;
+    if (_flight.phase == ToolFlightPhase.cut) return;
+    final next = _splitAnim.isAnimating ? null : _cue();
+    final duration = _flight.offer(
+      next,
+      t: _flightAnim.value,
+      approach: _approachFor(next),
+      follow: _turnAnim.isAnimating,
+    );
+    if (duration != null) _playFlight(duration);
+  }
+
+  ToolCue? _cue() {
+    if (_editing || _tool != _GridTool.scissors) return null;
+    final aim = _aimWorld();
+    if (aim == null) return null;
+    final ghost = _scissorGhost(aim);
+    if (ghost == null) return null;
+    final anchor = _shown(ghost.$1);
+    final end = _shown(ghost.$2);
+    final delta = end - anchor;
+    if (delta.distance < 1e-6) return null;
+    return ToolCue(
+      anchor: anchor,
+      direction: delta / delta.distance,
+      aim: aim,
+      reach: _step.gridSpacing * 0.75,
+    );
+  }
+
+  ScreenApproach? _approachFor(ToolCue? next) {
+    final pose = _flight.pose(_flightAnim.value);
+    final anchor = next?.anchor ?? pose.tip;
+    final direction = next?.direction ?? pose.direction;
+    final screen = _project(anchor);
+    final ahead = _project(anchor + direction * 10);
+    if (screen == null || ahead == null) return null;
+    return approachFor(
+      anchor: screen,
+      heading: ahead - screen,
+      viewport: _viewport,
+    );
+  }
+
+  Offset? _project(Offset world) {
+    if (_viewport.width < 2 || _viewport.height < 2) return null;
+    return _camera.camera.projectToScreen(
+      Vector3(world.dx, world.dy, 0),
+      _viewport,
+    );
+  }
+
+  void _playFlight(Duration duration) {
+    void start() {
+      if (!mounted) return;
+      _flightAnim.duration = duration;
+      _flightAnim.forward(from: 0);
+    }
+
+    final phase = WidgetsBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.persistentCallbacks ||
+        phase == SchedulerPhase.midFrameMicrotasks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => start());
+      return;
+    }
+    start();
+  }
+
+  void _onFlightStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    final phase = _flight.phase;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _flight.phase != phase) return;
+      switch (_flight.phase) {
+        case ToolFlightPhase.cut:
+          final split = _commitMarch();
+          final cue = _cue();
+          if (split == true || cue == null) {
+            _playFlight(_flight.depart(1, _approachFor(null)));
+            return;
+          }
+          _flight.seat(cue);
+          _syncFlight();
+        case ToolFlightPhase.arrive:
+        case ToolFlightPhase.relocate:
+          _flight.land();
+          _syncFlight();
+        case ToolFlightPhase.leave:
+          _flight.land();
+          _syncFlight();
+        case ToolFlightPhase.hold:
+        case ToolFlightPhase.absent:
+          break;
+      }
+    });
+  }
+
+  void _onSplitStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed) _syncFlight();
+  }
+
   int? _polygonIndex(Offset aim) {
     final world = _toModel(aim);
     for (var i = 0; i < _step.polygons.length; i++) {
@@ -734,11 +1021,11 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
             ),
             Row(
               children: [
-                _turnButton(clockwise: false),
+                _turnButton(clockwise: true),
                 const Spacer(),
                 _compassButton(),
                 const Spacer(),
-                _turnButton(clockwise: true),
+                _turnButton(clockwise: false),
               ],
             ),
           ],
@@ -823,36 +1110,44 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                 ),
               ],
             ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              HudToolCarousel<_GridTool>(
-                items: const [
-                  HudCarouselItem(
-                    value: _GridTool.scissors,
-                    icon: Icons.content_cut,
-                    label: 'Scissors',
-                    fill: Color(0xFF1A1A1A),
-                  ),
-                  HudCarouselItem(
-                    value: _GridTool.straightEdge,
-                    icon: Icons.straighten,
-                    label: 'Straight edge',
-                    fill: Color(0xFF1A1A1A),
-                  ),
-                ],
-                selected: _tool,
-                onSelect: (tool) => setState(() => _tool = tool),
+          HudToolCarousel<_GridTool>(
+            items: const [
+              HudCarouselItem(
+                value: _GridTool.scissors,
+                icon: Icons.content_cut,
+                label: 'Scissors',
+                fill: Color(0xFF1A1A1A),
               ),
-              IconButton(
-                tooltip: 'Undo',
-                onPressed: _locked || _undo.isEmpty ? null : _undoLast,
-                icon: const Icon(Icons.undo, color: Colors.white70),
+              HudCarouselItem(
+                value: _GridTool.straightEdge,
+                icon: Icons.straighten,
+                label: 'Straight edge',
+                fill: Color(0xFF1A1A1A),
               ),
             ],
+            selected: _tool,
+            onSelect: (tool) {
+              setState(() => _tool = tool);
+              _syncFlight();
+            },
           ),
         ],
       ],
+    );
+  }
+
+  Widget _undoButton() {
+    final enabled = !_locked && _undo.isNotEmpty;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xF01A1A1A),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: IconButton(
+        tooltip: 'Undo',
+        onPressed: enabled ? _undoLast : null,
+        icon: Icon(Icons.undo, color: enabled ? Colors.white : Colors.white24),
+      ),
     );
   }
 

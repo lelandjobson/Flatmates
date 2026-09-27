@@ -1,0 +1,38 @@
+{
+  "tools": [
+    {
+      "id": "scissors",
+      "style": {
+        "fill": 3875536895,
+        "stroke": 3875536895,
+        "strokeWidth": 0.4
+      },
+      "features": {
+        "pivotX": -36.83768656716417,
+        "bladeWidth": 3.3054425139925376,
+        "loopCenterX": -65.27985074626866,
+        "loopSpread": 18.12704057835822,
+        "loopWidth": 19.683127332089555,
+        "loopHeight": 16.05223880597015,
+        "holeScale": 0.701523145988806,
+        "edgeShift": 5.751166044776118,
+        "startAngle": 21.991021455223873
+      }
+    },
+    {
+      "id": "straight-edge",
+      "style": {
+        "fill": 4294967295,
+        "stroke": 4290164406,
+        "strokeWidth": 0.9552005597014913
+      },
+      "features": {
+        "length": 115.55357975746266,
+        "thickness": 6.76377390391791,
+        "tickSpacing": 10.419251399253739,
+        "edgeShift": 4.995802238805969,
+        "startAngle": 0.29471781716416956
+      }
+    }
+  ]
+}

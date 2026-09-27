@@ -11,6 +11,37 @@ import '../papercut/paper.dart';
 import 'blueprint.dart';
 import 'scissor.dart';
 
+/// Step that keeps unit dots at least about 7px apart.
+double unitGridStride({
+  required double spacing,
+  required double pixelsPerUnit,
+}) {
+  if (spacing <= 0) return spacing;
+  var stride = spacing;
+  final pixels = pixelsPerUnit.abs();
+  if (pixels < 1e-6) return stride;
+  while (pixels * (stride / spacing) < 7 && stride < spacing * 128) {
+    stride *= 2;
+  }
+  return stride;
+}
+
+/// Lattice points covering [bounds]. Each coordinate is a multiple of [stride].
+List<Offset> unitGridPoints(Rect bounds, double stride) {
+  if (stride <= 0) return const [];
+  final i0 = (bounds.left / stride).floor();
+  final i1 = (bounds.right / stride).ceil();
+  final j0 = (bounds.top / stride).floor();
+  final j1 = (bounds.bottom / stride).ceil();
+  final points = <Offset>[];
+  for (var i = i0; i <= i1; i++) {
+    for (var j = j0; j <= j1; j++) {
+      points.add(Offset(i * stride, j * stride));
+    }
+  }
+  return points;
+}
+
 class GridPuzzlePainter extends CustomPainter {
   GridPuzzlePainter({
     required this.camera,
@@ -40,6 +71,7 @@ class GridPuzzlePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    _paintUnitGrid(canvas, size);
     for (final piece in sheet.pieces) {
       _fillPiece(canvas, size, piece, const Color(0xFFFFF3B0));
       _stroke(
@@ -133,6 +165,87 @@ class GridPuzzlePainter extends CustomPainter {
         width: 4,
       );
     }
+  }
+
+  /// Crafting-view dot grid: one dot per unit, behind the sheet.
+  void _paintUnitGrid(Canvas canvas, Size size) {
+    final spacing = step.gridSpacing;
+    if (spacing <= 0 || size.width < 2 || size.height < 2) return;
+    final bounds = _visiblePlane(size);
+    if (bounds == null) return;
+    final origin = _project(Offset.zero, size);
+    final neighbor = _project(Offset(spacing, 0), size);
+    final pixels = origin == null || neighbor == null
+        ? 12.0
+        : (neighbor - origin).distance;
+    var stride = unitGridStride(spacing: spacing, pixelsPerUnit: pixels);
+    while (stride < spacing * 128) {
+      final cols = (bounds.width / stride).ceil() + 3;
+      final rows = (bounds.height / stride).ceil() + 3;
+      final gap = pixels * (stride / spacing);
+      if (gap >= 7 && cols * rows <= 4000) break;
+      stride *= 2;
+    }
+
+    const dotRadius = 1.35;
+    final dot = Paint()
+      ..color = Colors.grey.shade400.withValues(alpha: 0.55);
+    Offset? originScreen;
+    for (final world in unitGridPoints(bounds, stride)) {
+      final screen = _project(world, size);
+      if (screen == null || !_onScreen(screen, size)) continue;
+      if (world.distance < 1e-6) {
+        originScreen = screen;
+        continue;
+      }
+      canvas.drawCircle(screen, dotRadius, dot);
+    }
+    if (originScreen == null) return;
+    canvas.drawCircle(
+      originScreen,
+      4.8,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4
+        ..color = Colors.white.withValues(alpha: 0.95),
+    );
+    canvas.drawCircle(
+      originScreen,
+      3.6,
+      Paint()..color = Colors.white.withValues(alpha: 0.92),
+    );
+  }
+
+  Rect? _visiblePlane(Size size) {
+    final corners = <Offset>[];
+    for (final screen in [
+      Offset.zero,
+      Offset(size.width, 0),
+      Offset(size.width, size.height),
+      Offset(0, size.height),
+    ]) {
+      final world = camera.planePoint(screen, size);
+      if (world == null) return null;
+      corners.add(world);
+    }
+    var minX = corners.first.dx;
+    var maxX = corners.first.dx;
+    var minY = corners.first.dy;
+    var maxY = corners.first.dy;
+    for (final corner in corners) {
+      minX = math.min(minX, corner.dx);
+      maxX = math.max(maxX, corner.dx);
+      minY = math.min(minY, corner.dy);
+      maxY = math.max(maxY, corner.dy);
+    }
+    return Rect.fromLTRB(minX, minY, maxX, maxY);
+  }
+
+  bool _onScreen(Offset screen, Size size) {
+    return screen.dx >= -4 &&
+        screen.dy >= -4 &&
+        screen.dx <= size.width + 4 &&
+        screen.dy <= size.height + 4;
   }
 
   void _fillPiece(Canvas canvas, Size size, PapercutPiece piece, Color color) {

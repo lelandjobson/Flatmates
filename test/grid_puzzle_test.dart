@@ -13,6 +13,7 @@ import 'package:flatmates/papercut/models.dart';
 import 'package:flatmates/papercut/paper.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vector_math/vector_math_64.dart' hide Colors;
 
 void main() {
   test('two Ls sit on a sheet padded by 3', () {
@@ -146,6 +147,53 @@ void main() {
     );
     await tester.pump();
     expect(errors, isEmpty);
+  });
+
+  test('any aim starts on the closest paper edge', () {
+    final step = twinLsBlueprint().steps.single;
+    final paper = step.paper;
+    final ring = [
+      paper.topLeft,
+      paper.topRight,
+      paper.bottomRight,
+      paper.bottomLeft,
+    ];
+    final outside = closestGridEdgePoint(Offset(paper.left - 6, 1.4), [ring], 1);
+    expect(outside, isNotNull);
+    expect(outside!.dx, closeTo(paper.left, 1e-6));
+    expect(outside.dy, closeTo(1, 1e-6));
+
+    final inside = closestGridEdgePoint(const Offset(3.2, 1), [ring], 1);
+    expect(inside, isNotNull);
+    expect(inside!.dx, closeTo(3, 1e-6));
+    expect(inside.dy == paper.top || inside.dy == paper.bottom, isTrue);
+  });
+
+  test('unit dots sit on the puzzle grid and follow a pan', () {
+    expect(unitGridStride(spacing: 1, pixelsPerUnit: 20), 1);
+    expect(unitGridStride(spacing: 1, pixelsPerUnit: 3), 4);
+    final points = unitGridPoints(const Rect.fromLTRB(-0.2, -0.2, 2.2, 1.1), 1);
+    expect(points, contains(Offset.zero));
+    expect(points, contains(const Offset(2, 1)));
+    for (final point in points) {
+      expect(point.dx, closeTo(point.dx.roundToDouble(), 1e-9));
+      expect(point.dy, closeTo(point.dy.roundToDouble(), 1e-9));
+    }
+
+    final step = twinLsBlueprint().steps.single;
+    final camera = PapercutCamera();
+    const viewport = Size(800, 600);
+    camera.frameSheet(
+      viewport,
+      sheetMm: math.max(step.paper.width, step.paper.height),
+      center: step.paper.center,
+    );
+    final before = camera.camera.projectToScreen(Vector3(1, 1, 0), viewport);
+    camera.panByScreen(const Offset(30, -20), viewport);
+    final after = camera.camera.projectToScreen(Vector3(1, 1, 0), viewport);
+    expect(before, isNotNull);
+    expect(after, isNotNull);
+    expect((after! - before!).distance, greaterThan(5));
   });
 
   test('quarter turns land on the next canonical angle', () {
