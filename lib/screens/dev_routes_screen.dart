@@ -5,7 +5,7 @@ import '../router/app_router.dart';
 import '../ui/fm_screen.dart';
 
 /// Route names listed in the dev menu. Every other [GoRoute] stays registered.
-const kDevMenuRouteNames = {'papercut_puzzles', 'craft_editor'};
+const kDevMenuRouteNames = {'papercut_puzzles', 'craft_editor', 'grid_puzzles'};
 
 class DevRoutesScreen extends StatelessWidget {
   const DevRoutesScreen({super.key});

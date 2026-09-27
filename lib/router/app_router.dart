@@ -17,6 +17,7 @@ import '../screens/game_view.dart';
 import '../screens/expression_lab_view.dart';
 import '../screens/movement_lab_view.dart';
 import '../screens/craft_editor_view.dart';
+import '../screens/grid_puzzle_view.dart';
 import '../screens/papercut_puzzles_view.dart';
 import '../screens/test_3d_map_view.dart';
 
@@ -120,6 +121,11 @@ final router = GoRouter(
       path: '/craft-editor',
       name: 'craft_editor',
       builder: (context, state) => const CraftEditorView(),
+    ),
+    GoRoute(
+      path: '/grid-puzzles',
+      name: 'grid_puzzles',
+      builder: (context, state) => const GridPuzzleView(),
     ),
   ],
 );

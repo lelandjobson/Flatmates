@@ -246,6 +246,7 @@ List<PapercutPiece> _piecesFromFaces(
         color: source.color,
         vertices: faces[i],
         holes: holes[i],
+        separation: source.separation,
       ),
   ];
 }

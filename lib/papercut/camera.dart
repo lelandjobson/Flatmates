@@ -131,6 +131,13 @@ class PapercutCamera extends ChangeNotifier {
     notifyListeners();
   }
 
+  void focusOn(Offset point) {
+    if ((lookAt - point).distance < 1e-4) return;
+    lookAt = point;
+    _apply();
+    notifyListeners();
+  }
+
   void setRoll(double radians) {
     if ((radians - roll).abs() < 1e-8) return;
     roll = radians;
@@ -175,6 +182,30 @@ class PapercutCamera extends ChangeNotifier {
   static double snapRoll(double radians) {
     final step = rollSnapDegrees * math.pi / 180;
     return (radians / step).roundToDouble() * step;
+  }
+
+  /// Next quarter turn from [radians].
+  ///
+  /// Already-canonical angles (0, 90, 180, 270) step a full quarter.
+  /// Any other angle lands on the next one of those in [counterclockwise]'s
+  /// direction. The result stays continuous with [radians] rather than wrapping.
+  static double nextQuarterTurn(
+    double radians, {
+    required bool counterclockwise,
+  }) {
+    const quarter = math.pi / 2;
+    const tau = math.pi * 2;
+    const eps = 1e-4;
+    var wrapped = radians % tau;
+    if (wrapped < 0) wrapped += tau;
+    final steps = counterclockwise
+        ? (wrapped / quarter).ceil()
+        : (wrapped / quarter).floor();
+    var target = steps * quarter;
+    if ((target - wrapped).abs() < eps) {
+      target += counterclockwise ? quarter : -quarter;
+    }
+    return radians + (target - wrapped);
   }
 
   /// Angle of a one-finger ray from [center], or of the line through the first

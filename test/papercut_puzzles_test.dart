@@ -44,7 +44,11 @@ void main() {
         names,
         containsAll(['gameview', 'legacy_crafting', 'papercut_puzzles']),
       );
-      expect(kDevMenuRouteNames, {'papercut_puzzles', 'craft_editor'});
+      expect(kDevMenuRouteNames, {
+        'papercut_puzzles',
+        'craft_editor',
+        'grid_puzzles',
+      });
     });
   });
 

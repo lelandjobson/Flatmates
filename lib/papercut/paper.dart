@@ -10,6 +10,7 @@ class PapercutPiece {
     required this.color,
     required this.vertices,
     this.holes = const [],
+    this.separation = Offset.zero,
   });
 
   final String id;
@@ -17,12 +18,27 @@ class PapercutPiece {
   final List<Offset> vertices;
   final List<List<Offset>> holes;
 
+  /// Display nudge so a finished cut pulls this piece off its neighbors.
+  /// Cut geometry stays in grid space; only drawing uses this.
+  final Offset separation;
+
+  PapercutPiece copyWith({Offset? separation}) {
+    return PapercutPiece(
+      id: id,
+      color: color,
+      vertices: vertices,
+      holes: holes,
+      separation: separation ?? this.separation,
+    );
+  }
+
   PapercutPiece clone() {
     return PapercutPiece(
       id: id,
       color: color,
       vertices: List<Offset>.from(vertices),
       holes: [for (final hole in holes) List<Offset>.from(hole)],
+      separation: separation,
     );
   }
 }
