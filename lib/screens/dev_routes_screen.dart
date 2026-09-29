@@ -9,6 +9,7 @@ const kDevMenuRouteNames = {
   'papercut_puzzles',
   'craft_editor',
   'grid_puzzles',
+  'puzzle_editor',
   'tool_animations',
 };
 

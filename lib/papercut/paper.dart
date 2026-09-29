@@ -3,7 +3,10 @@ import 'dart:ui';
 
 import 'models.dart';
 
-/// One piece of a sheet after zero or more cuts. Coordinates are millimeters.
+/// A paper piece: one region of the sheet after zero or more cuts.
+///
+/// Coordinates are millimeters in craft papercut, and grid units in a level.
+/// This is not a blueprint piece.
 class PapercutPiece {
   const PapercutPiece({
     required this.id,
@@ -60,11 +63,56 @@ class PapercutCrease {
   final double angleDegrees;
 }
 
+/// Which way a folded flap faces the camera.
+enum FoldFacing { toward, away, unfolded }
+
+/// A joint between a flap and the paper it folded from.
+///
+/// Piece vertices stay in unfolded coordinates. [side] is the sign of the
+/// cross product that marks the flap. Display reflects the flap while
+/// [facing] is not [FoldFacing.unfolded].
+class FoldJoint {
+  const FoldJoint({
+    required this.a,
+    required this.b,
+    required this.side,
+    required this.facing,
+  });
+
+  final Offset a;
+  final Offset b;
+  final double side;
+  final FoldFacing facing;
+
+  FoldJoint copyWith({FoldFacing? facing}) {
+    return FoldJoint(a: a, b: b, side: side, facing: facing ?? this.facing);
+  }
+}
+
+/// The mark left when a fold is opened. Dark grey at 15% opacity.
+class ScoreLine {
+  const ScoreLine(this.a, this.b);
+
+  final Offset a;
+  final Offset b;
+}
+
+/// A pen or pencil stroke stored on the paper face that was showing.
+class PaperMark {
+  const PaperMark({required this.points});
+
+  /// Unfolded paper coordinates.
+  final List<Offset> points;
+}
+
 class PapercutSheet {
   const PapercutSheet({
     required this.pieces,
     this.cutStrokes = const [],
     this.creases = const [],
+    this.folds = const [],
+    this.scores = const [],
+    this.marks = const [],
     this.nextPieceId = 1,
   });
 
@@ -91,13 +139,42 @@ class PapercutSheet {
   final List<PapercutPiece> pieces;
   final List<List<Offset>> cutStrokes;
   final List<PapercutCrease> creases;
+  final List<FoldJoint> folds;
+  final List<ScoreLine> scores;
+  final List<PaperMark> marks;
   final int nextPieceId;
+
+  PapercutSheet copyWith({
+    List<PapercutPiece>? pieces,
+    List<List<Offset>>? cutStrokes,
+    List<PapercutCrease>? creases,
+    List<FoldJoint>? folds,
+    List<ScoreLine>? scores,
+    List<PaperMark>? marks,
+    int? nextPieceId,
+  }) {
+    return PapercutSheet(
+      pieces: pieces ?? this.pieces,
+      cutStrokes: cutStrokes ?? this.cutStrokes,
+      creases: creases ?? this.creases,
+      folds: folds ?? this.folds,
+      scores: scores ?? this.scores,
+      marks: marks ?? this.marks,
+      nextPieceId: nextPieceId ?? this.nextPieceId,
+    );
+  }
 
   PapercutSheet clone() {
     return PapercutSheet(
       pieces: [for (final piece in pieces) piece.clone()],
       cutStrokes: [for (final stroke in cutStrokes) List<Offset>.from(stroke)],
       creases: List<PapercutCrease>.from(creases),
+      folds: List<FoldJoint>.from(folds),
+      scores: List<ScoreLine>.from(scores),
+      marks: [
+        for (final mark in marks)
+          PaperMark(points: List<Offset>.from(mark.points)),
+      ],
       nextPieceId: nextPieceId,
     );
   }

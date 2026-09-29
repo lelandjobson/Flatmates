@@ -4901,6 +4901,8 @@ class CraftingTestViewState extends State<CraftingTestView>
   }
 
   // ---------------------------------------------------------------------------
+
+  // ---------------------------------------------------------------------------
   // Pointer interaction
   // ---------------------------------------------------------------------------
 
@@ -4958,14 +4960,6 @@ class CraftingTestViewState extends State<CraftingTestView>
     }
 
     if (_craftingMode == CraftingMode.pan) {
-      if (_panModeSelectedPaperId != null) {
-        final hitId = _hitTestPaper(localPos, viewportSize);
-        if (hitId == _panModeSelectedPaperId) {
-          _panModeDragLastScreen = localPos;
-          _panModeDragging = false;
-          return;
-        }
-      }
       _panDragLastScreen = localPos;
       return;
     }
@@ -5037,30 +5031,6 @@ class CraftingTestViewState extends State<CraftingTestView>
     }
 
     if (_craftingMode == CraftingMode.paint) {
-      final hitId = _hitTestPaper(localPos, viewportSize);
-      if (hitId != null) {
-        if (_selectedPaperIds.contains(hitId)) {
-          final paper = _placedPapers.firstWhere((p) => p.id == hitId);
-          if (!paper.locked) {
-            _pushUndo('Move paper');
-            _paintDragPaperId = hitId;
-            _paintDragLastScreen = localPos;
-            return;
-          }
-        }
-        final paper = _placedPapers.firstWhere((p) => p.id == hitId);
-        setState(() {
-          _selectedPaperIds = {hitId};
-          _isRotationGizmoActive = false;
-        });
-        if (!paper.locked) {
-          _pushUndo('Move paper');
-          _paintDragPaperId = hitId;
-          _paintDragLastScreen = localPos;
-        }
-        return;
-      }
-
       final worldPos = _screenToWorld(localPos, viewportSize);
       final cell = _worldToGridCell(Offset(worldPos.x, worldPos.y));
       _paintHadSelection = _selectedPaperIds.isNotEmpty;
@@ -5814,7 +5784,7 @@ class CraftingTestViewState extends State<CraftingTestView>
             _isRotationGizmoActive = false;
           });
         }
-      } else {
+      } else if (_hitTestPaper(localPos, viewportSize) == null) {
         if (_selectedPaperIds.isNotEmpty) {
           _pushUndo('Select');
           setState(() {
@@ -6513,7 +6483,7 @@ class CraftingTestViewState extends State<CraftingTestView>
           const SizedBox(height: 2),
           _ToolModeButton(
             icon: Icons.near_me,
-            tooltip: 'Select',
+            tooltip: 'Select and drag',
             isActive: _craftingMode == CraftingMode.select,
             onTap: isCutting
                 ? null
@@ -12104,3 +12074,4 @@ class _ToolModeButton extends StatelessWidget {
     );
   }
 }
+

@@ -26,7 +26,7 @@ const double kBladeClosed = 0.0;
 const Duration kArriveDuration = Duration(milliseconds: 320);
 const Duration kRelocateDuration = Duration(milliseconds: 220);
 const Duration kLeaveDuration = Duration(milliseconds: 220);
-const Duration kCutDuration = Duration(milliseconds: 360);
+const Duration kCutDuration = Duration(milliseconds: 180);
 
 /// Where the tool should sit. [aim] is the crosshair; drift from [anchor]
 /// rolls a seated tool and does not move it.

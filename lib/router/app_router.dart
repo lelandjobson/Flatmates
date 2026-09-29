@@ -1,5 +1,6 @@
 import 'package:go_router/go_router.dart';
 
+import '../gridcraft/blueprint.dart';
 import '../screens/cards_debug_view.dart';
 import '../screens/dev_routes_screen.dart';
 import '../screens/gesture_system_view.dart';
@@ -18,6 +19,7 @@ import '../screens/expression_lab_view.dart';
 import '../screens/movement_lab_view.dart';
 import '../screens/craft_editor_view.dart';
 import '../screens/grid_puzzle_view.dart';
+import '../screens/puzzle_editor_view.dart';
 import '../screens/tool_animation_view.dart';
 import '../screens/papercut_puzzles_view.dart';
 import '../screens/test_3d_map_view.dart';
@@ -126,7 +128,19 @@ final router = GoRouter(
     GoRoute(
       path: '/grid-puzzles',
       name: 'grid_puzzles',
-      builder: (context, state) => const GridPuzzleView(),
+      builder: (context, state) {
+        final extra = state.extra;
+        final blueprint = extra is GridBlueprint ? extra : null;
+        return GridPuzzleView(
+          initial: blueprint,
+          returnToEditor: blueprint != null,
+        );
+      },
+    ),
+    GoRoute(
+      path: '/puzzle-editor',
+      name: 'puzzle_editor',
+      builder: (context, state) => const PuzzleEditorView(),
     ),
     GoRoute(
       path: '/tool-animations',

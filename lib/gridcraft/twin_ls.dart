@@ -2,7 +2,8 @@ import 'dart:ui';
 
 import 'blueprint.dart';
 
-/// Two 3×2 L outlines on one sheet. Spacing is 1. The paper margin is 3.
+/// Two 3×2 L outlines on one sheet. Spacing is 1. The paper is 2 units
+/// outside the bounding box of the outlines.
 GridBlueprint twinLsBlueprint() {
   return GridBlueprint(
     id: 'twin-ls',
@@ -11,6 +12,7 @@ GridBlueprint twinLsBlueprint() {
       GridStep(
         id: 'ls',
         label: 'Two Ls',
+        paperMargin: 2,
         polygons: const [
           [
             Offset(0, 0),

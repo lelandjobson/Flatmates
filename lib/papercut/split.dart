@@ -4,8 +4,12 @@ import 'dart:ui';
 import '../geometry/polygon_union.dart';
 import 'paper.dart';
 
-/// Splits every piece the stroke crosses. Returns null when the stroke misses.
-PapercutSheet? applyPapercutCut(PapercutSheet sheet, List<Offset> stroke) {
+/// Splits every paper piece the stroke crosses. Returns null when it misses.
+PapercutSheet? applyPapercutCut(
+  PapercutSheet sheet,
+  List<Offset> stroke, {
+  bool recordStroke = true,
+}) {
   final cleaned = _cleanStroke(stroke);
   if (cleaned.length < 2) return null;
 
@@ -29,12 +33,45 @@ PapercutSheet? applyPapercutCut(PapercutSheet sheet, List<Offset> stroke) {
     nextPieces.addAll(built);
   }
   if (!hit) return null;
-  return PapercutSheet(
+  return sheet.copyWith(
     pieces: nextPieces,
-    cutStrokes: [...sheet.cutStrokes, cleaned],
-    creases: sheet.creases,
+    cutStrokes: recordStroke
+        ? [...sheet.cutStrokes, cleaned]
+        : sheet.cutStrokes,
     nextPieceId: nextId,
   );
+}
+
+/// Removes [region] from every paper piece it overlaps.
+///
+/// An interior region becomes a hole. A region that crosses the outline
+/// takes a bite. Faces inside [region] are not paper.
+PapercutSheet? subtractRegion(PapercutSheet sheet, List<Offset> region) {
+  if (region.length < 3) return null;
+  final cuts = <(Offset, Offset)>[
+    for (var i = 0; i < region.length; i++)
+      (region[i], region[(i + 1) % region.length]),
+  ];
+  final nextPieces = <PapercutPiece>[];
+  var hit = false;
+  var nextId = sheet.nextPieceId;
+  for (final piece in sheet.pieces) {
+    if (!_regionHitsPiece(region, piece)) {
+      nextPieces.add(piece);
+      continue;
+    }
+    hit = true;
+    final faces = _solidFaces(piece, cuts, minArea: 1e-4);
+    if (faces.isEmpty) continue;
+    final built = _piecesFromFaces(faces, piece, nextId);
+    nextId += built.length;
+    for (final part in built) {
+      if (isInsidePolygon(polygonCentroid(part.vertices), region)) continue;
+      nextPieces.add(part);
+    }
+  }
+  if (!hit) return null;
+  return sheet.copyWith(pieces: nextPieces, nextPieceId: nextId);
 }
 
 /// Stores a crease where the straight edge crosses paper. Does not deform it.
@@ -62,11 +99,8 @@ PapercutSheet? applyPapercutCrease(
     groupId: groupId,
     angleDegrees: angleDegrees,
   );
-  return PapercutSheet(
-    pieces: sheet.pieces,
-    cutStrokes: sheet.cutStrokes,
+  return sheet.copyWith(
     creases: [...sheet.creases, crease],
-    nextPieceId: sheet.nextPieceId,
   );
 }
 
@@ -152,10 +186,23 @@ bool _inSolid(Offset point, PapercutPiece piece) {
   return true;
 }
 
+bool _regionHitsPiece(List<Offset> region, PapercutPiece piece) {
+  if (isInsidePolygon(polygonCentroid(region), piece.vertices)) return true;
+  if (isInsidePolygon(polygonCentroid(piece.vertices), region)) return true;
+  for (var i = 0; i < region.length; i++) {
+    if (isInsidePolygon(region[i], piece.vertices)) return true;
+  }
+  for (final vertex in piece.vertices) {
+    if (isInsidePolygon(vertex, region)) return true;
+  }
+  return false;
+}
+
 List<List<Offset>> _solidFaces(
   PapercutPiece piece,
-  List<(Offset, Offset)> cuts,
-) {
+  List<(Offset, Offset)> cuts, {
+  double minArea = 1,
+}) {
   final segments = <(Offset, Offset)>[];
   void addRing(List<Offset> ring) {
     for (var i = 0; i < ring.length; i++) {
@@ -175,7 +222,7 @@ List<List<Offset>> _solidFaces(
   final solid = <List<Offset>>[];
   for (final face in faces) {
     if (face.length < 3) continue;
-    if (polygonSignedArea(face).abs() < 1) continue;
+    if (polygonSignedArea(face).abs() < minArea) continue;
     final sample = _faceInteriorPoint(face);
     if (!isInsidePolygon(sample, face)) continue;
     if (!_inSolid(sample, piece)) continue;

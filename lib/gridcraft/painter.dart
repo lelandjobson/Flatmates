@@ -1,14 +1,15 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:vector_math/vector_math_64.dart' hide Colors;
 
-import '../geometry/geometry_2d.dart';
-import '../geometry/geometry_algorithms.dart';
 import '../geometry/polygon_union.dart';
 import '../papercut/camera.dart';
 import '../papercut/paper.dart';
 import 'blueprint.dart';
+import 'fold.dart';
+import 'rules.dart';
 import 'scissor.dart';
 
 /// Step that keeps unit dots at least about 7px apart.
@@ -52,9 +53,25 @@ class GridPuzzlePainter extends CustomPainter {
     required this.rulerX,
     required this.showRuler,
     required this.selected,
-    required this.painted,
-    required this.ghostCells,
-    this.ghostCut,
+    this.pickedPiece,
+    this.ghostCuts = const [],
+    this.blockedCuts = const [],
+    this.ghostSeparation,
+    this.fillShapes = false,
+    this.draft = const [],
+    this.picked = const {},
+    this.marquee,
+    this.marqueeCross = false,
+    this.gatheredColors = const {},
+    this.nextNumber = 1,
+    this.failure,
+    this.failureFlash = 0,
+    this.darkness = false,
+    this.lightOrigin,
+    this.lightDirection,
+    this.lightThrow,
+    this.foldLine,
+    this.collisionLeft = const [],
   });
 
   final PapercutCamera camera;
@@ -65,60 +82,97 @@ class GridPuzzlePainter extends CustomPainter {
   final double? rulerX;
   final bool showRuler;
   final Set<int> selected;
-  final Set<(int, int)> painted;
-  final Set<(int, int)> ghostCells;
-  final (Offset, Offset)? ghostCut;
+
+  /// Paper piece the select tool is holding. Drawn on top of the sheet outline.
+  final int? pickedPiece;
+  final List<(Offset, Offset)> ghostCuts;
+  final List<(Offset, Offset)> blockedCuts;
+
+  /// Editor draws polygons as filled paper and skips the sheet fill.
+  final bool fillShapes;
+  final List<Offset> draft;
+
+  /// Rule widgets the editor has selected.
+  final Set<RulePick> picked;
+
+  /// Screen-space drag rectangle. Dashed when [marqueeCross] is set.
+  final Rect? marquee;
+  final bool marqueeCross;
+
+  /// Color gems already collected. They are not drawn.
+  final Set<int> gatheredColors;
+
+  /// Number gems below this have been taken and are not drawn.
+  final int nextNumber;
+
+  /// Entity flashing red because it caused a failure.
+  final FailureCue? failure;
+
+  /// 0–1 progress of the failure flash. The painter pulses red across it.
+  final double failureFlash;
+
+  final bool darkness;
+  final Offset? lightOrigin;
+  final Offset? lightDirection;
+  final double? lightThrow;
+
+  /// Armed folder crease, in unfolded paper coordinates.
+  final (Offset, Offset)? foldLine;
+
+  /// Remaining piece-tool collisions, parallel to blueprint pieces.
+  final List<int?> collisionLeft;
+
+  /// Display nudge for the piece the blade is cutting. Overrides ownership
+  /// when another piece's model outline still contains that point.
+  final Offset? ghostSeparation;
 
   @override
   void paint(Canvas canvas, Size size) {
     _paintUnitGrid(canvas, size);
-    for (final piece in sheet.pieces) {
-      _fillPiece(canvas, size, piece, const Color(0xFFFFF3B0));
-      _stroke(
-        canvas,
-        size,
-        _moved(piece.vertices, piece.separation),
-        const Color(0xFF1A1A2E),
-        width: 1.5,
-        close: true,
-      );
-    }
-    for (var i = 0; i < step.polygons.length; i++) {
-      final selectedPolygon = selected.contains(i);
-      for (final ring in _polygonOnPieces(step.polygons[i])) {
+    if (fillShapes) _paintPaperFrame(canvas, size);
+    if (!fillShapes) {
+      final order = [for (var i = 0; i < sheet.pieces.length; i++) i]..sort((
+        a,
+        b,
+      ) {
+        final depthA = foldDepth(
+          polygonCentroid(sheet.pieces[a].vertices),
+          sheet.folds,
+        );
+        final depthB = foldDepth(
+          polygonCentroid(sheet.pieces[b].vertices),
+          sheet.folds,
+        );
+        return depthA.compareTo(depthB);
+      });
+      for (final index in order) {
+        final piece = sheet.pieces[index];
+        _fillDisplayed(canvas, size, piece, const Color(0xFFFFF3B0));
         _stroke(
           canvas,
           size,
-          ring,
-          selectedPolygon ? const Color(0xFFFFD54F) : const Color(0xFF1565C0),
-          width: selectedPolygon ? 3 : 2,
+          _shownRing(piece.vertices, piece.separation),
+          const Color(0xFF1A1A2E),
+          width: 1.5,
+          close: true,
+        );
+      }
+      final picked = pickedPiece;
+      if (picked != null && picked >= 0 && picked < sheet.pieces.length) {
+        final piece = sheet.pieces[picked];
+        _stroke(
+          canvas,
+          size,
+          _moved(piece.vertices, piece.separation),
+          const Color(0xE6FFFFFF),
+          width: 2.5,
           close: true,
         );
       }
     }
-    for (final cell in ghostCells) {
-      if (painted.contains(cell)) continue;
-      final spacing = step.gridSpacing;
-      final x = cell.$1 * spacing;
-      final y = cell.$2 * spacing;
-      _fill(canvas, size, [
-        Offset(x, y),
-        Offset(x + spacing, y),
-        Offset(x + spacing, y + spacing),
-        Offset(x, y + spacing),
-      ], const Color(0x5567BB6A));
-    }
-    for (final cell in painted) {
-      final spacing = step.gridSpacing;
-      final x = cell.$1 * spacing;
-      final y = cell.$2 * spacing;
-      _fill(canvas, size, [
-        Offset(x, y),
-        Offset(x + spacing, y),
-        Offset(x + spacing, y + spacing),
-        Offset(x, y + spacing),
-      ], const Color(0x8867BB6A));
-    }
+    _paintBlueprint(canvas, size);
+    _paintDraft(canvas, size);
+    _paintRules(canvas, size);
     for (final stroke in sheet.cutStrokes) {
       for (final shifted in _onEachOwner(stroke)) {
         _stroke(canvas, size, shifted, const Color(0xFF000000), width: 2.5);
@@ -154,17 +208,502 @@ class GridPuzzlePainter extends CustomPainter {
         );
       }
     }
-    final preview = ghostCut;
-    if (preview != null) {
+    final ink = Color.fromRGBO(102, 187, 106, 0.35 + 0.65 * flash);
+    for (final preview in ghostCuts) {
       final shown = _shiftSegment(preview.$1, preview.$2);
+      _stroke(canvas, size, [shown.$1, shown.$2], ink, width: 4);
+      final terminal = _project(shown.$2, size);
+      if (terminal != null) _paintTerminal(canvas, terminal, ink);
+    }
+    final blocked = const Color(0xFFE53935);
+    for (final preview in blockedCuts) {
+      final shown = _shiftSegment(preview.$1, preview.$2);
+      _stroke(canvas, size, [shown.$1, shown.$2], blocked, width: 4);
+      final terminal = _project(shown.$2, size);
+      if (terminal != null) _paintTerminal(canvas, terminal, blocked);
+    }
+    _paintScores(canvas, size);
+    _paintMarks(canvas, size);
+    _paintFoldLine(canvas, size);
+    _paintNoFold(canvas, size);
+    if (darkness && !fillShapes) _paintDarkness(canvas, size);
+    _paintMarquee(canvas);
+  }
+
+  double get _failurePulse {
+    if (failure == null || failureFlash <= 0) return 0;
+    return math.sin(failureFlash * math.pi * 3).abs();
+  }
+
+  void _paintBlueprint(Canvas canvas, Size size) {
+    for (var i = 0; i < step.polygons.length; i++) {
+      final ring = step.polygons[i];
+      if (ring.length < 2) continue;
+      final selectedPolygon = selected.contains(i);
+      final closedRing = step.isRingClosed(i);
+      if (fillShapes && closedRing) {
+        _fill(canvas, size, ring, const Color(0xFFFFF3B0));
+      }
+      final styles = step.edgeStyleOf(i);
+      final edges = step.edgeCountOf(i);
+      for (var edge = 0; edge < edges; edge++) {
+        final a = ring[edge];
+        final b = ring[(edge + 1) % ring.length];
+        final penciled = styles[edge] == EdgeStyle.penciled;
+        final back = !fillShapes && showingBack(a, sheet.folds);
+        final failing =
+            failure?.kind == FailureKind.piece && failure?.index == i;
+        final pulse = failing ? _failurePulse : 0.0;
+        final color = pulse > 0
+            ? Color.lerp(
+                const Color(0xFF1565C0),
+                const Color(0xFFFF1744),
+                pulse,
+              )!
+            : selectedPolygon
+            ? const Color(0xFFFFD54F)
+            : penciled
+            ? const Color(0x661565C0)
+            : back
+            ? const Color(0x881565C0)
+            : const Color(0xFF1565C0);
+        final shown = _shiftSegment(
+          displayPoint(a, sheet.folds),
+          displayPoint(b, sheet.folds),
+        );
+        _stroke(
+          canvas,
+          size,
+          [shown.$1, shown.$2],
+          color,
+          width: pulse > 0 ? 2 + 4 * pulse : (penciled ? 1 : (selectedPolygon ? 3 : 2)),
+        );
+      }
+      final budget = i < collisionLeft.length
+          ? collisionLeft[i]
+          : step.collisionOf(i);
+      if (budget != null) {
+        _paintCount(canvas, size, collisionAnchor(ring), budget);
+      }
+    }
+  }
+
+  void _paintCount(Canvas canvas, Size size, Offset at, int count) {
+    final screen = _project(displayPoint(at, sheet.folds), size);
+    if (screen == null) return;
+    final painter = TextPainter(
+      text: TextSpan(
+        text: '$count',
+        style: const TextStyle(
+          color: Color(0xFF0D47A1),
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    painter.paint(
+      canvas,
+      screen - Offset(painter.width / 2, painter.height / 2),
+    );
+  }
+
+  void _paintScores(Canvas canvas, Size size) {
+    const ink = Color(0x26424242);
+    for (final score in sheet.scores) {
+      final shown = _shiftSegment(
+        displayPoint(score.a, sheet.folds),
+        displayPoint(score.b, sheet.folds),
+      );
+      _stroke(canvas, size, [shown.$1, shown.$2], ink, width: 2);
+    }
+    for (final joint in sheet.folds) {
+      if (joint.facing == FoldFacing.unfolded) continue;
+      final shown = _shiftSegment(joint.a, joint.b);
       _stroke(
         canvas,
         size,
         [shown.$1, shown.$2],
-        Color.fromRGBO(102, 187, 106, 0.35 + 0.65 * flash),
-        width: 4,
+        const Color(0xB3424242),
+        width: 2,
       );
     }
+  }
+
+  void _paintMarks(Canvas canvas, Size size) {
+    for (final mark in sheet.marks) {
+      final shown = [
+        for (final point in mark.points) displayPoint(point, sheet.folds),
+      ];
+      _stroke(canvas, size, shown, const Color(0xFF5D4037), width: 1.5);
+    }
+  }
+
+  void _paintFoldLine(Canvas canvas, Size size) {
+    final line = foldLine;
+    if (line == null) return;
+    final shown = _shiftSegment(line.$1, line.$2);
+    _stroke(
+      canvas,
+      size,
+      [shown.$1, shown.$2],
+      const Color(0xFF6D4C41),
+      width: 2,
+      dashed: true,
+    );
+  }
+
+  void _paintNoFold(Canvas canvas, Size size) {
+    for (final zone in step.permutation.noFold) {
+      if (zone.length < 3) continue;
+      _fill(canvas, size, zone, const Color(0x33E53935));
+    }
+  }
+
+  void _paintDarkness(Canvas canvas, Size size) {
+    final bounds = Offset.zero & size;
+    canvas.saveLayer(bounds, Paint());
+    canvas.drawRect(bounds, Paint()..color = const Color(0xE6000000));
+    final origin = lightOrigin;
+    final direction = lightDirection;
+    final reach = lightThrow;
+    if (origin != null &&
+        direction != null &&
+        reach != null &&
+        reach > 0 &&
+        direction.distance > 1e-6) {
+      final ray = direction / direction.distance;
+      final tip = origin + ray * reach;
+      final left = origin + _turn(ray, flashlightHalfAngle) * reach;
+      final right = origin + _turn(ray, -flashlightHalfAngle) * reach;
+      final apex = _project(origin, size);
+      final far = _project(tip, size);
+      final leftScreen = _project(left, size);
+      final rightScreen = _project(right, size);
+      if (apex != null &&
+          far != null &&
+          leftScreen != null &&
+          rightScreen != null) {
+        final path = Path()
+          ..moveTo(apex.dx, apex.dy)
+          ..lineTo(leftScreen.dx, leftScreen.dy)
+          ..lineTo(far.dx, far.dy)
+          ..lineTo(rightScreen.dx, rightScreen.dy)
+          ..close();
+        canvas.drawPath(
+          path,
+          Paint()
+            ..blendMode = BlendMode.dstOut
+            ..shader = ui.Gradient.linear(
+              apex,
+              far,
+              const [Color(0xFFFFFFFF), Color(0x00FFFFFF)],
+            ),
+        );
+      }
+    }
+    canvas.restore();
+  }
+
+  Offset _turn(Offset vector, double angle) {
+    final c = math.cos(angle);
+    final s = math.sin(angle);
+    return Offset(vector.dx * c - vector.dy * s, vector.dx * s + vector.dy * c);
+  }
+
+  void _paintPaperFrame(Canvas canvas, Size size) {
+    final paper = step.paper;
+    if (paper.width < 1e-6 && paper.height < 1e-6) return;
+    final ring = [
+      paper.topLeft,
+      paper.topRight,
+      paper.bottomRight,
+      paper.bottomLeft,
+    ];
+    _fill(canvas, size, ring, const Color(0x33FFF3B0));
+    _stroke(
+      canvas,
+      size,
+      ring,
+      const Color(0xAAFFFFFF),
+      width: 1.6,
+      close: true,
+    );
+  }
+
+  void _paintDraft(Canvas canvas, Size size) {
+    if (draft.length < 2) {
+      if (draft.length == 1) {
+        final screen = _project(draft.first, size);
+        if (screen != null) {
+          canvas.drawCircle(
+            screen,
+            4,
+            Paint()..color = const Color(0xFFFFD54F),
+          );
+        }
+      }
+      return;
+    }
+    _stroke(canvas, size, draft, const Color(0xFFFFD54F), width: 2);
+    for (final point in draft) {
+      final screen = _project(point, size);
+      if (screen == null) continue;
+      canvas.drawCircle(screen, 3.5, Paint()..color = const Color(0xFFFFD54F));
+    }
+  }
+
+  void _paintRules(Canvas canvas, Size size) {
+    final rules = step.rules;
+    if (rules.isEmpty) return;
+    for (var i = 0; i < rules.seams.length; i++) {
+      final edge = _shiftedEdge(rules.seams[i]);
+      final on = _markOn(RuleKind.seam, i);
+      _stroke(
+        canvas,
+        size,
+        [edge.a, edge.b],
+        on ? const Color(0xFFFFD54F) : const Color(0xFFFF8A65),
+        width: on ? 5 : 3,
+        dashed: true,
+      );
+    }
+    for (var i = 0; i < rules.arrows.length; i++) {
+      _paintArrow(
+        canvas,
+        size,
+        _shiftedEdge(rules.arrows[i]),
+        selected: _markOn(RuleKind.arrow, i),
+      );
+    }
+    for (var i = 0; i < rules.docks.length; i++) {
+      final screen = _project(_shifted(rules.docks[i]), size);
+      if (screen == null) continue;
+      if (_markOn(RuleKind.dock, i)) _markHalo(canvas, screen);
+      _paintDiamond(canvas, screen, const Color(0xFF80DEEA));
+    }
+    for (var i = 0; i < rules.links.length; i++) {
+      final mark = rules.links[i];
+      final screen = _project(_shifted(mark.point), size);
+      if (screen == null) continue;
+      if (_markOn(RuleKind.link, i)) _markHalo(canvas, screen);
+      final color = kRulePalette[mark.pair.abs() % kRulePalette.length];
+      canvas.drawCircle(screen, 7, Paint()..color = color);
+      canvas.drawCircle(
+        screen,
+        7,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5
+          ..color = Colors.white,
+      );
+      _paintLabel(canvas, screen, '${mark.pair}');
+    }
+    for (var i = 0; i < rules.colors.length; i++) {
+      if (gatheredColors.contains(i)) continue;
+      final mark = rules.colors[i];
+      final screen = _project(_shifted(mark.point), size);
+      if (screen == null) continue;
+      if (_markOn(RuleKind.color, i)) _markHalo(canvas, screen);
+      final index = mark.color.clamp(0, kRulePalette.length - 1).toInt();
+      final failing =
+          failure?.kind == FailureKind.color && failure?.index == i;
+      final pulse = failing ? _failurePulse : 0.0;
+      final color = Color.lerp(
+        kRulePalette[index],
+        const Color(0xFFFF1744),
+        pulse,
+      )!;
+      final radius = 6.5 + 5 * pulse;
+      canvas.drawCircle(screen, radius, Paint()..color = color);
+      canvas.drawCircle(
+        screen,
+        radius,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.6
+          ..color = pulse > 0 ? const Color(0xFFFF1744) : Colors.white,
+      );
+    }
+    for (var i = 0; i < rules.numbers.length; i++) {
+      final mark = rules.numbers[i];
+      if (mark.number < nextNumber) continue;
+      final screen = _project(_shifted(mark.point), size);
+      if (screen == null) continue;
+      if (_markOn(RuleKind.number, i)) _markHalo(canvas, screen, radius: 12);
+      final failing =
+          failure?.kind == FailureKind.number && failure?.index == i;
+      final pulse = failing ? _failurePulse : 0.0;
+      final fill = Color.lerp(
+        const Color(0xFF1A1A2E),
+        const Color(0xFFFF1744),
+        pulse,
+      )!;
+      final side = 14.0 + 6 * pulse;
+      canvas.drawRect(
+        Rect.fromCenter(center: screen, width: side, height: side),
+        Paint()..color = fill,
+      );
+      canvas.drawRect(
+        Rect.fromCenter(center: screen, width: side, height: side),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2
+          ..color = pulse > 0 ? const Color(0xFFFF1744) : Colors.white,
+      );
+      _paintLabel(canvas, screen, '${mark.number}');
+    }
+    for (var i = 0; i < rules.forbidden.length; i++) {
+      final screen = _project(_shifted(rules.forbidden[i]), size);
+      if (screen == null) continue;
+      if (_markOn(RuleKind.forbidden, i)) _markHalo(canvas, screen, radius: 11);
+      _paintTerminal(canvas, screen, const Color(0xFFEF5350));
+    }
+  }
+
+  Offset _shifted(Offset point) => point + markSeparation(point, sheet.pieces);
+
+  GridEdge _shiftedEdge(GridEdge edge) {
+    final shift = markSeparation(
+      Offset((edge.a.dx + edge.b.dx) / 2, (edge.a.dy + edge.b.dy) / 2),
+      sheet.pieces,
+    );
+    if (shift == Offset.zero) return edge;
+    return GridEdge(edge.a + shift, edge.b + shift);
+  }
+
+  bool _markOn(RuleKind kind, int index) =>
+      picked.contains(RulePick(kind, index));
+
+  void _markHalo(Canvas canvas, Offset screen, {double radius = 13}) {
+    canvas.drawCircle(
+      screen,
+      radius,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..color = const Color(0xFFFFD54F),
+    );
+  }
+
+  void _paintMarquee(Canvas canvas) {
+    final rect = marquee;
+    if (rect == null || rect.width < 1 && rect.height < 1) return;
+    canvas.drawRect(rect, Paint()..color = const Color(0x33FFFFFF));
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..color = Colors.white;
+    if (!marqueeCross) {
+      canvas.drawRect(rect, paint);
+      return;
+    }
+    const dash = 6.0;
+    const gap = 4.0;
+    final sides = [
+      (rect.topLeft, rect.topRight),
+      (rect.topRight, rect.bottomRight),
+      (rect.bottomRight, rect.bottomLeft),
+      (rect.bottomLeft, rect.topLeft),
+    ];
+    for (final (a, b) in sides) {
+      final delta = b - a;
+      final length = delta.distance;
+      if (length < 1e-6) continue;
+      final dir = delta / length;
+      var traveled = 0.0;
+      while (traveled < length) {
+        final end = math.min(traveled + dash, length);
+        canvas.drawLine(a + dir * traveled, a + dir * end, paint);
+        traveled += dash + gap;
+      }
+    }
+  }
+
+  void _paintArrow(
+    Canvas canvas,
+    Size size,
+    GridEdge edge, {
+    bool selected = false,
+  }) {
+    final a = _project(edge.a, size);
+    final b = _project(edge.b, size);
+    if (a == null || b == null) return;
+    if (selected) {
+      canvas.drawLine(
+        a,
+        b,
+        Paint()
+          ..color = const Color(0xFFFFFFFF)
+          ..strokeWidth = 6
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+    final paint = Paint()
+      ..color = const Color(0xFFFFD54F)
+      ..strokeWidth = 2.2
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(a, b, paint);
+    final delta = b - a;
+    final len = delta.distance;
+    if (len < 4) return;
+    final dir = delta / len;
+    final normal = Offset(-dir.dy, dir.dx);
+    final tip = b;
+    final base = b - dir * 9;
+    final path = Path()
+      ..moveTo(tip.dx, tip.dy)
+      ..lineTo((base + normal * 4.5).dx, (base + normal * 4.5).dy)
+      ..lineTo((base - normal * 4.5).dx, (base - normal * 4.5).dy)
+      ..close();
+    canvas.drawPath(path, Paint()..color = const Color(0xFFFFD54F));
+  }
+
+  void _paintDiamond(Canvas canvas, Offset screen, Color color) {
+    final path = Path()
+      ..moveTo(screen.dx, screen.dy - 7)
+      ..lineTo(screen.dx + 6, screen.dy)
+      ..lineTo(screen.dx, screen.dy + 7)
+      ..lineTo(screen.dx - 6, screen.dy)
+      ..close();
+    canvas.drawPath(path, Paint()..color = color);
+  }
+
+  void _paintLabel(Canvas canvas, Offset screen, String text) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    painter.paint(
+      canvas,
+      screen - Offset(painter.width / 2, painter.height / 2),
+    );
+  }
+
+  /// Green X at the far end of a preview, in screen pixels.
+  void _paintTerminal(Canvas canvas, Offset screen, Color color) {
+    const arm = 7.0;
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(
+      screen + const Offset(-arm, -arm),
+      screen + const Offset(arm, arm),
+      paint,
+    );
+    canvas.drawLine(
+      screen + const Offset(-arm, arm),
+      screen + const Offset(arm, -arm),
+      paint,
+    );
   }
 
   /// Crafting-view dot grid: one dot per unit, behind the sheet.
@@ -188,8 +727,7 @@ class GridPuzzlePainter extends CustomPainter {
     }
 
     const dotRadius = 1.35;
-    final dot = Paint()
-      ..color = Colors.grey.shade400.withValues(alpha: 0.55);
+    final dot = Paint()..color = Colors.grey.shade400.withValues(alpha: 0.55);
     Offset? originScreen;
     for (final world in unitGridPoints(bounds, stride)) {
       final screen = _project(world, size);
@@ -248,15 +786,27 @@ class GridPuzzlePainter extends CustomPainter {
         screen.dy <= size.height + 4;
   }
 
-  void _fillPiece(Canvas canvas, Size size, PapercutPiece piece, Color color) {
-    final path = _path(_moved(piece.vertices, piece.separation), size, close: true);
+  void _fillDisplayed(Canvas canvas, Size size, PapercutPiece piece, Color color) {
+    final path = _path(
+      _shownRing(piece.vertices, piece.separation),
+      size,
+      close: true,
+    );
     if (path == null) return;
     for (final hole in piece.holes) {
-      final holePath = _path(_moved(hole, piece.separation), size, close: true);
+      final holePath = _path(
+        _shownRing(hole, piece.separation),
+        size,
+        close: true,
+      );
       if (holePath != null) path.addPath(holePath, Offset.zero);
     }
     path.fillType = PathFillType.evenOdd;
     canvas.drawPath(path, Paint()..color = color);
+  }
+
+  List<Offset> _shownRing(List<Offset> ring, Offset shift) {
+    return _moved(displayRing(ring, sheet.folds), shift);
   }
 
   List<Offset> _moved(List<Offset> ring, Offset shift) {
@@ -264,43 +814,21 @@ class GridPuzzlePainter extends CustomPainter {
     return [for (final point in ring) point + shift];
   }
 
-  List<List<Offset>> _polygonOnPieces(List<Offset> polygon) {
-    final drawn = <List<Offset>>[];
-    for (final piece in sheet.pieces) {
-      if (piece.vertices.length < 3) continue;
-      final hits = polygonIntersection(
-        Polygon2D.simple(polygon),
-        Polygon2D.simple(piece.vertices),
-      );
-      if (hits.isEmpty) {
-        final centroid = polygonCentroid(polygon);
-        if (ownsPoint(piece.vertices, centroid)) {
-          drawn.add(_moved(polygon, piece.separation));
-        }
-        continue;
-      }
-      for (final hit in hits) {
-        if (hit.exterior.points.length < 3) continue;
-        drawn.add(_moved(hit.exterior.points, piece.separation));
-      }
-    }
-    if (drawn.isEmpty) drawn.add(polygon);
-    return drawn;
-  }
-
   List<List<Offset>> _onEachOwner(List<Offset> stroke) {
     if (stroke.isEmpty) return const [];
-    final mid = stroke[stroke.length ~/ 2];
     final shifted = <List<Offset>>[];
     for (final piece in sheet.pieces) {
-      if (!ownsPoint(piece.vertices, mid)) continue;
-      shifted.add(_moved(stroke, piece.separation));
+      for (final mark in cutMarksOnPiece(stroke, piece)) {
+        shifted.add(_moved(mark, piece.separation));
+      }
     }
     if (shifted.isEmpty) shifted.add(stroke);
     return shifted;
   }
 
   (Offset, Offset) _shiftSegment(Offset a, Offset b) {
+    final shift = ghostSeparation;
+    if (shift != null) return (a + shift, b + shift);
     final mid = Offset((a.dx + b.dx) / 2, (a.dy + b.dy) / 2);
     for (final piece in sheet.pieces) {
       if (!ownsPoint(piece.vertices, mid) && !ownsPoint(piece.vertices, a)) {
@@ -384,10 +912,7 @@ class GridPuzzlePainter extends CustomPainter {
   }
 
   Offset? _project(Offset point, Size size) {
-    return camera.camera.projectToScreen(
-      Vector3(point.dx, point.dy, 0),
-      size,
-    );
+    return camera.camera.projectToScreen(Vector3(point.dx, point.dy, 0), size);
   }
 
   @override

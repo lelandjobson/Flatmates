@@ -1,5 +1,9 @@
 # Flatmates
 
+## Grid puzzles
+
+Level, blueprint, blueprint piece, attachment, level permutation, collectible, and failure condition are defined in `docs/gridcraft.md`. Use those words in gridcraft code and in the puzzle editor.
+
 ## Geometry
 
 When a geometry operation is unclear — intersections, offsets, buffers, polygons, or numerical robustness — read the Boost.Geometry sources before inventing a new approach:

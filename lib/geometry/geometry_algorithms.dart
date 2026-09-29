@@ -854,6 +854,151 @@ double _distanceToSegment(Offset p, Offset a, Offset b) {
   return (p - projection).distance;
 }
 
+/// A point on the paper: the material centroid when it lies in the area,
+/// otherwise the pole of inaccessibility.
+///
+/// The area centroid of a concave ring, or of a shape with a hole, can fall
+/// off the paper. The pole is the interior point farthest from any edge.
+Offset? paperAnchor(Polygon2D polygon) {
+  if (!polygon.isValid) return null;
+  final mass = _materialCentroid(polygon);
+  if (mass != null && isPointStrictlyInside(mass, polygon)) return mass;
+  return _poleOfInaccessibility(polygon, mass);
+}
+
+Offset? _materialCentroid(Polygon2D polygon) {
+  final ext = ringCentroid(polygon.exterior);
+  if (ext == null) return null;
+  var area = _ringSignedArea(polygon.exterior).abs();
+  if (area < _epsilon) return ext;
+  var x = ext.dx * area;
+  var y = ext.dy * area;
+  for (final hole in polygon.holes) {
+    final center = ringCentroid(hole);
+    final holeArea = _ringSignedArea(hole).abs();
+    if (center == null || holeArea < _epsilon) continue;
+    area -= holeArea;
+    x -= center.dx * holeArea;
+    y -= center.dy * holeArea;
+  }
+  if (area < _epsilon) return ext;
+  return Offset(x / area, y / area);
+}
+
+double _ringSignedArea(Ring2D ring) {
+  var area = 0.0;
+  final n = ring.length;
+  for (var i = 0; i < n; i++) {
+    final p1 = ring.points[i];
+    final p2 = ring.points[(i + 1) % n];
+    area += p1.dx * p2.dy - p2.dx * p1.dy;
+  }
+  return area / 2;
+}
+
+double _signedDistanceToMaterial(Offset point, Polygon2D polygon) {
+  final dist = distanceToPolygon(point, polygon);
+  if (pointInPolygon(point, polygon) == PointLocation.outside) return -dist;
+  return dist;
+}
+
+/// Mapbox polylabel: quadtree search for the deepest interior point.
+Offset? _poleOfInaccessibility(Polygon2D polygon, Offset? guess) {
+  final bounds = Bounds2D.fromPolygon(polygon);
+  final width = bounds.width;
+  final height = bounds.height;
+  if (width < _epsilon && height < _epsilon) return guess ?? bounds.center;
+
+  final cellSize = math.min(width, height);
+  if (cellSize < _epsilon) return guess ?? bounds.center;
+  final precision = math.max(cellSize * 0.01, 1e-4);
+  final half = cellSize / 2;
+
+  final queue = <_PoleCell>[];
+  void push(_PoleCell cell) {
+    queue.add(cell);
+    var i = queue.length - 1;
+    while (i > 0) {
+      final parent = (i - 1) >> 1;
+      if (queue[parent].potential >= queue[i].potential) break;
+      final swap = queue[parent];
+      queue[parent] = queue[i];
+      queue[i] = swap;
+      i = parent;
+    }
+  }
+
+  _PoleCell pop() {
+    final top = queue.first;
+    final last = queue.removeLast();
+    if (queue.isEmpty) return top;
+    queue[0] = last;
+    var i = 0;
+    while (true) {
+      final left = i * 2 + 1;
+      if (left >= queue.length) break;
+      final right = left + 1;
+      var best = left;
+      if (right < queue.length &&
+          queue[right].potential > queue[left].potential) {
+        best = right;
+      }
+      if (queue[best].potential <= queue[i].potential) break;
+      final swap = queue[i];
+      queue[i] = queue[best];
+      queue[best] = swap;
+      i = best;
+    }
+    return top;
+  }
+
+  _PoleCell cellAt(double x, double y, double h) {
+    final center = Offset(x, y);
+    return _PoleCell(center, h, _signedDistanceToMaterial(center, polygon));
+  }
+
+  for (var x = bounds.min.dx; x < bounds.max.dx - _epsilon; x += cellSize) {
+    for (var y = bounds.min.dy; y < bounds.max.dy - _epsilon; y += cellSize) {
+      push(cellAt(x + half, y + half, half));
+    }
+  }
+
+  var best = guess == null
+      ? cellAt(bounds.center.dx, bounds.center.dy, 0)
+      : _PoleCell(guess, 0, _signedDistanceToMaterial(guess, polygon));
+  final middle = cellAt(bounds.center.dx, bounds.center.dy, 0);
+  if (middle.distance > best.distance) best = middle;
+
+  var probes = 0;
+  while (queue.isNotEmpty && probes < 4000) {
+    final cell = pop();
+    probes++;
+    if (cell.distance > best.distance) best = cell;
+    if (cell.potential - best.distance <= precision) continue;
+    final next = cell.half / 2;
+    if (next < precision * 0.5) continue;
+    final cx = cell.center.dx;
+    final cy = cell.center.dy;
+    push(cellAt(cx - next, cy - next, next));
+    push(cellAt(cx + next, cy - next, next));
+    push(cellAt(cx - next, cy + next, next));
+    push(cellAt(cx + next, cy + next, next));
+  }
+
+  if (isPointInPolygon(best.center, polygon)) return best.center;
+  return guess != null && isPointInPolygon(guess, polygon) ? guess : null;
+}
+
+class _PoleCell {
+  _PoleCell(this.center, this.half, this.distance);
+
+  final Offset center;
+  final double half;
+  final double distance;
+
+  double get potential => distance + half * math.sqrt2;
+}
+
 // =============================================================================
 // POLYGON UNION
 // =============================================================================

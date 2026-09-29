@@ -48,6 +48,8 @@ void main() {
         'papercut_puzzles',
         'craft_editor',
         'grid_puzzles',
+        'puzzle_editor',
+        'tool_animations',
       });
     });
   });
@@ -303,10 +305,7 @@ void main() {
             curve.points.contains(const Offset(0, 0)) &&
             curve.points.contains(const Offset(0, 10)),
       );
-      expect(
-        scoreOpenCut(boundary, [boundary.points]).passed,
-        isTrue,
-      );
+      expect(scoreOpenCut(boundary, [boundary.points]).passed, isTrue);
 
       final flat = applyFoldPose(craft, 1, 0);
       final folded = applyFoldPose(craft, 1, 1);
@@ -578,13 +577,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Step 1'), findsOneWidget);
-    final geometry = tester
-        .widgetList<CustomPaint>(find.byType(CustomPaint))
-        .map((paint) => paint.painter)
-        .whereType<PapercutPainter>()
-        .single
-        .step
-        .geometry as PapercutCurveGeometry;
+    final geometry =
+        tester
+                .widgetList<CustomPaint>(find.byType(CustomPaint))
+                .map((paint) => paint.painter)
+                .whereType<PapercutPainter>()
+                .single
+                .step
+                .geometry
+            as PapercutCurveGeometry;
     expect(geometry.foldCurves, hasLength(1));
     expect(
       geometry.curves.where((curve) => curve.role == PapercutCurveRole.cut),

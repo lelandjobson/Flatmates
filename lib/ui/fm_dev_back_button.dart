@@ -6,7 +6,10 @@ import 'fm_safe_area.dart';
 import 'fm_theme.dart';
 
 class FmDevBackButton extends StatefulWidget {
-  const FmDevBackButton({super.key});
+  const FmDevBackButton({super.key, this.onPressed, this.label = '← Dev'});
+
+  final VoidCallback? onPressed;
+  final String label;
 
   @override
   State<FmDevBackButton> createState() => _FmDevBackButtonState();
@@ -27,7 +30,7 @@ class _FmDevBackButtonState extends State<FmDevBackButton> {
         onExit: (_) => setState(() => _hovered = false),
         cursor: SystemMouseCursors.click,
         child: GestureDetector(
-          onTap: () => context.goNamed('dev_routes'),
+          onTap: widget.onPressed ?? () => context.goNamed('dev_routes'),
           child: CustomPaint(
             painter: _BackButtonPainter(
               strokeColor: theme.strokeColor,
@@ -37,7 +40,7 @@ class _FmDevBackButtonState extends State<FmDevBackButton> {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               child: Text(
-                '← Dev',
+                widget.label,
                 style: TextStyle(
                   color: theme.textColor,
                   fontSize: 12,

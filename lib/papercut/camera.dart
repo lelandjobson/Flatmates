@@ -168,6 +168,17 @@ class PapercutCamera extends ChangeNotifier {
     return unwrapped + signedAngleDelta(wrapAngle(unwrapped), wrappedNext);
   }
 
+  /// Roll at which [direction] points up on screen, kept near [near].
+  ///
+  /// Screen-up in paper space is `(sin(roll), cos(roll))`. A leftward cut
+  /// therefore takes a clockwise sheet turn (negative roll).
+  static double rollForScreenUp(Offset direction, {double near = 0}) {
+    final length = direction.distance;
+    if (length < 1e-8) return near;
+    final ray = direction / length;
+    return advanceAngle(near, math.atan2(ray.dx, ray.dy));
+  }
+
   /// Roll after a screen-space sweep. [currentAngle] is unwrapped relative to
   /// [startAngle]. Screen angles use `atan2(dy, dx)` with Y down, so a
   /// clockwise sweep increases the angle and the sheet follows it.
