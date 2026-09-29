@@ -24,7 +24,7 @@ class ActionDayStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final slots = plan?.slots ?? emptyDaySlots(null);
-    final fill = gameModeFill(GameMode.action, submenu: true);
+    final fill = gameModeFill(GameMode.action);
     return SizedBox(
       height: 58,
       width: double.infinity,

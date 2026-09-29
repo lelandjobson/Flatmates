@@ -16,6 +16,7 @@ import '../papercut/paper.dart';
 import '../ui/fm_dev_back_button.dart';
 import '../ui/fm_safe_area.dart';
 import '../ui/fm_screen.dart';
+import '../ui/craft_palette.dart';
 import '../ui/game/game_tool_carousel.dart';
 
 enum _EditorTool {
@@ -37,6 +38,32 @@ enum _ShapeTool { draw, select, delete }
 enum _MarkMode { place, erase, flip }
 
 const Color _hud = Color(0xFF1A1A1A);
+
+Color _editorToolFill(_EditorTool tool) => switch (tool) {
+  _EditorTool.shapes => CraftPalette.kentuckyBlue.fill,
+  _EditorTool.level => CraftPalette.midnightBlue.fill,
+  _EditorTool.exits => CraftPalette.cyan.fill,
+  _EditorTool.length => CraftPalette.turquoise.fill,
+  _EditorTool.forbid => CraftPalette.scarlet.fill,
+  _EditorTool.colors => CraftPalette.fuschia.fill,
+  _EditorTool.numbers => CraftPalette.butter.fill,
+  _EditorTool.arrows => CraftPalette.ginger.fill,
+  _EditorTool.docks => CraftPalette.seaFoam.fill,
+  _EditorTool.links => CraftPalette.babyBoy.fill,
+  _EditorTool.seams => CraftPalette.coral.fill,
+};
+
+Color _shapeToolFill(_ShapeTool tool) => switch (tool) {
+  _ShapeTool.draw => CraftPalette.cerulean.fill,
+  _ShapeTool.select => CraftPalette.granite.fill,
+  _ShapeTool.delete => CraftPalette.red.fill,
+};
+
+Color _markFill(_MarkMode mode) => switch (mode) {
+  _MarkMode.place => CraftPalette.grass.fill,
+  _MarkMode.erase => CraftPalette.stone.fill,
+  _MarkMode.flip => CraftPalette.mango.fill,
+};
 
 /// Authors a blueprint's levels, then sends one into play.
 class PuzzleEditorView extends StatefulWidget {
@@ -1047,7 +1074,7 @@ class _PuzzleEditorViewState extends State<PuzzleEditorView> {
                   value: tool,
                   icon: _toolIcon(tool),
                   label: _toolLabel(tool),
-                  fill: _hud,
+                  fill: _editorToolFill(tool),
                 ),
             ],
             selected: _tool,
@@ -1069,26 +1096,30 @@ class _PuzzleEditorViewState extends State<PuzzleEditorView> {
 
   Widget _subtoolbar() {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        switch (_tool) {
-          _EditorTool.shapes => _shapeBar(),
-          _EditorTool.level => _levelBar(),
-          _EditorTool.exits => _stepper(
-            label: _step.rules.maxExits?.toString() ?? '∞',
-            onMinus: () => _nudgeLimit(exits: true, delta: -1),
-            onPlus: () => _nudgeLimit(exits: true, delta: 1),
+        Expanded(
+          child: Align(
+            alignment: Alignment.center,
+            child: switch (_tool) {
+              _EditorTool.shapes => _shapeBar(),
+              _EditorTool.level => _levelBar(),
+              _EditorTool.exits => _stepper(
+                label: _step.rules.maxExits?.toString() ?? '∞',
+                onMinus: () => _nudgeLimit(exits: true, delta: -1),
+                onPlus: () => _nudgeLimit(exits: true, delta: 1),
+              ),
+              _EditorTool.length => _stepper(
+                label: _step.rules.maxLength?.toStringAsFixed(0) ?? '∞',
+                onMinus: () => _nudgeLimit(exits: false, delta: -1),
+                onPlus: () => _nudgeLimit(exits: false, delta: 1),
+              ),
+              _EditorTool.colors => _colorBar(),
+              _EditorTool.arrows => _markBar(flip: true),
+              _ => _markBar(flip: false),
+            },
           ),
-          _EditorTool.length => _stepper(
-            label: _step.rules.maxLength?.toStringAsFixed(0) ?? '∞',
-            onMinus: () => _nudgeLimit(exits: false, delta: -1),
-            onPlus: () => _nudgeLimit(exits: false, delta: 1),
-          ),
-          _EditorTool.colors => _colorBar(),
-          _EditorTool.arrows => _markBar(flip: true),
-          _ => _markBar(flip: false),
-        },
+        ),
         const SizedBox(width: 8),
         _helpButton(),
       ],
@@ -1101,7 +1132,7 @@ class _PuzzleEditorViewState extends State<PuzzleEditorView> {
       child: HudToolButton(
         icon: Icons.help_outline,
         label: 'Help',
-        fill: _hud,
+        fill: CraftPalette.warmGrey.fill,
         selected: false,
         iconSize: 20,
         buttonSize: 34,
@@ -1192,25 +1223,22 @@ class _PuzzleEditorViewState extends State<PuzzleEditorView> {
           ),
         HudToolCarousel<_ShapeTool>(
           compact: true,
-          items: const [
-            HudCarouselItem(
-              value: _ShapeTool.draw,
-              icon: Icons.timeline,
-              label: 'Draw',
-              fill: _hud,
-            ),
-            HudCarouselItem(
-              value: _ShapeTool.select,
-              icon: Icons.near_me,
-              label: 'Select',
-              fill: _hud,
-            ),
-            HudCarouselItem(
-              value: _ShapeTool.delete,
-              icon: Icons.delete_outline,
-              label: 'Delete',
-              fill: _hud,
-            ),
+          items: [
+            for (final tool in _ShapeTool.values)
+              HudCarouselItem(
+                value: tool,
+                icon: switch (tool) {
+                  _ShapeTool.draw => Icons.timeline,
+                  _ShapeTool.select => Icons.near_me,
+                  _ShapeTool.delete => Icons.delete_outline,
+                },
+                label: switch (tool) {
+                  _ShapeTool.draw => 'Draw',
+                  _ShapeTool.select => 'Select',
+                  _ShapeTool.delete => 'Delete',
+                },
+                fill: _shapeToolFill(tool),
+              ),
           ],
           selected: _shape,
           onSelect: (shape) {
@@ -1382,24 +1410,24 @@ class _PuzzleEditorViewState extends State<PuzzleEditorView> {
     return HudToolCarousel<_MarkMode>(
       compact: true,
       items: [
-        const HudCarouselItem(
+        HudCarouselItem(
           value: _MarkMode.place,
           icon: Icons.add_location_alt_outlined,
           label: 'Place',
-          fill: _hud,
+          fill: _markFill(_MarkMode.place),
         ),
         if (flip)
-          const HudCarouselItem(
+          HudCarouselItem(
             value: _MarkMode.flip,
             icon: Icons.swap_horiz,
             label: 'Flip',
-            fill: _hud,
+            fill: _markFill(_MarkMode.flip),
           ),
-        const HudCarouselItem(
+        HudCarouselItem(
           value: _MarkMode.erase,
           icon: Icons.auto_fix_off,
           label: 'Erase',
-          fill: _hud,
+          fill: _markFill(_MarkMode.erase),
         ),
       ],
       selected: _mark,
@@ -1419,13 +1447,13 @@ class _PuzzleEditorViewState extends State<PuzzleEditorView> {
             value: i,
             icon: Icons.circle,
             label: kRuleColorNames[i],
-            fill: kRulePalette[i],
+            fill: kRulePalette[i].withValues(alpha: 0.6),
           ),
-        const HudCarouselItem(
+        HudCarouselItem(
           value: -1,
           icon: Icons.auto_fix_off,
           label: 'Erase',
-          fill: _hud,
+          fill: _markFill(_MarkMode.erase),
         ),
       ],
       selected: _mark == _MarkMode.erase ? -1 : _color,

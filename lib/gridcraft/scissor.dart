@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui';
 
+import '../geometry/geometry_algorithms.dart';
 import '../geometry/polygon_union.dart';
 import '../papercut/paper.dart';
 import '../papercut/split.dart';
@@ -75,16 +76,37 @@ bool segmentEntersBlueprintInterior(
   Offset to,
   List<List<Offset>> blueprintPieces,
 ) {
+  return piercedBlueprintRing(from, to, blueprintPieces) != null;
+}
+
+/// Index of the closed blueprint piece whose area [from]–[to] crosses.
+///
+/// Stopping on the outline, or traveling along it, does not count. Open
+/// polylines have no area.
+int? piercedBlueprint(GridStep step, Offset from, Offset to) {
+  for (var i = 0; i < step.polygons.length; i++) {
+    if (!step.isRingClosed(i)) continue;
+    if (piercedBlueprintRing(from, to, [step.polygons[i]]) != null) return i;
+  }
+  return null;
+}
+
+int? piercedBlueprintRing(
+  Offset from,
+  Offset to,
+  List<List<Offset>> blueprintPieces,
+) {
   for (var i = 1; i < 8; i++) {
     final point = Offset.lerp(from, to, i / 8)!;
-    for (final ring in blueprintPieces) {
+    for (var ringIndex = 0; ringIndex < blueprintPieces.length; ringIndex++) {
+      final ring = blueprintPieces[ringIndex];
       if (ring.length < 3) continue;
       if (!isInsidePolygon(point, ring)) continue;
       if (_onRingBoundary(point, ring)) continue;
-      return true;
+      return ringIndex;
     }
   }
-  return false;
+  return null;
 }
 
 bool _onRingBoundary(Offset point, List<Offset> ring) {
@@ -242,6 +264,21 @@ ForwardCut? mostForwardCut(List<ForwardCut> cuts, Offset forward) {
   return best;
 }
 
+/// Forward, left, and right of [forward], in paper space.
+///
+/// These stay put when the camera rolls. A tap still picks among them by
+/// which screen side it is closest to.
+List<Offset> paperTurnDirections(Offset forward) {
+  final length = forward.distance;
+  if (length < 1e-8) return const [];
+  final heading = forward / length;
+  return [
+    heading,
+    Offset(-heading.dy, heading.dx),
+    Offset(heading.dy, -heading.dx),
+  ];
+}
+
 /// The cut whose direction matches [direction], or null when none does.
 ForwardCut? cutFacing(List<ForwardCut> cuts, Offset direction) {
   final length = direction.distance;
@@ -278,6 +315,29 @@ ScissorMarch? placeOnRing(Offset point, List<Offset> ring) {
   final direction = inwardOnRing(point, ring);
   if (direction == null) return null;
   return ScissorMarch(path: [point], direction: direction);
+}
+
+/// Heading for a new cut at [from].
+///
+/// A point on a piece faces into that piece, perpendicular to the edge it
+/// sits on. Aiming at the original paper center is only for a point that is
+/// not on a ring: a fresh cut edge is inside that rectangle, and the center
+/// often lies outside the piece, so that aim runs backward or into a corner.
+Offset openingHeading(
+  Offset from,
+  Rect paper, {
+  List<Offset>? ring,
+  List<List<Offset>> holes = const [],
+}) {
+  if (ring != null) {
+    final inward = inwardOnRing(from, ring);
+    if (inward != null) return inward;
+  }
+  for (final hole in holes) {
+    final inward = inwardOnRing(from, hole);
+    if (inward != null) return inward;
+  }
+  return placeAtEntry(from, paper).direction;
 }
 
 /// The piece whose drawn edge is closest to [aim], and the model point on it.
@@ -452,11 +512,14 @@ Offset? nextDatum({
 /// New pieces step apart from their shared centroid. Every piece then
 /// relaxes under a size-weighted push so none of the drawn bounds occupy
 /// the same space, and packs back toward that first step when it can.
+/// Pieces in [pinned] keep the separation they already have. A completed
+/// blueprint piece stays on its outline while the scrap steps away.
 PapercutSheet spreadPieces(
   PapercutSheet before,
   PapercutSheet after,
-  double spacing,
-) {
+  double spacing, {
+  Set<String> pinned = const {},
+}) {
   if (spacing <= 0 || after.pieces.length < 2) return after;
   final oldIds = {for (final piece in before.pieces) piece.id};
   final fresh = <int>[];
@@ -477,9 +540,11 @@ PapercutSheet spreadPieces(
   }
   if (weight < 1e-8) return after;
   final group = Offset(gx / weight, gy / weight);
+  bool stays(int index) =>
+      !fresh.contains(index) || pinned.contains(after.pieces[index].id);
   final home = <Offset>[
     for (var i = 0; i < after.pieces.length; i++)
-      if (!fresh.contains(i))
+      if (stays(i))
         after.pieces[i].separation
       else
         after.pieces[i].separation +
@@ -493,6 +558,7 @@ PapercutSheet spreadPieces(
     ],
     home: home,
     gap: spacing,
+    pinned: [for (final piece in after.pieces) pinned.contains(piece.id)],
   );
   return after.copyWith(
     pieces: [
@@ -526,8 +592,10 @@ List<Offset> relaxSeparations({
   required List<double> areas,
   required List<Offset> home,
   double gap = 0,
+  List<bool> pinned = const [],
 }) {
   final sep = [...home];
+  bool fixed(int index) => index < pinned.length && pinned[index];
   Rect shown(int index) => bounds[index].shift(sep[index]).inflate(gap / 2);
 
   Offset? push(Rect a, Rect b) {
@@ -549,21 +617,29 @@ List<Offset> relaxSeparations({
     for (var i = 0; i < sep.length; i++) {
       for (var j = i + 1; j < sep.length; j++) {
         final mtv = push(shown(i), shown(j));
-        if (mtv == null) continue;
+        if (mtv == null || (fixed(i) && fixed(j))) continue;
         any = true;
-        final total = areas[i] + areas[j];
-        force[i] -= mtv * (areas[j] / total);
-        force[j] += mtv * (areas[i] / total);
+        if (fixed(i)) {
+          force[j] += mtv;
+        } else if (fixed(j)) {
+          force[i] -= mtv;
+        } else {
+          final total = areas[i] + areas[j];
+          force[i] -= mtv * (areas[j] / total);
+          force[j] += mtv * (areas[i] / total);
+        }
       }
     }
     if (!any) break;
     for (var i = 0; i < sep.length; i++) {
+      if (fixed(i)) continue;
       sep[i] += force[i];
     }
   }
 
   for (var step = 0; step < 8; step++) {
     for (var i = 0; i < sep.length; i++) {
+      if (fixed(i)) continue;
       final trial = sep[i] + (home[i] - sep[i]) * 0.35;
       final previous = sep[i];
       sep[i] = trial;
@@ -581,40 +657,23 @@ List<Offset> relaxSeparations({
   return sep;
 }
 
-/// Portions of [stroke] that belong on [piece] when that piece moves.
+/// Portions of [stroke] that still read as a cut on [piece].
 ///
-/// Overlap with the outline uses the collinear parameter-range test from
-/// Boost.Geometry's `relate_collinear`: project both segments onto the line
-/// and keep the shared interval. An approach cut that only crosses the margin
-/// is not on the liberated outline, so that piece does not take it. A segment
-/// through the interior, and not on the outline, stays with the piece that
-/// contains it.
+/// A mark stays in the interior and travels with that piece. Where the stroke
+/// lies on an outline, the split has already made that edge, so the mark is
+/// dropped. An approach that only crosses another piece's margin is not taken.
 List<List<Offset>> cutMarksOnPiece(List<Offset> stroke, PapercutPiece piece) {
   if (stroke.length < 2) return const [];
   final marks = <List<Offset>>[];
-  final rings = [piece.vertices, ...piece.holes];
   for (var i = 0; i < stroke.length - 1; i++) {
-    final a = stroke[i];
-    final b = stroke[i + 1];
-    var onOutline = false;
-    for (final ring in rings) {
-      if (ring.length < 2) continue;
-      for (var j = 0; j < ring.length; j++) {
-        final overlap = _collinearOverlap(
-          a,
-          b,
-          ring[j],
-          ring[(j + 1) % ring.length],
-        );
-        if (overlap == null) continue;
-        onOutline = true;
-        marks.add(overlap);
-      }
+    for (final part in segmentOnPiece(stroke[i], stroke[i + 1], piece)) {
+      final mid = Offset(
+        (part.$1.dx + part.$2.dx) / 2,
+        (part.$1.dy + part.$2.dy) / 2,
+      );
+      if (!_inPieceInterior(mid, piece)) continue;
+      marks.add([part.$1, part.$2]);
     }
-    if (onOutline) continue;
-    final mid = Offset((a.dx + b.dx) / 2, (a.dy + b.dy) / 2);
-    if (!_inPieceInterior(mid, piece)) continue;
-    marks.add([a, b]);
   }
   return marks;
 }
@@ -626,38 +685,6 @@ bool _inPieceInterior(Offset point, PapercutPiece piece) {
     if (isInsidePolygon(point, hole)) return false;
   }
   return true;
-}
-
-/// Shared interval of two collinear segments, or null when they miss.
-List<Offset>? _collinearOverlap(Offset a, Offset b, Offset p, Offset q) {
-  final ab = b - a;
-  final len = ab.distance;
-  final pq = q - p;
-  final other = pq.distance;
-  if (len < 1e-8 || other < 1e-8) return null;
-  double cross(Offset u, Offset v) => u.dx * v.dy - u.dy * v.dx;
-  if ((cross(ab, pq).abs() / (len * other)) > 1e-3) return null;
-  if ((cross(ab, p - a).abs() / len) > 1e-3) return null;
-  if ((cross(ab, q - a).abs() / len) > 1e-3) return null;
-  double tOf(Offset point) {
-    return ((point.dx - a.dx) * ab.dx + (point.dy - a.dy) * ab.dy) /
-        (len * len);
-  }
-
-  var t0 = tOf(p);
-  var t1 = tOf(q);
-  if (t1 < t0) {
-    final swap = t0;
-    t0 = t1;
-    t1 = swap;
-  }
-  final lo = math.max(0.0, t0);
-  final hi = math.min(1.0, t1);
-  if (hi - lo < 1e-4) return null;
-  return [
-    Offset(a.dx + ab.dx * lo, a.dy + ab.dy * lo),
-    Offset(a.dx + ab.dx * hi, a.dy + ab.dy * hi),
-  ];
 }
 
 Offset _nudge(Offset delta, double spacing) {
@@ -924,6 +951,61 @@ bool _pieceOwnsMark(PapercutPiece piece, Offset point) {
   return true;
 }
 
+/// Portions of segment [a]–[b] that lie on [piece].
+///
+/// The level keeps the authored ring whole, so the blade, hits, and victory
+/// still see one blueprint piece. Drawing clips that ring onto the paper:
+/// a cut through an edge splits it, and each side travels with the piece
+/// that holds it. A point in a hole belongs to the cut-out, not the sheet.
+List<(Offset, Offset)> segmentOnPiece(
+  Offset a,
+  Offset b,
+  PapercutPiece piece,
+) {
+  final delta = b - a;
+  if (delta.distance < 1e-8 || piece.vertices.length < 3) return const [];
+  final parameters = <double>[0, 1];
+  void addRing(List<Offset> ring) {
+    for (var i = 0; i < ring.length; i++) {
+      final hit = segmentIntersection(
+        a,
+        b,
+        ring[i],
+        ring[(i + 1) % ring.length],
+      );
+      if (hit.isPoint && hit.point != null) {
+        parameters.add(parameterOnSegment(a, b, hit.point!).clamp(0.0, 1.0));
+      } else if (hit.isCollinear) {
+        final start = hit.segmentStart;
+        final end = hit.segmentEnd;
+        if (start != null) {
+          parameters.add(parameterOnSegment(a, b, start).clamp(0.0, 1.0));
+        }
+        if (end != null) {
+          parameters.add(parameterOnSegment(a, b, end).clamp(0.0, 1.0));
+        }
+      }
+    }
+  }
+
+  addRing(piece.vertices);
+  for (final hole in piece.holes) {
+    addRing(hole);
+  }
+  parameters.sort();
+
+  Offset at(double t) => Offset(a.dx + delta.dx * t, a.dy + delta.dy * t);
+  final kept = <(Offset, Offset)>[];
+  for (var i = 0; i < parameters.length - 1; i++) {
+    final t0 = parameters[i];
+    final t1 = parameters[i + 1];
+    if (t1 - t0 < 1e-5) continue;
+    if (!_pieceOwnsMark(piece, at((t0 + t1) / 2))) continue;
+    kept.add((at(t0), at(t1)));
+  }
+  return kept;
+}
+
 /// Parts of [polygon] that lie on [piece].
 ///
 /// A cut that crosses the blueprint shows up as the shared edge between two
@@ -1021,6 +1103,9 @@ double _distanceToRing(Offset point, List<Offset> ring) {
 }
 
 /// Axis direction into [ring] from a point on its boundary.
+///
+/// A corner belongs to two edges. The direction kept is the one that steps
+/// into the piece and, when both do, the one aimed more toward the piece.
 Offset? inwardOnRing(Offset point, List<Offset> ring) {
   if (ring.length < 3) return null;
   final area = polygonSignedArea(ring);
@@ -1038,18 +1123,33 @@ Offset? inwardOnRing(Offset point, List<Offset> ring) {
     final nx = -dy * sign;
     final ny = dx * sign;
     if (nx.abs() < 1e-8 && ny.abs() < 1e-8) continue;
-    if (nx.abs() >= ny.abs()) {
-      candidates.add(Offset(nx.sign, 0));
-    } else {
-      candidates.add(Offset(0, ny.sign));
-    }
+    final normal = nx.abs() >= ny.abs()
+        ? Offset(nx.sign, 0)
+        : Offset(0, ny.sign);
+    if (candidates.any((other) => other == normal)) continue;
+    candidates.add(normal);
   }
   if (candidates.isEmpty) return null;
-  const priority = [Offset(0, 1), Offset(0, -1), Offset(1, 0), Offset(-1, 0)];
-  for (final preferred in priority) {
-    if (candidates.any((candidate) => candidate == preferred)) return preferred;
+  final into = [
+    for (final candidate in candidates)
+      if (_stepsInside(point, candidate, ring)) candidate,
+  ];
+  final usable = into.isNotEmpty ? into : candidates;
+  if (usable.length == 1) return usable.first;
+  final center = polygonCentroid(ring) - point;
+  var best = usable.first;
+  var bestDot = -double.infinity;
+  for (final candidate in usable) {
+    final dot = candidate.dx * center.dx + candidate.dy * center.dy;
+    if (dot <= bestDot) continue;
+    best = candidate;
+    bestDot = dot;
   }
-  return candidates.first;
+  return best;
+}
+
+bool _stepsInside(Offset point, Offset direction, List<Offset> ring) {
+  return isInsidePolygon(point + direction * 0.05, ring);
 }
 
 double _distanceToSegment(Offset point, Offset a, Offset b) {

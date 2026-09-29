@@ -1,3 +1,4 @@
+import 'package:flatmates/ui/craft_palette.dart';
 import 'package:flatmates/ui/game/game_tool_carousel.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -33,14 +34,14 @@ void main() {
     expect(kGameCreateToolItems.map((i) => i.value), GameCreateTool.values);
   });
 
-  test('modes are black, gold-tinted, and blue-tinted', () {
-    expect(GameMode.select.fill, kHudSelectFill);
-    expect(gameModeFill(GameMode.edit).r, greaterThan(gameModeFill(GameMode.create).r));
-    expect(gameModeFill(GameMode.create).b, greaterThan(gameModeFill(GameMode.edit).b));
-    expect(
-      gameModeFill(GameMode.action).r,
-      greaterThan(hudTintedBlack(kHudSunset, amount: 0.28).r),
-    );
+  test('modes use craft-palette fills at 60% opacity', () {
+    expect(GameMode.select.fill, CraftPalette.kentuckyBlue.fill);
+    expect(GameMode.edit.fill, CraftPalette.goldenTan.fill);
+    expect(GameMode.create.fill, CraftPalette.cerulean.fill);
+    expect(GameMode.action.fill, CraftPalette.fuschia.fill);
+    for (final mode in GameMode.values) {
+      expect(mode.fill.a, closeTo(0.6, 1e-6));
+    }
   });
 
   test('carousel duration is 300ms', () {
@@ -219,14 +220,33 @@ void main() {
     expect(((xs.first + xs.last) / 2 - barCenter).abs(), lessThan(2));
   });
 
-  test('submenus share the parent hue and are 10% less black', () {
-    final edit = gameModeFill(GameMode.edit);
-    final editSub = gameModeFill(GameMode.edit, submenu: true);
-    final create = gameModeFill(GameMode.create);
-    final createSub = gameModeFill(GameMode.create, submenu: true);
-    expect(editSub.computeLuminance(), greaterThan(edit.computeLuminance()));
-    expect(createSub.computeLuminance(), greaterThan(create.computeLuminance()));
-    expect(kGameEditToolItems.map((i) => i.fill).toSet(), {editSub});
-    expect(kGameCreateToolItems.map((i) => i.fill).toSet(), {createSub});
+  test('submenu tools keep their own craft colors at 60% opacity', () {
+    expect(
+      kGameEditToolItems.map((i) => i.fill).toSet(),
+      {
+        CraftPalette.goldenTan.fill,
+        CraftPalette.chartreuse.fill,
+        CraftPalette.scarlet.fill,
+      },
+    );
+    expect(
+      kGameCreateToolItems.map((i) => i.fill).toSet(),
+      {
+        CraftPalette.cerulean.fill,
+        CraftPalette.turquoise.fill,
+        CraftPalette.springGreen.fill,
+      },
+    );
+    expect(
+      kGameSelectViewFilterItems.map((i) => i.fill).toSet(),
+      {CraftPalette.kentuckyBlue.fill, CraftPalette.seaGreen.fill},
+    );
+    for (final item in [
+      ...kGameEditToolItems,
+      ...kGameCreateToolItems,
+      ...kGameSelectViewFilterItems,
+    ]) {
+      expect(item.fill.a, closeTo(0.6, 1e-6));
+    }
   });
 }

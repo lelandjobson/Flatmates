@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../craft_palette.dart';
+
 const kGameToolCarouselDuration = Duration(milliseconds: 300);
 const kGameToolCarouselScale = 1.33;
 
@@ -37,23 +39,12 @@ double carouselItemSlot(int index, double focus, int length) {
   return slot;
 }
 
-const kHudSelectFill = Color(0xFF141414);
-const kHudGold = Color(0xFFC9A227);
-const kHudBlue = Color(0xFF3D7CC9);
-const kHudSunset = Color(0xFF7A4E9E);
-
-/// Near-black with a slight gold or blue wash. [lift] 0.10 is ~10% less black.
-Color hudTintedBlack(Color tint, {double amount = 0.20, double lift = 0}) {
-  return Color.lerp(const Color(0xFF101010), tint, amount + lift)!;
-}
-
-Color gameModeFill(GameMode mode, {bool submenu = false}) {
-  final lift = submenu ? 0.10 : 0.0;
+Color gameModeFill(GameMode mode) {
   return switch (mode) {
-    GameMode.select => Color.lerp(kHudSelectFill, Colors.white, lift)!,
-    GameMode.edit => hudTintedBlack(kHudGold, amount: 0.20, lift: lift),
-    GameMode.create => hudTintedBlack(kHudBlue, amount: 0.24, lift: lift),
-    GameMode.action => hudTintedBlack(kHudSunset, amount: 0.44, lift: lift),
+    GameMode.select => CraftPalette.kentuckyBlue.fill,
+    GameMode.create => CraftPalette.cerulean.fill,
+    GameMode.edit => CraftPalette.goldenTan.fill,
+    GameMode.action => CraftPalette.fuschia.fill,
   };
 }
 
@@ -101,6 +92,12 @@ extension GameEditToolX on GameEditTool {
         GameEditTool.delete => 'Delete',
       };
 
+  Color get fill => switch (this) {
+        GameEditTool.transform => CraftPalette.goldenTan.fill,
+        GameEditTool.paint => CraftPalette.chartreuse.fill,
+        GameEditTool.delete => CraftPalette.scarlet.fill,
+      };
+
   GameEditTool stepped(int delta) {
     final n = GameEditTool.values.length;
     return GameEditTool.values[(index + delta % n + n) % n];
@@ -116,6 +113,11 @@ extension GameSelectViewFilterX on GameSelectViewFilter {
   String get label => switch (this) {
         GameSelectViewFilter.all => 'All',
         GameSelectViewFilter.program => 'Program',
+      };
+
+  Color get fill => switch (this) {
+        GameSelectViewFilter.all => CraftPalette.kentuckyBlue.fill,
+        GameSelectViewFilter.program => CraftPalette.seaGreen.fill,
       };
 
   GameSelectViewFilter stepped(int delta) {
@@ -135,6 +137,12 @@ extension GameCreateToolX on GameCreateTool {
         GameCreateTool.volume => 'Volumes',
         GameCreateTool.path => 'Paths',
         GameCreateTool.playground => 'Playgrounds',
+      };
+
+  Color get fill => switch (this) {
+        GameCreateTool.volume => CraftPalette.cerulean.fill,
+        GameCreateTool.path => CraftPalette.turquoise.fill,
+        GameCreateTool.playground => CraftPalette.springGreen.fill,
       };
 
   GameCreateTool stepped(int delta) {
@@ -177,7 +185,7 @@ List<HudCarouselItem<GameEditTool>> get kGameEditToolItems => [
           value: tool,
           icon: tool.icon,
           label: tool.label,
-          fill: gameModeFill(GameMode.edit, submenu: true),
+          fill: tool.fill,
         ),
     ];
 
@@ -187,7 +195,7 @@ List<HudCarouselItem<GameSelectViewFilter>> get kGameSelectViewFilterItems => [
           value: filter,
           icon: filter.icon,
           label: filter.label,
-          fill: gameModeFill(GameMode.select, submenu: true),
+          fill: filter.fill,
         ),
     ];
 
@@ -197,7 +205,7 @@ List<HudCarouselItem<GameCreateTool>> get kGameCreateToolItems => [
           value: tool,
           icon: tool.icon,
           label: tool.label,
-          fill: gameModeFill(GameMode.create, submenu: true),
+          fill: tool.fill,
         ),
     ];
 
@@ -236,30 +244,44 @@ class HudToolCarousel<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: _height,
-      child: Align(
-        alignment: Alignment.center,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final item in items)
-              SizedBox(
-                key: ValueKey(item.value),
-                width: _slot,
-                child: HudToolButton(
-                  icon: item.icon,
-                  label: item.label,
-                  fill: item.fill,
-                  selected: selected == item.value,
-                  iconSize: _icon,
-                  buttonSize: _button,
-                  onTap: () => onSelect(item.value),
-                ),
-              ),
-          ],
+    final buttons = [
+      for (final item in items)
+        SizedBox(
+          key: ValueKey(item.value),
+          width: _slot,
+          child: HudToolButton(
+            icon: item.icon,
+            label: item.label,
+            fill: item.fill,
+            selected: selected == item.value,
+            iconSize: _icon,
+            buttonSize: _button,
+            onTap: () => onSelect(item.value),
+          ),
         ),
-      ),
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!constraints.hasBoundedWidth) {
+          return SizedBox(
+            height: _height,
+            child: Row(mainAxisSize: MainAxisSize.min, children: buttons),
+          );
+        }
+        return SizedBox(
+          height: _height,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: buttons,
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -308,7 +330,7 @@ class HudToolButton extends StatelessWidget {
             height: buttonSize,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: fill.withValues(alpha: selected ? 0.92 : 0.72),
+              color: fill,
               border: Border.all(
                 color: border,
                 width: selected || borderColor != null ? 2 : 1,

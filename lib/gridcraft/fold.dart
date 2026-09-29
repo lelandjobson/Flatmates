@@ -11,6 +11,53 @@ const _eps = 1e-4;
 /// Fixed flashlight cone, measured from the facing axis to each side.
 const double flashlightHalfAngle = 25 * math.pi / 180;
 
+/// On and off fractions of one grid cell. The phase is the distance from the
+/// world origin along the line, so every collinear mark shares one pattern.
+const double foldDashFraction = 0.62;
+const double foldGapFraction = 0.38;
+
+/// Dashed pieces of [a]–[b]. A dash does not restart at the segment.
+List<(Offset, Offset)> globalDashSegments(
+  Offset a,
+  Offset b, {
+  double spacing = 1,
+}) {
+  final delta = b - a;
+  final length = delta.distance;
+  if (length < 1e-8) return const [];
+  var direction = delta / length;
+  if (direction.dx < -1e-9 || (direction.dx.abs() <= 1e-9 && direction.dy < 0)) {
+    direction = -direction;
+  }
+  final period = spacing <= 1e-8 ? 1.0 : spacing;
+  final dash = period * foldDashFraction;
+  double phase(Offset point) =>
+      point.dx * direction.dx + point.dy * direction.dy;
+  final alongA = phase(a);
+  final alongB = phase(b);
+  final lo = math.min(alongA, alongB);
+  final hi = math.max(alongA, alongB);
+  var cursor = lo - _floorMod(lo, period);
+  final marks = <(Offset, Offset)>[];
+  while (cursor < hi - 1e-9) {
+    final start = math.max(cursor, lo);
+    final end = math.min(cursor + dash, hi);
+    if (end - start > 1e-4) {
+      marks.add((
+        a + direction * (start - alongA),
+        a + direction * (end - alongA),
+      ));
+    }
+    cursor += period;
+  }
+  return marks;
+}
+
+double _floorMod(double value, double period) {
+  final remainder = value % period;
+  return remainder < 0 ? remainder + period : remainder;
+}
+
 double sideOfLine(Offset point, Offset a, Offset b) {
   final ab = b - a;
   final ap = point - a;
@@ -34,17 +81,51 @@ bool foldApplies(Offset point, FoldJoint joint) {
 }
 
 /// Unfolded [point] moved onto the face the player sees.
-Offset displayPoint(Offset point, List<FoldJoint> joints) {
+///
+/// [bend] is a joint still swinging onto the sheet. [bendT] 0 is flat,
+/// 1 has landed on its reflection. The flap closes onto the crease at the
+/// halfway point, which is the paper rotating through the edge-on pose.
+Offset displayPoint(
+  Offset point,
+  List<FoldJoint> joints, {
+  int? bend,
+  double bendT = 1,
+}) {
   var current = point;
-  for (final joint in joints) {
+  for (var i = 0; i < joints.length; i++) {
+    final joint = joints[i];
     if (!foldApplies(current, joint)) continue;
-    current = reflectAcrossLine(current, joint.a, joint.b);
+    if (i == bend && bendT < 1) {
+      current = bendAcrossLine(current, joint.a, joint.b, bendT);
+    } else {
+      current = reflectAcrossLine(current, joint.a, joint.b);
+    }
   }
   return current;
 }
 
-List<Offset> displayRing(List<Offset> ring, List<FoldJoint> joints) {
-  return [for (final point in ring) displayPoint(point, joints)];
+/// Moves [point] toward its reflection. [t] 0 stays put, 0.5 sits on the
+/// crease, and 1 is the full reflection.
+Offset bendAcrossLine(Offset point, Offset a, Offset b, double t) {
+  final ab = b - a;
+  final len2 = ab.dx * ab.dx + ab.dy * ab.dy;
+  if (len2 < _eps) return point;
+  final along = ((point.dx - a.dx) * ab.dx + (point.dy - a.dy) * ab.dy) / len2;
+  final foot = Offset(a.dx + ab.dx * along, a.dy + ab.dy * along);
+  final scale = math.cos(t.clamp(0.0, 1.0) * math.pi);
+  return foot + (point - foot) * scale;
+}
+
+List<Offset> displayRing(
+  List<Offset> ring,
+  List<FoldJoint> joints, {
+  int? bend,
+  double bendT = 1,
+}) {
+  return [
+    for (final point in ring)
+      displayPoint(point, joints, bend: bend, bendT: bendT),
+  ];
 }
 
 /// Positive draws above the sheet. Negative draws underneath.
@@ -167,24 +248,132 @@ PapercutSheet? foldSheet({
   if (facing == FoldFacing.unfolded) return null;
   final side = sideOfLine(flapPoint, spanA, spanB);
   if (side.abs() < _eps) return null;
-  if (_foldBlocked(
-    sheet: sheet,
-    a: spanA,
-    b: spanB,
-    side: side,
+  if (_creaseBlocked(
+    sheet,
+    spanA,
+    spanB,
+    flapPoint,
     noFold: noFold,
     blueprintPieces: blueprintPieces,
   )) {
     return null;
   }
-  final split = applyPapercutCut(sheet, [spanA, spanB], recordStroke: false);
-  final next = split ?? sheet;
+  final split = cutThroughFolds(
+    sheet,
+    [spanA, spanB],
+    recordStroke: false,
+  );
+  if (split == null) return null;
+  final next = split;
   return next.copyWith(
     folds: [
       ...next.folds,
       FoldJoint(a: spanA, b: spanB, side: side, facing: facing),
     ],
   );
+}
+
+bool _creaseBlocked(
+  PapercutSheet sheet,
+  Offset a,
+  Offset b,
+  Offset flapPoint, {
+  required List<List<Offset>> noFold,
+  required List<List<Offset>> blueprintPieces,
+}) {
+  final localA = localPoint(a, sheet.folds);
+  final localB = localPoint(b, sheet.folds);
+  final localFlap = localPoint(flapPoint, sheet.folds);
+  final layers = <(Offset, Offset, Offset)>[(localA, localB, localFlap)];
+  for (final joint in sheet.folds) {
+    if (joint.facing == FoldFacing.unfolded) continue;
+    layers.add((
+      reflectAcrossLine(localA, joint.a, joint.b),
+      reflectAcrossLine(localB, joint.a, joint.b),
+      reflectAcrossLine(localFlap, joint.a, joint.b),
+    ));
+  }
+  for (final layer in layers) {
+    final layerSide = sideOfLine(layer.$3, layer.$1, layer.$2);
+    if (layerSide.abs() < _eps) continue;
+    if (_foldBlocked(
+      sheet: sheet,
+      a: layer.$1,
+      b: layer.$2,
+      side: layerSide,
+      noFold: noFold,
+      blueprintPieces: blueprintPieces,
+    )) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// Where the folder hinge will land, and the side that folds.
+class FolderGuide {
+  const FolderGuide({required this.line, required this.flap});
+
+  /// Paper-vertical crease, clipped to the sheet as it is shown.
+  final (Offset, Offset) line;
+
+  /// A point on the side that folds. Null when the cursor sits on the crease.
+  final Offset? flap;
+}
+
+Rect? displayedPaperBounds(PapercutSheet sheet) {
+  var minX = double.infinity;
+  var minY = double.infinity;
+  var maxX = -double.infinity;
+  var maxY = -double.infinity;
+  var any = false;
+  for (final piece in sheet.pieces) {
+    for (final vertex in piece.vertices) {
+      final shown = displayPoint(vertex, sheet.folds);
+      any = true;
+      minX = math.min(minX, shown.dx);
+      minY = math.min(minY, shown.dy);
+      maxX = math.max(maxX, shown.dx);
+      maxY = math.max(maxY, shown.dy);
+    }
+  }
+  if (!any) return null;
+  return Rect.fromLTRB(minX, minY, maxX, maxY);
+}
+
+/// Nearest paper-vertical grid line to [aim]. The cursor's side is kept.
+FolderGuide? folderGuide(Offset aim, PapercutSheet sheet, double spacing) {
+  if (spacing <= 0) return null;
+  final bounds = displayedPaperBounds(sheet);
+  if (bounds == null) return null;
+  final lines = <double>[];
+  var x = (bounds.left / spacing).ceil() * spacing;
+  if ((x - bounds.left).abs() < 1e-3) x += spacing;
+  for (; x < bounds.right - 1e-3; x += spacing) {
+    lines.add(x);
+  }
+  if (lines.isEmpty) return null;
+  var hinge = lines.first;
+  var best = (aim.dx - hinge).abs();
+  for (final line in lines.skip(1)) {
+    final distance = (aim.dx - line).abs();
+    if (distance < best) {
+      hinge = line;
+      best = distance;
+    }
+  }
+  final span = creaseSpan(
+    Offset(hinge, bounds.center.dy),
+    const Offset(0, 1),
+    bounds,
+  );
+  if (span == null) return null;
+  final delta = aim.dx - hinge;
+  if (delta.abs() < 1e-3) return FolderGuide(line: span, flap: null);
+  final flapX = (delta > 0 ? hinge - spacing * 0.25 : hinge + spacing * 0.25)
+      .clamp(bounds.left + 1e-3, bounds.right - 1e-3);
+  final flapY = aim.dy.clamp(bounds.top, bounds.bottom);
+  return FolderGuide(line: span, flap: Offset(flapX, flapY));
 }
 
 PapercutSheet? unfoldAt(PapercutSheet sheet, Offset point, {double reach = 0.45}) {
@@ -275,6 +464,7 @@ PapercutSheet? cutThroughFolds(
   List<Offset> visualStroke, {
   double thickCut = 0,
   List<List<Offset>> blueprintPieces = const [],
+  bool recordStroke = true,
 }) {
   if (visualStroke.length < 2) return null;
   final local = [for (final point in visualStroke) localPoint(point, sheet.folds)];
@@ -296,7 +486,11 @@ PapercutSheet? cutThroughFolds(
   PapercutSheet? current = sheet;
   var any = false;
   for (final stroke in layers) {
-    final next = applyPapercutCut(current!, stroke);
+    final next = applyPapercutCut(
+      current!,
+      stroke,
+      recordStroke: recordStroke,
+    );
     if (next == null) continue;
     any = true;
     current = next;
@@ -505,10 +699,11 @@ bool paperRemovedEarly(int? hitsLeft, {required bool cutOut}) {
   return cutOut;
 }
 
-bool blueprintPieceCutOut(List<Offset> ring, PapercutSheet sheet) {
-  if (ring.length < 3) return false;
+/// The paper piece whose outline matches [ring], if the cut has freed it.
+PapercutPiece? paperMatchingRing(List<Offset> ring, PapercutSheet sheet) {
+  if (ring.length < 3) return null;
   final target = polygonSignedArea(ring).abs();
-  if (target < 1e-6) return false;
+  if (target < 1e-6) return null;
   final center = polygonCentroid(ring);
   for (final piece in sheet.pieces) {
     if (!isInsidePolygon(center, piece.vertices)) continue;
@@ -518,9 +713,37 @@ bool blueprintPieceCutOut(List<Offset> ring, PapercutSheet sheet) {
     }
     if (buried) continue;
     final area = polygonSignedArea(piece.vertices).abs();
-    if ((area - target).abs() <= target * 0.25 + 0.35) return true;
+    if ((area - target).abs() <= target * 0.25 + 0.35) return piece;
   }
-  return false;
+  return null;
+}
+
+bool blueprintPieceCutOut(List<Offset> ring, PapercutSheet sheet) {
+  return paperMatchingRing(ring, sheet) != null;
+}
+
+/// Closed blueprint pieces whose paper is already free on [sheet].
+Set<int> liberatedPieceIndexes(GridStep step, PapercutSheet sheet) {
+  final found = <int>{};
+  for (var i = 0; i < step.polygons.length; i++) {
+    if (!step.isRingClosed(i)) continue;
+    if (step.polygons[i].length < 3) continue;
+    if (blueprintPieceCutOut(step.polygons[i], sheet)) found.add(i);
+  }
+  return found;
+}
+
+/// True when the level has at least one closed blueprint piece and every one
+/// of them is in [liberated].
+bool piecesLiberated(GridStep step, Set<int> liberated) {
+  var any = false;
+  for (var i = 0; i < step.polygons.length; i++) {
+    if (!step.isRingClosed(i)) continue;
+    if (step.polygons[i].length < 3) continue;
+    any = true;
+    if (!liberated.contains(i)) return false;
+  }
+  return any;
 }
 
 /// Blueprint piece indexes whose perimeter the segment meets.

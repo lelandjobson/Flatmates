@@ -90,7 +90,7 @@ class _ActionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fill = gameModeFill(GameMode.action, submenu: true);
+    final fill = gameModeFill(GameMode.action);
     return Material(
       color: selected ? Colors.white.withValues(alpha: 0.12) : Colors.transparent,
       borderRadius: BorderRadius.circular(6),

@@ -16,6 +16,7 @@ import '../papercut/paper.dart';
 import '../papercut/samples.dart';
 import '../papercut/score.dart';
 import '../papercut/split.dart';
+import '../ui/craft_palette.dart';
 import '../ui/fm_dev_back_button.dart';
 import '../ui/fm_safe_area.dart';
 import '../ui/fm_screen.dart';
@@ -793,6 +794,7 @@ class _PapercutPuzzlesViewState extends State<PapercutPuzzlesView>
       key: const Key('papercut-rotate'),
       icon: Icons.rotate_right,
       label: 'Rotate',
+      fill: CraftPalette.mango.fill,
       selected: _rotationEngaged,
       onTap: _onRotatePressed,
     );
@@ -815,20 +817,24 @@ class _PapercutPuzzlesViewState extends State<PapercutPuzzlesView>
               tool: PapercutTool.scissors,
               icon: Icons.content_cut,
               label: 'Scissors',
+              fill: CraftPalette.scarlet.fill,
             ),
             _toolButton(
               tool: PapercutTool.exacto,
               icon: Icons.gesture,
               label: 'Exacto',
+              fill: CraftPalette.ginger.fill,
             ),
             _toolButton(
               tool: PapercutTool.straightEdge,
               icon: Icons.straighten,
               label: 'Straight edge',
+              fill: CraftPalette.cyan.fill,
             ),
             _circleButton(
               icon: Icons.undo,
               label: 'Undo',
+              fill: CraftPalette.stone.fill,
               selected: false,
               enabled: _undo.isNotEmpty,
               onTap: _undoLast,
@@ -836,6 +842,7 @@ class _PapercutPuzzlesViewState extends State<PapercutPuzzlesView>
             _circleButton(
               icon: Icons.threed_rotation,
               label: _camera.targetFlat ? 'Perspective' : 'Flat',
+              fill: CraftPalette.kentuckyBlue.fill,
               selected: !_camera.targetFlat,
               onTap: _toggleCamera,
             ),
@@ -854,12 +861,14 @@ class _PapercutPuzzlesViewState extends State<PapercutPuzzlesView>
           _circleButton(
             icon: Icons.content_cut,
             label: 'Cut',
+            fill: CraftPalette.scarlet.fill,
             selected: _edgeAction == StraightEdgeAction.cut,
             onTap: () => setState(() => _edgeAction = StraightEdgeAction.cut),
           ),
           _circleButton(
             icon: Icons.architecture,
             label: 'Fold',
+            fill: CraftPalette.carmel.fill,
             selected: _edgeAction == StraightEdgeAction.fold,
             onTap: () => setState(() => _edgeAction = StraightEdgeAction.fold),
           ),
@@ -867,12 +876,14 @@ class _PapercutPuzzlesViewState extends State<PapercutPuzzlesView>
             _circleButton(
               icon: Icons.north,
               label: '+90 toward camera',
+              fill: CraftPalette.cyan.fill,
               selected: _foldAngle > 0,
               onTap: () => setState(() => _foldAngle = 90),
             ),
             _circleButton(
               icon: Icons.south,
               label: '-90 away from camera',
+              fill: CraftPalette.peach.fill,
               selected: _foldAngle < 0,
               onTap: () => setState(() => _foldAngle = -90),
             ),
@@ -886,10 +897,12 @@ class _PapercutPuzzlesViewState extends State<PapercutPuzzlesView>
     required PapercutTool tool,
     required IconData icon,
     required String label,
+    required Color fill,
   }) {
     return _circleButton(
       icon: icon,
       label: label,
+      fill: fill,
       selected: _tool == tool,
       onTap: () => setState(() => _tool = tool),
     );
@@ -899,6 +912,7 @@ class _PapercutPuzzlesViewState extends State<PapercutPuzzlesView>
     Key? key,
     required IconData icon,
     required String label,
+    required Color fill,
     required bool selected,
     required VoidCallback? onTap,
     bool enabled = true,
@@ -910,7 +924,7 @@ class _PapercutPuzzlesViewState extends State<PapercutPuzzlesView>
       child: HudToolButton(
         icon: icon,
         label: label,
-        fill: kHudSelectFill,
+        fill: fill,
         selected: selected,
         enabled: enabled,
         onTap: onTap,

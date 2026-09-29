@@ -37,8 +37,10 @@ class GridBlueprint {
   }
 }
 
-/// Penned edges can be tracked by the scissors. Penciled edges are faint and
-/// are not a tracking guide unless a collinear penned edge shares their axis.
+/// Penned edges are the piece outline. The blade can track them.
+/// Penciled edges are fold lines the puzzle requires: dashed, in the outline
+/// color, and not a tracking guide unless a collinear penned edge shares
+/// their axis.
 enum EdgeStyle { penned, penciled }
 
 /// A crafting tool the level can allow or budget. Select is never filtered.

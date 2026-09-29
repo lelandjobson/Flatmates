@@ -376,6 +376,31 @@ void main() {
     expect(find.textContaining('cannot travel through'), findsOneWidget);
   });
 
+  testWidgets('editor menus fit beside help on a narrow screen', (tester) async {
+    tester.view.physicalSize = const Size(640, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final directory = Directory.systemTemp.createTempSync('puzzle-narrow');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    await tester.pumpWidget(
+      ChangeNotifierProvider(
+        create: (_) => FmThemeData(),
+        child: MaterialApp(
+          home: PuzzleEditorView(store: LevelStore(directory: directory)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Level'));
+    await tester.pumpAndSettle();
+    expect(find.text('Dark'), findsOneWidget);
+    expect(find.text('Mirror X'), findsOneWidget);
+    await tester.tap(find.byTooltip('Color gems'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
   test('level attachments, permutations, and tool filter round-trip', () {
     const step = GridStep(
       id: 'level',

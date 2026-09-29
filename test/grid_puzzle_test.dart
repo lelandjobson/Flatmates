@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flatmates/geometry/geometry_2d.dart';
 import 'package:flatmates/geometry/geometry_algorithms.dart';
+import 'package:flatmates/geometry/polygon_union.dart';
 import 'package:flatmates/gridcraft/blueprint.dart';
 import 'package:flatmates/gridcraft/level_io.dart';
 import 'package:flatmates/gridcraft/painter.dart';
@@ -77,6 +78,31 @@ void main() {
     );
   });
 
+  test('cutting through a blueprint piece is a failure of that piece', () {
+    const ring = [Offset(0, 0), Offset(2, 0), Offset(2, 2), Offset(0, 2)];
+    const other = [Offset(4, 0), Offset(6, 0), Offset(6, 2), Offset(4, 2)];
+    final step = GridStep(
+      id: 'box',
+      label: 'Box',
+      polygons: const [ring, other, [Offset(0, 3), Offset(2, 3)]],
+      ringClosed: const [true, true, false],
+    );
+    expect(
+      piercedBlueprint(step, const Offset(-1, 1), const Offset(0, 1)),
+      isNull,
+    );
+    expect(
+      piercedBlueprint(step, const Offset(0, 0), const Offset(2, 0)),
+      isNull,
+    );
+    expect(piercedBlueprint(step, const Offset(0, 1), const Offset(2, 1)), 0);
+    expect(piercedBlueprint(step, const Offset(4, 1), const Offset(6, 1)), 1);
+    expect(
+      piercedBlueprint(step, const Offset(0, 3), const Offset(2, 3)),
+      isNull,
+    );
+  });
+
   test(
     'the scissor stops at the next datum and stays locked until a split',
     () {
@@ -123,6 +149,111 @@ void main() {
       );
     },
   );
+
+  test('a fresh cut edge faces straight into its piece', () {
+    final step = twinLsBlueprint().steps.single;
+    final base = _sheet(step);
+    final vertical = _splitAcross(step, base, const Offset(-1, 0), vertical: true);
+    final horizontal = _splitAcross(
+      step,
+      base,
+      const Offset(0, 3),
+      vertical: false,
+    );
+    for (final sheet in [vertical, horizontal]) {
+      expect(sheet.pieces, hasLength(2));
+      for (final piece in sheet.pieces) {
+        final edge = _freshEdge(piece.vertices, step.paper);
+        expect(edge, isNotNull, reason: piece.vertices.toString());
+        final from = edge!;
+        final heading = openingHeading(
+          from,
+          step.paper,
+          ring: piece.vertices,
+        );
+        expect(heading.dx == 0 || heading.dy == 0, isTrue, reason: '$heading');
+        expect(
+          isInsidePolygon(from + heading * 0.2, piece.vertices),
+          isTrue,
+          reason: 'heading $heading from $from on ${piece.vertices}',
+        );
+        final centerAim = placeAtEntry(from, step.paper).direction;
+        if (!_stepsInto(from, centerAim, piece.vertices)) {
+          expect(heading, isNot(centerAim));
+        }
+        final end = nextOutlineHit(
+          from: from,
+          direction: heading,
+          closed: [piece.vertices, ...step.closedPolygons],
+          open: openBlueprint(step),
+        );
+        expect(end, isNotNull);
+        final delta = end! - from;
+        if (heading.dx.abs() > 0.5) {
+          expect(delta.dy.abs(), lessThan(1e-6));
+        } else {
+          expect(delta.dx.abs(), lessThan(1e-6));
+        }
+        for (final vertex in piece.vertices) {
+          expect(
+            (end - vertex).distance,
+            greaterThan(0.25),
+            reason: 'cut from $from along $heading landed on corner $vertex',
+          );
+        }
+      }
+    }
+  });
+
+  test('a completed blueprint piece stays on the outline while the scrap moves', () {
+    const color = Color(0xFFFFF3B0);
+    final before = PapercutSheet(
+      pieces: [
+        PapercutPiece(
+          id: 'sheet',
+          color: color,
+          vertices: const [
+            Offset(0, 0),
+            Offset(4, 0),
+            Offset(4, 2),
+            Offset(0, 2),
+          ],
+        ),
+      ],
+    );
+    final after = PapercutSheet(
+      pieces: [
+        PapercutPiece(
+          id: 'island',
+          color: color,
+          vertices: const [
+            Offset(0, 0),
+            Offset(2, 0),
+            Offset(2, 2),
+            Offset(0, 2),
+          ],
+        ),
+        PapercutPiece(
+          id: 'scrap',
+          color: color,
+          vertices: const [
+            Offset(2, 0),
+            Offset(4, 0),
+            Offset(4, 2),
+            Offset(2, 2),
+          ],
+        ),
+      ],
+    );
+    final spread = spreadPieces(before, after, 1, pinned: {'island'});
+    expect(spread.pieces[0].id, 'island');
+    expect(spread.pieces[0].separation, Offset.zero);
+    expect(spread.pieces[1].separation, isNot(Offset.zero));
+    expect(
+      _shownBounds(spread.pieces[0]).overlaps(_shownBounds(spread.pieces[1])),
+      isFalse,
+    );
+  });
 
   testWidgets('a finished cut paints two separated pieces', (tester) async {
     final step = twinLsBlueprint().steps.single;
@@ -287,6 +418,28 @@ void main() {
     },
   );
 
+  test('paper turns stay on the cut and ignore a rolled camera', () {
+    final turns = paperTurnDirections(const Offset(0, 1));
+    expect(turns, hasLength(3));
+    expect(turns.first, const Offset(0, 1));
+    expect(turns[1], const Offset(-1, 0));
+    expect(turns[2], const Offset(1, 0));
+
+    final step = twinLsBlueprint().steps.single;
+    final sheet = _sheet(step);
+    final cuts = forwardCuts(
+      from: const Offset(0, 0),
+      forward: const Offset(0, 1),
+      directions: turns,
+      closed: cutOutlines(step, sheet),
+    );
+    final rolled = Offset(math.sin(0.4), math.cos(0.4));
+    final chosen = mostForwardCut(cuts, rolled);
+    expect(chosen, isNotNull);
+    expect(chosen!.direction.dx.abs(), lessThan(1e-6));
+    expect(chosen.direction.dy, closeTo(1, 1e-6));
+  });
+
   test('forward cuts keep every screen cardinal except the reverse', () {
     final step = twinLsBlueprint().steps.single;
     final sheet = _sheet(step);
@@ -438,10 +591,64 @@ void main() {
 
     final onPiece = cutMarksOnPiece(stroke, liberated);
     expect(covers(onPiece, const Offset(1, -1.5)), isFalse);
-    expect(covers(onPiece, const Offset(2, 0)), isTrue);
+    expect(covers(onPiece, const Offset(2, 0)), isFalse);
 
     final onPaper = cutMarksOnPiece(stroke, paper);
     expect(covers(onPaper, const Offset(1, -1.5)), isTrue);
+  });
+
+  test('a separating cut drops off the new edges and interior marks travel', () {
+    const yellow = Color(0xFFFFF3B0);
+    final left = PapercutPiece(
+      id: 'left',
+      color: yellow,
+      vertices: const [Offset(0, 0), Offset(2, 0), Offset(2, 4), Offset(0, 4)],
+    );
+    final right = PapercutPiece(
+      id: 'right',
+      color: yellow,
+      vertices: const [Offset(2, 0), Offset(4, 0), Offset(4, 4), Offset(2, 4)],
+      separation: const Offset(3, 0),
+    );
+    const seam = [Offset(2, 0), Offset(2, 4)];
+    expect(cutMarksOnPiece(seam, left), isEmpty);
+    expect(cutMarksOnPiece(seam, right), isEmpty);
+
+    const slit = [Offset(3, 1), Offset(3, 3)];
+    expect(cutMarksOnPiece(slit, left), isEmpty);
+    final carried = [
+      for (final mark in cutMarksOnPiece(slit, right))
+        [for (final point in mark) point + right.separation],
+    ];
+    expect(carried, [
+      [const Offset(6, 1), const Offset(6, 3)],
+    ]);
+
+    final sheet = PapercutPiece(
+      id: 'sheet',
+      color: yellow,
+      vertices: const [
+        Offset(-1, -1),
+        Offset(5, -1),
+        Offset(5, 5),
+        Offset(-1, 5),
+      ],
+      holes: const [
+        [Offset(2, 0), Offset(4, 0), Offset(4, 4), Offset(2, 4)],
+      ],
+    );
+    expect(cutMarksOnPiece(seam, sheet), isEmpty);
+    expect(cutMarksOnPiece(slit, sheet), isEmpty);
+
+    const across = [Offset(1, 2), Offset(3, 2)];
+    final onLeft = cutMarksOnPiece(across, left);
+    final onRight = cutMarksOnPiece(across, right);
+    expect(onLeft, hasLength(1));
+    expect(onLeft.single.first.dx, closeTo(1, 1e-6));
+    expect(onLeft.single.last.dx, closeTo(2, 1e-6));
+    expect(onRight, hasLength(1));
+    expect(onRight.single.first.dx, closeTo(2, 1e-6));
+    expect(onRight.single.last.dx, closeTo(3, 1e-6));
   });
 
   test('a smaller piece slides out of space a larger one occupies', () {
@@ -520,6 +727,102 @@ void main() {
     expect(
       polygonBounds(polygonOnPiece(square, cutOut)),
       const Rect.fromLTRB(0, 0, 4, 4),
+    );
+  });
+
+  test('blueprint linework stays with the paper that holds it', () {
+    const yellow = Color(0xFFFFF3B0);
+    PapercutPiece box(String id, List<Offset> ring) {
+      return PapercutPiece(id: id, color: yellow, vertices: ring);
+    }
+
+    final left = box('left', const [
+      Offset(-1, -1),
+      Offset(3.5, -1),
+      Offset(3.5, 4),
+      Offset(-1, 4),
+    ]);
+    final right = box('right', const [
+      Offset(3.5, -1),
+      Offset(9, -1),
+      Offset(9, 4),
+      Offset(3.5, 4),
+    ]);
+    const leftL = [
+      Offset(0, 0),
+      Offset(3, 0),
+      Offset(3, 1),
+      Offset(1, 1),
+      Offset(1, 2),
+      Offset(0, 2),
+    ];
+    const rightL = [
+      Offset(4, 0),
+      Offset(7, 0),
+      Offset(7, 1),
+      Offset(5, 1),
+      Offset(5, 2),
+      Offset(4, 2),
+    ];
+    for (var i = 0; i < leftL.length; i++) {
+      final a = leftL[i];
+      final b = leftL[(i + 1) % leftL.length];
+      expect(segmentOnPiece(a, b, left), [(a, b)]);
+      expect(segmentOnPiece(a, b, right), isEmpty);
+    }
+    for (var i = 0; i < rightL.length; i++) {
+      final a = rightL[i];
+      final b = rightL[(i + 1) % rightL.length];
+      expect(segmentOnPiece(a, b, right), [(a, b)]);
+      expect(segmentOnPiece(a, b, left), isEmpty);
+    }
+
+    final through = box('through', const [
+      Offset(-1, -1),
+      Offset(2, -1),
+      Offset(2, 4),
+      Offset(-1, 4),
+    ]);
+    final rest = box('rest', const [
+      Offset(2, -1),
+      Offset(9, -1),
+      Offset(9, 4),
+      Offset(2, 4),
+    ]);
+    final cut = segmentOnPiece(const Offset(0, 0), const Offset(3, 0), through);
+    expect(cut, hasLength(1));
+    expect(cut.single.$1, const Offset(0, 0));
+    expect(cut.single.$2.dx, closeTo(2, 1e-6));
+    expect(cut.single.$2.dy, closeTo(0, 1e-6));
+    final other = segmentOnPiece(const Offset(0, 0), const Offset(3, 0), rest);
+    expect(other, hasLength(1));
+    expect(other.single.$1.dx, closeTo(2, 1e-6));
+    expect(other.single.$2, const Offset(3, 0));
+
+    final sheetPiece = PapercutPiece(
+      id: 'sheet',
+      color: yellow,
+      vertices: const [
+        Offset(-2, -2),
+        Offset(6, -2),
+        Offset(6, 6),
+        Offset(-2, 6),
+      ],
+      holes: const [
+        [Offset(0, 0), Offset(2, 0), Offset(2, 2), Offset(0, 2)],
+      ],
+    );
+    final inner = box('inner', const [
+      Offset(0, 0),
+      Offset(2, 0),
+      Offset(2, 2),
+      Offset(0, 2),
+    ]);
+    const buried = [Offset(0.2, 1), Offset(1.8, 1)];
+    expect(segmentOnPiece(buried[0], buried[1], sheetPiece), isEmpty);
+    expect(
+      segmentOnPiece(buried[0], buried[1], inner),
+      [(buried[0], buried[1])],
     );
   });
 
@@ -681,6 +984,60 @@ Rect _shownBounds(PapercutPiece piece) {
     maxY = math.max(maxY, shown.dy);
   }
   return Rect.fromLTRB(minX, minY, maxX, maxY);
+}
+
+PapercutSheet _splitAcross(
+  GridStep step,
+  PapercutSheet base,
+  Offset at, {
+  required bool vertical,
+}) {
+  final start = vertical
+      ? Offset(at.dx, step.paper.top)
+      : Offset(step.paper.left, at.dy);
+  var march = placeScissor(start, step.paper);
+  expect(march, isNotNull);
+  PapercutSheet? sheet;
+  var guard = 0;
+  while (march != null && guard < 8) {
+    final commit = commitScissor(march: march, step: step, base: base);
+    expect(commit, isNotNull);
+    sheet = commit!.sheet;
+    march = commit.march;
+    guard++;
+  }
+  return sheet!;
+}
+
+/// Midpoint of the longest edge that is not on the original paper border.
+Offset? _freshEdge(List<Offset> ring, Rect paper) {
+  Offset? best;
+  var bestLength = -1.0;
+  for (var i = 0; i < ring.length; i++) {
+    final a = ring[i];
+    final b = ring[(i + 1) % ring.length];
+    final mid = Offset((a.dx + b.dx) / 2, (a.dy + b.dy) / 2);
+    if (_onPaperBorder(mid, paper)) continue;
+    final length = (b - a).distance;
+    if (length <= bestLength) continue;
+    best = mid;
+    bestLength = length;
+  }
+  return best;
+}
+
+bool _onPaperBorder(Offset point, Rect paper) {
+  final onVertical =
+      (point.dx - paper.left).abs() < 1e-3 ||
+      (point.dx - paper.right).abs() < 1e-3;
+  final onHorizontal =
+      (point.dy - paper.top).abs() < 1e-3 ||
+      (point.dy - paper.bottom).abs() < 1e-3;
+  return onVertical || onHorizontal;
+}
+
+bool _stepsInto(Offset point, Offset direction, List<Offset> ring) {
+  return isInsidePolygon(point + direction * 0.2, ring);
 }
 
 PapercutSheet _sheet(GridStep step) {
