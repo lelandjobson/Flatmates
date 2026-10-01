@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
@@ -39,6 +40,9 @@ enum _MarkMode { place, erase, flip }
 
 const Color _hud = Color(0xFF1A1A1A);
 
+/// In-memory collection that has not been written yet.
+const String _memoryCollectionId = '~memory';
+
 Color _editorToolFill(_EditorTool tool) => switch (tool) {
   _EditorTool.shapes => CraftPalette.kentuckyBlue.fill,
   _EditorTool.level => CraftPalette.midnightBlue.fill,
@@ -65,7 +69,8 @@ Color _markFill(_MarkMode mode) => switch (mode) {
   _MarkMode.flip => CraftPalette.mango.fill,
 };
 
-/// Authors a blueprint's levels, then sends one into play.
+/// Authors puzzles, grouped into collections, then sends one into play.
+/// Each puzzle is a blueprint file. A collection is a folder of those files.
 class PuzzleEditorView extends StatefulWidget {
   const PuzzleEditorView({super.key, this.store});
 
@@ -78,7 +83,10 @@ class PuzzleEditorView extends StatefulWidget {
 class _PuzzleEditorViewState extends State<PuzzleEditorView> {
   final LevelStore _store = LevelStore();
   late PapercutCamera _camera;
-  List<GridBlueprint> _levels = const [];
+  List<PuzzleCollection> _collections = const [];
+  String _collectionName = 'Untitled';
+  String? _collectionId;
+  bool _persisted = false;
   GridBlueprint _blueprint = blankPuzzle();
   late GridBlueprint _snapshot;
   int _stepIndex = 0;
@@ -119,7 +127,7 @@ class _PuzzleEditorViewState extends State<PuzzleEditorView> {
     super.initState();
     _snapshot = cloneGridBlueprint(_blueprint);
     _camera = PapercutCamera()..addListener(_onCamera);
-    _refreshLevels();
+    _refreshCollections();
   }
 
   @override
@@ -133,17 +141,55 @@ class _PuzzleEditorViewState extends State<PuzzleEditorView> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _refreshLevels() async {
-    final saved = await _levelsStore.loadAll();
+  Future<void> _refreshCollections() async {
+    final saved = await _levelsStore.loadCollections();
     if (!mounted) return;
-    setState(() {
-      _levels = saved;
-      if (!_levels.any((level) => level.id == _blueprint.id)) return;
-      _levels = [
-        for (final level in _levels)
-          if (level.id == _blueprint.id) _blueprint else level,
-      ];
-    });
+    setState(() => _collections = saved);
+  }
+
+  bool get _dirty {
+    if (!_persisted) return true;
+    return _encoded(_blueprint) != _encoded(_snapshot);
+  }
+
+  String _encoded(GridBlueprint blueprint) =>
+      jsonEncode(cloneGridBlueprint(blueprint).toJson());
+
+  List<PuzzleCollection> get _library {
+    final merged = <PuzzleCollection>[];
+    var found = false;
+    for (final collection in _collections) {
+      if (_collectionId != null && collection.id == _collectionId) {
+        found = true;
+        merged.add(_overlayCurrent(collection));
+      } else {
+        merged.add(collection);
+      }
+    }
+    if (!found) {
+      merged.add(
+        PuzzleCollection(
+          id: _memoryCollectionId,
+          name: _collectionName,
+          puzzles: [_blueprint],
+        ),
+      );
+    }
+    merged.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return merged;
+  }
+
+  PuzzleCollection _overlayCurrent(PuzzleCollection collection) {
+    final puzzles = [
+      for (final puzzle in collection.puzzles)
+        if (puzzle.id != _blueprint.id) puzzle,
+      _blueprint,
+    ]..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return PuzzleCollection(
+      id: collection.id,
+      name: _collectionName,
+      puzzles: puzzles,
+    );
   }
 
   void _adopt(GridBlueprint blueprint, {bool snapshot = true}) {
@@ -509,10 +555,7 @@ class _PuzzleEditorViewState extends State<PuzzleEditorView> {
       closedRing,
     ];
     _replaceStep(
-      _step.copyWith(
-        polygons: [..._step.polygons, points],
-        ringClosed: closed,
-      ),
+      _step.copyWith(polygons: [..._step.polygons, points], ringClosed: closed),
     );
     _draft = const [];
   }
@@ -543,9 +586,7 @@ class _PuzzleEditorViewState extends State<PuzzleEditorView> {
       final next = [...zones]..removeAt(best);
       setState(() {
         _replaceStep(
-          _step.copyWith(
-            permutation: _step.permutation.copyWith(noFold: next),
-          ),
+          _step.copyWith(permutation: _step.permutation.copyWith(noFold: next)),
         );
       });
       return;
@@ -625,27 +666,210 @@ class _PuzzleEditorViewState extends State<PuzzleEditorView> {
     setState(() {
       final kept = _step.filterPieces((index) => !_selected.contains(index));
       _replaceStep(
-        kept.copyWith(
-          polygons: [...kept.polygons, ...mergeSelected(chosen)],
-        ),
+        kept.copyWith(polygons: [...kept.polygons, ...mergeSelected(chosen)]),
       );
       _selected = {};
     });
   }
 
-  void _newPuzzle() {
-    setState(() => _adopt(blankPuzzle()));
-  }
-
-  void _copyPuzzle() {
-    setState(() => _adopt(copyPuzzle(_blueprint)));
-  }
-
-  Future<void> _save() async {
-    await _levelsStore.save(_blueprint);
+  Future<void> _startPuzzle() async {
+    if (!await _prepareToLeave()) return;
     if (!mounted) return;
-    setState(() => _snapshot = cloneGridBlueprint(_blueprint));
-    await _refreshLevels();
+    setState(() => _replaceWithBlank(newCollection: false));
+  }
+
+  void _replaceWithBlank({required bool newCollection}) {
+    _persisted = false;
+    if (newCollection) {
+      _collectionId = null;
+      _collectionName = 'Untitled';
+    }
+    _adopt(blankPuzzle());
+  }
+
+  Future<void> _copyPuzzle() async {
+    if (!await _prepareToLeave()) return;
+    if (!mounted) return;
+    setState(() {
+      _adopt(copyPuzzle(_blueprint));
+      _persisted = false;
+    });
+  }
+
+  Future<void> _save() => _saveWithDialog();
+
+  Future<bool> _saveWithDialog() async {
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return _SaveNamesDialog(
+          collectionName: _collectionName,
+          puzzleName: _blueprint.name,
+          onSubmit: _commitSave,
+        );
+      },
+    );
+    return saved == true && mounted;
+  }
+
+  Future<String?> _commitSave(String collectionName, String puzzleName) async {
+    try {
+      final stored = await _levelsStore.savePuzzle(
+        collectionName: collectionName,
+        puzzle: _blueprint.copyWith(name: puzzleName),
+        fromCollectionId: _collectionId,
+      );
+      if (!mounted) return 'Could not save.';
+      final savedPuzzle = stored.puzzles
+          .where((puzzle) => puzzle.id == _blueprint.id)
+          .firstOrNull;
+      setState(() {
+        if (savedPuzzle != null) {
+          _adopt(savedPuzzle);
+        } else {
+          _blueprint = _blueprint.copyWith(name: puzzleName.trim());
+        }
+        _snapshot = cloneGridBlueprint(_blueprint);
+        _collectionId = stored.id;
+        _collectionName = stored.name;
+        _persisted = true;
+      });
+      await _refreshCollections();
+      return null;
+    } on LevelSaveException catch (error) {
+      return switch (error.failure) {
+        LevelSaveFailure.blankName =>
+          'Enter a collection name and a puzzle name.',
+        LevelSaveFailure.collectionTaken =>
+          'A collection with that name already exists.',
+        LevelSaveFailure.puzzleTaken =>
+          'A puzzle with that name is already in this collection.',
+      };
+    }
+  }
+
+  Future<bool> _prepareToLeave() async {
+    if (!_dirty) return true;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return Dialog(
+          key: const Key('puzzle-save-prompt'),
+          backgroundColor: _hud,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Save changes to ${_blueprint.name}?',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'The open puzzle has unsaved changes.',
+                  style: TextStyle(color: Colors.white70, fontSize: 15),
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      key: const Key('puzzle-save-cancel'),
+                      onPressed: () => Navigator.pop(context, 'cancel'),
+                      child: const Text('Cancel'),
+                    ),
+                    TextButton(
+                      key: const Key('puzzle-save-discard'),
+                      onPressed: () => Navigator.pop(context, 'discard'),
+                      child: const Text('Discard'),
+                    ),
+                    TextButton(
+                      key: const Key('puzzle-save-now'),
+                      onPressed: () => Navigator.pop(context, 'save'),
+                      child: const Text('Save'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (!mounted) return false;
+    if (choice == 'discard') {
+      setState(() => _adopt(cloneGridBlueprint(_snapshot)));
+      return true;
+    }
+    if (choice == 'save') return _saveWithDialog();
+    return false;
+  }
+
+  Future<void> _openLibrary() async {
+    final library = _library;
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return _LibraryDialog(
+          collections: library,
+          collectionId: _collectionId ?? _memoryCollectionId,
+          puzzleId: _blueprint.id,
+          onPick: _pickPuzzle,
+          onNewPuzzle: _newPuzzleFromLibrary,
+          onNewCollection: _newCollectionFromLibrary,
+        );
+      },
+    );
+  }
+
+  Future<void> _pickPuzzle(
+    BuildContext dialogContext,
+    PuzzleCollection collection,
+    GridBlueprint puzzle,
+  ) async {
+    if (_isCurrent(collection, puzzle)) {
+      Navigator.pop(dialogContext);
+      return;
+    }
+    if (!await _prepareToLeave()) return;
+    if (!mounted) return;
+    setState(() => _showSaved(puzzle, collection));
+    if (dialogContext.mounted) Navigator.pop(dialogContext);
+  }
+
+  Future<void> _newPuzzleFromLibrary(BuildContext dialogContext) async {
+    if (!await _prepareToLeave()) return;
+    if (!mounted) return;
+    setState(() => _replaceWithBlank(newCollection: false));
+    if (dialogContext.mounted) Navigator.pop(dialogContext);
+  }
+
+  Future<void> _newCollectionFromLibrary(BuildContext dialogContext) async {
+    if (!await _prepareToLeave()) return;
+    if (!mounted) return;
+    setState(() => _replaceWithBlank(newCollection: true));
+    if (dialogContext.mounted) Navigator.pop(dialogContext);
+  }
+
+  void _showSaved(GridBlueprint puzzle, PuzzleCollection collection) {
+    _adopt(cloneGridBlueprint(puzzle));
+    _snapshot = cloneGridBlueprint(_blueprint);
+    _collectionId = collection.id == _memoryCollectionId ? null : collection.id;
+    _collectionName = collection.name;
+    _persisted = _collectionId != null;
+  }
+
+  bool _isCurrent(PuzzleCollection collection, GridBlueprint puzzle) {
+    final currentId = _collectionId ?? _memoryCollectionId;
+    return puzzle.id == _blueprint.id && collection.id == currentId;
   }
 
   void _clear() {
@@ -676,16 +900,6 @@ class _PuzzleEditorViewState extends State<PuzzleEditorView> {
     }
     final next = (current ?? 0) + delta;
     setState(() => _setRules(rules.copyWith(maxLength: next.toDouble())));
-  }
-
-  List<GridBlueprint> get _menuLevels {
-    if (!_levels.any((level) => level.id == _blueprint.id)) {
-      return [_blueprint, ..._levels];
-    }
-    return [
-      for (final level in _levels)
-        if (level.id == _blueprint.id) _blueprint else level,
-    ];
   }
 
   @override
@@ -961,7 +1175,6 @@ class _PuzzleEditorViewState extends State<PuzzleEditorView> {
   }
 
   Widget _topBar() {
-    final levels = _menuLevels;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: const Color(0xF01A1A1A),
@@ -973,14 +1186,32 @@ class _PuzzleEditorViewState extends State<PuzzleEditorView> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            _dropdown(levels),
+            Row(
+              children: [
+                Expanded(
+                  child: _libraryButton(
+                    key: const Key('puzzle-collection-button'),
+                    label: 'Collection',
+                    name: _collectionName,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _libraryButton(
+                    key: const Key('puzzle-puzzle-button'),
+                    label: 'Puzzle',
+                    name: _blueprint.name,
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 6),
             Wrap(
               spacing: 4,
               children: [
                 TextButton(
                   key: const Key('puzzle-new'),
-                  onPressed: _newPuzzle,
+                  onPressed: _startPuzzle,
                   child: const Text('New'),
                 ),
                 TextButton(
@@ -1017,38 +1248,32 @@ class _PuzzleEditorViewState extends State<PuzzleEditorView> {
     );
   }
 
-  Widget _dropdown(List<GridBlueprint> levels) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: _hud,
-        borderRadius: BorderRadius.circular(8),
+  Widget _libraryButton({
+    required Key key,
+    required String label,
+    required String name,
+  }) {
+    return TextButton(
+      key: key,
+      onPressed: _openLibrary,
+      style: TextButton.styleFrom(
+        backgroundColor: _hud,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: DropdownButtonHideUnderline(
-          child: DropdownButton<String>(
-            key: const Key('puzzle-level-dropdown'),
-            isDense: true,
-            dropdownColor: _hud,
-            value: _blueprint.id,
-            items: [
-              for (final level in levels)
-                DropdownMenuItem(
-                  value: level.id,
-                  child: Text(
-                    level.name,
-                    style: const TextStyle(color: Colors.white70),
-                  ),
-                ),
-            ],
-            onChanged: (id) {
-              if (id == null || id == _blueprint.id) return;
-              final level = levels.where((item) => item.id == id).firstOrNull;
-              if (level == null) return;
-              setState(() => _adopt(cloneGridBlueprint(level)));
-            },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white54, fontSize: 11),
           ),
-        ),
+          Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white),
+          ),
+        ],
       ),
     );
   }
@@ -1254,7 +1479,8 @@ class _PuzzleEditorViewState extends State<PuzzleEditorView> {
         if (_selected.length == 1) ...[
           const SizedBox(height: 8),
           _stepper(
-            label: 'hits ${_step.collisionOf(_selected.single)?.toString() ?? '—'}',
+            label:
+                'hits ${_step.collisionOf(_selected.single)?.toString() ?? '—'}',
             onMinus: () => _nudgeCollision(-1),
             onPlus: () => _nudgeCollision(1),
           ),
@@ -1280,16 +1506,12 @@ class _PuzzleEditorViewState extends State<PuzzleEditorView> {
           }),
           _flag('Mirror X', permutation.mirrorX, (value) {
             _replaceStep(
-              _step.copyWith(
-                permutation: permutation.copyWith(mirrorX: value),
-              ),
+              _step.copyWith(permutation: permutation.copyWith(mirrorX: value)),
             );
           }),
           _flag('Mirror Y', permutation.mirrorY, (value) {
             _replaceStep(
-              _step.copyWith(
-                permutation: permutation.copyWith(mirrorY: value),
-              ),
+              _step.copyWith(permutation: permutation.copyWith(mirrorY: value)),
             );
           }),
           _flag('Light', attachment.flashlightThrow != null, (value) {
@@ -1389,9 +1611,7 @@ class _PuzzleEditorViewState extends State<PuzzleEditorView> {
     final next = (_step.attachment.thickCut + delta).clamp(0, 4).toDouble();
     setState(() {
       _replaceStep(
-        _step.copyWith(
-          attachment: _step.attachment.copyWith(thickCut: next),
-        ),
+        _step.copyWith(attachment: _step.attachment.copyWith(thickCut: next)),
       );
     });
   }
@@ -1499,6 +1719,417 @@ class _PuzzleEditorViewState extends State<PuzzleEditorView> {
   }
 }
 
+class _SaveNamesDialog extends StatefulWidget {
+  const _SaveNamesDialog({
+    required this.collectionName,
+    required this.puzzleName,
+    required this.onSubmit,
+  });
+
+  final String collectionName;
+  final String puzzleName;
+  final Future<String?> Function(String collection, String puzzle) onSubmit;
+
+  @override
+  State<_SaveNamesDialog> createState() => _SaveNamesDialogState();
+}
+
+class _SaveNamesDialogState extends State<_SaveNamesDialog> {
+  late final TextEditingController _collection;
+  late final TextEditingController _puzzle;
+  String? _error;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _collection = TextEditingController(text: widget.collectionName);
+    _puzzle = TextEditingController(text: widget.puzzleName);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _select(_puzzle);
+    });
+  }
+
+  @override
+  void dispose() {
+    _collection.dispose();
+    _puzzle.dispose();
+    super.dispose();
+  }
+
+  void _select(TextEditingController controller) {
+    controller.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: controller.text.length,
+    );
+  }
+
+  Future<void> _submit() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final error = await widget.onSubmit(_collection.text, _puzzle.text);
+    if (!mounted) return;
+    if (error == null) {
+      Navigator.pop(context, true);
+      return;
+    }
+    setState(() {
+      _busy = false;
+      _error = error;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      key: const Key('puzzle-save-dialog'),
+      backgroundColor: _hud,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Save',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 12),
+            _nameField(
+              key: const Key('puzzle-collection-name'),
+              label: 'Collection',
+              controller: _collection,
+            ),
+            const SizedBox(height: 8),
+            _nameField(
+              key: const Key('puzzle-name'),
+              label: 'Puzzle',
+              controller: _puzzle,
+              autofocus: true,
+              onSubmitted: (_) => _submit(),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _error!,
+                key: const Key('puzzle-save-error'),
+                style: const TextStyle(color: Color(0xFFFF8A80)),
+              ),
+            ],
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: _busy ? null : () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  key: const Key('puzzle-save-confirm'),
+                  onPressed: _busy ? null : _submit,
+                  child: const Text('Save'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _nameField({
+    required Key key,
+    required String label,
+    required TextEditingController controller,
+    bool autofocus = false,
+    ValueChanged<String>? onSubmitted,
+  }) {
+    return TextField(
+      key: key,
+      controller: controller,
+      autofocus: autofocus,
+      style: const TextStyle(color: Colors.white),
+      cursorColor: Colors.white,
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: Colors.white54),
+        enabledBorder: const UnderlineInputBorder(
+          borderSide: BorderSide(color: Colors.white24),
+        ),
+        focusedBorder: const UnderlineInputBorder(
+          borderSide: BorderSide(color: Colors.white70),
+        ),
+      ),
+      onTap: () => _select(controller),
+      onSubmitted: onSubmitted,
+    );
+  }
+}
+
+class _LibraryDialog extends StatefulWidget {
+  const _LibraryDialog({
+    required this.collections,
+    required this.collectionId,
+    required this.puzzleId,
+    required this.onPick,
+    required this.onNewPuzzle,
+    required this.onNewCollection,
+  });
+
+  final List<PuzzleCollection> collections;
+  final String collectionId;
+  final String puzzleId;
+  final Future<void> Function(
+    BuildContext context,
+    PuzzleCollection collection,
+    GridBlueprint puzzle,
+  )
+  onPick;
+  final Future<void> Function(BuildContext context) onNewPuzzle;
+  final Future<void> Function(BuildContext context) onNewCollection;
+
+  @override
+  State<_LibraryDialog> createState() => _LibraryDialogState();
+}
+
+class _LibraryDialogState extends State<_LibraryDialog> {
+  late final TextEditingController _search;
+  late String _selectedId;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _search = TextEditingController();
+    _selectedId = widget.collectionId;
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  Future<void> _run(Future<void> Function() action) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    await action();
+    if (mounted) setState(() => _busy = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _search.text;
+    final visible = [
+      for (final collection in widget.collections)
+        if (_collectionVisible(collection, query)) collection,
+    ];
+    final selected = visible.where(
+      (collection) => collection.id == _selectedId,
+    );
+    final current = selected.isEmpty ? visible.firstOrNull : selected.first;
+    final puzzles = current == null
+        ? const <GridBlueprint>[]
+        : _visiblePuzzles(current, query);
+    return Dialog(
+      key: const Key('puzzle-library'),
+      backgroundColor: _hud,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: SizedBox(
+        width: 520,
+        height: 420,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                key: const Key('puzzle-library-search'),
+                controller: _search,
+                style: const TextStyle(color: Colors.white),
+                cursorColor: Colors.white,
+                decoration: const InputDecoration(
+                  hintText: 'Search',
+                  hintStyle: TextStyle(color: Colors.white38),
+                  prefixIcon: Icon(Icons.search, color: Colors.white54),
+                  border: InputBorder.none,
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: _scrollList(
+                        title: 'Collections',
+                        empty: 'No collections',
+                        children: [
+                          for (final collection in visible)
+                            _row(
+                              key: Key(
+                                'puzzle-collection-item-${collection.id}',
+                              ),
+                              label: collection.name,
+                              selected: collection.id == current?.id,
+                              onTap: _busy
+                                  ? null
+                                  : () => setState(
+                                      () => _selectedId = collection.id,
+                                    ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _scrollList(
+                        title: 'Puzzles',
+                        empty: 'No puzzles',
+                        children: [
+                          if (current != null)
+                            for (final puzzle in puzzles)
+                              _row(
+                                key: Key('puzzle-item-${puzzle.id}'),
+                                label: puzzle.name,
+                                selected:
+                                    puzzle.id == widget.puzzleId &&
+                                    current.id == widget.collectionId,
+                                onTap: _busy
+                                    ? null
+                                    : () => _run(
+                                        () => widget.onPick(
+                                          context,
+                                          current,
+                                          puzzle,
+                                        ),
+                                      ),
+                              ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Wrap(
+                spacing: 4,
+                alignment: WrapAlignment.end,
+                children: [
+                  TextButton(
+                    key: const Key('puzzle-new-collection'),
+                    onPressed: _busy
+                        ? null
+                        : () => _run(() => widget.onNewCollection(context)),
+                    child: const Text('New collection'),
+                  ),
+                  TextButton(
+                    key: const Key('puzzle-new-puzzle'),
+                    onPressed: _busy
+                        ? null
+                        : () => _run(() => widget.onNewPuzzle(context)),
+                    child: const Text('New puzzle'),
+                  ),
+                  TextButton(
+                    onPressed: _busy ? null : () => Navigator.pop(context),
+                    child: const Text('Close'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _scrollList({
+    required String title,
+    required String empty,
+    required List<Widget> children,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(color: Colors.white54, fontSize: 12),
+        ),
+        const SizedBox(height: 4),
+        Expanded(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: const Color(0xFF111111),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: children.isEmpty
+                ? Center(
+                    child: Text(
+                      empty,
+                      style: const TextStyle(color: Colors.white38),
+                    ),
+                  )
+                : ListView(children: children),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _row({
+    required Key key,
+    required String label,
+    required bool selected,
+    required VoidCallback? onTap,
+  }) {
+    return Material(
+      color: selected ? const Color(0xFF2E2E2E) : Colors.transparent,
+      child: InkWell(
+        key: key,
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+bool _collectionVisible(PuzzleCollection collection, String query) {
+  final trimmed = query.trim();
+  if (trimmed.isEmpty) return true;
+  if (_nameMatches(collection.name, trimmed)) return true;
+  return collection.puzzles.any((puzzle) => _nameMatches(puzzle.name, trimmed));
+}
+
+List<GridBlueprint> _visiblePuzzles(PuzzleCollection collection, String query) {
+  final trimmed = query.trim();
+  if (trimmed.isEmpty || _nameMatches(collection.name, trimmed)) {
+    return collection.puzzles;
+  }
+  return [
+    for (final puzzle in collection.puzzles)
+      if (_nameMatches(puzzle.name, trimmed)) puzzle,
+  ];
+}
+
+bool _nameMatches(String name, String query) =>
+    name.toLowerCase().contains(query.toLowerCase());
+
 double _segmentDistance(Offset point, Offset a, Offset b) {
   final ab = b - a;
   final len2 = ab.dx * ab.dx + ab.dy * ab.dy;
@@ -1562,7 +2193,7 @@ _ToolHelp _toolHelp(_EditorTool tool) {
     _EditorTool.forbid =>
       'An X on a grid point. The blade cannot travel through that point. Place drops an X, and Erase removes the nearest one.',
     _EditorTool.colors =>
-      'Color gems are entry points on the paper. A new cut starts only at a gem, and the blade can come back onto the paper only at one. The gem disappears when the blade takes it. The first color opens that group. Taking another color before the group is finished fails the level: that gem flashes red, then the level restarts. Every gem must be taken before the level is cleared. Tap a swatch to place that color. Tap an existing gem to recolor it. Erase removes the nearest gem.',
+      'Color gems are collected in groups. A cut can start anywhere on the paper edge. The gem disappears when the blade takes it. The first color opens that group. Taking another color before the group is finished fails the level: that gem flashes red, then the level restarts. Every gem must be taken before the level is cleared. Tap a swatch to place that color. Tap an existing gem to recolor it. Erase removes the nearest gem.',
     _EditorTool.numbers =>
       'Number gems are entry points, taken in order starting at 1. A new cut starts only at a gem, and the gem disappears once the blade takes it. Taking a number out of order fails the level: that gem flashes red, then the level restarts. Every gem must be taken before the level is cleared. Each new gem takes the next unused number.',
     _EditorTool.arrows =>

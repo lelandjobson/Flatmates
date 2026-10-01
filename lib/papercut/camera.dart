@@ -78,15 +78,37 @@ class PapercutCamera extends ChangeNotifier {
     ensureFramed(viewport, sheetMm: sheetMm);
   }
 
+  /// Half-height that fits [sheetMm] with the same margin [frameSheet] uses.
+  double halfHeightForSheet(Size viewport, {required double sheetMm}) {
+    final margin = sheetMm / 2 * 1.35;
+    if (viewport.width < 2 || viewport.height < 2) return margin;
+    final aspect = viewport.width / viewport.height;
+    return math.max(margin, margin / math.max(aspect, 0.05));
+  }
+
   /// Frames the sheet once, with a margin on the tighter axis.
   void ensureFramed(Size viewport, {required double sheetMm}) {
     if (_didFrame) return;
     if (viewport.width < 2 || viewport.height < 2) return;
-    final aspect = viewport.width / viewport.height;
-    final margin = sheetMm / 2 * 1.35;
-    framedHalfHeightMm = math.max(margin, margin / math.max(aspect, 0.05));
+    framedHalfHeightMm = halfHeightForSheet(viewport, sheetMm: sheetMm);
     _didFrame = true;
     _apply();
+  }
+
+  /// Moves the look-at point and, when set, the framed half-height.
+  ///
+  /// Unlike [panByScreen], this does not clamp. The puzzle advance uses it
+  /// to travel off the current sheet, then lands back near the origin.
+  void moveLook({required Offset lookAt, double? halfHeight}) {
+    final height = halfHeight ?? framedHalfHeightMm;
+    if ((this.lookAt - lookAt).distance < 1e-4 &&
+        (framedHalfHeightMm - height).abs() < 1e-4) {
+      return;
+    }
+    this.lookAt = lookAt;
+    framedHalfHeightMm = height;
+    _apply();
+    notifyListeners();
   }
 
   void beginToggle() {

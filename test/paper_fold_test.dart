@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flatmates/geometry/polygon_union.dart';
 import 'package:flatmates/gridcraft/blueprint.dart';
 import 'package:flatmates/gridcraft/fold.dart';
 import 'package:flatmates/gridcraft/scissor.dart';
@@ -48,6 +49,81 @@ void main() {
     expect(opened.scores, hasLength(1));
   });
 
+  test('a cut across a folded sheet hits the flap and the paper under it', () {
+    final folded = foldSheet(
+      sheet: sheet(),
+      spanA: const Offset(2, 0),
+      spanB: const Offset(2, 4),
+      flapPoint: const Offset(3, 2),
+      facing: FoldFacing.toward,
+    )!;
+    final cut = cutThroughFolds(folded, const [Offset(0, 2), Offset(2, 2)]);
+    expect(cut, isNotNull);
+    expect(
+      _pieceAt(cut!, const Offset(1, 1))!.id,
+      isNot(equals(_pieceAt(cut, const Offset(1, 3))!.id)),
+    );
+    expect(
+      _pieceAt(cut, const Offset(3, 1))!.id,
+      isNot(equals(_pieceAt(cut, const Offset(3, 3))!.id)),
+    );
+  });
+
+  test('a semicircle through a folded edge opens into a hole', () {
+    final folded = foldSheet(
+      sheet: sheet(),
+      spanA: const Offset(2, 0),
+      spanB: const Offset(2, 4),
+      flapPoint: const Offset(3, 2),
+      facing: FoldFacing.toward,
+    )!;
+    final cut = cutThroughFolds(folded, _semicircleLeft())!;
+    const sample = Offset(1.2, 2);
+    for (final piece in cut.pieces) {
+      if (polygonSignedArea(piece.vertices).abs() < 4) continue;
+      expect(_drawnContains(piece, sample, cut.folds), isFalse);
+    }
+    final opened = unfoldAt(cut, const Offset(2, 0.25))!;
+    final holed = opened.pieces.where((piece) => piece.holes.isNotEmpty);
+    expect(holed, isNotEmpty);
+    expect(
+      isInsidePolygon(const Offset(2, 2), holed.first.holes.first),
+      isTrue,
+    );
+    final scraps = opened.pieces.where(
+      (piece) => polygonSignedArea(piece.vertices).abs() < 4,
+    );
+    expect(scraps, hasLength(2));
+  });
+
+  test('a cut through two fold directions hits every layer', () {
+    final first = foldSheet(
+      sheet: sheet(),
+      spanA: const Offset(2, 0),
+      spanB: const Offset(2, 4),
+      flapPoint: const Offset(3, 2),
+      facing: FoldFacing.toward,
+    )!;
+    final folded = foldSheet(
+      sheet: first,
+      spanA: const Offset(0, 2),
+      spanB: const Offset(2, 2),
+      flapPoint: const Offset(1, 3),
+      facing: FoldFacing.toward,
+    )!;
+    expect(folded.pieces, hasLength(4));
+    final cut = cutThroughFolds(folded, const [Offset(0, 1), Offset(2, 1)])!;
+    expect(cut.pieces, hasLength(8));
+    void split(Offset below, Offset above) {
+      expect(_pieceAt(cut, below)!.id, isNot(equals(_pieceAt(cut, above)!.id)));
+    }
+
+    split(const Offset(1, 0.5), const Offset(1, 1.5));
+    split(const Offset(3, 0.5), const Offset(3, 1.5));
+    split(const Offset(1, 2.5), const Offset(1, 3.5));
+    split(const Offset(3, 2.5), const Offset(3, 3.5));
+  });
+
   test('a second fold also cuts the layer already folded over', () {
     final first = foldSheet(
       sheet: sheet(),
@@ -90,12 +166,70 @@ void main() {
     expect(landed.dx, closeTo(0, 1e-6));
   });
 
-  test('the folder preview is a paper-vertical line and keeps the cursor side', () {
-    final guide = folderGuide(const Offset(0.4, 2), sheet(), 1);
+  test('the folder crease is perpendicular to the nearest edge', () {
+    final left = folderGuide(const Offset(0.4, 1.4), sheet(), 1);
+    expect(left, isNotNull);
+    expect(left!.line.$1.dy, closeTo(left.line.$2.dy, 1e-6));
+    expect(left.line.$1.dy, closeTo(1, 1e-6));
+    expect(left.line.$1.dx, closeTo(0, 1e-6));
+    expect(left.line.$2.dx, closeTo(4, 1e-6));
+    expect(left.flap!.dy, lessThan(1));
+
+    final top = folderGuide(const Offset(1.4, 0.4), sheet(), 1);
+    expect(top, isNotNull);
+    expect(top!.line.$1.dx, closeTo(top.line.$2.dx, 1e-6));
+    expect(top.line.$1.dx, closeTo(1, 1e-6));
+    expect(top.flap!.dx, lessThan(1));
+  });
+
+  test('a diagonal edge snaps its fold to the stronger axis', () {
+    const ring = [Offset(0, 0), Offset(2, 0), Offset(0, 1)];
+    final bottom = axisPerpendicular(ring[0], ring[1], ring);
+    expect(bottom, const Offset(0, 1));
+    final slant = axisPerpendicular(ring[1], ring[2], ring);
+    expect(slant!.dx.abs() == 1 || slant.dy.abs() == 1, isTrue);
+    expect(slant.dx == 0 || slant.dy == 0, isTrue);
+  });
+  test('the folder preview hides away from the paper', () {
+    expect(folderGuide(const Offset(6, 2), sheet(), 1), isNull);
+  });
+
+  test('a fold stays on the nearest paper', () {
+    PapercutPiece box(String id, double x) {
+      return PapercutPiece(
+        id: id,
+        color: const Color(0xFFFFF3B0),
+        vertices: [
+          Offset(x, 0),
+          Offset(x + 4, 0),
+          Offset(x + 4, 4),
+          Offset(x, 4),
+        ],
+      );
+    }
+
+    final both = PapercutSheet(pieces: [box('near', 0), box('far', 8)]);
+    final guide = folderGuide(const Offset(0.4, 1.4), both, 1);
     expect(guide, isNotNull);
-    expect(guide!.line.$1.dx, closeTo(guide.line.$2.dx, 1e-6));
-    expect(guide.line.$1.dx, closeTo(1, 1e-6));
-    expect(guide.flap!.dx, greaterThan(1));
+    expect(guide!.line.$1.dx, inInclusiveRange(0, 4));
+    expect(guide.line.$2.dx, inInclusiveRange(0, 4));
+    expect(guide.line.$1.dy, inInclusiveRange(0, 4));
+    expect(guide.line.$2.dy, inInclusiveRange(0, 4));
+  });
+
+  test('an unfold cue sits on the drawn crease', () {
+    final folded = foldSheet(
+      sheet: sheet(),
+      spanA: const Offset(2, 0),
+      spanB: const Offset(2, 4),
+      flapPoint: const Offset(3, 2),
+      facing: FoldFacing.toward,
+    )!;
+    final cue = unfoldCue(folded, const Offset(2.2, 2));
+    expect(cue, isNotNull);
+    expect(cue!.$1.dx, closeTo(2, 1e-6));
+    expect(cue.$2.dx, closeTo(2, 1e-6));
+    expect(unfoldCue(folded, const Offset(0, 0)), isNull);
   });
 
   test('a no-fold zone refuses a flap that meets it', () {
@@ -125,8 +259,20 @@ void main() {
     expect(marked.marks.single.points.first.dx, greaterThan(2));
   });
 
+  test('a hole punch centers on the nearest grid point', () {
+    expect(snapPunchCenter(const Offset(1.2, 1.6), 1), const Offset(1, 2));
+    expect(snapPunchCenter(const Offset(0, 2), 1), const Offset(0, 2));
+    expect(
+      snapPunchCenter(const Offset(0.4, -0.6), 0.5),
+      const Offset(0.5, -0.5),
+    );
+  });
+
   test('a thick cut removes a strip and a hole punch bites the edge', () {
-    final thick = applyThickCut(sheet(), const [Offset(0, 2), Offset(4, 2)], 0.25);
+    final thick = applyThickCut(sheet(), const [
+      Offset(0, 2),
+      Offset(4, 2),
+    ], 0.25);
     expect(thick, isNotNull);
     expect(thick!.pieces.length, greaterThan(1));
 
@@ -152,7 +298,12 @@ void main() {
       [Offset(2, 0), Offset(4, 0), Offset(4, 2), Offset(2, 2)],
     ];
     const styles = [
-      [EdgeStyle.penned, EdgeStyle.penciled, EdgeStyle.penned, EdgeStyle.penned],
+      [
+        EdgeStyle.penned,
+        EdgeStyle.penciled,
+        EdgeStyle.penned,
+        EdgeStyle.penned,
+      ],
       [EdgeStyle.penned, EdgeStyle.penned, EdgeStyle.penned, EdgeStyle.penned],
     ];
     expect(
@@ -296,12 +447,161 @@ void main() {
     expect(piecesLiberated(step, {0}), isFalse);
 
     final both = PapercutSheet(
-      pieces: [
-        box('left', left),
-        box('right', right),
-      ],
+      pieces: [box('left', left), box('right', right)],
     );
     expect(liberatedPieceIndexes(step, both), {0, 1});
     expect(piecesLiberated(step, {0, 1}), isTrue);
   });
+
+  test('an opened fold rejoins the paper so the crease folds again', () {
+    FolderGuide crease(PapercutSheet on) {
+      final guide = folderGuide(const Offset(1.6, 0.3), on, 1);
+      expect(guide, isNotNull);
+      expect(guide!.drawn.$1.dx, closeTo(2, 1e-6));
+      return guide;
+    }
+
+    PapercutSheet fold(PapercutSheet on) {
+      final guide = crease(on);
+      return foldSheet(
+        sheet: on,
+        spanA: guide.line.$1,
+        spanB: guide.line.$2,
+        flapPoint: guide.flap!,
+        facing: FoldFacing.toward,
+      )!;
+    }
+
+    final folded = fold(sheet());
+    expect(folded.pieces, hasLength(2));
+    final opened = unfoldAt(folded, const Offset(2, 2))!;
+    expect(opened.pieces, hasLength(1));
+    expect(
+      polygonSignedArea(opened.pieces.single.vertices).abs(),
+      closeTo(16, 1e-6),
+    );
+    expect(opened.pieces.single.vertices, hasLength(4));
+
+    final refolded = fold(opened);
+    expect(refolded.folds.last.facing, FoldFacing.toward);
+    final shown = displayPoint(const Offset(3.5, 2), refolded.folds);
+    expect(shown.dx, lessThan(2));
+    final reopened = unfoldAt(refolded, const Offset(2, 2))!;
+    expect(reopened.pieces, hasLength(1));
+    expect(reopened.scores, hasLength(1));
+  });
+
+  test('an opened fold leaves a real cut on its crease apart', () {
+    const color = Color(0xFFFFF3B0);
+    final cutOnCrease = PapercutSheet(
+      pieces: const [
+        PapercutPiece(
+          id: 'left',
+          color: color,
+          vertices: [Offset(0, 0), Offset(2, 0), Offset(2, 4), Offset(0, 4)],
+        ),
+        PapercutPiece(
+          id: 'right',
+          color: color,
+          vertices: [Offset(2, 0), Offset(4, 0), Offset(4, 4), Offset(2, 4)],
+        ),
+      ],
+      cutStrokes: const [
+        [Offset(2, -1), Offset(2, 5)],
+      ],
+      folds: [
+        FoldJoint(
+          a: const Offset(2, 0),
+          b: const Offset(2, 4),
+          side: sideOfLine(
+            const Offset(3, 2),
+            const Offset(2, 0),
+            const Offset(2, 4),
+          ),
+          facing: FoldFacing.toward,
+        ),
+      ],
+    );
+    final opened = unfoldAt(cutOnCrease, const Offset(2, 2))!;
+    expect(opened.pieces, hasLength(2));
+  });
+
+  test('a separated piece folds and unfolds under the drawn reticle', () {
+    const shift = Offset(10, 0);
+    final moved = PapercutSheet(
+      pieces: [
+        PapercutPiece(
+          id: 'paper',
+          color: const Color(0xFFFFF3B0),
+          vertices: const [
+            Offset(0, 0),
+            Offset(8, 0),
+            Offset(8, 4),
+            Offset(0, 4),
+          ],
+          separation: shift,
+        ),
+      ],
+    );
+    final first = folderGuide(const Offset(14.6, 0.3), moved, 1);
+    expect(first, isNotNull);
+    expect(first!.drawn.$1.dx, closeTo(15, 1e-6));
+    expect(first.drawn.$2.dx, closeTo(15, 1e-6));
+    final folded = foldSheet(
+      sheet: moved,
+      spanA: first.line.$1,
+      spanB: first.line.$2,
+      flapPoint: first.flap!,
+      facing: FoldFacing.toward,
+    )!;
+
+    final next = folderGuide(const Offset(11.3, 2), folded, 1);
+    expect(next, isNotNull);
+    expect(next!.drawn.$1.dy, closeTo(2, 1e-6));
+    expect(next.drawn.$1.dx, closeTo(10, 1e-6));
+    expect(next.drawn.$2.dx, closeTo(15, 1e-6));
+
+    final cue = unfoldCue(folded, const Offset(15.1, 1));
+    expect(cue, isNotNull);
+    expect(cue!.$1.dx, closeTo(15, 1e-6));
+    expect(unfoldAt(folded, const Offset(15.1, 1)), isNotNull);
+  });
+}
+
+/// Semicircle on the left of the crease x = 2, centered at (2, 2).
+List<Offset> _semicircleLeft() {
+  const center = Offset(2, 2);
+  const radius = 1.5;
+  const steps = 16;
+  return [
+    for (var i = 0; i <= steps; i++)
+      Offset(
+        center.dx - radius * math.cos((i / steps - 0.5) * math.pi),
+        center.dy + radius * math.sin((i / steps - 0.5) * math.pi),
+      ),
+  ];
+}
+
+PapercutPiece? _pieceAt(PapercutSheet sheet, Offset point) {
+  for (final piece in sheet.pieces) {
+    if (piece.vertices.length < 3 || !isInsidePolygon(point, piece.vertices)) {
+      continue;
+    }
+    var inHole = false;
+    for (final hole in piece.holes) {
+      if (hole.length >= 3 && isInsidePolygon(point, hole)) inHole = true;
+    }
+    if (!inHole) return piece;
+  }
+  return null;
+}
+
+bool _drawnContains(PapercutPiece piece, Offset point, List<FoldJoint> folds) {
+  final ring = shownRing(piece.vertices, piece.separation, folds);
+  if (ring.length < 3 || !isInsidePolygon(point, ring)) return false;
+  for (final hole in piece.holes) {
+    final drawn = shownRing(hole, piece.separation, folds);
+    if (drawn.length >= 3 && isInsidePolygon(point, drawn)) return false;
+  }
+  return true;
 }

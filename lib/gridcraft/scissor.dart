@@ -4,7 +4,6 @@ import 'dart:ui';
 import '../geometry/geometry_algorithms.dart';
 import '../geometry/polygon_union.dart';
 import '../papercut/paper.dart';
-import '../papercut/split.dart';
 import 'blueprint.dart';
 import 'fold.dart';
 
@@ -194,11 +193,13 @@ class ForwardCut {
   final Offset end;
 }
 
-/// Screen-cardinal cuts from [from] that are not the reverse of [forward].
+/// Cuts from [from] that are not an exact reverse of [forward].
 ///
-/// A direction whose dot with [forward] is negative is dropped. A right angle
-/// stays. A cardinal that leaves the sheet without hitting an outline is
-/// omitted.
+/// Only the opposite of the arrival line is dropped. That blocks a U-turn
+/// along the stroke the blade just traveled, and still leaves a turn onto
+/// another edge, even when the turn points partly back. The diagonal of a Z
+/// meets its bar at more than a right angle, and that turn has to stay.
+/// A cardinal that leaves the sheet without hitting an outline is omitted.
 List<ForwardCut> forwardCuts({
   required Offset from,
   required Offset forward,
@@ -217,7 +218,8 @@ List<ForwardCut> forwardCuts({
     if (span < 1e-8) continue;
     final ray = direction / span;
     final aligned = ray.dx * heading.dx + ray.dy * heading.dy;
-    if (aligned < -1e-3) continue;
+    // Exact reverse of the arrival. A wider turn is a different edge.
+    if (aligned < -1 + 1e-3) continue;
     final end = nextOutlineHit(
       from: from,
       direction: ray,
@@ -264,10 +266,55 @@ ForwardCut? mostForwardCut(List<ForwardCut> cuts, Offset forward) {
   return best;
 }
 
+/// Unit directions of the linework through [at], and the opposite of each.
+///
+/// A right-angle corner has four: both edges, and both edges running the
+/// other way. A point in the middle of one edge has only that edge's two
+/// directions. [forwardCuts] still drops the way the blade arrived.
+List<Offset> lineworkDirections({
+  required Offset at,
+  List<List<Offset>> closed = const [],
+  List<List<Offset>> open = const [],
+}) {
+  final rays = <Offset>[];
+  void add(Offset ray) {
+    final length = ray.distance;
+    if (length < 1e-8) return;
+    final unit = ray / length;
+    for (final existing in rays) {
+      final dot = existing.dx * unit.dx + existing.dy * unit.dy;
+      if (dot > 1 - 1e-4) return;
+    }
+    rays.add(unit);
+  }
+
+  void walk(List<Offset> stroke, {required bool close}) {
+    if (stroke.length < 2) return;
+    final count = close ? stroke.length : stroke.length - 1;
+    for (var i = 0; i < count; i++) {
+      final a = stroke[i];
+      final b = stroke[(i + 1) % stroke.length];
+      if (_distanceToSegment(at, a, b) > 1e-3) continue;
+      final delta = b - a;
+      add(delta);
+      add(-delta);
+    }
+  }
+
+  for (final stroke in closed) {
+    walk(stroke, close: true);
+  }
+  for (final stroke in open) {
+    walk(stroke, close: false);
+  }
+  return rays;
+}
+
 /// Forward, left, and right of [forward], in paper space.
 ///
 /// These stay put when the camera rolls. A tap still picks among them by
-/// which screen side it is closest to.
+/// which screen side it is closest to. A cut that has not started still uses
+/// this grid rule. Once the blade is on a stroke, [lineworkDirections] decides.
 List<Offset> paperTurnDirections(Offset forward) {
   final length = forward.distance;
   if (length < 1e-8) return const [];
@@ -315,6 +362,99 @@ ScissorMarch? placeOnRing(Offset point, List<Offset> ring) {
   final direction = inwardOnRing(point, ring);
   if (direction == null) return null;
   return ScissorMarch(path: [point], direction: direction);
+}
+
+/// Unit direction of the blueprint edge nearest [aim], pointing into the sheet.
+///
+/// Used when that edge is at least as close as the paper border, so a gem or
+/// a diagonal stroke is followed at its own angle. The paper center is not a
+/// heading: it leaves orthogonal and diagonal linework at a slant.
+Offset? headingAlongLinework({
+  required Offset aim,
+  required Offset from,
+  required GridStep step,
+}) {
+  final edge = _nearestBlueprintEdge(aim, step);
+  if (edge == null) return null;
+  if (edge.distance > _borderDistance(aim, step.paper) + 1e-6) return null;
+  final length = edge.direction.distance;
+  if (length < 1e-8) return null;
+  return _senseIntoSheet(from, edge.direction / length, aim, step.paper);
+}
+
+class _BlueprintEdge {
+  const _BlueprintEdge({required this.direction, required this.distance});
+
+  final Offset direction;
+  final double distance;
+}
+
+_BlueprintEdge? _nearestBlueprintEdge(Offset aim, GridStep step) {
+  _BlueprintEdge? best;
+  for (var i = 0; i < step.polygons.length; i++) {
+    final ring = step.polygons[i];
+    final count = step.edgeCountOf(i);
+    for (var e = 0; e < count; e++) {
+      final a = ring[e];
+      final b = ring[(e + 1) % ring.length];
+      final delta = b - a;
+      if (delta.distance < 1e-8) continue;
+      final distance = _distanceToSegment(aim, a, b);
+      if (best != null && distance >= best.distance - 1e-9) continue;
+      best = _BlueprintEdge(direction: delta, distance: distance);
+    }
+  }
+  return best;
+}
+
+/// Distance from [point] to the boundary of [paper]. Inside, that is the
+/// distance to the nearest side.
+double _borderDistance(Offset point, Rect paper) {
+  if (paper.width < 1e-8 || paper.height < 1e-8) return double.infinity;
+  final dx = math.min(
+    (point.dx - paper.left).abs(),
+    (paper.right - point.dx).abs(),
+  );
+  final dy = math.min(
+    (point.dy - paper.top).abs(),
+    (paper.bottom - point.dy).abs(),
+  );
+  final inside =
+      point.dx >= paper.left - 1e-6 &&
+      point.dx <= paper.right + 1e-6 &&
+      point.dy >= paper.top - 1e-6 &&
+      point.dy <= paper.bottom + 1e-6;
+  if (inside) return math.min(dx, dy);
+  final clamped = Offset(
+    point.dx.clamp(paper.left, paper.right),
+    point.dy.clamp(paper.top, paper.bottom),
+  );
+  return (point - clamped).distance;
+}
+
+/// [unit] or its opposite, whichever steps into [paper] and aims more toward
+/// [aim]. A point already on the blade uses the paper center as the tie break.
+Offset? _senseIntoSheet(Offset from, Offset unit, Offset aim, Rect paper) {
+  bool inside(Offset ray) {
+    final step = from + ray * 0.05;
+    return step.dx > paper.left + 1e-6 &&
+        step.dx < paper.right - 1e-6 &&
+        step.dy > paper.top + 1e-6 &&
+        step.dy < paper.bottom - 1e-6;
+  }
+
+  final towardAim = aim - from;
+  final toward = towardAim.distance > 0.2 ? towardAim : paper.center - from;
+  Offset? best;
+  var bestDot = -double.infinity;
+  for (final ray in [unit, -unit]) {
+    if (!inside(ray)) continue;
+    final dot = ray.dx * toward.dx + ray.dy * toward.dy;
+    if (dot <= bestDot) continue;
+    best = ray;
+    bestDot = dot;
+  }
+  return best;
 }
 
 /// Heading for a new cut at [from].
@@ -505,6 +645,20 @@ Offset? nextDatum({
       : _ringExit(from, direction, boundary);
   if (exit != null) consider(exit);
   return best;
+}
+
+/// Lays out a split. Finished blueprint pieces stay on their outline and
+/// the scrap steps away, so a completed piece is its own object.
+/// A won level stays where it was cut so leftover bursts land on the paper.
+PapercutSheet layoutAfterSplit(
+  PapercutSheet before,
+  PapercutSheet after,
+  double spacing, {
+  Set<String> finished = const {},
+  bool winning = false,
+}) {
+  if (winning || spacing <= 0) return after;
+  return spreadPieces(before, after, spacing, pinned: finished);
 }
 
 /// Pulls the pieces created by a split off each other by [spacing].
@@ -723,35 +877,35 @@ ScissorCommit? commitScissor({
     step,
     base,
     closed: closed,
-      skipCollinear: (a, b) => penciledRidesPennedNeighbor(
-        step.polygons,
-        step.edgeStyles,
-        a,
-        b,
-        closed: step.ringClosed,
-      ),
+    skipCollinear: (a, b) => penciledRidesPennedNeighbor(
+      step.polygons,
+      step.edgeStyles,
+      a,
+      b,
+      closed: step.ringClosed,
+    ),
   );
   if (end == null) return null;
   final path = [...march.path, end];
-  final folded = base.folds.any((joint) => joint.facing != FoldFacing.unfolded);
   final thick = step.attachment.thickCut;
-  final PapercutSheet? cut;
-  if (folded || thick > 0) {
-    cut = cutThroughFolds(
-      base,
-      path,
-      thickCut: thick,
-      blueprintPieces: [
-        for (var i = 0; i < step.polygons.length; i++)
-          if (step.isRingClosed(i)) step.polygons[i],
-      ],
-    );
-  } else {
-    cut = applyPapercutCut(base, path);
-  }
+  final owner = _strokeOwner(base, path);
+  final shift = owner?.separation ?? Offset.zero;
+  final display = [
+    for (final point in path) displayPoint(point, base.folds) + shift,
+  ];
+  final cut = cutThroughFolds(
+    base,
+    display,
+    thickCut: thick,
+    blueprintPieces: [
+      for (var i = 0; i < step.polygons.length; i++)
+        if (step.isRingClosed(i)) step.polygons[i],
+    ],
+  );
   if (cut == null) return null;
   final split =
-      cut.pieces.length > base.pieces.length || _holeCount(cut) > _holeCount(base);
+      cut.pieces.length > base.pieces.length ||
+      _holeCount(cut) > _holeCount(base);
   if (split) {
     return ScissorCommit(sheet: cut, march: null);
   }
@@ -894,6 +1048,31 @@ bool _onRect(Offset point, Rect paper) {
   return onEdge;
 }
 
+/// Piece the blade is traveling through, so its separation can be drawn.
+PapercutPiece? _strokeOwner(PapercutSheet sheet, List<Offset> path) {
+  for (var i = 0; i < path.length - 1; i++) {
+    final mid = Offset(
+      (path[i].dx + path[i + 1].dx) / 2,
+      (path[i].dy + path[i + 1].dy) / 2,
+    );
+    for (final piece in sheet.pieces) {
+      if (!_ownsInterior(piece, mid)) continue;
+      return piece;
+    }
+  }
+  return null;
+}
+
+bool _ownsInterior(PapercutPiece piece, Offset point) {
+  if (piece.vertices.length < 3 || !isInsidePolygon(point, piece.vertices)) {
+    return false;
+  }
+  for (final hole in piece.holes) {
+    if (hole.length >= 3 && isInsidePolygon(point, hole)) return false;
+  }
+  return true;
+}
+
 bool _entersPieces(Offset a, Offset b, List<PapercutPiece> pieces) {
   final mid = Offset((a.dx + b.dx) / 2, (a.dy + b.dy) / 2);
   for (final piece in pieces) {
@@ -957,11 +1136,7 @@ bool _pieceOwnsMark(PapercutPiece piece, Offset point) {
 /// still see one blueprint piece. Drawing clips that ring onto the paper:
 /// a cut through an edge splits it, and each side travels with the piece
 /// that holds it. A point in a hole belongs to the cut-out, not the sheet.
-List<(Offset, Offset)> segmentOnPiece(
-  Offset a,
-  Offset b,
-  PapercutPiece piece,
-) {
+List<(Offset, Offset)> segmentOnPiece(Offset a, Offset b, PapercutPiece piece) {
   final delta = b - a;
   if (delta.distance < 1e-8 || piece.vertices.length < 3) return const [];
   final parameters = <double>[0, 1];
@@ -1110,7 +1285,6 @@ Offset? inwardOnRing(Offset point, List<Offset> ring) {
   if (ring.length < 3) return null;
   final area = polygonSignedArea(ring);
   if (area.abs() < 1e-8) return null;
-  final sign = area > 0 ? 1.0 : -1.0;
   final candidates = <Offset>[];
   for (var i = 0; i < ring.length; i++) {
     final a = ring[i];
@@ -1118,14 +1292,8 @@ Offset? inwardOnRing(Offset point, List<Offset> ring) {
     if (_distanceToSegment(point, a, b) > 1e-3) continue;
     final along = _segmentT(point, a, b);
     if (along < -1e-3 || along > 1 + 1e-3) continue;
-    final dx = b.dx - a.dx;
-    final dy = b.dy - a.dy;
-    final nx = -dy * sign;
-    final ny = dx * sign;
-    if (nx.abs() < 1e-8 && ny.abs() < 1e-8) continue;
-    final normal = nx.abs() >= ny.abs()
-        ? Offset(nx.sign, 0)
-        : Offset(0, ny.sign);
+    final normal = axisPerpendicular(a, b, ring);
+    if (normal == null) continue;
     if (candidates.any((other) => other == normal)) continue;
     candidates.add(normal);
   }

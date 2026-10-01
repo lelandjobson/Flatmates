@@ -14,8 +14,12 @@ class GridBlueprint {
   final String name;
   final List<GridStep> steps;
 
-  GridBlueprint copyWith({List<GridStep>? steps}) {
-    return GridBlueprint(id: id, name: name, steps: steps ?? this.steps);
+  GridBlueprint copyWith({String? name, List<GridStep>? steps}) {
+    return GridBlueprint(
+      id: id,
+      name: name ?? this.name,
+      steps: steps ?? this.steps,
+    );
   }
 
   Map<String, dynamic> toJson() => {
@@ -143,8 +147,7 @@ class LevelPermutation {
   /// Regions of paper that cannot be folded.
   final List<List<Offset>> noFold;
 
-  bool get isEmpty =>
-      !darkness && !mirrorX && !mirrorY && noFold.isEmpty;
+  bool get isEmpty => !darkness && !mirrorX && !mirrorY && noFold.isEmpty;
 
   LevelPermutation copyWith({
     bool? darkness,
@@ -364,13 +367,9 @@ class GridStep {
           [for (final style in edgeStyleOf(i)) style.name],
       ],
     if (collisions.any((count) => count != null))
-      'collisions': [
-        for (var i = 0; i < polygons.length; i++) collisionOf(i),
-      ],
+      'collisions': [for (var i = 0; i < polygons.length; i++) collisionOf(i)],
     if (ringClosed.any((closed) => !closed))
-      'ringClosed': [
-        for (var i = 0; i < polygons.length; i++) isRingClosed(i),
-      ],
+      'ringClosed': [for (var i = 0; i < polygons.length; i++) isRingClosed(i)],
     if (tools != null) 'tools': tools!.toJson(),
     if (!attachment.isEmpty) 'attachments': attachment.toJson(),
     if (!permutation.isEmpty) 'permutations': permutation.toJson(),

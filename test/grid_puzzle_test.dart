@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -84,7 +85,11 @@ void main() {
     final step = GridStep(
       id: 'box',
       label: 'Box',
-      polygons: const [ring, other, [Offset(0, 3), Offset(2, 3)]],
+      polygons: const [
+        ring,
+        other,
+        [Offset(0, 3), Offset(2, 3)],
+      ],
       ringClosed: const [true, true, false],
     );
     expect(
@@ -153,7 +158,12 @@ void main() {
   test('a fresh cut edge faces straight into its piece', () {
     final step = twinLsBlueprint().steps.single;
     final base = _sheet(step);
-    final vertical = _splitAcross(step, base, const Offset(-1, 0), vertical: true);
+    final vertical = _splitAcross(
+      step,
+      base,
+      const Offset(-1, 0),
+      vertical: true,
+    );
     final horizontal = _splitAcross(
       step,
       base,
@@ -166,11 +176,7 @@ void main() {
         final edge = _freshEdge(piece.vertices, step.paper);
         expect(edge, isNotNull, reason: piece.vertices.toString());
         final from = edge!;
-        final heading = openingHeading(
-          from,
-          step.paper,
-          ring: piece.vertices,
-        );
+        final heading = openingHeading(from, step.paper, ring: piece.vertices);
         expect(heading.dx == 0 || heading.dy == 0, isTrue, reason: '$heading');
         expect(
           isInsidePolygon(from + heading * 0.2, piece.vertices),
@@ -205,55 +211,135 @@ void main() {
     }
   });
 
-  test('a completed blueprint piece stays on the outline while the scrap moves', () {
-    const color = Color(0xFFFFF3B0);
-    final before = PapercutSheet(
+  test('an opening cut follows the untitled linework angle', () {
+    GridStep load(String path) {
+      return GridBlueprint.fromJson(
+        jsonDecode(File(path).readAsStringSync()) as Map<String, dynamic>,
+      ).steps.single;
+    }
+
+    bool axis(Offset heading) =>
+        heading.dx.abs() < 1e-4 || heading.dy.abs() < 1e-4;
+    bool parallel(Offset heading, Offset edge) {
+      final cross = heading.dx * edge.dy - heading.dy * edge.dx;
+      return cross.abs() < 1e-4;
+    }
+
+    final gems = load('levels/puzzles/triple-shape.json');
+    for (final gem in gems.rules.colors) {
+      final heading = headingAlongLinework(
+        aim: gem.point,
+        from: gem.point,
+        step: gems,
+      );
+      expect(heading, isNotNull, reason: '${gem.point}');
+      expect(axis(heading!), isTrue, reason: '$heading at ${gem.point}');
+      final center = gems.paper.center - gem.point;
+      final centerUnit = center / center.distance;
+      expect(
+        (heading - centerUnit).distance,
+        greaterThan(0.2),
+        reason: 'gem ${gem.point} still aims at the sheet center',
+      );
+    }
+
+    final diagonal = load('levels/puzzles/puzzle-1790710681492.json');
+    const onStroke = Offset(1, 0);
+    final from = closestPieceEdge(
+      aim: onStroke,
       pieces: [
         PapercutPiece(
-          id: 'sheet',
-          color: color,
-          vertices: const [
-            Offset(0, 0),
-            Offset(4, 0),
-            Offset(4, 2),
-            Offset(0, 2),
+          id: 'paper',
+          color: const Color(0xFFFFF3B0),
+          vertices: [
+            diagonal.paper.topLeft,
+            diagonal.paper.topRight,
+            diagonal.paper.bottomRight,
+            diagonal.paper.bottomLeft,
           ],
         ),
       ],
+      spacing: diagonal.gridSpacing,
     );
-    final after = PapercutSheet(
-      pieces: [
-        PapercutPiece(
-          id: 'island',
-          color: color,
-          vertices: const [
-            Offset(0, 0),
-            Offset(2, 0),
-            Offset(2, 2),
-            Offset(0, 2),
-          ],
-        ),
-        PapercutPiece(
-          id: 'scrap',
-          color: color,
-          vertices: const [
-            Offset(2, 0),
-            Offset(4, 0),
-            Offset(4, 2),
-            Offset(2, 2),
-          ],
-        ),
-      ],
+    expect(from, isNotNull);
+    final slant = headingAlongLinework(
+      aim: onStroke,
+      from: from!.model,
+      step: diagonal,
     );
-    final spread = spreadPieces(before, after, 1, pinned: {'island'});
-    expect(spread.pieces[0].id, 'island');
-    expect(spread.pieces[0].separation, Offset.zero);
-    expect(spread.pieces[1].separation, isNot(Offset.zero));
+    expect(slant, isNotNull);
+    expect(parallel(slant!, const Offset(1, 1)), isTrue, reason: '$slant');
     expect(
-      _shownBounds(spread.pieces[0]).overlaps(_shownBounds(spread.pieces[1])),
-      isFalse,
+      headingAlongLinework(
+        aim: diagonal.paper.topLeft,
+        from: diagonal.paper.topLeft,
+        step: diagonal,
+      ),
+      isNull,
     );
   });
+
+  test(
+    'a completed blueprint piece stays on the outline while the scrap moves',
+    () {
+      const color = Color(0xFFFFF3B0);
+      final before = PapercutSheet(
+        pieces: [
+          PapercutPiece(
+            id: 'sheet',
+            color: color,
+            vertices: const [
+              Offset(0, 0),
+              Offset(4, 0),
+              Offset(4, 2),
+              Offset(0, 2),
+            ],
+          ),
+        ],
+      );
+      final after = PapercutSheet(
+        pieces: [
+          PapercutPiece(
+            id: 'island',
+            color: color,
+            vertices: const [
+              Offset(0, 0),
+              Offset(2, 0),
+              Offset(2, 2),
+              Offset(0, 2),
+            ],
+          ),
+          PapercutPiece(
+            id: 'scrap',
+            color: color,
+            vertices: const [
+              Offset(2, 0),
+              Offset(4, 0),
+              Offset(4, 2),
+              Offset(2, 2),
+            ],
+          ),
+        ],
+      );
+      final spread = layoutAfterSplit(before, after, 1, finished: {'island'});
+      final stayed = layoutAfterSplit(
+        before,
+        after,
+        1,
+        finished: {'island'},
+        winning: true,
+      );
+      expect(stayed.pieces[0].separation, Offset.zero);
+      expect(stayed.pieces[1].separation, Offset.zero);
+      expect(spread.pieces[0].id, 'island');
+      expect(spread.pieces[0].separation, Offset.zero);
+      expect(spread.pieces[1].separation, isNot(Offset.zero));
+      expect(
+        _shownBounds(spread.pieces[0]).overlaps(_shownBounds(spread.pieces[1])),
+        isFalse,
+      );
+    },
+  );
 
   testWidgets('a finished cut paints two separated pieces', (tester) async {
     final step = twinLsBlueprint().steps.single;
@@ -417,6 +503,71 @@ void main() {
       expect(along.dy, closeTo(0, 1e-6));
     },
   );
+
+  test('a diamond corner follows its edges instead of the grid', () {
+    const diamond = [Offset(1, 0), Offset(0, 1), Offset(-1, 0), Offset(0, -1)];
+    final corner = lineworkDirections(
+      at: const Offset(1, 0),
+      closed: const [diamond],
+    );
+    expect(corner, hasLength(4));
+    final down = const Offset(-1, -1);
+    final up = const Offset(-1, 1);
+    expect(_hasRay(corner, down), isTrue);
+    expect(_hasRay(corner, -down), isTrue);
+    expect(_hasRay(corner, up), isTrue);
+    expect(_hasRay(corner, -up), isTrue);
+    expect(_hasRay(corner, const Offset(1, 0)), isFalse);
+    expect(_hasRay(corner, const Offset(0, 1)), isFalse);
+
+    final cuts = forwardCuts(
+      from: const Offset(1, 0),
+      forward: const Offset(1, -1),
+      directions: corner,
+      closed: const [diamond],
+    );
+    expect(_hasDirection(cuts, up / math.sqrt(2)), isFalse);
+    final along = cutFacing(cuts, down);
+    expect(along, isNotNull);
+    expect(along!.end.dx, closeTo(0, 1e-6));
+    expect(along.end.dy, closeTo(-1, 1e-6));
+
+    final midway = lineworkDirections(
+      at: const Offset(0.5, 0.5),
+      closed: const [diamond],
+      open: const [
+        [Offset(0.5, 0), Offset(0.5, 0.5)],
+      ],
+    );
+    expect(midway, hasLength(4));
+    expect(_hasRay(midway, const Offset(0, 1)), isTrue);
+    expect(_hasRay(midway, const Offset(0, -1)), isTrue);
+    expect(_hasRay(midway, up), isTrue);
+    expect(_hasRay(midway, down), isFalse);
+  });
+
+  test('the untitled Z diagonal can be entered from the bar that meets it', () {
+    final step = GridBlueprint.fromJson(
+      jsonDecode(
+        File('levels/puzzles/puzzle-1790710681492.json').readAsStringSync(),
+      ) as Map<String, dynamic>,
+    ).steps.single;
+    final sheet = _sheet(step);
+    final closed = cutOutlines(step, sheet);
+    const corner = Offset(0, -1);
+    final cuts = forwardCuts(
+      from: corner,
+      forward: const Offset(-1, 0),
+      directions: lineworkDirections(at: corner, closed: closed),
+      closed: closed,
+      boundary: [sheet.pieces.single.vertices],
+    );
+    final into = cutFacing(cuts, const Offset(1, 1));
+    expect(into, isNotNull, reason: '$cuts');
+    expect(into!.end.dx, closeTo(3, 1e-6));
+    expect(into.end.dy, closeTo(2, 1e-6));
+    expect(_hasDirection(cuts, const Offset(1, 0)), isFalse);
+  });
 
   test('paper turns stay on the cut and ignore a rolled camera', () {
     final turns = paperTurnDirections(const Offset(0, 1));
@@ -597,59 +748,72 @@ void main() {
     expect(covers(onPaper, const Offset(1, -1.5)), isTrue);
   });
 
-  test('a separating cut drops off the new edges and interior marks travel', () {
-    const yellow = Color(0xFFFFF3B0);
-    final left = PapercutPiece(
-      id: 'left',
-      color: yellow,
-      vertices: const [Offset(0, 0), Offset(2, 0), Offset(2, 4), Offset(0, 4)],
-    );
-    final right = PapercutPiece(
-      id: 'right',
-      color: yellow,
-      vertices: const [Offset(2, 0), Offset(4, 0), Offset(4, 4), Offset(2, 4)],
-      separation: const Offset(3, 0),
-    );
-    const seam = [Offset(2, 0), Offset(2, 4)];
-    expect(cutMarksOnPiece(seam, left), isEmpty);
-    expect(cutMarksOnPiece(seam, right), isEmpty);
+  test(
+    'a separating cut drops off the new edges and interior marks travel',
+    () {
+      const yellow = Color(0xFFFFF3B0);
+      final left = PapercutPiece(
+        id: 'left',
+        color: yellow,
+        vertices: const [
+          Offset(0, 0),
+          Offset(2, 0),
+          Offset(2, 4),
+          Offset(0, 4),
+        ],
+      );
+      final right = PapercutPiece(
+        id: 'right',
+        color: yellow,
+        vertices: const [
+          Offset(2, 0),
+          Offset(4, 0),
+          Offset(4, 4),
+          Offset(2, 4),
+        ],
+        separation: const Offset(3, 0),
+      );
+      const seam = [Offset(2, 0), Offset(2, 4)];
+      expect(cutMarksOnPiece(seam, left), isEmpty);
+      expect(cutMarksOnPiece(seam, right), isEmpty);
 
-    const slit = [Offset(3, 1), Offset(3, 3)];
-    expect(cutMarksOnPiece(slit, left), isEmpty);
-    final carried = [
-      for (final mark in cutMarksOnPiece(slit, right))
-        [for (final point in mark) point + right.separation],
-    ];
-    expect(carried, [
-      [const Offset(6, 1), const Offset(6, 3)],
-    ]);
+      const slit = [Offset(3, 1), Offset(3, 3)];
+      expect(cutMarksOnPiece(slit, left), isEmpty);
+      final carried = [
+        for (final mark in cutMarksOnPiece(slit, right))
+          [for (final point in mark) point + right.separation],
+      ];
+      expect(carried, [
+        [const Offset(6, 1), const Offset(6, 3)],
+      ]);
 
-    final sheet = PapercutPiece(
-      id: 'sheet',
-      color: yellow,
-      vertices: const [
-        Offset(-1, -1),
-        Offset(5, -1),
-        Offset(5, 5),
-        Offset(-1, 5),
-      ],
-      holes: const [
-        [Offset(2, 0), Offset(4, 0), Offset(4, 4), Offset(2, 4)],
-      ],
-    );
-    expect(cutMarksOnPiece(seam, sheet), isEmpty);
-    expect(cutMarksOnPiece(slit, sheet), isEmpty);
+      final sheet = PapercutPiece(
+        id: 'sheet',
+        color: yellow,
+        vertices: const [
+          Offset(-1, -1),
+          Offset(5, -1),
+          Offset(5, 5),
+          Offset(-1, 5),
+        ],
+        holes: const [
+          [Offset(2, 0), Offset(4, 0), Offset(4, 4), Offset(2, 4)],
+        ],
+      );
+      expect(cutMarksOnPiece(seam, sheet), isEmpty);
+      expect(cutMarksOnPiece(slit, sheet), isEmpty);
 
-    const across = [Offset(1, 2), Offset(3, 2)];
-    final onLeft = cutMarksOnPiece(across, left);
-    final onRight = cutMarksOnPiece(across, right);
-    expect(onLeft, hasLength(1));
-    expect(onLeft.single.first.dx, closeTo(1, 1e-6));
-    expect(onLeft.single.last.dx, closeTo(2, 1e-6));
-    expect(onRight, hasLength(1));
-    expect(onRight.single.first.dx, closeTo(2, 1e-6));
-    expect(onRight.single.last.dx, closeTo(3, 1e-6));
-  });
+      const across = [Offset(1, 2), Offset(3, 2)];
+      final onLeft = cutMarksOnPiece(across, left);
+      final onRight = cutMarksOnPiece(across, right);
+      expect(onLeft, hasLength(1));
+      expect(onLeft.single.first.dx, closeTo(1, 1e-6));
+      expect(onLeft.single.last.dx, closeTo(2, 1e-6));
+      expect(onRight, hasLength(1));
+      expect(onRight.single.first.dx, closeTo(2, 1e-6));
+      expect(onRight.single.last.dx, closeTo(3, 1e-6));
+    },
+  );
 
   test('a smaller piece slides out of space a larger one occupies', () {
     final settled = relaxSeparations(
@@ -820,10 +984,9 @@ void main() {
     ]);
     const buried = [Offset(0.2, 1), Offset(1.8, 1)];
     expect(segmentOnPiece(buried[0], buried[1], sheetPiece), isEmpty);
-    expect(
-      segmentOnPiece(buried[0], buried[1], inner),
-      [(buried[0], buried[1])],
-    );
+    expect(segmentOnPiece(buried[0], buried[1], inner), [
+      (buried[0], buried[1]),
+    ]);
   });
 
   test('a mark on a cut-out follows the inner piece', () {
@@ -969,6 +1132,16 @@ void main() {
 
 bool _hasDirection(List<ForwardCut> cuts, Offset direction) {
   return cuts.any((cut) => (cut.direction - direction).distance < 1e-6);
+}
+
+bool _hasRay(List<Offset> rays, Offset direction) {
+  final length = direction.distance;
+  if (length < 1e-8) return false;
+  final unit = direction / length;
+  return rays.any((ray) {
+    final dot = ray.dx * unit.dx + ray.dy * unit.dy;
+    return dot > 1 - 1e-4;
+  });
 }
 
 Rect _shownBounds(PapercutPiece piece) {

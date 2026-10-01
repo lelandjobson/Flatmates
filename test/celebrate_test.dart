@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('the fill holds, then the burst starts', () {
     expect(Celebration.fillSeconds, 0.25);
+    expect(Celebration.glowSeconds, 0.48);
     expect(Celebration.holdSeconds, 0.25);
     expect(Celebration.totalSeconds, 1.3);
     expect(Celebration.duration, const Duration(milliseconds: 1300));
@@ -51,57 +52,60 @@ void main() {
     }
   });
 
-  test('thirty percent of sparks travel twice as far, and thirty percent four times', () {
-    final celebration = prepareCelebration(const [
-      Offset(0, 0),
-      Offset(8, 0),
-      Offset(8, 8),
-      Offset(0, 8),
-    ]);
-    var twice = 0;
-    var four = 0;
-    for (final cell in celebration.cells) {
-      if (cell.reach == 2) twice++;
-      if (cell.reach == 4) four++;
-      expect(cell.reach, isIn([1, 2, 4]));
-    }
-    expect(twice / celebration.cells.length, closeTo(0.3, 0.05));
-    expect(four / celebration.cells.length, closeTo(0.3, 0.05));
-    final base = sparkPosition(
-      const SparkCell(
-        at: Offset.zero,
-        wave: 0,
-        row: 0,
-        direction: Offset(1, 0),
-      ),
-      0.4,
-      speed: 3.2,
-    ).distance;
-    final doubled = sparkPosition(
-      const SparkCell(
-        at: Offset.zero,
-        wave: 0,
-        row: 0,
-        direction: Offset(1, 0),
-        reach: 2,
-      ),
-      0.4,
-      speed: 3.2 * 2,
-    ).distance;
-    final quadrupled = sparkPosition(
-      const SparkCell(
-        at: Offset.zero,
-        wave: 0,
-        row: 0,
-        direction: Offset(1, 0),
-        reach: 4,
-      ),
-      0.4,
-      speed: 3.2 * 4,
-    ).distance;
-    expect(doubled, closeTo(base * 2, 1e-6));
-    expect(quadrupled, closeTo(base * 4, 1e-6));
-  });
+  test(
+    'thirty percent of sparks travel twice as far, and thirty percent four times',
+    () {
+      final celebration = prepareCelebration(const [
+        Offset(0, 0),
+        Offset(8, 0),
+        Offset(8, 8),
+        Offset(0, 8),
+      ]);
+      var twice = 0;
+      var four = 0;
+      for (final cell in celebration.cells) {
+        if (cell.reach == 2) twice++;
+        if (cell.reach == 4) four++;
+        expect(cell.reach, isIn([1, 2, 4]));
+      }
+      expect(twice / celebration.cells.length, closeTo(0.3, 0.05));
+      expect(four / celebration.cells.length, closeTo(0.3, 0.05));
+      final base = sparkPosition(
+        const SparkCell(
+          at: Offset.zero,
+          wave: 0,
+          row: 0,
+          direction: Offset(1, 0),
+        ),
+        0.4,
+        speed: 3.2,
+      ).distance;
+      final doubled = sparkPosition(
+        const SparkCell(
+          at: Offset.zero,
+          wave: 0,
+          row: 0,
+          direction: Offset(1, 0),
+          reach: 2,
+        ),
+        0.4,
+        speed: 3.2 * 2,
+      ).distance;
+      final quadrupled = sparkPosition(
+        const SparkCell(
+          at: Offset.zero,
+          wave: 0,
+          row: 0,
+          direction: Offset(1, 0),
+          reach: 4,
+        ),
+        0.4,
+        speed: 3.2 * 4,
+      ).distance;
+      expect(doubled, closeTo(base * 2, 1e-6));
+      expect(quadrupled, closeTo(base * 4, 1e-6));
+    },
+  );
 
   test('rows march inward and follow the short side', () {
     const ring = [Offset(0, 0), Offset(6, 0), Offset(6, 4), Offset(0, 4)];
@@ -133,6 +137,14 @@ void main() {
     expect(outer!.row, lessThan(inner!.row));
   });
 
+  test('a finished piece is not a leftover scrap', () {
+    expect(leftoverScrapIds(const ['done', 'scrap', 'also'], const {'done'}), [
+      'scrap',
+      'also',
+    ]);
+    expect(leftoverScrapIds(const ['done'], const {'done'}), isEmpty);
+  });
+
   test('leftover bursts stagger by 150 ms and keep the paper color', () {
     expect(Celebration.scrapStaggerSeconds, 0.15);
     expect(scrapDelay(0, afterSuccess: true), 0.15);
@@ -159,20 +171,31 @@ void main() {
       celebration: scrap.celebration,
     );
     expect(success.burst, isFalse);
-    expect(success.span, Celebration.fillSeconds);
+    expect(success.span, Celebration.glowSeconds);
     expect(success.fillColors, Celebration.successFill);
     expect(success.sparkColors, Celebration.successSpark);
   });
 
   test('a hole drops the cells inside it', () {
     const ring = [Offset(0, 0), Offset(2, 0), Offset(2, 2), Offset(0, 2)];
-    const hole = [Offset(0.5, 0.5), Offset(1.5, 0.5), Offset(1.5, 1.5), Offset(0.5, 1.5)];
+    const hole = [
+      Offset(0.5, 0.5),
+      Offset(1.5, 0.5),
+      Offset(1.5, 1.5),
+      Offset(0.5, 1.5),
+    ];
     final solid = prepareCelebration(ring);
     final opened = prepareCelebration(ring, holes: const [hole]);
     expect(solid.cells, hasLength(4 * 4));
     expect(opened.cells.length, lessThan(solid.cells.length));
     for (final cell in opened.cells) {
-      expect(cell.at.dx <= 0.5 || cell.at.dx >= 1.5 || cell.at.dy <= 0.5 || cell.at.dy >= 1.5, isTrue);
+      expect(
+        cell.at.dx <= 0.5 ||
+            cell.at.dx >= 1.5 ||
+            cell.at.dy <= 0.5 ||
+            cell.at.dy >= 1.5,
+        isTrue,
+      );
     }
   });
 }

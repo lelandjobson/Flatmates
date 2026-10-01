@@ -13,7 +13,10 @@ import '../gridcraft/edit.dart';
 import '../gridcraft/fold.dart';
 import '../gridcraft/level_io.dart';
 import '../gridcraft/painter.dart';
-import '../gridcraft/piece_quadtree.dart';
+import '../gridcraft/paper_stack.dart';
+import '../gridcraft/puzzle_advance.dart';
+import '../gridcraft/piece_glow.dart';
+import '../gridcraft/piece_glow_io.dart';
 import '../gridcraft/rules.dart';
 import '../gridcraft/scissor.dart';
 import '../gridcraft/scissor_glyph.dart';
@@ -26,10 +29,12 @@ import '../papercut/models.dart';
 import '../papercut/paper.dart';
 import '../papercut/split.dart';
 import '../ui/game/dev_tools_button.dart';
+import '../ui/game/grid_dev_panel.dart';
 import '../ui/craft_palette.dart';
 import '../ui/game/game_tool_carousel.dart';
 import '../ui/game/view_crosshair.dart';
 import '../ui/fm_dev_back_button.dart';
+import '../ui/grid/play_library_dialog.dart';
 import '../ui/fm_safe_area.dart';
 import '../ui/fm_screen.dart';
 
@@ -48,6 +53,7 @@ const Duration _kSplitDuration = Duration(milliseconds: 750);
 const Duration _kFoldDuration = Duration(milliseconds: 700);
 const Duration _kFocusDuration = Duration(milliseconds: 320);
 const Duration _kCelebrateDuration = Celebration.duration;
+const Duration _kAdvanceDuration = Duration(milliseconds: 780);
 
 /// Plays one level of a blueprint. Authoring lives in the puzzle editor.
 class GridPuzzleView extends StatefulWidget {
@@ -79,6 +85,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   late AnimationController _turnAnim;
   late AnimationController _splitAnim;
   late AnimationController _celebrateAnim;
+  late AnimationController _advanceAnim;
   late AnimationController _foldAnim;
   late AnimationController _rollNudge;
   late AnimationController _flightAnim;
@@ -99,6 +106,8 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   List<CelebrationPlayback> _lit = const [];
   Set<int> _liberated = {};
   bool _won = false;
+  bool _collectionWon = false;
+  bool _advancing = false;
   double _rollFrom = 0;
   double _rollTo = 0;
   GridStep? _turnFromStep;
@@ -108,7 +117,15 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   Offset? _turnOrigin;
   bool _turnClockwise = true;
 
-  List<GridBlueprint> _levels = [twinLsBlueprint()];
+  List<PuzzleCollection> _collections = const [];
+  int _collectionIndex = 0;
+  int _puzzleIndex = 0;
+  GridStep? _incomingStep;
+  PapercutSheet? _incomingSheet;
+  Offset _advanceFrom = Offset.zero;
+  Offset _advanceTo = Offset.zero;
+  double _advanceFromHeight = 0;
+  double _advanceToHeight = 0;
   late GridBlueprint _blueprint;
   GridStep _baseline = twinLsBlueprint().steps.first;
   int _stepIndex = 0;
@@ -133,7 +150,12 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   List<int?> _collisionLeft = const [];
   Set<int> _touching = {};
   int? _foldBend;
+
+  /// Sheet to show once the unfold swing finishes. While it plays, [_sheet]
+  /// keeps the fold and [_foldBend] runs backward.
+  PapercutSheet? _unfoldTo;
   int? _picked;
+  final _stacks = PaperStackPick();
   int? _dragPiece;
   bool _dragNudged = false;
   Offset? _dragSample;
@@ -146,7 +168,10 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   double _moved = 0;
   double _gestureScale = 1;
   bool _zoomed = false;
+  bool _devToolsOpen = false;
   bool _showTapDebug = false;
+  final PieceGlowStore _glowStore = PieceGlowStore();
+  PieceGlowSettings _glow = PieceGlowSettings.standard;
   Offset? _debugTap;
   String _debugSide = '';
   Size _viewport = Size.zero;
@@ -162,7 +187,6 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     super.initState();
     _camera = PapercutCamera()..addListener(_onCamera);
     _blueprint = widget.initial ?? twinLsBlueprint();
-    _levels = _seedLevels(_blueprint);
     _flash = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 450),
@@ -177,9 +201,13 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _splitAnim = AnimationController(vsync: this, duration: _kSplitDuration)
       ..addListener(_onSplitTick)
       ..addStatusListener(_onSplitStatus);
-    _celebrateAnim =
-        AnimationController(vsync: this, duration: _kCelebrateDuration)
-          ..addStatusListener(_onCelebrateStatus);
+    _celebrateAnim = AnimationController(
+      vsync: this,
+      duration: _kCelebrateDuration,
+    )..addStatusListener(_onCelebrateStatus);
+    _advanceAnim = AnimationController(vsync: this, duration: _kAdvanceDuration)
+      ..addListener(_onAdvanceTick)
+      ..addStatusListener(_onAdvanceStatus);
     _foldAnim = AnimationController(vsync: this, duration: _kFoldDuration)
       ..addStatusListener(_onFoldStatus);
     _rollNudge = AnimationController(vsync: this, duration: _kTurnDuration)
@@ -196,9 +224,18 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       _keys.requestFocus();
       _syncFlight();
     });
-    _refreshLevels();
+    _refreshCollections();
     _loadToolAnimations();
+    _loadGlow();
   }
+
+  Future<void> _loadGlow() async {
+    final glow = await _glowStore.load();
+    if (!mounted) return;
+    setState(() => _glow = glow);
+  }
+
+  Future<void> _saveGlow() => _glowStore.save(_glow);
 
   Future<void> _loadToolAnimations() async {
     final tools = await ToolAnimationStore().load();
@@ -219,6 +256,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _rollNudge.dispose();
     _keys.dispose();
     _splitAnim.dispose();
+    _advanceAnim.dispose();
     _celebrateAnim.dispose();
     _foldAnim.dispose();
     _turnAnim.dispose();
@@ -234,36 +272,119 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     if (mounted) setState(() {});
   }
 
-  List<GridBlueprint> _seedLevels(GridBlueprint blueprint) {
-    if (blueprint.id == 'twin-ls') return [blueprint];
-    return [blueprint, twinLsBlueprint()];
+  PuzzleCollection? get _collection {
+    if (_collections.isEmpty) return null;
+    final index = _collectionIndex.clamp(0, _collections.length - 1);
+    return _collections[index];
   }
 
-  Future<void> _refreshLevels() async {
-    final saved = await _levelsStore.loadAll();
+  String get _collectionName => _collection?.name ?? 'Collection';
+
+  GridBlueprint? get _nextPuzzle {
+    final collection = _collection;
+    if (collection == null) return null;
+    final next = _puzzleIndex + 1;
+    if (next < 0 || next >= collection.puzzles.length) return null;
+    return collection.puzzles[next];
+  }
+
+  Future<void> _refreshCollections() async {
+    final saved = await _levelsStore.loadCollections();
     if (!mounted) return;
-    final initial = widget.initial;
-    final levels = <GridBlueprint>[
-      twinLsBlueprint(),
-      ...saved.where((level) => level.id != 'twin-ls'),
-    ];
-    if (initial != null) {
-      final merged = [
-        for (final level in levels)
-          if (level.id == initial.id) initial else level,
-      ];
-      if (!merged.any((level) => level.id == initial.id)) {
-        merged.insert(0, initial);
-      }
-      setState(() => _levels = merged);
-      return;
-    }
+    final collections = _playCollections(saved);
+    final found = _findPuzzle(collections, _blueprint.id);
     setState(() {
-      _levels = levels;
+      _collections = collections;
+      if (found != null) {
+        _collectionIndex = found.$1;
+        _puzzleIndex = found.$2;
+        _keepLivePuzzle(found.$1, found.$2);
+      } else if (widget.initial != null &&
+          widget.initial!.id == _blueprint.id) {
+        _collections = [
+          PuzzleCollection(
+            id: 'unsaved',
+            name: 'Unsaved',
+            puzzles: [_blueprint],
+          ),
+          ...collections,
+        ];
+        _collectionIndex = 0;
+        _puzzleIndex = 0;
+      } else if (collections.isNotEmpty &&
+          collections.first.puzzles.isNotEmpty) {
+        _collectionIndex = 0;
+        _puzzleIndex = 0;
+        if (_blueprint.id != collections.first.puzzles.first.id) {
+          _loadStep(0, collections.first.puzzles.first);
+        }
+      }
     });
   }
 
-  void _loadStep(int index, GridBlueprint blueprint) {
+  /// Twin Ls stays available when it is not already saved in a folder.
+  List<PuzzleCollection> _playCollections(List<PuzzleCollection> saved) {
+    final hasTwin = saved.any(
+      (collection) =>
+          collection.puzzles.any((puzzle) => puzzle.id == 'twin-ls'),
+    );
+    if (hasTwin) return saved;
+    return [
+      PuzzleCollection(
+        id: 'twin-ls',
+        name: 'Twin Ls',
+        puzzles: [twinLsBlueprint()],
+      ),
+      ...saved,
+    ];
+  }
+
+  (int, int)? _findPuzzle(List<PuzzleCollection> collections, String id) {
+    for (var c = 0; c < collections.length; c++) {
+      final puzzles = collections[c].puzzles;
+      for (var p = 0; p < puzzles.length; p++) {
+        if (puzzles[p].id == id) return (c, p);
+      }
+    }
+    return null;
+  }
+
+  void _keepLivePuzzle(int collectionIndex, int puzzleIndex) {
+    final collection = _collections[collectionIndex];
+    final puzzles = [...collection.puzzles];
+    puzzles[puzzleIndex] = _blueprint;
+    _collections[collectionIndex] = PuzzleCollection(
+      id: collection.id,
+      name: collection.name,
+      puzzles: puzzles,
+    );
+  }
+
+  Future<void> _openLibrary() async {
+    if (_collections.isEmpty) return;
+    final pick = await showDialog<PlayLibraryPick>(
+      context: context,
+      builder: (context) => PlayLibraryDialog(
+        collections: _collections,
+        collectionIndex: _collectionIndex,
+        puzzleIndex: _puzzleIndex,
+      ),
+    );
+    if (pick == null || !mounted) return;
+    final collection = _collections[pick.collectionIndex];
+    final puzzle = collection.puzzles[pick.puzzleIndex];
+    if (puzzle.id == _blueprint.id &&
+        pick.collectionIndex == _collectionIndex) {
+      return;
+    }
+    setState(() {
+      _collectionIndex = pick.collectionIndex;
+      _puzzleIndex = pick.puzzleIndex;
+      _loadStep(0, puzzle);
+    });
+  }
+
+  void _loadStep(int index, GridBlueprint blueprint, {bool frame = true}) {
     if (_turnAnim.isAnimating) _turnAnim.stop();
     if (_splitAnim.isAnimating) _splitAnim.stop();
     _stopCelebrate();
@@ -279,6 +400,11 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _strokeDirection = null;
     _turnFromStep = null;
     _won = false;
+    _collectionWon = false;
+    _advancing = false;
+    _incomingStep = null;
+    _incomingSheet = null;
+    if (_advanceAnim.isAnimating) _advanceAnim.stop();
     _liberated = {};
     _lit = const [];
     _blueprint = blueprint;
@@ -306,10 +432,15 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       _tool = _GridTool.select;
     }
     _picked = null;
+    _stacks.clear();
     _dragPiece = null;
     _rulerX = _snap(_step.paper.center.dx, _step.gridSpacing);
-    _needsFrame = true;
-    _frame();
+    if (frame) {
+      _needsFrame = true;
+      _frame();
+    } else {
+      _needsFrame = false;
+    }
     _syncFlight();
   }
 
@@ -367,9 +498,9 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _flight.reset();
   }
 
-  bool get _gemsRemain => gemsRemain(_step.rules, _progress);
+  bool get _entryGemsRemain => entryGemsRemain(_step.rules, _progress);
 
-  /// Nearest gem the blade may still enter through.
+  /// Nearest number gem the blade may still enter through.
   Offset? _openGemNear(Offset world) {
     final rules = _step.rules;
     final reach = _step.gridSpacing * 1.5;
@@ -382,10 +513,6 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       best = point;
     }
 
-    for (var i = 0; i < rules.colors.length; i++) {
-      if (_progress.collectedColors.contains(i)) continue;
-      consider(rules.colors[i].point);
-    }
     for (final mark in rules.numbers) {
       if (mark.number < _progress.nextNumber) continue;
       consider(mark.point);
@@ -404,7 +531,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   void _onScissorTap(Offset world) {
     if (_cutting || _failing || _won) return;
     if (_march == null) {
-      if (_gemsRemain) {
+      if (_entryGemsRemain) {
         final gem = _openGemNear(world);
         if (gem == null) return;
         final edge = _nearestEdge(gem);
@@ -443,12 +570,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   }
 
   bool _beginStroke(Offset modelFrom, Offset modelTo) {
-    if (!_liveRules.allows(
-      modelFrom,
-      modelTo,
-      _progress,
-      paper: _step.paper,
-    )) {
+    if (!_liveRules.allows(modelFrom, modelTo, _progress, paper: _step.paper)) {
       return false;
     }
     final from = _shown(modelFrom);
@@ -519,12 +641,16 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
 
   /// Cut heading fixed to the paper. Camera roll does not change it.
   ///
-  /// With no march yet, a point on a piece faces into that piece. The
-  /// original sheet center is not a heading: on a fresh cut it points out
-  /// of the piece or into a corner.
-  Offset _paperHeading(Offset from, {PapercutPiece? piece}) {
+  /// With no march yet, a point on a piece faces into that piece. Near
+  /// blueprint linework the heading follows that edge, so a diagonal stroke
+  /// is not met on a slant and a gem does not aim at the sheet center.
+  Offset _paperHeading(Offset from, {PapercutPiece? piece, Offset? aim}) {
     final march = _march?.direction;
     if (march != null && march.distance > 1e-6) return march;
+    if (aim != null) {
+      final along = headingAlongLinework(aim: aim, from: from, step: _step);
+      if (along != null) return along;
+    }
     final owner = piece ?? _bladePiece();
     return openingHeading(
       from,
@@ -696,6 +822,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       _strokeDirection = null;
       _modelEnd = null;
       _picked = null;
+      _stacks.clear();
       _dragPiece = null;
       _failureCue = null;
       _failing = false;
@@ -851,9 +978,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     );
     if (!ruling.allowed) return null;
     if (ruling.failed) {
-      _failLevel(
-        ruling.cause ?? const FailureCue(FailureKind.color, 0),
-      );
+      _failLevel(ruling.cause ?? const FailureCue(FailureKind.color, 0));
       return null;
     }
     final pierced = piercedBlueprint(_step, march.position, end);
@@ -888,11 +1013,17 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     final split = commit.march == null;
     final freed = split ? _newlyFreed(base, settled) : const <PapercutPiece>[];
     final winning = _wouldWin(settled);
-    // A finished blueprint piece stays on its outline, and so does the
-    // paper it was cut from. A won level leaves every scrap in place so
-    // the leftover bursts land on the paper. Only other cuts pull pieces apart.
-    final spread = split && freed.isEmpty && !winning
-        ? spreadPieces(base, settled, _step.gridSpacing)
+    // A finished blueprint piece stays on its outline. The scrap steps away
+    // so that piece is its own object. A won level leaves every scrap in
+    // place so the leftover bursts land on the paper.
+    final spread = split
+        ? layoutAfterSplit(
+            base,
+            settled,
+            _step.gridSpacing,
+            finished: {for (final piece in freed) piece.id},
+            winning: winning,
+          )
         : settled;
     setState(() {
       _sheet = split ? settled : spread;
@@ -913,7 +1044,8 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     if (_failed || _failIfRemovedEarly()) return null;
     _splitFrom = [for (final piece in settled.pieces) piece.separation];
     _splitTo = [for (final piece in spread.pieces) piece.separation];
-    final separates = _splitFrom.length == _splitTo.length &&
+    final separates =
+        _splitFrom.length == _splitTo.length &&
         [
           for (var i = 0; i < _splitFrom.length; i++)
             _splitFrom[i] != _splitTo[i],
@@ -974,11 +1106,13 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   }
 
   /// Green light for each newly freed blueprint piece. When the level is won,
-  /// every leftover paper piece bursts in its own color, 150 ms apart.
+  /// leftover paper bursts in its own color, 150 ms apart. Pieces that were
+  /// already completed stay green and are not part of that burst.
   void _playCutCelebration(List<PapercutPiece> freed) {
     if (_won || _failed) return;
     _liberated.addAll(liberatedPieceIndexes(_step, _sheet));
     final won = piecesLiberated(_step, _liberated) && _gemsSatisfied();
+    final finished = _liberatedPieceIds();
     final plays = <CelebrationPlayback>[
       for (final piece in freed)
         CelebrationPlayback(
@@ -992,15 +1126,18 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
         ),
     ];
     if (won) {
-      final taken = {for (final piece in freed) piece.id};
-      var scrap = 0;
-      for (final piece in _sheet.pieces) {
-        if (taken.contains(piece.id)) continue;
+      final scraps = leftoverScrapIds([
+        for (final piece in _sheet.pieces) piece.id,
+      ], finished);
+      final byId = {for (final piece in _sheet.pieces) piece.id: piece};
+      for (var i = 0; i < scraps.length; i++) {
+        final piece = byId[scraps[i]];
+        if (piece == null) continue;
         plays.add(
           CelebrationPlayback(
             pieceId: piece.id,
             anchor: piece.separation,
-            delay: scrapDelay(scrap, afterSuccess: freed.isNotEmpty),
+            delay: scrapDelay(i, afterSuccess: freed.isNotEmpty),
             ink: piece.color,
             burst: true,
             celebration: prepareCelebration(
@@ -1010,9 +1147,9 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
             ),
           ),
         );
-        scrap++;
       }
     }
+    final lighting = {for (final piece in freed) piece.id};
     if (!won && plays.isEmpty) return;
     var span = 0.0;
     for (final play in plays) {
@@ -1020,11 +1157,113 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     }
     setState(() {
       _won = won;
+      _lit = _steadyGreen(except: lighting);
       if (plays.isNotEmpty) _celebrations = plays;
     });
-    if (plays.isEmpty) return;
+    if (plays.isEmpty) {
+      if (won) _presentNext();
+      return;
+    }
     _celebrateAnim.duration = Duration(microseconds: (span * 1000000).round());
     _celebrateAnim.forward(from: 0);
+  }
+
+  /// The finished puzzle stays on screen. The next one is parked off to the
+  /// right, then the camera travels to it. The last puzzle in the collection
+  /// ends on the victory screen instead.
+  void _presentNext() {
+    if (_advancing || _collectionWon) return;
+    final next = _nextPuzzle;
+    final step = next == null || next.steps.isEmpty ? null : next.steps.first;
+    if (next == null || step == null) {
+      setState(() => _collectionWon = true);
+      return;
+    }
+    final right = screenRight(_camera.roll);
+    final shift = placeNextPuzzle(
+      occupied: drawnPiecePoints(_sheet.pieces),
+      nextPaper: step.paper,
+      lookAt: _camera.lookAt,
+      right: right,
+      halfWidth: visibleHalfWidth(
+        framedHalfHeight: _camera.framedHalfHeightMm,
+        viewport: _viewport,
+      ),
+      padding: math.max(2, step.gridSpacing * 2),
+    );
+    final sheetMm = math.max(step.paper.width, step.paper.height);
+    _advanceFrom = _camera.lookAt;
+    _advanceTo = step.paper.center + shift;
+    _advanceFromHeight = _camera.framedHalfHeightMm;
+    _advanceToHeight = _camera.halfHeightForSheet(_viewport, sheetMm: sheetMm);
+    setState(() {
+      _advancing = true;
+      _incomingStep = shiftStep(step, shift);
+      _incomingSheet = shiftSheet(_freshSheet(step), shift);
+    });
+    _advanceAnim.forward(from: 0);
+  }
+
+  void _onAdvanceTick() {
+    final t = Curves.easeInOutCubic.transform(_advanceAnim.value);
+    _camera.moveLook(
+      lookAt: Offset.lerp(_advanceFrom, _advanceTo, t)!,
+      halfHeight:
+          _advanceFromHeight + (_advanceToHeight - _advanceFromHeight) * t,
+    );
+  }
+
+  void _onAdvanceStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed || !_advancing) return;
+    final collection = _collection;
+    if (collection == null) return;
+    final nextIndex = _puzzleIndex + 1;
+    if (nextIndex >= collection.puzzles.length) return;
+    final puzzle = collection.puzzles[nextIndex];
+    final center = puzzle.steps.isEmpty
+        ? _camera.lookAt
+        : puzzle.steps.first.paper.center;
+    setState(() {
+      _puzzleIndex = nextIndex;
+      _loadStep(0, puzzle, frame: false);
+    });
+    _camera.moveLook(lookAt: center, halfHeight: _advanceToHeight);
+  }
+
+  /// Paper pieces that already match a freed blueprint ring.
+  Set<String> _liberatedPieceIds() {
+    final ids = <String>{};
+    for (final index in _liberated) {
+      if (index < 0 || index >= _step.polygons.length) continue;
+      final piece = paperMatchingRing(_step.polygons[index], _sheet);
+      if (piece != null) ids.add(piece.id);
+    }
+    return ids;
+  }
+
+  /// Resting glow for finished pieces, other than ones still lighting up.
+  List<CelebrationPlayback> _steadyGreen({required Set<String> except}) {
+    final plays = <CelebrationPlayback>[];
+    final seen = <String>{};
+    for (final index in _liberated) {
+      if (index < 0 || index >= _step.polygons.length) continue;
+      final piece = paperMatchingRing(_step.polygons[index], _sheet);
+      if (piece == null || !seen.add(piece.id) || except.contains(piece.id)) {
+        continue;
+      }
+      plays.add(
+        CelebrationPlayback(
+          pieceId: piece.id,
+          anchor: piece.separation,
+          celebration: prepareCelebration(
+            piece.vertices,
+            gridSpacing: _step.gridSpacing,
+            holes: piece.holes,
+          ),
+        ),
+      );
+    }
+    return plays;
   }
 
   bool _isCelebrating(String id) {
@@ -1064,17 +1303,19 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     ];
     _celebrations = const [];
     if (!mounted) return;
-    if (staying.isEmpty && bursting.isEmpty) return;
-    setState(() {
-      if (staying.isNotEmpty) _lit = [..._lit, ...staying];
-      if (bursting.isEmpty) return;
-      _sheet = _sheet.copyWith(
-        pieces: [
-          for (final piece in _sheet.pieces)
-            if (!bursting.contains(piece.id)) piece,
-        ],
-      );
-    });
+    if (staying.isNotEmpty || bursting.isNotEmpty) {
+      setState(() {
+        if (staying.isNotEmpty) _lit = [..._lit, ...staying];
+        if (bursting.isEmpty) return;
+        _sheet = _sheet.copyWith(
+          pieces: [
+            for (final piece in _sheet.pieces)
+              if (!bursting.contains(piece.id)) piece,
+          ],
+        );
+      });
+    }
+    if (_won) _presentNext();
   }
 
   void _onSplitTick() {
@@ -1098,38 +1339,68 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   void _stopFold() {
     if (_foldAnim.isAnimating) _foldAnim.stop();
     _foldBend = null;
+    _unfoldTo = null;
   }
 
+  /// A fold lands at completed. An unfold runs backward and lands at dismissed.
+  /// Each also reports the opposite status when it jumps to its start value.
   void _onFoldStatus(AnimationStatus status) {
-    if (status != AnimationStatus.completed) return;
     if (!mounted) return;
-    setState(() => _foldBend = null);
+    final opened = _unfoldTo;
+    if (status == AnimationStatus.completed && opened == null) {
+      setState(() => _foldBend = null);
+    } else if (status == AnimationStatus.dismissed && opened != null) {
+      setState(() {
+        _sheet = opened;
+        _unfoldTo = null;
+        _foldBend = null;
+      });
+    }
   }
 
   FolderGuide? _folderGuide(Offset? aim) {
     if (_tool != _GridTool.folder || aim == null || _foldAnim.isAnimating) {
       return null;
     }
-    return folderGuide(_toModel(aim), _sheet, _step.gridSpacing);
+    if (unfoldCue(_sheet, aim) != null) return null;
+    return folderGuide(aim, _sheet, _step.gridSpacing);
+  }
+
+  /// [aim] stays where the paper is drawn: [unfoldCue] and [folderGuide]
+  /// already add each piece's separation and fold reflections.
+  (Offset, Offset)? _unfoldCue(Offset? aim) {
+    if (_tool != _GridTool.folder || aim == null || _foldAnim.isAnimating) {
+      return null;
+    }
+    return unfoldCue(_sheet, aim);
   }
 
   /// [toward] is set by a tap above or below the cursor. A tap on a crease
   /// unfolds it. The cursor itself is the side that stays flat.
   void _onFolderTap(Offset aim, {bool? toward}) {
     if (_failing || _won || _foldAnim.isAnimating) return;
-    final world = _toModel(aim);
-    final opened = unfoldAt(_sheet, world);
+    final opened = unfoldAt(_sheet, aim);
     if (opened != null) {
       if (!_canSpend(CraftTool.folder, _folderUses)) return;
+      final bend = _openedJoint(_sheet, opened);
       _pushUndo();
+      if (bend == null) {
+        setState(() {
+          _sheet = opened;
+          _folderUses += 1;
+        });
+        return;
+      }
       setState(() {
-        _sheet = opened;
         _folderUses += 1;
+        _foldBend = bend;
+        _unfoldTo = opened;
       });
+      _foldAnim.reverse(from: 1);
       return;
     }
     if (toward == null) return;
-    final guide = folderGuide(world, _sheet, _step.gridSpacing);
+    final guide = folderGuide(aim, _sheet, _step.gridSpacing);
     final flap = guide?.flap;
     if (guide == null || flap == null) return;
     if (!_canSpend(CraftTool.folder, _folderUses)) return;
@@ -1138,6 +1409,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       spanA: guide.line.$1,
       spanB: guide.line.$2,
       flapPoint: flap,
+      cutShift: guide.separation,
       facing: toward ? FoldFacing.toward : FoldFacing.away,
       noFold: _step.permutation.noFold,
       blueprintPieces: _step.closedPolygons,
@@ -1153,10 +1425,42 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _playCutCelebration(const []);
   }
 
+  /// Index of the fold that is folded in [before] and open in [after].
+  int? _openedJoint(PapercutSheet before, PapercutSheet after) {
+    final count = math.min(before.folds.length, after.folds.length);
+    for (var i = 0; i < count; i++) {
+      if (before.folds[i].facing == FoldFacing.unfolded) continue;
+      if (after.folds[i].facing == FoldFacing.unfolded) return i;
+    }
+    return null;
+  }
+
+  /// Snapped punch centers under the crosshair, including fold mirrors.
+  List<Offset> _punchPreviewCenters(Offset? aim) {
+    if (_tool != _GridTool.holePunch || aim == null || _failing || _won) {
+      return const [];
+    }
+    final center = snapPunchCenter(_toModel(aim), _step.gridSpacing);
+    final centers = <Offset>[center];
+    for (final joint in _sheet.folds) {
+      if (joint.facing == FoldFacing.unfolded) continue;
+      centers.add(reflectAcrossLine(center, joint.a, joint.b));
+    }
+    return centers;
+  }
+
+  bool _punchPreviewBlocked(Offset? aim) {
+    for (final center in _punchPreviewCenters(aim)) {
+      final outline = punchOutline(center, _punchShape, _punchSize);
+      if (punchCrossesBlueprint(outline, _step.closedPolygons)) return true;
+    }
+    return false;
+  }
+
   void _onPunch(Offset aim) {
     if (_failing || _won) return;
     if (!_canSpend(CraftTool.holePunch, _punchUses)) return;
-    final world = _toModel(aim);
+    final world = snapPunchCenter(_toModel(aim), _step.gridSpacing);
     final outline = punchOutline(world, _punchShape, _punchSize);
     if (punchCrossesBlueprint(outline, _step.closedPolygons)) return;
     var next = subtractRegion(_sheet, outline);
@@ -1164,8 +1468,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     for (final joint in _sheet.folds) {
       if (joint.facing == FoldFacing.unfolded) continue;
       final mirrored = [
-        for (final point in outline)
-          reflectAcrossLine(point, joint.a, joint.b),
+        for (final point in outline) reflectAcrossLine(point, joint.a, joint.b),
       ];
       next = subtractRegion(next!, mirrored) ?? next;
     }
@@ -1247,6 +1550,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   }
 
   void _clear() {
+    if (_advancing) return;
     _turnAnim.stop();
     _splitAnim.stop();
     _stopCelebrate();
@@ -1275,8 +1579,10 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       _progress = const CutProgress();
       _cutQueue.clear();
       _picked = null;
+      _stacks.clear();
       _dragPiece = null;
       _won = false;
+      _collectionWon = false;
       _liberated = {};
       _lit = const [];
     });
@@ -1285,7 +1591,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
 
   Future<void> _save() async {
     await _levelsStore.save(_blueprint);
-    await _refreshLevels();
+    await _refreshCollections();
   }
 
   void _pushUndo() {
@@ -1300,7 +1606,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   }
 
   void _undoLast() {
-    if (_locked || _undo.isEmpty) return;
+    if (_locked || _undo.isEmpty || _advancing) return;
     _splitAnim.stop();
     _stopCelebrate();
     _stopFold();
@@ -1312,9 +1618,11 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       _bladePieceId = null;
       _cutQueue.clear();
       if (_picked != null && _picked! >= _sheet.pieces.length) _picked = null;
+      _stacks.adopt(_picked);
       _won = false;
+      _collectionWon = false;
       _liberated = _undoLiberated.isEmpty ? {} : _undoLiberated.removeLast();
-      _lit = const [];
+      _lit = _steadyGreen(except: const {});
     });
     _syncFlight();
   }
@@ -1343,7 +1651,11 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     return forwardCuts(
       from: march.position,
       forward: forward,
-      directions: paperTurnDirections(forward),
+      directions: lineworkDirections(
+        at: march.position,
+        closed: _bladeOutlines(piece),
+        open: [...openBlueprint(_step), ..._sheet.cutStrokes, march.path],
+      ),
       closed: _bladeOutlines(piece),
       open: [...openBlueprint(_step), ..._sheet.cutStrokes],
       boundary: _paperEdges(piece),
@@ -1421,8 +1733,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       final length = wish.distance;
       if (length < 1e-8) return null;
       final heading = wish / length;
-      final dot =
-          cut.direction.dx * heading.dx + cut.direction.dy * heading.dy;
+      final dot = cut.direction.dx * heading.dx + cut.direction.dy * heading.dy;
       return dot > 0.2 ? cut : null;
     }
 
@@ -1534,7 +1845,9 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                 Positioned.fill(
                   child: Listener(
                     onPointerSignal: (event) {
-                      if (event is! PointerScrollEvent ||
+                      if (_advancing ||
+                          _collectionWon ||
+                          event is! PointerScrollEvent ||
                           event.scrollDelta.dy == 0) {
                         return;
                       }
@@ -1553,6 +1866,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                           _flash,
                           _failAnim,
                           _celebrateAnim,
+                          _advanceAnim,
                           _flightAnim,
                           _foldAnim,
                         ]),
@@ -1590,16 +1904,38 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                                   ? _lightDirection()
                                   : null,
                               lightThrow: _step.attachment.flashlightThrow,
-                              foldLine: guide?.line,
+                              foldLine: guide?.drawn,
+                              unfoldLine: _unfoldCue(aim),
+                              punchCenters: _punchPreviewCenters(aim),
+                              punchRadius: _punchSize / 2,
+                              punchShape: _punchShape,
+                              punchBlocked: _punchPreviewBlocked(aim),
                               foldBend: _foldBend,
                               foldBendT: _foldAnim.value,
                               collisionLeft: _collisionLeft,
                               celebrations: _celebrations,
                               celebrateSeconds: _celebrateSeconds,
                               lit: _lit,
+                              glow: _glow,
                               clearedRings: _liberated,
                             ),
-                            child: const SizedBox.expand(),
+                            child:
+                                _incomingStep == null || _incomingSheet == null
+                                ? const SizedBox.expand()
+                                : CustomPaint(
+                                    painter: GridPuzzlePainter(
+                                      camera: _camera,
+                                      step: _incomingStep!,
+                                      sheet: _incomingSheet!,
+                                      march: null,
+                                      flash: 0,
+                                      rulerX: null,
+                                      showRuler: false,
+                                      selected: const {},
+                                      drawGrid: false,
+                                    ),
+                                    child: const SizedBox.expand(),
+                                  ),
                           );
                         },
                       ),
@@ -1626,25 +1962,39 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                 const Positioned.fill(
                   child: IgnorePointer(child: ViewCrosshair()),
                 ),
-                if (_won)
-                  const Positioned.fill(
+                if (_collectionWon)
+                  Positioned.fill(
                     child: IgnorePointer(
                       child: Center(
-                        child: Text(
-                          'victory',
-                          key: Key('grid-victory'),
-                          style: TextStyle(
-                            color: Color(0xFFFFFFFF),
-                            fontSize: 56,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 6,
-                            shadows: [
-                              Shadow(
-                                color: Color(0x99000000),
-                                blurRadius: 16,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text(
+                              'victory',
+                              key: Key('grid-victory'),
+                              style: TextStyle(
+                                color: Color(0xFFFFFFFF),
+                                fontSize: 56,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 6,
+                                shadows: [
+                                  Shadow(
+                                    color: Color(0x99000000),
+                                    blurRadius: 16,
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _collectionName,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 18,
+                                letterSpacing: 1,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -1663,6 +2013,19 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                     ),
                   ),
                 FmSafePositioned(top: 8, left: 8, right: 8, child: _topBar()),
+                if (_devToolsOpen)
+                  FmSafePositioned(
+                    top: 196,
+                    right: 12,
+                    child: GridDevPanel(
+                      glow: _glow,
+                      onGlowChanged: (glow) => setState(() => _glow = glow),
+                      onSave: _saveGlow,
+                      showTapDebug: _showTapDebug,
+                      onShowTapDebugChanged: (value) =>
+                          setState(() => _showTapDebug = value),
+                    ),
+                  ),
                 FmSafePositioned(
                   left: 0,
                   right: 0,
@@ -1695,18 +2058,15 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     if (_tool != _GridTool.select || _cutting || _locked) return;
     final world = _camera.planePoint(details.localFocalPoint, _viewport);
     if (world == null) return;
-    final index = closestPieceIndex(
-      point: world,
-      pieces: _sheet.pieces,
-      unit: _step.gridSpacing,
-    );
-    if (index == null) return;
+    final index = _stacks.press(world, _sheet);
+    if (index == null || index >= _sheet.pieces.length) return;
     if (_isCelebrating(_sheet.pieces[index].id)) return;
     _dragPiece = index;
-    setState(() => _picked = index);
+    setState(() => _picked = _stacks.selected);
   }
 
   void _onScaleUpdate(ScaleUpdateDetails details) {
+    if (_advancing || _collectionWon) return;
     final local = details.localFocalPoint;
     final previous = _lastFocal ?? local;
     final delta = local - previous;
@@ -1739,7 +2099,6 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
 
   void _onScaleEnd(ScaleEndDetails details) {
     if (_failing) return;
-    final dragPiece = _dragPiece;
     final nudged = _dragNudged;
     _dragPiece = null;
     _dragNudged = false;
@@ -1758,7 +2117,13 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     }
     if (_moved > 12) return;
     if (_tool == _GridTool.select) {
-      if (!nudged) setState(() => _picked = dragPiece);
+      if (!nudged && _lastFocal != null) {
+        final world = _camera.planePoint(_lastFocal!, _viewport);
+        final index = world == null
+            ? null
+            : _stacks.tap(world, _sheet, DateTime.now());
+        setState(() => _picked = index);
+      }
       return;
     }
     if (_tool == _GridTool.scissors) {
@@ -1767,17 +2132,8 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
         _enqueueCut(_tapSide(_lastFocal));
         return;
       }
-      final side = _tapSide(_lastFocal);
       if (_directing) {
         _chooseCut(_lastFocal);
-        return;
-      }
-      if (side == _CutSide.left) {
-        _nudgeRoll(counterclockwise: false);
-        return;
-      }
-      if (side == _CutSide.right) {
-        _nudgeRoll(counterclockwise: true);
         return;
       }
     }
@@ -1859,10 +2215,10 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
 
   (Offset, Offset)? _scissorGhost(Offset? aim) {
     if (_tool != _GridTool.scissors || _failing) return null;
-    final edge = _march != null || aim == null || _gemsRemain
+    final edge = _march != null || aim == null || _entryGemsRemain
         ? null
         : _nearestEdge(aim);
-    final gem = _march == null && aim != null && _gemsRemain
+    final gem = _march == null && aim != null && _entryGemsRemain
         ? _openGemNear(aim)
         : null;
     final from = _march?.position ?? gem ?? edge?.model;
@@ -1873,7 +2229,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     final outlines = _bladeOutlines(piece);
     final aimed = nextOutlineHit(
       from: from,
-      direction: _paperHeading(from, piece: piece),
+      direction: _paperHeading(from, piece: piece, aim: aim),
       closed: outlines,
       open: [...openBlueprint(_step), ..._sheet.cutStrokes],
       skipCollinear: _skipPenciled,
@@ -1954,7 +2310,9 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
 
   String? _ruleStatus() {
     final rules = _step.rules;
-    if (rules.isEmpty && _step.tools == null && _step.scissorLengthBudget == null) {
+    if (rules.isEmpty &&
+        _step.tools == null &&
+        _step.scissorLengthBudget == null) {
       return null;
     }
     final parts = <String>[];
@@ -1987,11 +2345,19 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     final filter = _step.tools;
     if (filter != null && filter.allows(CraftTool.folder)) {
       final cap = filter.budget(CraftTool.folder);
-      parts.add(cap == null ? 'folds $_folderUses' : 'folds $_folderUses/${cap.toStringAsFixed(0)}');
+      parts.add(
+        cap == null
+            ? 'folds $_folderUses'
+            : 'folds $_folderUses/${cap.toStringAsFixed(0)}',
+      );
     }
     if (filter != null && filter.allows(CraftTool.holePunch)) {
       final cap = filter.budget(CraftTool.holePunch);
-      parts.add(cap == null ? 'punches $_punchUses' : 'punches $_punchUses/${cap.toStringAsFixed(0)}');
+      parts.add(
+        cap == null
+            ? 'punches $_punchUses'
+            : 'punches $_punchUses/${cap.toStringAsFixed(0)}',
+      );
     }
     if (parts.isEmpty) return null;
     return parts.join('  ');
@@ -2136,24 +2502,33 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
 
   Widget _header() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _dropdown<String>(
-          keyName: 'grid-level-dropdown',
-          value: _blueprint.id,
-          items: {for (final level in _levels) level.id: level.name},
-          onChanged: (id) {
-            final level = _levels.where((item) => item.id == id).firstOrNull;
-            if (level == null) return;
-            setState(() => _loadStep(0, level));
-          },
+        Row(
+          children: [
+            Expanded(
+              child: _libraryButton(
+                key: const Key('grid-collection-button'),
+                label: 'Collection',
+                name: _collectionName,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: _libraryButton(
+                key: const Key('grid-puzzle-button'),
+                label: 'Puzzle',
+                name: _blueprint.name,
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 8),
         Row(
           children: [
             DevToolsButton(
-              active: _showTapDebug,
-              onPressed: () => setState(() => _showTapDebug = !_showTapDebug),
+              active: _devToolsOpen,
+              onPressed: () => setState(() => _devToolsOpen = !_devToolsOpen),
             ),
             TextButton(onPressed: _clear, child: const Text('Clear')),
             TextButton(onPressed: _save, child: const Text('Save')),
@@ -2172,6 +2547,36 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     );
   }
 
+  Widget _libraryButton({
+    required Key key,
+    required String label,
+    required String name,
+  }) {
+    return TextButton(
+      key: key,
+      onPressed: _openLibrary,
+      style: TextButton.styleFrom(
+        backgroundColor: const Color(0xFF1A1A1A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white54, fontSize: 11),
+          ),
+          Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _toolbar() {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -2181,7 +2586,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
           const Padding(
             padding: EdgeInsets.only(bottom: 6),
             child: Text(
-              'Pan the cursor onto the side to keep. Tap above it to fold toward you, below to fold down.',
+              'The crease follows the nearest edge. Tap above it to fold toward you, below to fold down.',
               style: TextStyle(color: Colors.white70, fontSize: 12),
             ),
           ),
@@ -2418,44 +2823,6 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       icon: Icon(
         Icons.explore,
         color: _rolling ? const Color(0xFFFFD54F) : Colors.white,
-      ),
-    );
-  }
-
-  Widget _dropdown<T>({
-    required String keyName,
-    required T value,
-    required Map<T, String> items,
-    required ValueChanged<T> onChanged,
-  }) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: DropdownButtonHideUnderline(
-          child: DropdownButton<T>(
-            key: Key(keyName),
-            isDense: true,
-            dropdownColor: const Color(0xFF1A1A1A),
-            value: items.containsKey(value) ? value : items.keys.first,
-            items: [
-              for (final entry in items.entries)
-                DropdownMenuItem(
-                  value: entry.key,
-                  child: Text(
-                    entry.value,
-                    style: const TextStyle(color: Colors.white70),
-                  ),
-                ),
-            ],
-            onChanged: (next) {
-              if (next != null) onChanged(next);
-            },
-          ),
-        ),
       ),
     );
   }

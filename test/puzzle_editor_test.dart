@@ -5,6 +5,7 @@ import 'package:flatmates/gridcraft/blueprint.dart';
 import 'package:flatmates/gridcraft/edit.dart';
 import 'package:flatmates/gridcraft/level_io.dart';
 import 'package:flatmates/gridcraft/rules.dart';
+import 'package:flatmates/gridcraft/twin_ls.dart';
 import 'package:flatmates/screens/puzzle_editor_view.dart';
 import 'package:flatmates/ui/fm_theme.dart';
 import 'package:flutter/material.dart';
@@ -178,14 +179,25 @@ void main() {
     expect(inward.allowed, isTrue);
     expect(inward.progress.collectedColors, {0});
     expect(gemsRemain(gate, inward.progress), isFalse);
-    final blockedEntry = gate.consider(
+    final edgeEntry = gate.consider(
+      const Offset(0, 2),
+      const Offset(1, 2),
+      open,
+      paper: paper,
+    );
+    expect(edgeEntry.allowed, isTrue);
+    expect(edgeEntry.progress.collectedColors, isEmpty);
+    expect(entryGemsRemain(gate, open), isFalse);
+
+    const numberGate = GridRules(numbers: [OrderMark(Offset.zero, 1)]);
+    expect(entryGemsRemain(numberGate, open), isTrue);
+    final blockedEntry = numberGate.consider(
       const Offset(0, 2),
       const Offset(1, 2),
       open,
       paper: paper,
     );
     expect(blockedEntry.allowed, isFalse);
-    expect(blockedEntry.progress.collectedColors, isEmpty);
 
     const numbers = GridRules(
       numbers: [OrderMark(Offset(1, 0), 2), OrderMark(Offset(2, 0), 1)],
@@ -376,7 +388,9 @@ void main() {
     expect(find.textContaining('cannot travel through'), findsOneWidget);
   });
 
-  testWidgets('editor menus fit beside help on a narrow screen', (tester) async {
+  testWidgets('editor menus fit beside help on a narrow screen', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(640, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -434,4 +448,262 @@ void main() {
     expect(loaded.scissorLengthBudget, 6);
     expect(loaded.toJson().containsKey('edgeStyles'), isTrue);
   });
+
+  test('a loose save reloads spacing, margin, and polygons', () async {
+    final directory = Directory.systemTemp.createTempSync('puzzle-play-save');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final store = LevelStore(directory: directory);
+    final level = twinLsBlueprint();
+    await store.save(level);
+    final loaded = await store.loadAll();
+    expect(loaded, hasLength(1));
+    final step = loaded.single.steps.single;
+    expect(step.gridSpacing, level.steps.single.gridSpacing);
+    expect(step.paperMargin, level.steps.single.paperMargin);
+    expect(step.polygons, level.steps.single.polygons);
+    await store.save(loaded.single);
+    expect(File('${directory.path}/twin-ls.json').existsSync(), isTrue);
+  });
+
+  test(
+    'save writes a collection folder and rename deletes the old puzzle',
+    () async {
+      final directory = Directory.systemTemp.createTempSync('puzzle-folders');
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final store = LevelStore(directory: directory);
+      final house = await store.savePuzzle(
+        collectionName: 'Front Door',
+        puzzle: _storedPuzzle('door', 'Door'),
+        fromCollectionId: null,
+      );
+      expect(house.name, 'Front Door');
+      expect(house.id, 'front-door');
+      final manifest = File('${directory.path}/front-door/collection.json');
+      expect(manifest.readAsStringSync(), contains('Front Door'));
+      expect(
+        File('${directory.path}/front-door/door.json').existsSync(),
+        isTrue,
+      );
+
+      await store.savePuzzle(
+        collectionName: 'Front Door',
+        puzzle: _storedPuzzle('window', 'Window'),
+        fromCollectionId: house.id,
+      );
+      await store.savePuzzle(
+        collectionName: 'Front Door',
+        puzzle: _storedPuzzle('door', 'Gate'),
+        fromCollectionId: house.id,
+      );
+      expect(
+        File('${directory.path}/front-door/door.json').existsSync(),
+        isFalse,
+      );
+      expect(
+        File('${directory.path}/front-door/gate.json').existsSync(),
+        isTrue,
+      );
+      expect(
+        File('${directory.path}/front-door/window.json').existsSync(),
+        isTrue,
+      );
+
+      await store.savePuzzle(
+        collectionName: 'Estate',
+        puzzle: _storedPuzzle('door', 'Gate'),
+        fromCollectionId: house.id,
+      );
+      expect(Directory('${directory.path}/front-door').existsSync(), isFalse);
+      expect(File('${directory.path}/estate/gate.json').existsSync(), isTrue);
+      expect(File('${directory.path}/estate/window.json').existsSync(), isTrue);
+      final loaded = await store.loadAll();
+      expect(loaded.map((puzzle) => puzzle.name), ['Gate', 'Window']);
+    },
+  );
+
+  test('a taken name leaves the existing puzzle file in place', () async {
+    final directory = Directory.systemTemp.createTempSync('puzzle-taken');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final store = LevelStore(directory: directory);
+    final house = await store.savePuzzle(
+      collectionName: 'House',
+      puzzle: _storedPuzzle('door', 'Door'),
+      fromCollectionId: null,
+    );
+    await store.savePuzzle(
+      collectionName: 'House',
+      puzzle: _storedPuzzle('window', 'Window'),
+      fromCollectionId: house.id,
+    );
+    await expectLater(
+      store.savePuzzle(
+        collectionName: 'House',
+        puzzle: _storedPuzzle('window', 'Door'),
+        fromCollectionId: house.id,
+      ),
+      throwsA(
+        isA<LevelSaveException>().having(
+          (error) => error.failure,
+          'failure',
+          LevelSaveFailure.puzzleTaken,
+        ),
+      ),
+    );
+    expect(File('${directory.path}/house/door.json').existsSync(), isTrue);
+    expect(File('${directory.path}/house/window.json').existsSync(), isTrue);
+  });
+
+  test(
+    'loose puzzle files load as Puzzles and move into a folder on save',
+    () async {
+      final directory = Directory.systemTemp.createTempSync('puzzle-loose');
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final store = LevelStore(directory: directory);
+      await store.save(_storedPuzzle('one', 'Attic'));
+      await store.save(_storedPuzzle('two', 'Cellar'));
+      final loose = await store.loadCollections();
+      expect(loose.single.name, 'Puzzles');
+      expect(loose.single.loose, isTrue);
+      expect(File('${directory.path}/one.json').existsSync(), isTrue);
+
+      await store.savePuzzle(
+        collectionName: 'Puzzles',
+        puzzle: _storedPuzzle('one', 'Attic'),
+        fromCollectionId: loose.single.id,
+      );
+      expect(File('${directory.path}/one.json').existsSync(), isFalse);
+      expect(File('${directory.path}/two.json').existsSync(), isFalse);
+      expect(File('${directory.path}/puzzles/attic.json').existsSync(), isTrue);
+      expect(File('${directory.path}/puzzles/two.json').existsSync(), isTrue);
+      expect(
+        File('${directory.path}/puzzles/collection.json').readAsStringSync(),
+        contains('Puzzles'),
+      );
+      final flat = await store.loadAll();
+      expect(flat, hasLength(2));
+    },
+  );
+
+  testWidgets('save names both, and unsaved edits ask before switching', (
+    tester,
+  ) async {
+    final directory = Directory.systemTemp.createTempSync('puzzle-save-ui');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final store = LevelStore(directory: directory);
+    await store.savePuzzle(
+      collectionName: 'House',
+      puzzle: _storedPuzzle('door', 'Door'),
+      fromCollectionId: null,
+    );
+    await _pumpEditor(tester, store);
+    await _pumpDialog(tester);
+
+    await tester.tap(find.byKey(const Key('puzzle-save')));
+    await _pumpDialog(tester);
+    expect(find.byKey(const Key('puzzle-save-dialog')), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const Key('puzzle-collection-name')),
+      'Shed',
+    );
+    await tester.enterText(find.byKey(const Key('puzzle-name')), 'Floor');
+    await tester.tap(find.byKey(const Key('puzzle-save-confirm')));
+    await _pumpDialog(tester);
+    expect(find.byKey(const Key('puzzle-save-dialog')), findsNothing);
+    expect(File('${directory.path}/shed/floor.json').existsSync(), isTrue);
+    expect(File('${directory.path}/shed/collection.json').existsSync(), isTrue);
+    expect(find.text('Floor'), findsWidgets);
+    expect(find.text('Shed'), findsWidgets);
+
+    await tester.tap(find.byKey(const Key('puzzle-puzzle-button')));
+    await _pumpDialog(tester);
+    expect(find.byKey(const Key('puzzle-save-prompt')), findsNothing);
+    await tester.tap(find.byKey(const Key('puzzle-collection-item-house')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('puzzle-item-door')));
+    await _pumpDialog(tester);
+    expect(find.byKey(const Key('puzzle-library')), findsNothing);
+    expect(find.text('Door'), findsWidgets);
+
+    await tester.tap(find.byTooltip('Forbid'));
+    await _pumpDialog(tester);
+    await tester.tap(find.byKey(const Key('puzzle-editor-canvas')));
+    await _pumpDialog(tester);
+
+    await tester.tap(find.byKey(const Key('puzzle-puzzle-button')));
+    await _pumpDialog(tester);
+    await tester.tap(find.byKey(const Key('puzzle-collection-item-shed')));
+    await tester.pump();
+    await tester.tap(find.text('Floor'));
+    await _pumpDialog(tester);
+    expect(find.byKey(const Key('puzzle-save-prompt')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('puzzle-save-discard')));
+    await _pumpDialog(tester);
+    expect(find.byKey(const Key('puzzle-library')), findsNothing);
+    expect(find.text('Floor'), findsWidgets);
+  });
+
+  testWidgets('search hides collections and puzzles that do not match', (
+    tester,
+  ) async {
+    final directory = Directory.systemTemp.createTempSync('puzzle-search');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final store = LevelStore(directory: directory);
+    await store.savePuzzle(
+      collectionName: 'House',
+      puzzle: _storedPuzzle('door', 'Door'),
+      fromCollectionId: null,
+    );
+    await store.savePuzzle(
+      collectionName: 'Garden',
+      puzzle: _storedPuzzle('tree', 'Tree'),
+      fromCollectionId: null,
+    );
+    await _pumpEditor(tester, store);
+    await _pumpDialog(tester);
+    await tester.tap(find.byKey(const Key('puzzle-collection-button')));
+    await _pumpDialog(tester);
+    expect(
+      find.byKey(const Key('puzzle-collection-item-garden')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const Key('puzzle-collection-item-garden')));
+    await tester.pump();
+    expect(find.byKey(const Key('puzzle-item-tree')), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('puzzle-library-search')),
+      'Door',
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const Key('puzzle-collection-item-garden')),
+      findsNothing,
+    );
+    expect(find.byKey(const Key('puzzle-item-tree')), findsNothing);
+    expect(find.byKey(const Key('puzzle-item-door')), findsOneWidget);
+  });
+}
+
+GridBlueprint _storedPuzzle(String id, String name) {
+  return GridBlueprint(
+    id: id,
+    name: name,
+    steps: const [GridStep(id: 'level', label: 'Level', polygons: [])],
+  );
+}
+
+Future<void> _pumpEditor(WidgetTester tester, LevelStore store) {
+  return tester.pumpWidget(
+    ChangeNotifierProvider(
+      create: (_) => FmThemeData(),
+      child: MaterialApp(home: PuzzleEditorView(store: store)),
+    ),
+  );
+}
+
+/// Advances dialog routes without waiting out a focused text cursor.
+Future<void> _pumpDialog(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 50));
+  await tester.pump(const Duration(milliseconds: 400));
 }

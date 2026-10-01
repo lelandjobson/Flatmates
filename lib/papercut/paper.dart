@@ -89,7 +89,8 @@ class FoldJoint {
   }
 }
 
-/// The mark left when a fold is opened. Dark grey at 15% opacity.
+/// The mark left when a fold is opened. Decoration only: it does not split
+/// the paper or stop a tool.
 class ScoreLine {
   const ScoreLine(this.a, this.b);
 

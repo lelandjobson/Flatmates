@@ -220,7 +220,9 @@ class GridRules {
       return SegmentRuling(allowed: false, progress: progress);
     }
     final entering = _onBoundary(from, paper) && !_onBoundary(to, paper);
-    if (gemsRemain(this, progress) && entering && !_opensAtGem(from, progress)) {
+    if (entryGemsRemain(this, progress) &&
+        entering &&
+        !_opensAtGem(from, progress)) {
       return SegmentRuling(allowed: false, progress: progress);
     }
 
@@ -417,10 +419,6 @@ class GridRules {
   }
 
   bool _opensAtGem(Offset point, CutProgress progress) {
-    for (var i = 0; i < colors.length; i++) {
-      if (progress.collectedColors.contains(i)) continue;
-      if (_near(colors[i].point, point)) return true;
-    }
     for (var i = 0; i < numbers.length; i++) {
       if (numbers[i].number < progress.nextNumber) continue;
       if (_near(numbers[i].point, point)) return true;
@@ -524,6 +522,17 @@ class FailureCue {
 /// True while a color or number gem is still waiting to be taken.
 bool gemsRemain(GridRules rules, CutProgress progress) {
   if (progress.collectedColors.length < rules.colors.length) return true;
+  for (final mark in rules.numbers) {
+    if (mark.number >= progress.nextNumber) return true;
+  }
+  return false;
+}
+
+/// True while a number gem is still waiting to be taken.
+///
+/// Number gems are entry points: a new cut must start at one. Color gems are
+/// only collected in groups, so a cut may start anywhere on the paper edge.
+bool entryGemsRemain(GridRules rules, CutProgress progress) {
   for (final mark in rules.numbers) {
     if (mark.number >= progress.nextNumber) return true;
   }

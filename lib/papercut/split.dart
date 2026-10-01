@@ -42,6 +42,28 @@ PapercutSheet? applyPapercutCut(
   );
 }
 
+/// Polylines of [stroke] that lie in [piece], in stroke order.
+///
+/// A stroke that leaves the paper and comes back is more than one polyline.
+List<List<Offset>> clipStrokePolylines(
+  List<Offset> stroke,
+  PapercutPiece piece,
+) {
+  final parts = _clipStroke(stroke, piece);
+  final chains = <List<Offset>>[];
+  for (final part in parts) {
+    if (chains.isNotEmpty && (chains.last.last - part.$1).distance <= 1e-3) {
+      chains.last.add(part.$2);
+    } else {
+      chains.add([part.$1, part.$2]);
+    }
+  }
+  return [
+    for (final chain in chains)
+      if (chain.length >= 2) chain,
+  ];
+}
+
 /// Removes [region] from every paper piece it overlaps.
 ///
 /// An interior region becomes a hole. A region that crosses the outline
@@ -99,9 +121,7 @@ PapercutSheet? applyPapercutCrease(
     groupId: groupId,
     angleDegrees: angleDegrees,
   );
-  return sheet.copyWith(
-    creases: [...sheet.creases, crease],
-  );
+  return sheet.copyWith(creases: [...sheet.creases, crease]);
 }
 
 List<Offset> _cleanStroke(List<Offset> stroke) {

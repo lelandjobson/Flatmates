@@ -45,9 +45,14 @@ class Celebration {
   final List<List<Offset>> holes;
 
   static const int fillMilliseconds = 250;
+
+  /// Color blend for a finished blueprint piece. Leftover scraps still use
+  /// [fillMilliseconds] before they burst.
+  static const int glowMilliseconds = 480;
   static const int holdMilliseconds = 250;
   static const int burstMilliseconds = 800;
   static const double fillSeconds = fillMilliseconds / 1000;
+  static const double glowSeconds = glowMilliseconds / 1000;
   static const double holdSeconds = holdMilliseconds / 1000;
   static const double burstSeconds = burstMilliseconds / 1000;
   static const double totalSeconds = fillSeconds + holdSeconds + burstSeconds;
@@ -58,10 +63,7 @@ class Celebration {
   /// Leftover paper bursts this far apart once the level is won.
   static const double scrapStaggerSeconds = 0.15;
 
-  static const List<Color> successFill = [
-    Color(0xFF69F0AE),
-    Color(0xFF1DE9B6),
-  ];
+  static const List<Color> successFill = [Color(0xFF69F0AE), Color(0xFF1DE9B6)];
   static const List<Color> successSpark = [
     Color(0xFFB9F6CA),
     Color(0xFF00C853),
@@ -72,6 +74,17 @@ class Celebration {
 /// when a blueprint piece is already lighting up, and otherwise starts at once.
 double scrapDelay(int index, {required bool afterSuccess}) {
   return (index + (afterSuccess ? 1 : 0)) * Celebration.scrapStaggerSeconds;
+}
+
+/// Piece ids that burst in the paper color when the level is won.
+///
+/// [finished] pieces are already their own green objects. A leftover burst
+/// repaints in the sheet color, so a completed piece has to stay out of it.
+List<String> leftoverScrapIds(Iterable<String> pieceIds, Set<String> finished) {
+  return [
+    for (final id in pieceIds)
+      if (!finished.contains(id)) id,
+  ];
 }
 
 /// How many inward bands a piece of this shorter side gets.
@@ -264,7 +277,7 @@ class CelebrationPlayback {
 
   /// How long this playback needs on the clock, including its delay.
   double get span =>
-      delay + (burst ? Celebration.totalSeconds : Celebration.fillSeconds);
+      delay + (burst ? Celebration.totalSeconds : Celebration.glowSeconds);
 
   List<Color> get fillColors {
     final ink = this.ink;
