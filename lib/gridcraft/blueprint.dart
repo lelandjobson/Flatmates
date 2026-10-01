@@ -231,6 +231,7 @@ class GridStep {
     this.tools,
     this.attachment = const ScissorAttachment(),
     this.permutation = const LevelPermutation(),
+    this.allowSeparation = false,
   });
 
   final String id;
@@ -248,6 +249,11 @@ class GridStep {
   final ToolFilter? tools;
   final ScissorAttachment attachment;
   final LevelPermutation permutation;
+
+  /// When false, a cut keeps the one paper piece that still holds the unsolved
+  /// blueprint and discards the rest. Splitting that blueprint across two
+  /// pieces fails the level. When true, every new piece stays and steps apart.
+  final bool allowSeparation;
 
   /// Sheet around the outlines and rule marks, grown by [paperMargin] cells.
   Rect get paper {
@@ -333,6 +339,7 @@ class GridStep {
     bool clearTools = false,
     ScissorAttachment? attachment,
     LevelPermutation? permutation,
+    bool? allowSeparation,
   }) {
     return GridStep(
       id: id,
@@ -347,6 +354,7 @@ class GridStep {
       tools: clearTools ? null : (tools ?? this.tools),
       attachment: attachment ?? this.attachment,
       permutation: permutation ?? this.permutation,
+      allowSeparation: allowSeparation ?? this.allowSeparation,
     );
   }
 
@@ -374,6 +382,7 @@ class GridStep {
     if (!attachment.isEmpty) 'attachments': attachment.toJson(),
     if (!permutation.isEmpty) 'permutations': permutation.toJson(),
     if (!rules.isEmpty) 'rules': rules.toJson(),
+    if (allowSeparation) 'allowSeparation': true,
   };
 
   bool get _stylesStored {
@@ -401,6 +410,7 @@ class GridStep {
           : null,
       attachment: ScissorAttachment.fromJson(json['attachments']),
       permutation: LevelPermutation.fromJson(json['permutations']),
+      allowSeparation: json['allowSeparation'] == true,
       edgeStyles: [
         for (final row in styles)
           [

@@ -434,6 +434,7 @@ void main() {
       tools: ToolFilter({CraftTool.scissors: 6, CraftTool.folder: null}),
       attachment: ScissorAttachment(flashlightThrow: 4, thickCut: 0.25),
       permutation: LevelPermutation(darkness: true, mirrorX: true),
+      allowSeparation: true,
     );
     final loaded = GridStep.fromJson(step.toJson());
     expect(loaded.edgeStyleOf(0)[1], EdgeStyle.penciled);
@@ -445,6 +446,13 @@ void main() {
     expect(loaded.attachment.thickCut, 0.25);
     expect(loaded.permutation.darkness, isTrue);
     expect(loaded.permutation.mirrorX, isTrue);
+    expect(loaded.allowSeparation, isTrue);
+    expect(
+      GridStep.fromJson(
+        loaded.copyWith(allowSeparation: false).toJson(),
+      ).allowSeparation,
+      isFalse,
+    );
     expect(loaded.scissorLengthBudget, 6);
     expect(loaded.toJson().containsKey('edgeStyles'), isTrue);
   });

@@ -16,6 +16,8 @@ import 'package:flatmates/papercut/models.dart';
 import 'package:flatmates/papercut/paper.dart';
 import 'package:flatmates/screens/grid_puzzle_view.dart';
 import 'package:flatmates/ui/fm_theme.dart';
+import 'package:flatmates/ui/game/view_crosshair.dart';
+import 'package:flatmates/gridcraft/scissor_glyph.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -549,8 +551,9 @@ void main() {
   test('the untitled Z diagonal can be entered from the bar that meets it', () {
     final step = GridBlueprint.fromJson(
       jsonDecode(
-        File('levels/puzzles/puzzle-1790710681492.json').readAsStringSync(),
-      ) as Map<String, dynamic>,
+            File('levels/puzzles/puzzle-1790710681492.json').readAsStringSync(),
+          )
+          as Map<String, dynamic>,
     ).steps.single;
     final sheet = _sheet(step);
     final closed = cutOutlines(step, sheet);
@@ -692,6 +695,44 @@ void main() {
       ScreenSide.right,
     );
     expect(dominantScreenSide(const Offset(5, -4), deadZone: deadZone), isNull);
+  });
+
+  test('a fixed camera measures the tap from the tool, not the reticle', () {
+    const reticle = Offset(400, 300);
+    const tool = Offset(120, 220);
+    expect(
+      directionTapOrigin(
+        cameraFollowsTool: true,
+        reticle: reticle,
+        toolOnScreen: tool,
+      ),
+      reticle,
+    );
+    expect(
+      directionTapOrigin(
+        cameraFollowsTool: false,
+        reticle: reticle,
+        toolOnScreen: tool,
+      ),
+      tool,
+    );
+    expect(
+      directionTapOrigin(cameraFollowsTool: false, reticle: reticle),
+      reticle,
+    );
+    // Above the blade, not above the reticle.
+    expect(
+      dominantScreenSide(
+        const Offset(130, 180) -
+            directionTapOrigin(
+              cameraFollowsTool: false,
+              reticle: reticle,
+              toolOnScreen: tool,
+            ),
+        deadZone: 28,
+      ),
+      ScreenSide.up,
+    );
   });
 
   test('a leftward cut turns the sheet clockwise so that direction is up', () {
@@ -1128,6 +1169,82 @@ void main() {
     expect(find.byKey(const Key('grid-rule-badge-number')), findsOneWidget);
     expect(find.text('1'), findsOneWidget);
   });
+
+  testWidgets('a scissor use fits the sheet and leaves the camera there', (
+    tester,
+  ) async {
+    final directory = Directory.systemTemp.createTempSync('puzzle-fixed');
+    addTearDown(() => directory.delete(recursive: true));
+    await tester.pumpWidget(
+      ChangeNotifierProvider(
+        create: (_) => FmThemeData(),
+        child: MaterialApp(
+          home: GridPuzzleView(
+            initial: twinLsBlueprint(),
+            store: LevelStore(directory: directory),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(ViewCrosshair), findsNothing);
+
+    final box = tester.renderObject<RenderBox>(
+      find.byKey(const Key('grid-puzzle-canvas')),
+    );
+    final center = box.localToGlobal(box.size.center(Offset.zero));
+    await tester.dragFrom(center, const Offset(90, 0));
+    await tester.pump();
+
+    final panned = _puzzlePainter(tester);
+    final paper = panned.step.paper;
+    expect((panned.camera.lookAt - paper.center).distance, greaterThan(1));
+
+    final edge = panned.camera.camera.projectToScreen(
+      Vector3(paper.left, paper.center.dy, 0),
+      box.size,
+    );
+    expect(edge, isNotNull);
+    await tester.tapAt(box.localToGlobal(edge!));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+
+    final cutting = _puzzlePainter(tester);
+    expect((cutting.camera.lookAt - paper.center).distance, lessThan(1));
+    expect(cutting.camera.roll, closeTo(0, 1e-6));
+    final glyph = _glyphPainter(tester);
+    expect(glyph.pose.visible, greaterThan(0));
+    expect((glyph.pose.tip - paper.center).distance, greaterThan(1));
+
+    final fitted = cutting.camera.lookAt;
+    await tester.dragFrom(center, const Offset(-90, 0));
+    await tester.pump();
+    expect(
+      (_puzzlePainter(tester).camera.lookAt - fitted).distance,
+      lessThan(1),
+    );
+  });
+}
+
+GridPuzzlePainter _puzzlePainter(WidgetTester tester) {
+  GridPuzzlePainter? found;
+  for (final element in find.byType(CustomPaint).evaluate()) {
+    final painter = (element.widget as CustomPaint).painter;
+    if (painter is GridPuzzlePainter && painter.drawGrid) found = painter;
+  }
+  expect(found, isNotNull);
+  return found!;
+}
+
+ScissorGlyphPainter _glyphPainter(WidgetTester tester) {
+  ScissorGlyphPainter? found;
+  for (final element in find.byType(CustomPaint).evaluate()) {
+    final painter = (element.widget as CustomPaint).painter;
+    if (painter is ScissorGlyphPainter) found = painter;
+  }
+  expect(found, isNotNull);
+  return found!;
 }
 
 bool _hasDirection(List<ForwardCut> cuts, Offset direction) {

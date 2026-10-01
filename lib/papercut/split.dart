@@ -311,6 +311,7 @@ List<PapercutPiece> _piecesFromFaces(
       PapercutPiece(
         id: '${source.id}-${idStart + i}',
         color: source.color,
+        backColor: source.backColor,
         vertices: faces[i],
         holes: holes[i],
         separation: source.separation,

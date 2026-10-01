@@ -45,7 +45,7 @@ void main() {
     expect(_idAt(cut, const Offset(5, 0.5)).startsWith('top'), isTrue);
   });
 
-  test('each sheet in a pile is one over the page count opaque', () {
+  test('covered blueprint ink is one over the sheet count solid', () {
     expect(pageOpacity(1), 1);
     expect(pageCounts(pile([box('only', square)])), [1]);
 
@@ -82,6 +82,77 @@ void main() {
       facing: FoldFacing.toward,
     )!;
     expect(pageCounts(folded), [2, 2]);
+  });
+
+  test('a fold shows the pink back and the blueprint through the paper', () {
+    final folded = foldSheet(
+      sheet: pile([
+        box('paper', const [
+          Offset(0, 0),
+          Offset(4, 0),
+          Offset(4, 4),
+          Offset(0, 4),
+        ]),
+      ]),
+      spanA: const Offset(3, 0),
+      spanB: const Offset(3, 4),
+      flapPoint: const Offset(3.5, 2),
+      facing: FoldFacing.toward,
+    )!;
+    final base = folded.pieces.indexWhere(
+      (piece) => polygonCentroid(piece.vertices).dx < 3,
+    );
+    final flap = folded.pieces.indexWhere(
+      (piece) => polygonCentroid(piece.vertices).dx > 3,
+    );
+    expect(base, isNonNegative);
+    expect(flap, isNonNegative);
+
+    expect(showingBack(const Offset(1, 2), folded.folds), isFalse);
+    expect(showingBack(const Offset(3.5, 2), folded.folds), isTrue);
+    expect(
+      blueprintInkCover(
+        pieceIndex: base,
+        local: const Offset(1, 2),
+        sheet: folded,
+      ),
+      0,
+    );
+    expect(
+      blueprintInkCover(
+        pieceIndex: base,
+        local: const Offset(2.5, 2),
+        sheet: folded,
+      ),
+      1,
+    );
+    expect(
+      blueprintInkCover(
+        pieceIndex: flap,
+        local: const Offset(3.5, 2),
+        sheet: folded,
+      ),
+      1,
+    );
+    expect(pageOpacity(2), 0.5);
+
+    final bend = folded.folds.length - 1;
+    expect(
+      showingBack(const Offset(3.5, 2), folded.folds, bend: bend, bendT: 0.25),
+      isFalse,
+    );
+    expect(
+      showingBack(const Offset(3.5, 2), folded.folds, bend: bend, bendT: 0.75),
+      isTrue,
+    );
+    expect(
+      paperSideColor(folded.pieces[flap], back: true),
+      const Color(0xFFFFB3BA),
+    );
+    expect(
+      paperSideColor(folded.pieces[flap], back: false),
+      folded.pieces[flap].color,
+    );
   });
 
   test('clicks walk down a stack and a drag keeps the last sheet', () {

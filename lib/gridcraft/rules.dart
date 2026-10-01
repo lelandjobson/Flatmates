@@ -510,7 +510,7 @@ RuleCue ruleCue(GridRules rules, CutProgress progress) {
 }
 
 /// The thing that broke a failure condition, so play can flash it red.
-enum FailureKind { color, number, piece }
+enum FailureKind { color, number, piece, paper }
 
 class FailureCue {
   const FailureCue(this.kind, this.index);

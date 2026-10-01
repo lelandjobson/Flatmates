@@ -37,9 +37,7 @@ GridStep rotateStepBy(GridStep step, Offset origin, double radians) {
   return step.copyWith(
     polygons: [
       for (final polygon in step.polygons)
-        [
-          for (final point in polygon) turn(point),
-        ],
+        [for (final point in polygon) turn(point)],
     ],
     rules: step.rules.turned(origin, (point, around) => turn(point)),
     permutation: step.permutation.turned(radians, turn),
@@ -307,6 +305,7 @@ PapercutSheet rotateSheetBy(
         PapercutPiece(
           id: piece.id,
           color: piece.color,
+          backColor: piece.backColor,
           vertices: [for (final point in piece.vertices) turn(point)],
           holes: [
             for (final hole in piece.holes)

@@ -1509,6 +1509,9 @@ class _PuzzleEditorViewState extends State<PuzzleEditorView> {
               _step.copyWith(permutation: permutation.copyWith(mirrorX: value)),
             );
           }),
+          _flag('Separate', _step.allowSeparation, (value) {
+            _replaceStep(_step.copyWith(allowSeparation: value));
+          }),
           _flag('Mirror Y', permutation.mirrorY, (value) {
             _replaceStep(
               _step.copyWith(permutation: permutation.copyWith(mirrorY: value)),
@@ -2185,7 +2188,7 @@ _ToolHelp _toolHelp(_EditorTool tool) {
     _EditorTool.shapes =>
       'Tap grid points to draw. A line can stay open: tap the last point a second time to finish it. Tap the first point again, or Close, to join a ring. Select drags a rectangle: left to right keeps what sits fully inside, and right to left also takes what the rectangle crosses. With one blueprint piece selected, tap an edge to pencil it in. The hits counter is how many times a tool may touch that piece. Its paper can be cut free only once hits reaches 0; cutting it free sooner fails the level. Drag any selected item to move the whole selection. Delete removes the blueprint piece you tap, or the pieces already selected.',
     _EditorTool.level =>
-      'Level permutations and tool attachments. Dark covers the sheet except the scissor flashlight. Mirror X and Mirror Y reflect a committed cut across the paper center. Throw is the flashlight reach in grid units. Thick is the scissor half-width. Limit tools lists which tools play may use, and a use count. No-fold: place two corners of a region that cannot be folded. Erase removes the nearest no-fold zone.',
+      'Level permutations and tool attachments. Dark covers the sheet except the scissor flashlight. Mirror X and Mirror Y reflect a committed cut across the paper center. Separate keeps every piece a cut makes and lets them step apart. Off, the cut keeps the piece that still holds the puzzle and the rest fades. Paper that only shares a blueprint edge, with none of the blueprint inside it, still fades. Splitting the puzzle across two pieces fails the level. Throw is the flashlight reach in grid units. Thick is the scissor half-width. Limit tools lists which tools play may use, and a use count. No-fold: place two corners of a region that cannot be folded. Erase removes the nearest no-fold zone.',
     _EditorTool.exits =>
       'How many times the blade may leave the paper. A cut that ends on the paper edge spends one exit. The counter shows ∞ when there is no limit. Minus from 1 clears the limit, and plus from unlimited starts it at 1.',
     _EditorTool.length =>

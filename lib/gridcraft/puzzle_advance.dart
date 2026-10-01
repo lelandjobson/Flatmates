@@ -109,6 +109,7 @@ PapercutSheet shiftSheet(PapercutSheet sheet, Offset delta) {
         PapercutPiece(
           id: piece.id,
           color: piece.color,
+          backColor: piece.backColor,
           vertices: [for (final point in piece.vertices) point + delta],
           holes: [
             for (final hole in piece.holes)

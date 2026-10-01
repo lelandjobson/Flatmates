@@ -4,8 +4,9 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../../gridcraft/piece_glow.dart';
+import '../../gridcraft/scrap.dart';
 
-enum _GridDevSection { completedPiece, tapDebug }
+enum _GridDevSection { completedPiece, tapDebug, paperScore, camera }
 
 /// Right-hand puzzle DevTools. The dropdown picks which settings to edit.
 class GridDevPanel extends StatefulWidget {
@@ -16,6 +17,10 @@ class GridDevPanel extends StatefulWidget {
     required this.onSave,
     required this.showTapDebug,
     required this.onShowTapDebugChanged,
+    required this.tallyStyle,
+    required this.onTallyStyleChanged,
+    required this.cameraFollowsTool,
+    required this.onCameraFollowsToolChanged,
   });
 
   final PieceGlowSettings glow;
@@ -23,6 +28,10 @@ class GridDevPanel extends StatefulWidget {
   final Future<void> Function() onSave;
   final bool showTapDebug;
   final ValueChanged<bool> onShowTapDebugChanged;
+  final ScrapTallyStyle tallyStyle;
+  final ValueChanged<ScrapTallyStyle> onTallyStyleChanged;
+  final bool cameraFollowsTool;
+  final ValueChanged<bool> onCameraFollowsToolChanged;
 
   @override
   State<GridDevPanel> createState() => _GridDevPanelState();
@@ -98,6 +107,14 @@ class _GridDevPanelState extends State<GridDevPanel> {
                       value: _GridDevSection.tapDebug,
                       child: Text('Tap debug'),
                     ),
+                    DropdownMenuItem(
+                      value: _GridDevSection.paperScore,
+                      child: Text('Paper score'),
+                    ),
+                    DropdownMenuItem(
+                      value: _GridDevSection.camera,
+                      child: Text('Camera'),
+                    ),
                   ],
                   onChanged: (section) {
                     if (section == null) return;
@@ -112,6 +129,16 @@ class _GridDevPanelState extends State<GridDevPanel> {
                   status: _status,
                   onChanged: _edit,
                   onSave: _save,
+                )
+              else if (_section == _GridDevSection.paperScore)
+                _PaperScoreSettings(
+                  style: widget.tallyStyle,
+                  onChanged: widget.onTallyStyleChanged,
+                )
+              else if (_section == _GridDevSection.camera)
+                _CameraSettings(
+                  followsTool: widget.cameraFollowsTool,
+                  onChanged: widget.onCameraFollowsToolChanged,
                 )
               else
                 _TapDebugSettings(
@@ -190,6 +217,66 @@ class _CompletedPieceSettings extends StatelessWidget {
             key: const Key('grid-glow-save'),
             onPressed: onSave,
             child: Text(status),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CameraSettings extends StatelessWidget {
+  const _CameraSettings({required this.followsTool, required this.onChanged});
+
+  final bool followsTool;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'On, the camera keeps the tool in the reticle and turns with it. Off, a tool use zooms to fit and stays put. Taps are measured from the tool.',
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.45),
+            fontSize: 10,
+            height: 1.3,
+          ),
+        ),
+        const SizedBox(height: 8),
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => onChanged(!followsTool),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Follow tool',
+                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+              ),
+              SizedBox(
+                height: 24,
+                width: 36,
+                child: IgnorePointer(
+                  child: Checkbox(
+                    key: const Key('grid-camera-follow'),
+                    value: followsTool,
+                    onChanged: (_) {},
+                    side: const BorderSide(color: Colors.white54),
+                    fillColor: WidgetStateProperty.resolveWith((states) {
+                      if (states.contains(WidgetState.selected)) {
+                        return Colors.white24;
+                      }
+                      return Colors.transparent;
+                    }),
+                    checkColor: Colors.white,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -419,6 +506,45 @@ class _HueBar extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _PaperScoreSettings extends StatelessWidget {
+  const _PaperScoreSettings({required this.style, required this.onChanged});
+
+  final ScrapTallyStyle style;
+  final ValueChanged<ScrapTallyStyle> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return RadioGroup<ScrapTallyStyle>(
+      groupValue: style,
+      onChanged: (next) {
+        if (next != null) onChanged(next);
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'How leftover paper leaves at the end of a level. Each unit is one point.',
+            style: TextStyle(color: Colors.white70, fontSize: 11),
+          ),
+          const SizedBox(height: 8),
+          for (final option in ScrapTallyStyle.values)
+            RadioListTile<ScrapTallyStyle>(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              activeColor: Colors.white,
+              title: Text(switch (option) {
+                ScrapTallyStyle.shrink => 'Shrink',
+                ScrapTallyStyle.shrinkThenFly => 'Shrink, then fly',
+                ScrapTallyStyle.fly => 'Fly',
+              }, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+              value: option,
+            ),
+        ],
       ),
     );
   }

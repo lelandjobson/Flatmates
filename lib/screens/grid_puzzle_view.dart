@@ -18,6 +18,7 @@ import '../gridcraft/puzzle_advance.dart';
 import '../gridcraft/piece_glow.dart';
 import '../gridcraft/piece_glow_io.dart';
 import '../gridcraft/rules.dart';
+import '../gridcraft/scrap.dart';
 import '../gridcraft/scissor.dart';
 import '../gridcraft/scissor_glyph.dart';
 import '../gridcraft/tool_animation.dart';
@@ -51,6 +52,8 @@ const double _kCrosshairCutRadius = 28;
 const Duration _kTurnDuration = Duration(milliseconds: 600);
 const Duration _kSplitDuration = Duration(milliseconds: 750);
 const Duration _kFoldDuration = Duration(milliseconds: 700);
+const Duration _kFadeDuration = Duration(milliseconds: 400);
+const Duration _kTallyDuration = Duration(seconds: 3);
 const Duration _kFocusDuration = Duration(milliseconds: 320);
 const Duration _kCelebrateDuration = Celebration.duration;
 const Duration _kAdvanceDuration = Duration(milliseconds: 780);
@@ -87,6 +90,8 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   late AnimationController _celebrateAnim;
   late AnimationController _advanceAnim;
   late AnimationController _foldAnim;
+  late AnimationController _fadeAnim;
+  late AnimationController _tallyAnim;
   late AnimationController _rollNudge;
   late AnimationController _flightAnim;
   late AnimationController _focusAnim;
@@ -170,6 +175,23 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   bool _zoomed = false;
   bool _devToolsOpen = false;
   bool _showTapDebug = false;
+
+  /// When set, the camera keeps the blade in the reticle and rolls with each
+  /// cut. Off, a scissor use zooms to fit, then stays put until that use ends.
+  bool _cameraFollowsTool = false;
+
+  /// Latest pointer in viewport space. Fixed-camera aiming uses this instead
+  /// of the reticle.
+  Offset? _pointer;
+  ScrapTallyStyle _tallyStyle = ScrapTallyStyle.shrink;
+  int _collectionScore = 0;
+  final GlobalKey _scoreKey = GlobalKey();
+  Set<String> _fading = const {};
+  bool _tallying = false;
+  List<Offset> _tallyCells = const [];
+  List<CellWindow> _tallyWindows = const [];
+  Set<String> _tallyIds = const {};
+  int _tallyAwarded = 0;
   final PieceGlowStore _glowStore = PieceGlowStore();
   PieceGlowSettings _glow = PieceGlowSettings.standard;
   Offset? _debugTap;
@@ -181,6 +203,13 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   GridStep get _step => _blueprint.steps[_stepIndex];
 
   bool get _locked => _march?.locked ?? false;
+
+  /// Scissors are in a use: placed on the paper, or a stroke is still running.
+  bool get _scissorUse =>
+      _tool == _GridTool.scissors && (_march != null || _cutting);
+
+  /// Camera stays at the fitted sheet until the scissor use ends.
+  bool get _fixedToolCamera => !_cameraFollowsTool && _scissorUse;
 
   @override
   void initState() {
@@ -210,6 +239,11 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       ..addStatusListener(_onAdvanceStatus);
     _foldAnim = AnimationController(vsync: this, duration: _kFoldDuration)
       ..addStatusListener(_onFoldStatus);
+    _fadeAnim = AnimationController(vsync: this, duration: _kFadeDuration)
+      ..addStatusListener(_onFadeStatus);
+    _tallyAnim = AnimationController(vsync: this, duration: _kTallyDuration)
+      ..addListener(_onTallyTick)
+      ..addStatusListener(_onTallyStatus);
     _rollNudge = AnimationController(vsync: this, duration: _kTurnDuration)
       ..addListener(_onRollNudge);
     _flightAnim = AnimationController(vsync: this, duration: kArriveDuration)
@@ -259,6 +293,8 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _advanceAnim.dispose();
     _celebrateAnim.dispose();
     _foldAnim.dispose();
+    _fadeAnim.dispose();
+    _tallyAnim.dispose();
     _turnAnim.dispose();
     _failAnim.dispose();
     _flash.dispose();
@@ -378,6 +414,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       return;
     }
     setState(() {
+      if (pick.collectionIndex != _collectionIndex) _collectionScore = 0;
       _collectionIndex = pick.collectionIndex;
       _puzzleIndex = pick.puzzleIndex;
       _loadStep(0, puzzle);
@@ -389,6 +426,8 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     if (_splitAnim.isAnimating) _splitAnim.stop();
     _stopCelebrate();
     _stopFold();
+    _stopFade();
+    _stopTally();
     if (_flightAnim.isAnimating) _flightAnim.stop();
     if (_focusAnim.isAnimating) _focusAnim.stop();
     _armingCut = false;
@@ -469,6 +508,29 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       sheetMm: math.max(paper.width, paper.height),
       center: paper.center,
     );
+  }
+
+  /// Fits the sheet and holds the camera there for the rest of the tool use.
+  void _lockToolCamera() {
+    if (_cameraFollowsTool) return;
+    if (_rollNudge.isAnimating) _rollNudge.stop();
+    _frame();
+    if (mounted) setState(() {});
+  }
+
+  void _setCameraFollowsTool(bool value) {
+    if (_cameraFollowsTool == value) return;
+    setState(() => _cameraFollowsTool = value);
+    if (value) {
+      _pinScissor();
+      return;
+    }
+    if (_armingCut) {
+      _armingCut = false;
+      if (_focusAnim.isAnimating) _focusAnim.stop();
+    }
+    if (_rollNudge.isAnimating) _rollNudge.stop();
+    if (_scissorUse) _lockToolCamera();
   }
 
   double _snap(double value, double spacing) =>
@@ -556,15 +618,20 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     }
     final ghost = _scissorGhost(world);
     if (ghost == null) {
-      _pinScissor();
+      if (_cameraFollowsTool) {
+        _pinScissor();
+      } else if (_march != null) {
+        _lockToolCamera();
+      }
       _syncFlight();
       return;
     }
-    _startCut();
+    _startCut(world);
+    if (_march != null && !_cameraFollowsTool) _lockToolCamera();
   }
 
-  void _startCut() {
-    final ghost = _scissorGhost(_aimWorld());
+  void _startCut([Offset? aim]) {
+    final ghost = _scissorGhost(aim ?? _aimWorld());
     if (ghost == null) return;
     _beginStroke(ghost.$1, ghost.$2);
   }
@@ -581,6 +648,19 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _modelEnd = modelTo;
     _armedFrom = from;
     _armedTo = to;
+    if (!_cameraFollowsTool) {
+      _armingCut = false;
+      _cutRoll = null;
+      _flight.beginCut(
+        from: from,
+        to: to,
+        direction: _strokeDirection!,
+        t: _flightAnim.value,
+        present: (_march?.path.length ?? 1) <= 1,
+      );
+      _playFlight(kCutDuration);
+      return true;
+    }
     _cutRoll = PapercutCamera.rollForScreenUp(
       modelTo - modelFrom,
       near: _rollNudge.isAnimating ? _rollTo : _camera.roll,
@@ -605,7 +685,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   }
 
   void _onFocusTick() {
-    if (!_armingCut) return;
+    if (!_armingCut || !_cameraFollowsTool) return;
     final t = Curves.easeInOutCubic.transform(_focusAnim.value);
     _camera.focusOn(Offset.lerp(_focusFrom, _focusTo, t)!);
   }
@@ -663,7 +743,31 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   Offset? _lightOrigin() {
     final pose = _flight.pose(_flightAnim.value);
     if (pose.visible > 0.2) return pose.tip;
+    if (!_cameraFollowsTool) {
+      final tracked = _trackedToolWorld();
+      if (tracked != null) return tracked;
+    }
     return _aimWorld();
+  }
+
+  /// Blade position the fixed camera measures taps from.
+  ///
+  /// A seated blade is the march point, which begins on the paper edge.
+  /// During a stroke it is the moving tip.
+  Offset? _trackedToolWorld() {
+    if (_tool != _GridTool.scissors) return null;
+    if (_flight.phase == ToolFlightPhase.cut) {
+      return _flight.pose(_flightAnim.value).tip;
+    }
+    final march = _march;
+    if (march == null) return null;
+    return _shown(march.position);
+  }
+
+  Offset? _trackedToolScreen() {
+    final world = _trackedToolWorld();
+    if (world == null) return null;
+    return _project(world);
   }
 
   Offset _lightDirection() {
@@ -695,6 +799,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   }
 
   void _pinScissor() {
+    if (!_cameraFollowsTool) return;
     final march = _march;
     if (march == null || _viewport.width < 2) return;
     _camera.focusOn(_shown(march.position));
@@ -702,6 +807,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
 
   /// Keeps the crosshair on the blade while a stroke is in progress.
   void _followCut() {
+    if (!_cameraFollowsTool) return;
     if (_flight.phase != ToolFlightPhase.cut || _viewport.width < 2) return;
     _camera.focusOn(_flight.pose(_flightAnim.value).tip);
   }
@@ -798,6 +904,8 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _splitAnim.stop();
     _stopCelebrate();
     _stopFold();
+    _stopFade();
+    _stopTally();
     if (_flightAnim.isAnimating) _flightAnim.stop();
     if (_focusAnim.isAnimating) _focusAnim.stop();
     _flight.reset();
@@ -1011,12 +1119,31 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _pushUndo();
     _progress = ruling.progress;
     final split = commit.march == null;
+    final fresh = split
+        ? classifyFreshPieces(
+            before: base,
+            after: settled,
+            closedRings: _step.closedPolygons,
+          )
+        : null;
+    if (fresh != null && !_step.allowSeparation && fresh.discardsBlueprint) {
+      final index = settled.pieces.indexWhere(
+        (piece) => piece.id == fresh.smallest?.id,
+      );
+      setState(() {
+        _sheet = settled;
+        _march = null;
+        _marchBase = null;
+        _bladePieceId = null;
+      });
+      _failLevel(FailureCue(FailureKind.paper, index < 0 ? 0 : index));
+      return null;
+    }
     final freed = split ? _newlyFreed(base, settled) : const <PapercutPiece>[];
     final winning = _wouldWin(settled);
-    // A finished blueprint piece stays on its outline. The scrap steps away
-    // so that piece is its own object. A won level leaves every scrap in
-    // place so the leftover bursts land on the paper.
-    final spread = split
+    // Allow separation keeps today's spread. Otherwise the carrier stays
+    // where it was cut and scrap fades instead of stepping away.
+    final spread = split && _step.allowSeparation
         ? layoutAfterSplit(
             base,
             settled,
@@ -1051,6 +1178,12 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
             _splitFrom[i] != _splitTo[i],
         ].any((moved) => moved);
     _playCutCelebration(freed);
+    if (!winning &&
+        fresh != null &&
+        !_step.allowSeparation &&
+        fresh.scraps.isNotEmpty) {
+      _startFade({for (final piece in fresh.scraps) piece.id});
+    }
     if (separates) {
       _splitAnim.forward(from: 0);
     } else {
@@ -1105,14 +1238,12 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     return _celebrateAnim.value * span.inMicroseconds / 1000000;
   }
 
-  /// Green light for each newly freed blueprint piece. When the level is won,
-  /// leftover paper bursts in its own color, 150 ms apart. Pieces that were
-  /// already completed stay green and are not part of that burst.
+  /// Green light for each newly freed blueprint piece. A won level then counts
+  /// the leftover paper into the collection score instead of bursting it.
   void _playCutCelebration(List<PapercutPiece> freed) {
     if (_won || _failed) return;
     _liberated.addAll(liberatedPieceIndexes(_step, _sheet));
     final won = piecesLiberated(_step, _liberated) && _gemsSatisfied();
-    final finished = _liberatedPieceIds();
     final plays = <CelebrationPlayback>[
       for (final piece in freed)
         CelebrationPlayback(
@@ -1125,30 +1256,6 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
           ),
         ),
     ];
-    if (won) {
-      final scraps = leftoverScrapIds([
-        for (final piece in _sheet.pieces) piece.id,
-      ], finished);
-      final byId = {for (final piece in _sheet.pieces) piece.id: piece};
-      for (var i = 0; i < scraps.length; i++) {
-        final piece = byId[scraps[i]];
-        if (piece == null) continue;
-        plays.add(
-          CelebrationPlayback(
-            pieceId: piece.id,
-            anchor: piece.separation,
-            delay: scrapDelay(i, afterSuccess: freed.isNotEmpty),
-            ink: piece.color,
-            burst: true,
-            celebration: prepareCelebration(
-              piece.vertices,
-              gridSpacing: _step.gridSpacing,
-              holes: piece.holes,
-            ),
-          ),
-        );
-      }
-    }
     final lighting = {for (final piece in freed) piece.id};
     if (!won && plays.isEmpty) return;
     var span = 0.0;
@@ -1160,12 +1267,110 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       _lit = _steadyGreen(except: lighting);
       if (plays.isNotEmpty) _celebrations = plays;
     });
+    if (won) _beginTally();
     if (plays.isEmpty) {
-      if (won) _presentNext();
+      if (won && !_tallying) _presentNext();
       return;
     }
     _celebrateAnim.duration = Duration(microseconds: (span * 1000000).round());
     _celebrateAnim.forward(from: 0);
+  }
+
+  void _startFade(Set<String> ids) {
+    if (ids.isEmpty) return;
+    _fading = ids;
+    _fadeAnim.forward(from: 0);
+  }
+
+  void _stopFade() {
+    if (_fadeAnim.isAnimating) _fadeAnim.stop();
+    _fading = const {};
+  }
+
+  void _onFadeStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed || _fading.isEmpty) return;
+    if (!mounted) return;
+    final gone = _fading;
+    setState(() {
+      _fading = const {};
+      _sheet = _sheet.copyWith(
+        pieces: [
+          for (final piece in _sheet.pieces)
+            if (!gone.contains(piece.id)) piece,
+        ],
+      );
+    });
+  }
+
+  /// Frames the leftover paper and removes it cell by cell over 3 seconds.
+  void _beginTally() {
+    final finished = _liberatedPieceIds();
+    final cells = leftoverCells(
+      pieces: _sheet.pieces,
+      freedIds: finished,
+      spacing: _step.gridSpacing,
+    );
+    final bounds = leftoverBounds(_sheet.pieces, freedIds: finished);
+    if (cells.isEmpty || bounds == null) return;
+    final span = math.max(bounds.width, bounds.height);
+    _camera.moveLook(
+      lookAt: bounds.center,
+      halfHeight: _camera.halfHeightForSheet(
+        _viewport,
+        sheetMm: math.max(span, _step.gridSpacing),
+      ),
+    );
+    _tallyCells = cells;
+    _tallyWindows = tallySchedule(cells.length);
+    _tallyAwarded = 0;
+    _tallyIds = {
+      for (final piece in _sheet.pieces)
+        if (!finished.contains(piece.id)) piece.id,
+    };
+    setState(() => _tallying = true);
+    _tallyAnim.forward(from: 0);
+  }
+
+  void _stopTally() {
+    if (_tallyAnim.isAnimating) _tallyAnim.stop();
+    _tallying = false;
+    _tallyCells = const [];
+    _tallyWindows = const [];
+    _tallyIds = const {};
+    _tallyAwarded = 0;
+  }
+
+  void _onTallyTick() {
+    if (!_tallying) return;
+    final seconds = _tallyAnim.value * _kTallyDuration.inMilliseconds / 1000;
+    final done = tallyFinished(_tallyWindows, seconds);
+    final gain = done - _tallyAwarded;
+    if (gain <= 0 || !mounted) return;
+    setState(() {
+      _tallyAwarded = done;
+      _collectionScore += gain;
+    });
+  }
+
+  void _onTallyStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed || !_tallying) return;
+    if (!mounted) return;
+    final gone = _tallyIds;
+    setState(() {
+      final pending = _tallyWindows.length - _tallyAwarded;
+      if (pending > 0) _collectionScore += pending;
+      _tallying = false;
+      _tallyCells = const [];
+      _tallyWindows = const [];
+      _tallyIds = const {};
+      _sheet = _sheet.copyWith(
+        pieces: [
+          for (final piece in _sheet.pieces)
+            if (!gone.contains(piece.id)) piece,
+        ],
+      );
+    });
+    if (!_celebrateAnim.isAnimating) _presentNext();
   }
 
   /// The finished puzzle stays on screen. The next one is parked off to the
@@ -1315,7 +1520,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
         );
       });
     }
-    if (_won) _presentNext();
+    if (_won && !_tallying && !_celebrateAnim.isAnimating) _presentNext();
   }
 
   void _onSplitTick() {
@@ -1555,6 +1760,8 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _splitAnim.stop();
     _stopCelebrate();
     _stopFold();
+    _stopFade();
+    _stopTally();
     if (_flightAnim.isAnimating) _flightAnim.stop();
     if (_focusAnim.isAnimating) _focusAnim.stop();
     _armingCut = false;
@@ -1610,6 +1817,8 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _splitAnim.stop();
     _stopCelebrate();
     _stopFold();
+    _stopFade();
+    _stopTally();
     setState(() {
       _sheet = _undo.removeLast();
       if (_undoProgress.isNotEmpty) _progress = _undoProgress.removeLast();
@@ -1667,14 +1876,21 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   /// on this same point.
   Offset get _crosshair => Offset(_viewport.width / 2, _viewport.height / 2);
 
-  /// Larger offset from the crosshair. A tap above and left is up when the
+  /// Follow mode measures from the reticle. Fixed mode measures from the tool.
+  Offset _directionOrigin() => directionTapOrigin(
+    cameraFollowsTool: _cameraFollowsTool,
+    reticle: _crosshair,
+    toolOnScreen: _trackedToolScreen(),
+  );
+
+  /// Larger offset from the aim point. A tap above and left is up when the
   /// vertical component is greater, and left when the horizontal one is.
   _CutSide? _tapSide(Offset? local) {
     if (local == null || _viewport.width < 2 || _viewport.height < 2) {
       return null;
     }
     final side = dominantScreenSide(
-      local - _crosshair,
+      local - _directionOrigin(),
       deadZone: _kCrosshairCutRadius,
     );
     return switch (side) {
@@ -1759,6 +1975,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
 
   /// Side taps and arrow keys. Right is counterclockwise.
   void _nudgeRoll({required bool counterclockwise}) {
+    if (_fixedToolCamera) return;
     if (_tool != _GridTool.scissors) return;
     if (_cutting) return;
     _animateQuarter(counterclockwise);
@@ -1776,6 +1993,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   /// Turns the sheet so [target] is the roll. Independent of the cut's
   /// world direction: the stroke already knows where it is going.
   void _animateRollTo(double target) {
+    if (_fixedToolCamera) return;
     _rollFrom = _camera.roll;
     _rollTo = target;
     if ((_rollTo - _rollFrom).abs() < 1e-3) return;
@@ -1783,6 +2001,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   }
 
   void _onRollNudge() {
+    if (_fixedToolCamera) return;
     final t = Curves.easeOutCubic.transform(_rollNudge.value);
     _camera.setRoll(_rollFrom + (_rollTo - _rollFrom) * t);
     if (_cutting) return;
@@ -1845,7 +2064,8 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                 Positioned.fill(
                   child: Listener(
                     onPointerSignal: (event) {
-                      if (_advancing ||
+                      if (_fixedToolCamera ||
+                          _advancing ||
                           _collectionWon ||
                           event is! PointerScrollEvent ||
                           event.scrollDelta.dy == 0) {
@@ -1855,6 +2075,10 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                         math.exp(-event.scrollDelta.dy * 0.002),
                       );
                     },
+                    onPointerHover: (event) =>
+                        _trackPointer(event.localPosition),
+                    onPointerDown: (event) =>
+                        _trackPointer(event.localPosition),
                     child: GestureDetector(
                       key: const Key('grid-puzzle-canvas'),
                       behavior: HitTestBehavior.opaque,
@@ -1869,6 +2093,8 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                           _advanceAnim,
                           _flightAnim,
                           _foldAnim,
+                          _fadeAnim,
+                          _tallyAnim,
                         ]),
                         builder: (context, _) {
                           final aim = _aimWorld();
@@ -1918,6 +2144,9 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                               lit: _lit,
                               glow: _glow,
                               clearedRings: _liberated,
+                              fadingIds: _fading,
+                              fadeOpacity: 1 - _fadeAnim.value,
+                              hiddenPieceIds: _tallyIds,
                             ),
                             child:
                                 _incomingStep == null || _incomingSheet == null
@@ -1959,9 +2188,35 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                     ),
                   ),
                 ),
-                const Positioned.fill(
-                  child: IgnorePointer(child: ViewCrosshair()),
-                ),
+                if (_cameraFollowsTool)
+                  const Positioned.fill(
+                    child: IgnorePointer(child: ViewCrosshair()),
+                  ),
+                if (_tallying)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: AnimatedBuilder(
+                        animation: _tallyAnim,
+                        builder: (context, _) {
+                          final seconds =
+                              _tallyAnim.value *
+                              _kTallyDuration.inMilliseconds /
+                              1000;
+                          return CustomPaint(
+                            painter: _ScrapTallyPainter(
+                              cells: _tallyCells,
+                              windows: _tallyWindows,
+                              seconds: seconds,
+                              style: _tallyStyle,
+                              spacing: _step.gridSpacing,
+                              project: _project,
+                              target: _scoreCenter(context),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
                 if (_collectionWon)
                   Positioned.fill(
                     child: IgnorePointer(
@@ -2004,7 +2259,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                     child: IgnorePointer(
                       child: CustomPaint(
                         painter: _TapDebugPainter(
-                          centroid: _crosshair,
+                          centroid: _directionOrigin(),
                           tap: _debugTap,
                           side: _debugSide,
                           deadZone: _kCrosshairCutRadius,
@@ -2024,6 +2279,11 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                       showTapDebug: _showTapDebug,
                       onShowTapDebugChanged: (value) =>
                           setState(() => _showTapDebug = value),
+                      tallyStyle: _tallyStyle,
+                      onTallyStyleChanged: (style) =>
+                          setState(() => _tallyStyle = style),
+                      cameraFollowsTool: _cameraFollowsTool,
+                      onCameraFollowsToolChanged: _setCameraFollowsTool,
                     ),
                   ),
                 FmSafePositioned(
@@ -2072,11 +2332,13 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     final delta = local - previous;
     _lastFocal = local;
     _moved += delta.distance;
+    _trackPointer(local);
+    if (_fixedToolCamera) return;
     if (details.pointerCount >= 2 || (details.scale - 1).abs() > 0.02) {
       _zoomed = true;
     }
     if (_rolling && details.pointerCount < 2) {
-      if (_cutting) return;
+      if (_cutting || _fixedToolCamera) return;
       _camera.setRoll(_rollStart + (local.dx - _rollAnchor) * 0.01);
       _pinScissor();
       return;
@@ -2137,18 +2399,12 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
         return;
       }
     }
-    final world = _aimWorld();
+    final world = _cameraFollowsTool ? _aimWorld() : _pointWorld(_lastFocal);
     if (world == null) return;
     if (_tool == _GridTool.scissors) {
       _onScissorTap(world);
     } else if (_tool == _GridTool.folder) {
-      final side = _tapSide(_lastFocal);
-      final toward = switch (side) {
-        _CutSide.up => true,
-        _CutSide.down => false,
-        _ => null,
-      };
-      _onFolderTap(world, toward: toward);
+      _onFolderTap(world, toward: _foldToward(_lastFocal, world));
     } else if (_tool == _GridTool.holePunch) {
       _onPunch(world);
     }
@@ -2183,11 +2439,58 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   }
 
   Offset? _aimWorld() {
+    if (!_cameraFollowsTool) {
+      return _pointWorld(_pointer ?? _lastFocal);
+    }
     if (_viewport.width < 2 || _viewport.height < 2) return null;
     return _camera.planePoint(
       Offset(_viewport.width / 2, _viewport.height / 2),
       _viewport,
     );
+  }
+
+  Offset? _pointWorld(Offset? local) {
+    if (local == null || _viewport.width < 2 || _viewport.height < 2) {
+      return null;
+    }
+    return _camera.planePoint(local, _viewport);
+  }
+
+  void _trackPointer(Offset local) {
+    if (_cameraFollowsTool) return;
+    _pointer = local;
+    final preview =
+        _tool == _GridTool.folder ||
+        _tool == _GridTool.holePunch ||
+        (_tool == _GridTool.scissors && _march == null);
+    if (!preview || !mounted) return;
+    setState(() {});
+  }
+
+  /// Above the crease folds toward the player. Below folds away.
+  ///
+  /// Follow mode reads that from the reticle, because the crease sits under
+  /// it. Fixed mode reads it from the crease on screen.
+  bool? _foldToward(Offset? local, Offset aim) {
+    if (_cameraFollowsTool) {
+      return switch (_tapSide(local)) {
+        _CutSide.up => true,
+        _CutSide.down => false,
+        _ => null,
+      };
+    }
+    if (local == null) return null;
+    final drawn = folderGuide(aim, _sheet, _step.gridSpacing)?.drawn;
+    if (drawn == null) return null;
+    final a = _project(drawn.$1);
+    final b = _project(drawn.$2);
+    if (a == null || b == null) return null;
+    final dx = b.dx - a.dx;
+    final lineY = dx.abs() < 1e-6
+        ? (a.dy + b.dy) / 2
+        : a.dy + (b.dy - a.dy) * ((local.dx - a.dx) / dx).clamp(0.0, 1.0);
+    if ((local.dy - lineY).abs() < _kCrosshairCutRadius) return null;
+    return local.dy < lineY;
   }
 
   (Offset, Offset)? _cueSegment(Offset? aim) {
@@ -2419,6 +2722,16 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     );
   }
 
+  /// Score widget center in the same space as [_project].
+  Offset? _scoreCenter(BuildContext overlay) {
+    final box = _scoreKey.currentContext?.findRenderObject() as RenderBox?;
+    final host = overlay.findRenderObject() as RenderBox?;
+    if (box == null || host == null || !box.hasSize || !host.hasSize) {
+      return null;
+    }
+    return host.globalToLocal(box.localToGlobal(box.size.center(Offset.zero)));
+  }
+
   void _playFlight(Duration duration) {
     void start() {
       if (!mounted) return;
@@ -2513,7 +2826,18 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                 name: _collectionName,
               ),
             ),
-            const SizedBox(width: 6),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                '$_collectionScore',
+                key: _scoreKey,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
             Expanded(
               child: _libraryButton(
                 key: const Key('grid-puzzle-button'),
@@ -2594,12 +2918,21 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
           items: _carouselItems(),
           selected: _tool,
           onSelect: (tool) {
+            final leavingScissors =
+                _tool == _GridTool.scissors && tool != _GridTool.scissors;
             setState(() {
               if (tool == _GridTool.select && _tool != _GridTool.select) {
                 _abandonOtherTools();
               }
               _tool = tool;
             });
+            if (leavingScissors) {
+              if (_rollNudge.isAnimating) _rollNudge.stop();
+            } else if (!_cameraFollowsTool &&
+                tool == _GridTool.scissors &&
+                _march != null) {
+              _lockToolCamera();
+            }
             _syncFlight();
           },
         ),
@@ -2703,7 +3036,8 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   Widget _turnButton({required bool clockwise}) {
     return IconButton(
       tooltip: clockwise ? 'Rotate clockwise' : 'Rotate counterclockwise',
-      onPressed: _turnAnim.isAnimating || _splitAnim.isAnimating
+      onPressed:
+          _turnAnim.isAnimating || _splitAnim.isAnimating || _fixedToolCamera
           ? null
           : () => _rotatePiece(clockwise),
       icon: Icon(
@@ -2916,4 +3250,56 @@ class _TapDebugPainter extends CustomPainter {
         oldDelegate.side != side ||
         oldDelegate.deadZone != deadZone;
   }
+}
+
+/// Leftover paper leaving as unit cells. Drawn in screen space.
+class _ScrapTallyPainter extends CustomPainter {
+  _ScrapTallyPainter({
+    required this.cells,
+    required this.windows,
+    required this.seconds,
+    required this.style,
+    required this.spacing,
+    required this.project,
+    required this.target,
+  });
+
+  final List<Offset> cells;
+  final List<CellWindow> windows;
+  final double seconds;
+  final ScrapTallyStyle style;
+  final double spacing;
+  final Offset? Function(Offset world) project;
+  final Offset? target;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = const Color(0xFFFFF3B0);
+    final fallback = Offset(size.width / 2, 28);
+    for (var i = 0; i < cells.length && i < windows.length; i++) {
+      final motion = cellMotion(
+        style: style,
+        window: windows[i],
+        seconds: seconds,
+      );
+      if (motion.gone || motion.scale < 0.02) continue;
+      final origin = project(cells[i]);
+      final edge = project(cells[i] + Offset(spacing, 0));
+      if (origin == null || edge == null) continue;
+      final px = (edge - origin).distance;
+      if (px < 0.5) continue;
+      final at = Offset.lerp(origin, target ?? fallback, motion.fly)!;
+      canvas.save();
+      canvas.translate(at.dx, at.dy);
+      canvas.scale(motion.scale);
+      canvas.drawRect(
+        Rect.fromCenter(center: Offset.zero, width: px, height: px),
+        paint,
+      );
+      canvas.restore();
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ScrapTallyPainter oldDelegate) => true;
 }

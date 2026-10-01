@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flatmates/gridcraft/piece_glow.dart';
 import 'package:flatmates/gridcraft/piece_glow_io.dart';
+import 'package:flatmates/gridcraft/scrap.dart';
 import 'package:flatmates/ui/game/grid_dev_panel.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -72,6 +73,10 @@ void main() {
             onSave: () async => saved++,
             showTapDebug: false,
             onShowTapDebugChanged: (_) {},
+            tallyStyle: ScrapTallyStyle.shrink,
+            onTallyStyleChanged: (_) {},
+            cameraFollowsTool: false,
+            onCameraFollowsToolChanged: (_) {},
           ),
         ),
       ),
@@ -89,5 +94,38 @@ void main() {
     await tester.pump();
     expect(saved, 1);
     expect(find.text('Saved'), findsOneWidget);
+  });
+
+  testWidgets('camera follow starts off and can be turned on', (tester) async {
+    var follows = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GridDevPanel(
+            glow: PieceGlowSettings.standard,
+            onGlowChanged: (_) {},
+            onSave: () async {},
+            showTapDebug: false,
+            onShowTapDebugChanged: (_) {},
+            tallyStyle: ScrapTallyStyle.shrink,
+            onTallyStyleChanged: (_) {},
+            cameraFollowsTool: follows,
+            onCameraFollowsToolChanged: (value) => follows = value,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('grid-dev-section')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Camera').last);
+    await tester.pumpAndSettle();
+
+    final box = tester.widget<Checkbox>(
+      find.byKey(const Key('grid-camera-follow')),
+    );
+    expect(box.value, isFalse);
+    await tester.tap(find.text('Follow tool'));
+    expect(follows, isTrue);
   });
 }

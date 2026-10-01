@@ -7,8 +7,71 @@ import 'fold.dart';
 /// Taps on one stack this close together select the next sheet down.
 const Duration stackTapInterval = Duration(milliseconds: 300);
 
-/// Opacity of one sheet in a pile of [pages]. A sheet alone stays opaque.
+/// How solid a blueprint curve is with [pages] sheets between the player
+/// and the ink. The front face, with nothing over it, stays solid. The
+/// paper itself does not use this.
 double pageOpacity(int pages) => pages <= 1 ? 1.0 : 1.0 / pages;
+
+/// Sheets between the player and blueprint ink at [local] on [pieceIndex].
+///
+/// Ink sits on the front face. Looking at the back counts that sheet. Each
+/// other sheet whose displayed paper covers the ink counts too.
+int blueprintInkCover({
+  required int pieceIndex,
+  required Offset local,
+  required PapercutSheet sheet,
+  int? bend,
+  double bendT = 1,
+}) {
+  if (pieceIndex < 0 || pieceIndex >= sheet.pieces.length) return 0;
+  final piece = sheet.pieces[pieceIndex];
+  var cover = showingBack(local, sheet.folds, bend: bend, bendT: bendT) ? 1 : 0;
+  final shown =
+      displayPoint(local, sheet.folds, bend: bend, bendT: bendT) +
+      piece.separation;
+  final depth = foldDepth(polygonCentroid(piece.vertices), sheet.folds);
+  for (var i = 0; i < sheet.pieces.length; i++) {
+    if (i == pieceIndex) continue;
+    final other = sheet.pieces[i];
+    final otherDepth = foldDepth(polygonCentroid(other.vertices), sheet.folds);
+    final inFront =
+        otherDepth > depth || (otherDepth == depth && i > pieceIndex);
+    if (!inFront) continue;
+    if (!_displayedContains(
+      other,
+      shown,
+      sheet.folds,
+      bend: bend,
+      bendT: bendT,
+    )) {
+      continue;
+    }
+    cover++;
+  }
+  return cover;
+}
+
+bool _displayedContains(
+  PapercutPiece piece,
+  Offset shown,
+  List<FoldJoint> folds, {
+  int? bend,
+  double bendT = 1,
+}) {
+  final ring = [
+    for (final point in piece.vertices)
+      displayPoint(point, folds, bend: bend, bendT: bendT) + piece.separation,
+  ];
+  if (ring.length < 3 || !isInsidePolygon(shown, ring)) return false;
+  for (final hole in piece.holes) {
+    final drawn = [
+      for (final point in hole)
+        displayPoint(point, folds, bend: bend, bendT: bendT) + piece.separation,
+    ];
+    if (drawn.length >= 3 && isInsidePolygon(shown, drawn)) return false;
+  }
+  return true;
+}
 
 /// How many sheets share a pile with each piece, including itself.
 ///

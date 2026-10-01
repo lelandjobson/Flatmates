@@ -167,11 +167,25 @@ Offset? nextOutlineHit({
 /// Screen side of a tap, measured from the crosshair. Up is toward the top.
 enum ScreenSide { up, down, left, right }
 
-/// Larger component of [delta] from the crosshair.
+/// Screen point a direction tap is measured from.
+///
+/// Follow mode uses the reticle. With the camera fixed, the tap is measured
+/// from the tool. That point starts where the blade was placed on the paper
+/// and moves with the blade.
+Offset directionTapOrigin({
+  required bool cameraFollowsTool,
+  required Offset reticle,
+  Offset? toolOnScreen,
+}) {
+  if (cameraFollowsTool || toolOnScreen == null) return reticle;
+  return toolOnScreen;
+}
+
+/// Larger component of [delta] from the aim point.
 ///
 /// A tap can sit off both axes. The bigger one wins: horizontal when
 /// `|dx| >= |dy|`, otherwise vertical. Screen Y grows downward. Both
-/// components inside [deadZone] are the crosshair itself.
+/// components inside [deadZone] are the aim point itself.
 ScreenSide? dominantScreenSide(Offset delta, {double deadZone = 0}) {
   final ax = delta.dx.abs();
   final ay = delta.dy.abs();

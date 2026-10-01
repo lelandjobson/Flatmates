@@ -162,13 +162,26 @@ int foldDepth(Offset point, List<FoldJoint> joints) {
   return depth;
 }
 
-bool showingBack(Offset point, List<FoldJoint> joints) {
+/// True when [point] has been turned an odd number of times.
+///
+/// [bend] is a joint still swinging. The back faces the player only after
+/// that swing passes halfway, when the flap has come through edge-on.
+bool showingBack(
+  Offset point,
+  List<FoldJoint> joints, {
+  int? bend,
+  double bendT = 1,
+}) {
   var flips = 0;
   var current = point;
-  for (final joint in joints) {
+  for (var i = 0; i < joints.length; i++) {
+    final joint = joints[i];
     if (!foldApplies(current, joint)) continue;
-    flips++;
-    current = reflectAcrossLine(current, joint.a, joint.b);
+    final swinging = i == bend && bendT < 1 - 1e-9;
+    if (!swinging || bendT >= 0.5) flips++;
+    current = swinging
+        ? bendAcrossLine(current, joint.a, joint.b, bendT)
+        : reflectAcrossLine(current, joint.a, joint.b);
   }
   return flips.isOdd;
 }
@@ -517,6 +530,7 @@ PapercutPiece? _pieceFromLoops(
   return PapercutPiece(
     id: p.id,
     color: p.color,
+    backColor: p.backColor,
     vertices: _dropCollinear(loops[outer]),
     holes: [...p.holes, ...q.holes, ...gaps],
     separation: p.separation,

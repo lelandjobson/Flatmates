@@ -12,12 +12,18 @@ class PapercutPiece {
     required this.id,
     required this.color,
     required this.vertices,
+    this.backColor = kPapercutPink,
     this.holes = const [],
     this.separation = Offset.zero,
   });
 
   final String id;
+
+  /// Front face. This is the color until a front texture is authored.
   final Color color;
+
+  /// Back face. Pastel pink until a back texture is authored.
+  final Color backColor;
   final List<Offset> vertices;
   final List<List<Offset>> holes;
 
@@ -25,10 +31,11 @@ class PapercutPiece {
   /// Cut geometry stays in grid space; only drawing uses this.
   final Offset separation;
 
-  PapercutPiece copyWith({Offset? separation}) {
+  PapercutPiece copyWith({Offset? separation, Color? backColor}) {
     return PapercutPiece(
       id: id,
       color: color,
+      backColor: backColor ?? this.backColor,
       vertices: vertices,
       holes: holes,
       separation: separation ?? this.separation,
@@ -39,11 +46,17 @@ class PapercutPiece {
     return PapercutPiece(
       id: id,
       color: color,
+      backColor: backColor,
       vertices: List<Offset>.from(vertices),
       holes: [for (final hole in holes) List<Offset>.from(hole)],
       separation: separation,
     );
   }
+}
+
+/// The face the player is looking at. [back] is the pink side.
+Color paperSideColor(PapercutPiece piece, {required bool back}) {
+  return back ? piece.backColor : piece.color;
 }
 
 /// A straight-edge crease. It is drawn, not folded into a mesh.

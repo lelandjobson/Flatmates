@@ -89,6 +89,9 @@ class GridPuzzlePainter extends CustomPainter {
     this.lit = const [],
     this.glow = PieceGlowSettings.standard,
     this.clearedRings = const {},
+    this.fadingIds = const {},
+    this.fadeOpacity = 1,
+    this.hiddenPieceIds = const {},
   });
 
   final PapercutCamera camera;
@@ -179,6 +182,13 @@ class GridPuzzlePainter extends CustomPainter {
   /// when another piece's model outline still contains that point.
   final Offset? ghostSeparation;
 
+  /// Scrap pieces fading out. [fadeOpacity] is how solid they still are.
+  final Set<String> fadingIds;
+  final double fadeOpacity;
+
+  /// Pieces drawn as tally cells instead of a solid fill.
+  final Set<String> hiddenPieceIds;
+
   @override
   void paint(Canvas canvas, Size size) {
     if (drawGrid) _paintUnitGrid(canvas, size);
@@ -196,22 +206,36 @@ class GridPuzzlePainter extends CustomPainter {
           );
           return depthA.compareTo(depthB);
         });
-      final pages = pageCounts(sheet);
       for (final index in order) {
         final piece = sheet.pieces[index];
-        if (_bursting(piece.id)) continue;
-        final count = index < pages.length ? pages[index] : 1;
+        if (_bursting(piece.id) || hiddenPieceIds.contains(piece.id)) continue;
+        final failingPaper =
+            failure?.kind == FailureKind.paper && failure?.index == index;
+        final pulse = failingPaper ? _failurePulse : 0.0;
+        final fade = fadingIds.contains(piece.id) ? fadeOpacity : 1.0;
+        final face = paperSideColor(
+          piece,
+          back: showingBack(
+            polygonCentroid(piece.vertices),
+            sheet.folds,
+            bend: foldBend,
+            bendT: foldBendT,
+          ),
+        );
+        final paper = face.withValues(alpha: face.a * fade);
         _fillDisplayed(
           canvas,
           size,
           piece,
-          const Color(0xFFFFF3B0).withValues(alpha: pageOpacity(count)),
+          pulse > 0
+              ? Color.lerp(paper, const Color(0xFFFF1744), pulse)!
+              : paper,
         );
         _stroke(
           canvas,
           size,
           _shownRing(piece.vertices, piece.separation),
-          const Color(0xFF1A1A2E),
+          const Color(0xFF1A1A2E).withValues(alpha: fade),
           width: 1.5,
           close: true,
         );
@@ -531,7 +555,6 @@ class GridPuzzlePainter extends CustomPainter {
         final a = ring[edge];
         final b = ring[(edge + 1) % ring.length];
         final penciled = styles[edge] == EdgeStyle.penciled;
-        final back = !fillShapes && showingBack(a, sheet.folds);
         final failing =
             failure?.kind == FailureKind.piece && failure?.index == i;
         final pulse = failing ? _failurePulse : 0.0;
@@ -543,17 +566,21 @@ class GridPuzzlePainter extends CustomPainter {
               )!
             : selectedPolygon
             ? const Color(0xFFFFD54F)
-            : back
-            ? const Color(0x881565C0)
             : const Color(0xFF1565C0);
         final width = pulse > 0
             ? 2.0 + 4 * pulse
             : (selectedPolygon ? 3.0 : 2.0);
         if (penciled) {
-          _paintFoldMark(canvas, size, a, b, color, width);
+          _paintFoldMark(canvas, size, a, b, color, width, solid: pulse > 0);
         } else {
-          for (final shown in _ownedSegments(a, b)) {
-            _stroke(canvas, size, [shown.$1, shown.$2], color, width: width);
+          for (final span in _inkSpans(a, b)) {
+            _stroke(
+              canvas,
+              size,
+              [span.$1, span.$2],
+              _throughPaper(color, pulse > 0 ? 0 : span.$3),
+              width: width,
+            );
           }
         }
       }
@@ -582,9 +609,11 @@ class GridPuzzlePainter extends CustomPainter {
     Offset a,
     Offset b,
     Color color,
-    double width,
-  ) {
-    void paint(Offset from, Offset to, Offset shift) {
+    double width, {
+    bool solid = false,
+  }) {
+    void paint(Offset from, Offset to, Offset shift, int cover) {
+      final ink = _throughPaper(color, cover);
       for (final dash in globalDashSegments(
         from,
         to,
@@ -594,22 +623,39 @@ class GridPuzzlePainter extends CustomPainter {
           canvas,
           size,
           [_seen(dash.$1) + shift, _seen(dash.$2) + shift],
-          color,
+          ink,
           width: width,
         );
       }
     }
 
     if (fillShapes || sheet.pieces.isEmpty) {
-      paint(a, b, Offset.zero);
+      paint(a, b, Offset.zero, 0);
       return;
     }
-    for (final piece in sheet.pieces) {
+    for (var i = 0; i < sheet.pieces.length; i++) {
+      final piece = sheet.pieces[i];
       if (_bursting(piece.id)) continue;
       for (final part in segmentOnPiece(a, b, piece)) {
-        paint(part.$1, part.$2, piece.separation);
+        final mid = Offset.lerp(part.$1, part.$2, 0.5)!;
+        final cover = solid
+            ? 0
+            : blueprintInkCover(
+                pieceIndex: i,
+                local: mid,
+                sheet: sheet,
+                bend: foldBend,
+                bendT: foldBendT,
+              );
+        paint(part.$1, part.$2, piece.separation, cover);
       }
     }
+  }
+
+  /// Blueprint ink seen through the sheets in front of it.
+  Color _throughPaper(Color color, int cover) {
+    if (cover <= 0) return color;
+    return color.withValues(alpha: color.a * pageOpacity(cover + 1));
   }
 
   /// An opened fold. A faint solid line, decoration only.
@@ -636,20 +682,30 @@ class GridPuzzlePainter extends CustomPainter {
     }
   }
 
-  /// Blueprint edges clipped onto each paper piece. The editor draws the
-  /// authored ring, because it has no cut sheet.
-  List<(Offset, Offset)> _ownedSegments(Offset a, Offset b) {
+  /// Blueprint edges clipped onto each paper piece, with how many sheets
+  /// sit between the player and that ink. The editor draws the authored
+  /// ring, because it has no cut sheet.
+  List<(Offset, Offset, int)> _inkSpans(Offset a, Offset b) {
     if (fillShapes || sheet.pieces.isEmpty) {
       final shown = _shiftSegment(_seen(a), _seen(b));
-      return [(shown.$1, shown.$2)];
+      return [(shown.$1, shown.$2, 0)];
     }
-    final placed = <(Offset, Offset)>[];
-    for (final piece in sheet.pieces) {
+    final placed = <(Offset, Offset, int)>[];
+    for (var i = 0; i < sheet.pieces.length; i++) {
+      final piece = sheet.pieces[i];
       if (_bursting(piece.id)) continue;
       for (final part in segmentOnPiece(a, b, piece)) {
+        final mid = Offset.lerp(part.$1, part.$2, 0.5)!;
         placed.add((
           _seen(part.$1) + piece.separation,
           _seen(part.$2) + piece.separation,
+          blueprintInkCover(
+            pieceIndex: i,
+            local: mid,
+            sheet: sheet,
+            bend: foldBend,
+            bendT: foldBendT,
+          ),
         ));
       }
     }
