@@ -177,12 +177,9 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   bool _showTapDebug = false;
 
   /// When set, the camera keeps the blade in the reticle and rolls with each
-  /// cut. Off, a scissor use zooms to fit, then stays put until that use ends.
+  /// cut. Off, panning still parks the blade on the reticle until a cut
+  /// starts. The cut zooms to fit and stays put until that use ends.
   bool _cameraFollowsTool = false;
-
-  /// Latest pointer in viewport space. Fixed-camera aiming uses this instead
-  /// of the reticle.
-  Offset? _pointer;
   ScrapTallyStyle _tallyStyle = ScrapTallyStyle.shrink;
   int _collectionScore = 0;
   final GlobalKey _scoreKey = GlobalKey();
@@ -2075,10 +2072,6 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                         math.exp(-event.scrollDelta.dy * 0.002),
                       );
                     },
-                    onPointerHover: (event) =>
-                        _trackPointer(event.localPosition),
-                    onPointerDown: (event) =>
-                        _trackPointer(event.localPosition),
                     child: GestureDetector(
                       key: const Key('grid-puzzle-canvas'),
                       behavior: HitTestBehavior.opaque,
@@ -2117,6 +2110,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                                   : null,
                               ghostCuts: ghosts.$1,
                               blockedCuts: ghosts.$2,
+                              activeCut: _activeCut(),
                               ghostSeparation: _ghostShift(aim),
                               gatheredColors: _progress.collectedColors,
                               nextNumber: _progress.nextNumber,
@@ -2188,7 +2182,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                     ),
                   ),
                 ),
-                if (_cameraFollowsTool)
+                if (!_fixedToolCamera)
                   const Positioned.fill(
                     child: IgnorePointer(child: ViewCrosshair()),
                   ),
@@ -2332,7 +2326,6 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     final delta = local - previous;
     _lastFocal = local;
     _moved += delta.distance;
-    _trackPointer(local);
     if (_fixedToolCamera) return;
     if (details.pointerCount >= 2 || (details.scale - 1).abs() > 0.02) {
       _zoomed = true;
@@ -2399,12 +2392,17 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
         return;
       }
     }
-    final world = _cameraFollowsTool ? _aimWorld() : _pointWorld(_lastFocal);
+    final world = _aimWorld();
     if (world == null) return;
     if (_tool == _GridTool.scissors) {
       _onScissorTap(world);
     } else if (_tool == _GridTool.folder) {
-      _onFolderTap(world, toward: _foldToward(_lastFocal, world));
+      final toward = switch (_tapSide(_lastFocal)) {
+        _CutSide.up => true,
+        _CutSide.down => false,
+        _ => null,
+      };
+      _onFolderTap(world, toward: toward);
     } else if (_tool == _GridTool.holePunch) {
       _onPunch(world);
     }
@@ -2438,59 +2436,14 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     });
   }
 
+  /// World point under the reticle. Panning slides the sheet under it, and
+  /// the seated blade follows. A cut in progress does not use this point.
   Offset? _aimWorld() {
-    if (!_cameraFollowsTool) {
-      return _pointWorld(_pointer ?? _lastFocal);
-    }
     if (_viewport.width < 2 || _viewport.height < 2) return null;
     return _camera.planePoint(
       Offset(_viewport.width / 2, _viewport.height / 2),
       _viewport,
     );
-  }
-
-  Offset? _pointWorld(Offset? local) {
-    if (local == null || _viewport.width < 2 || _viewport.height < 2) {
-      return null;
-    }
-    return _camera.planePoint(local, _viewport);
-  }
-
-  void _trackPointer(Offset local) {
-    if (_cameraFollowsTool) return;
-    _pointer = local;
-    final preview =
-        _tool == _GridTool.folder ||
-        _tool == _GridTool.holePunch ||
-        (_tool == _GridTool.scissors && _march == null);
-    if (!preview || !mounted) return;
-    setState(() {});
-  }
-
-  /// Above the crease folds toward the player. Below folds away.
-  ///
-  /// Follow mode reads that from the reticle, because the crease sits under
-  /// it. Fixed mode reads it from the crease on screen.
-  bool? _foldToward(Offset? local, Offset aim) {
-    if (_cameraFollowsTool) {
-      return switch (_tapSide(local)) {
-        _CutSide.up => true,
-        _CutSide.down => false,
-        _ => null,
-      };
-    }
-    if (local == null) return null;
-    final drawn = folderGuide(aim, _sheet, _step.gridSpacing)?.drawn;
-    if (drawn == null) return null;
-    final a = _project(drawn.$1);
-    final b = _project(drawn.$2);
-    if (a == null || b == null) return null;
-    final dx = b.dx - a.dx;
-    final lineY = dx.abs() < 1e-6
-        ? (a.dy + b.dy) / 2
-        : a.dy + (b.dy - a.dy) * ((local.dx - a.dx) / dx).clamp(0.0, 1.0);
-    if ((local.dy - lineY).abs() < _kCrosshairCutRadius) return null;
-    return local.dy < lineY;
   }
 
   (Offset, Offset)? _cueSegment(Offset? aim) {
@@ -2593,14 +2546,25 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     return (open, blocked);
   }
 
+  /// Model-space corners of the cut that has not left the paper yet.
+  ///
+  /// Finished strokes stay in the march path. The blade tip lengthens the
+  /// last one while it travels. The path is empty once the blade leaves,
+  /// because that stroke does not end where another cut can go forward.
+  List<Offset> _activeCut() {
+    final march = _march;
+    if (march == null || _tool != _GridTool.scissors) return const [];
+    Offset? tip;
+    if (_flight.phase == ToolFlightPhase.cut) {
+      final shift = _bladePiece()?.separation ?? Offset.zero;
+      tip = _flight.pose(_flightAnim.value).tip - shift;
+    }
+    return activeCutPoints(march.path, tip: tip);
+  }
+
   List<(Offset, Offset)> _displayGhosts(Offset? aim) {
     if (_tool != _GridTool.scissors) return const [];
-    if (_flight.phase == ToolFlightPhase.cut) {
-      final end = _modelEnd;
-      if (end == null) return const [];
-      final shift = _bladePiece()?.separation ?? Offset.zero;
-      return [(_flight.pose(_flightAnim.value).tip - shift, end)];
-    }
+    if (_flight.phase == ToolFlightPhase.cut) return const [];
     if (_directing) {
       final from = _march?.position;
       if (from == null) return const [];

@@ -697,6 +697,30 @@ void main() {
     expect(dominantScreenSide(const Offset(5, -4), deadZone: deadZone), isNull);
   });
 
+  test('the active cut keeps every stroke until the blade leaves', () {
+    expect(activeCutPoints(const [Offset(0, 0)]), isEmpty);
+    expect(
+      activeCutPoints(const [Offset(0, 0)], tip: const Offset(0, 1)),
+      const [Offset(0, 0), Offset(0, 1)],
+    );
+    final traveled = activeCutPoints(const [
+      Offset(0, 0),
+      Offset(2, 0),
+      Offset(2, 3),
+    ], tip: const Offset(4, 3));
+    expect(traveled, const [
+      Offset(0, 0),
+      Offset(2, 0),
+      Offset(2, 3),
+      Offset(4, 3),
+    ]);
+    expect(
+      activeCutPoints(const [Offset(0, 0), Offset(2, 0), Offset(2, 3)]),
+      const [Offset(0, 0), Offset(2, 0), Offset(2, 3)],
+    );
+    expect(activeCutPoints(const []), isEmpty);
+  });
+
   test('a fixed camera measures the tap from the tool, not the reticle', () {
     const reticle = Offset(400, 300);
     const tool = Offset(120, 220);
@@ -1187,35 +1211,51 @@ void main() {
       ),
     );
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
 
-    expect(find.byType(ViewCrosshair), findsNothing);
+    expect(find.byType(ViewCrosshair), findsOneWidget);
+    final seated = _glyphPainter(tester).pose.tip;
 
     final box = tester.renderObject<RenderBox>(
       find.byKey(const Key('grid-puzzle-canvas')),
     );
     final center = box.localToGlobal(box.size.center(Offset.zero));
-    await tester.dragFrom(center, const Offset(90, 0));
+    await tester.dragFrom(center, const Offset(180, 0));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     await tester.pump();
 
     final panned = _puzzlePainter(tester);
     final paper = panned.step.paper;
     expect((panned.camera.lookAt - paper.center).distance, greaterThan(1));
+    final followed = _glyphPainter(tester).pose;
+    expect(followed.visible, greaterThan(0));
+    expect((followed.tip - seated).distance, greaterThan(0.4));
 
-    final edge = panned.camera.camera.projectToScreen(
-      Vector3(paper.left, paper.center.dy, 0),
-      box.size,
-    );
-    expect(edge, isNotNull);
-    await tester.tapAt(box.localToGlobal(edge!));
+    await tester.tapAt(center);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 40));
 
+    expect(find.byType(ViewCrosshair), findsNothing);
     final cutting = _puzzlePainter(tester);
     expect((cutting.camera.lookAt - paper.center).distance, lessThan(1));
     expect(cutting.camera.roll, closeTo(0, 1e-6));
     final glyph = _glyphPainter(tester);
     expect(glyph.pose.visible, greaterThan(0));
-    expect((glyph.pose.tip - paper.center).distance, greaterThan(1));
+    final early = cutting.activeCut;
+    expect(early.length, greaterThanOrEqualTo(2));
+    expect(cutting.ghostCuts, isEmpty);
+    final earlyLength = (early.last - early.first).distance;
+    expect(earlyLength, greaterThan(0.05));
+
+    await tester.pump(const Duration(milliseconds: 80));
+    final later = _puzzlePainter(tester).activeCut;
+    expect(later.length, early.length);
+    expect(
+      (later.last - later.first).distance,
+      greaterThan(earlyLength + 0.05),
+    );
 
     final fitted = cutting.camera.lookAt;
     await tester.dragFrom(center, const Offset(-90, 0));

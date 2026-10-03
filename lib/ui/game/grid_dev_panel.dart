@@ -236,7 +236,7 @@ class _CameraSettings extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'On, the camera keeps the tool in the reticle and turns with it. Off, a tool use zooms to fit and stays put. Taps are measured from the tool.',
+          'On, the camera keeps the tool in the reticle and turns with each cut. Off, panning still parks the tool on the reticle until a cut starts. The cut zooms to fit and stays put, and further taps are measured from the tool.',
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.45),
             fontSize: 10,

@@ -60,6 +60,7 @@ class GridPuzzlePainter extends CustomPainter {
     this.pickedPiece,
     this.ghostCuts = const [],
     this.blockedCuts = const [],
+    this.activeCut = const [],
     this.ghostSeparation,
     this.fillShapes = false,
     this.drawGrid = true,
@@ -107,6 +108,12 @@ class GridPuzzlePainter extends CustomPainter {
   final int? pickedPiece;
   final List<(Offset, Offset)> ghostCuts;
   final List<(Offset, Offset)> blockedCuts;
+
+  /// Corners of the cut still in progress, in model space.
+  ///
+  /// This is every stroke since the blade entered, through the one that
+  /// leaves the paper. The last point is the blade while a stroke travels.
+  final List<Offset> activeCut;
 
   /// Editor draws polygons as filled paper and skips the sheet fill.
   final bool fillShapes;
@@ -313,6 +320,17 @@ class GridPuzzlePainter extends CustomPainter {
       _stroke(canvas, size, [shown.$1, shown.$2], blocked, width: 4);
       final terminal = _project(shown.$2, size);
       if (terminal != null) _paintTerminal(canvas, terminal, blocked);
+    }
+    if (activeCut.length >= 2) {
+      final shown = _shiftPolyline(activeCut);
+      _stroke(
+        canvas,
+        size,
+        shown,
+        const Color(0xFFFF1744),
+        width: 6,
+        join: StrokeJoin.round,
+      );
     }
     _paintScores(canvas, size);
     _paintMarks(canvas, size);
@@ -1314,16 +1332,35 @@ class GridPuzzlePainter extends CustomPainter {
   }
 
   (Offset, Offset) _shiftSegment(Offset a, Offset b) {
-    final shift = ghostSeparation;
-    if (shift != null) return (a + shift, b + shift);
-    final mid = Offset((a.dx + b.dx) / 2, (a.dy + b.dy) / 2);
+    final shift = _polylineShift([a, b]);
+    return (a + shift, b + shift);
+  }
+
+  List<Offset> _shiftPolyline(List<Offset> points) {
+    final shift = _polylineShift(points);
+    if (shift == Offset.zero) return points;
+    return [for (final point in points) point + shift];
+  }
+
+  Offset _polylineShift(List<Offset> points) {
+    final given = ghostSeparation;
+    if (given != null) return given;
+    if (points.isEmpty) return Offset.zero;
+    final origin = points.first;
+    final sample = points.length < 2
+        ? origin
+        : Offset(
+            (origin.dx + points[1].dx) / 2,
+            (origin.dy + points[1].dy) / 2,
+          );
     for (final piece in sheet.pieces) {
-      if (!ownsPoint(piece.vertices, mid) && !ownsPoint(piece.vertices, a)) {
+      if (!ownsPoint(piece.vertices, sample) &&
+          !ownsPoint(piece.vertices, origin)) {
         continue;
       }
-      return (a + piece.separation, b + piece.separation);
+      return piece.separation;
     }
-    return (a, b);
+    return Offset.zero;
   }
 
   bool _crossesX(List<Offset> ring, double x) {
@@ -1350,6 +1387,7 @@ class GridPuzzlePainter extends CustomPainter {
     required double width,
     bool close = false,
     bool dashed = false,
+    StrokeJoin join = StrokeJoin.miter,
   }) {
     final projected = [
       for (final point in ring) _project(point, size),
@@ -1359,7 +1397,8 @@ class GridPuzzlePainter extends CustomPainter {
       ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = width
-      ..strokeCap = StrokeCap.round;
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = join;
     if (!dashed) {
       final path = Path()..moveTo(projected.first.dx, projected.first.dy);
       for (final point in projected.skip(1)) {

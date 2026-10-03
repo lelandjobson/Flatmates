@@ -167,6 +167,23 @@ Offset? nextOutlineHit({
 /// Screen side of a tap, measured from the crosshair. Up is toward the top.
 enum ScreenSide { up, down, left, right }
 
+/// Points of the cut still in progress.
+///
+/// [path] runs from the paper edge through every stroke the blade has
+/// finished. [tip] is where the blade is now, and lengthens the last stroke
+/// while it travels. The path ends when the blade leaves the paper: that
+/// last stroke does not stop where another cut can go forward. The caller
+/// passes an empty path once the blade has left.
+List<Offset> activeCutPoints(List<Offset> path, {Offset? tip}) {
+  if (path.isEmpty) return const [];
+  final points = List<Offset>.of(path);
+  if (tip != null && (tip - points.last).distance >= 1e-3) {
+    points.add(tip);
+  }
+  if (points.length < 2) return const [];
+  return points;
+}
+
 /// Screen point a direction tap is measured from.
 ///
 /// Follow mode uses the reticle. With the camera fixed, the tap is measured
