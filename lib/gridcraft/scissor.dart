@@ -213,6 +213,13 @@ ScreenSide? dominantScreenSide(Offset delta, {double deadZone = 0}) {
   return delta.dy >= 0 ? ScreenSide.down : ScreenSide.up;
 }
 
+/// Side a swipe cuts toward. The sheet scrolls under the blade, so the
+/// cut is opposite the finger. A downward finger cuts up. Movement inside
+/// [deadZone] is not a side.
+ScreenSide? swipeCutSide(Offset fingerDelta, {double deadZone = 0}) {
+  return dominantScreenSide(-fingerDelta, deadZone: deadZone);
+}
+
 /// One straight cut the blade can still take.
 class ForwardCut {
   const ForwardCut({required this.direction, required this.end});

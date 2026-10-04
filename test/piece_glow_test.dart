@@ -77,6 +77,8 @@ void main() {
             onTallyStyleChanged: (_) {},
             cameraFollowsTool: false,
             onCameraFollowsToolChanged: (_) {},
+            cameraRotates: true,
+            onCameraRotatesChanged: (_) {},
           ),
         ),
       ),
@@ -96,8 +98,9 @@ void main() {
     expect(find.text('Saved'), findsOneWidget);
   });
 
-  testWidgets('camera follow starts off and can be turned on', (tester) async {
-    var follows = false;
+  testWidgets('camera settings toggle follow and rotation', (tester) async {
+    var follows = true;
+    var rotates = true;
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -111,6 +114,8 @@ void main() {
             onTallyStyleChanged: (_) {},
             cameraFollowsTool: follows,
             onCameraFollowsToolChanged: (value) => follows = value,
+            cameraRotates: true,
+            onCameraRotatesChanged: (value) => rotates = value,
           ),
         ),
       ),
@@ -124,8 +129,16 @@ void main() {
     final box = tester.widget<Checkbox>(
       find.byKey(const Key('grid-camera-follow')),
     );
-    expect(box.value, isFalse);
+    expect(box.value, isTrue);
+    expect(
+      tester
+          .widget<Checkbox>(find.byKey(const Key('grid-camera-rotate')))
+          .value,
+      isTrue,
+    );
     await tester.tap(find.text('Follow tool'));
-    expect(follows, isTrue);
+    expect(follows, isFalse);
+    await tester.tap(find.text('Rotate camera'));
+    expect(rotates, isFalse);
   });
 }

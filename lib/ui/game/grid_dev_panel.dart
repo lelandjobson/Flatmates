@@ -21,6 +21,8 @@ class GridDevPanel extends StatefulWidget {
     required this.onTallyStyleChanged,
     required this.cameraFollowsTool,
     required this.onCameraFollowsToolChanged,
+    required this.cameraRotates,
+    required this.onCameraRotatesChanged,
   });
 
   final PieceGlowSettings glow;
@@ -32,6 +34,8 @@ class GridDevPanel extends StatefulWidget {
   final ValueChanged<ScrapTallyStyle> onTallyStyleChanged;
   final bool cameraFollowsTool;
   final ValueChanged<bool> onCameraFollowsToolChanged;
+  final bool cameraRotates;
+  final ValueChanged<bool> onCameraRotatesChanged;
 
   @override
   State<GridDevPanel> createState() => _GridDevPanelState();
@@ -138,7 +142,9 @@ class _GridDevPanelState extends State<GridDevPanel> {
               else if (_section == _GridDevSection.camera)
                 _CameraSettings(
                   followsTool: widget.cameraFollowsTool,
-                  onChanged: widget.onCameraFollowsToolChanged,
+                  onFollowChanged: widget.onCameraFollowsToolChanged,
+                  rotates: widget.cameraRotates,
+                  onRotateChanged: widget.onCameraRotatesChanged,
                 )
               else
                 _TapDebugSettings(
@@ -225,10 +231,17 @@ class _CompletedPieceSettings extends StatelessWidget {
 }
 
 class _CameraSettings extends StatelessWidget {
-  const _CameraSettings({required this.followsTool, required this.onChanged});
+  const _CameraSettings({
+    required this.followsTool,
+    required this.onFollowChanged,
+    required this.rotates,
+    required this.onRotateChanged,
+  });
 
   final bool followsTool;
-  final ValueChanged<bool> onChanged;
+  final ValueChanged<bool> onFollowChanged;
+  final bool rotates;
+  final ValueChanged<bool> onRotateChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -236,7 +249,7 @@ class _CameraSettings extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'On, the camera keeps the tool in the reticle and turns with each cut. Off, panning still parks the tool on the reticle until a cut starts. The cut zooms to fit and stays put, and further taps are measured from the tool.',
+          'The camera keeps the tool in the reticle. Rotate camera turns the sheet so each cut points up. With follow off, a cut zooms to fit and stays put, and further taps are measured from the tool.',
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.45),
             fontSize: 10,
@@ -244,42 +257,72 @@ class _CameraSettings extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => onChanged(!followsTool),
-          child: Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Follow tool',
-                  style: TextStyle(color: Colors.white70, fontSize: 12),
-                ),
-              ),
-              SizedBox(
-                height: 24,
-                width: 36,
-                child: IgnorePointer(
-                  child: Checkbox(
-                    key: const Key('grid-camera-follow'),
-                    value: followsTool,
-                    onChanged: (_) {},
-                    side: const BorderSide(color: Colors.white54),
-                    fillColor: WidgetStateProperty.resolveWith((states) {
-                      if (states.contains(WidgetState.selected)) {
-                        return Colors.white24;
-                      }
-                      return Colors.transparent;
-                    }),
-                    checkColor: Colors.white,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.compact,
-                  ),
-                ),
-              ),
-            ],
-          ),
+        _CameraCheck(
+          label: 'Follow tool',
+          boxKey: const Key('grid-camera-follow'),
+          value: followsTool,
+          onChanged: onFollowChanged,
+        ),
+        _CameraCheck(
+          label: 'Rotate camera',
+          boxKey: const Key('grid-camera-rotate'),
+          value: rotates,
+          onChanged: onRotateChanged,
         ),
       ],
+    );
+  }
+}
+
+class _CameraCheck extends StatelessWidget {
+  const _CameraCheck({
+    required this.label,
+    required this.boxKey,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final Key boxKey;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => onChanged(!value),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          ),
+          SizedBox(
+            height: 24,
+            width: 36,
+            child: IgnorePointer(
+              child: Checkbox(
+                key: boxKey,
+                value: value,
+                onChanged: (_) {},
+                side: const BorderSide(color: Colors.white54),
+                fillColor: WidgetStateProperty.resolveWith((states) {
+                  if (states.contains(WidgetState.selected)) {
+                    return Colors.white24;
+                  }
+                  return Colors.transparent;
+                }),
+                checkColor: Colors.white,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

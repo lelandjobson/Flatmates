@@ -697,6 +697,13 @@ void main() {
     expect(dominantScreenSide(const Offset(5, -4), deadZone: deadZone), isNull);
   });
 
+  test('a swipe cuts opposite the finger', () {
+    const slop = 12.0;
+    expect(swipeCutSide(const Offset(0, 40), deadZone: slop), ScreenSide.up);
+    expect(swipeCutSide(const Offset(40, 8), deadZone: slop), ScreenSide.left);
+    expect(swipeCutSide(const Offset(0, 8), deadZone: slop), isNull);
+  });
+
   test('the active cut keeps every stroke until the blade leaves', () {
     expect(activeCutPoints(const [Offset(0, 0)]), isEmpty);
     expect(
@@ -1211,6 +1218,10 @@ void main() {
       ),
     );
     await tester.pump();
+    await _openCameraSettings(tester);
+    await tester.tap(find.text('Follow tool'));
+    await tester.pump();
+
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pump();
 
@@ -1265,6 +1276,116 @@ void main() {
       lessThan(1),
     );
   });
+
+  testWidgets('a cut follows the blade without turning the sheet', (tester) async {
+    final directory = Directory.systemTemp.createTempSync('puzzle-follow');
+    addTearDown(() => directory.delete(recursive: true));
+    await tester.pumpWidget(
+      ChangeNotifierProvider(
+        create: (_) => FmThemeData(),
+        child: MaterialApp(
+          home: GridPuzzleView(
+            initial: twinLsBlueprint(),
+            store: LevelStore(directory: directory),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    final box = tester.renderObject<RenderBox>(
+      find.byKey(const Key('grid-puzzle-canvas')),
+    );
+    final center = box.size.center(Offset.zero);
+    final camera = _puzzlePainter(tester).camera;
+    final paper = _puzzlePainter(tester).step.paper;
+    final here = camera.planePoint(center, box.size)!;
+    final aside = camera.planePoint(center + const Offset(80, 0), box.size)!;
+    final perPixel = (aside.dx - here.dx) / 80;
+    final drag = (paper.left + 0.45 - here.dx) / perPixel;
+    await tester.dragFrom(box.localToGlobal(center), Offset(-drag, 0));
+    await tester.pump();
+    final before = _puzzlePainter(tester).camera.lookAt;
+    await tester.tapAt(box.localToGlobal(center));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+    final opening = _puzzlePainter(tester);
+    final cut = opening.activeCut;
+    expect(cut.length, greaterThanOrEqualTo(2));
+    final edge = cut.first;
+    final tip = cut.last;
+    expect(
+      (opening.camera.lookAt - edge).distance,
+      greaterThan((tip - edge).distance),
+    );
+    expect(
+      (opening.camera.lookAt - edge).distance,
+      greaterThan((before - edge).distance),
+    );
+
+    await tester.pump(const Duration(milliseconds: 1000));
+
+    final followed = _puzzlePainter(tester).camera;
+    final blade = _glyphPainter(tester).pose.tip;
+    expect((followed.lookAt - blade).distance, lessThan(2));
+    expect(followed.roll, closeTo(0, 1e-6));
+  });
+
+  testWidgets('a cut rolls the sheet when rotate is on', (tester) async {
+    final directory = Directory.systemTemp.createTempSync('puzzle-roll');
+    addTearDown(() => directory.delete(recursive: true));
+    await tester.pumpWidget(
+      ChangeNotifierProvider(
+        create: (_) => FmThemeData(),
+        child: MaterialApp(
+          home: GridPuzzleView(
+            initial: twinLsBlueprint(),
+            store: LevelStore(directory: directory),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    await _openCameraSettings(tester);
+    await tester.tap(find.text('Rotate camera'));
+    await tester.pump();
+
+    final box = tester.renderObject<RenderBox>(
+      find.byKey(const Key('grid-puzzle-canvas')),
+    );
+    final center = box.size.center(Offset.zero);
+    final camera = _puzzlePainter(tester).camera;
+    final paper = _puzzlePainter(tester).step.paper;
+    final here = camera.planePoint(center, box.size)!;
+    final aside = camera.planePoint(center + const Offset(80, 0), box.size)!;
+    final perPixel = (aside.dx - here.dx) / 80;
+    final drag = (paper.left - here.dx) / perPixel;
+    await tester.dragFrom(box.localToGlobal(center), Offset(-drag, 0));
+    await tester.pump();
+    await tester.tapAt(box.localToGlobal(center));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1000));
+
+    final followed = _puzzlePainter(tester).camera;
+    final blade = _glyphPainter(tester).pose.tip;
+    expect((followed.lookAt - blade).distance, lessThan(2));
+    expect(followed.roll.abs(), greaterThan(0.4));
+  });
+}
+
+Future<void> _openCameraSettings(WidgetTester tester) async {
+  await tester.tap(find.text('devtools'));
+  await tester.pump();
+  await tester.tap(find.byKey(const Key('grid-dev-section')));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 400));
+  await tester.tap(find.text('Camera').last);
+  await tester.pump();
 }
 
 GridPuzzlePainter _puzzlePainter(WidgetTester tester) {

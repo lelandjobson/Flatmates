@@ -39,3 +39,5 @@ flutter:
     - assets/gameplay/eye_profiles/
     - assets/textures/paper/
     - assets/gridcraft/
+    - levels/puzzles/
+    - levels/sharp-turns/

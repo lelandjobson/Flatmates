@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
+
 import 'blueprint.dart';
 
 /// Folder id for loose blueprint files that sit directly under the store
@@ -48,10 +50,16 @@ class LevelSaveException implements Exception {
 ///
 /// Disk work is synchronous so a save finishes before the future completes.
 class LevelStore {
-  LevelStore({Directory? directory})
+  LevelStore({Directory? directory, this.bundle})
     : directory = directory ?? Directory('levels');
 
   final Directory directory;
+
+  /// App bundle holding a copy of `levels/`, so play works where that folder
+  /// is not beside the running app (mobile, or a launch outside the repo).
+  /// Disk wins: bundled collections and puzzles only fill in what is missing.
+  /// Each `levels/` subfolder has to be listed under `assets:` in pubspec.
+  final AssetBundle? bundle;
 
   final Map<String, String> _pathById = {};
 
@@ -76,6 +84,78 @@ class LevelStore {
   }
 
   Future<List<PuzzleCollection>> loadCollections() async {
+    final disk = _loadDisk();
+    final bundle = this.bundle;
+    if (bundle == null) return disk;
+    final bundled = await _loadBundled(bundle);
+    if (bundled.isEmpty) return disk;
+    final merged = [...disk];
+    for (final collection in bundled) {
+      final index = merged.indexWhere((item) => item.id == collection.id);
+      if (index < 0) {
+        merged.add(collection);
+        continue;
+      }
+      final have = merged[index];
+      final ids = {for (final puzzle in have.puzzles) puzzle.id};
+      final puzzles = [
+        ...have.puzzles,
+        ...collection.puzzles.where((puzzle) => !ids.contains(puzzle.id)),
+      ]..sort(_comparePuzzles);
+      merged[index] = PuzzleCollection(
+        id: have.id,
+        name: have.name,
+        puzzles: puzzles,
+      );
+    }
+    merged.sort((a, b) => a.name.compareTo(b.name));
+    return merged;
+  }
+
+  Future<List<PuzzleCollection>> _loadBundled(AssetBundle bundle) async {
+    final List<String> assets;
+    try {
+      final manifest = await AssetManifest.loadFromAssetBundle(bundle);
+      assets = manifest.listAssets();
+    } catch (_) {
+      return const [];
+    }
+    final prefix = '${_basename(directory.path)}/';
+    final files = <String, List<String>>{};
+    for (final asset in assets) {
+      if (!asset.startsWith(prefix)) continue;
+      final parts = asset.substring(prefix.length).split('/');
+      if (parts.length != 2 || !parts[1].endsWith('.json')) continue;
+      files.putIfAbsent(parts[0], () => []).add(asset);
+    }
+    final collections = <PuzzleCollection>[];
+    for (final MapEntry(key: folder, value: paths) in files.entries) {
+      String? name;
+      final puzzles = <GridBlueprint>[];
+      for (final path in paths) {
+        final String text;
+        try {
+          text = await bundle.loadString(path, cache: false);
+        } catch (_) {
+          continue;
+        }
+        if (_basename(path) == _manifestName) {
+          name = _parseManifestName(text) ?? folder;
+          continue;
+        }
+        final puzzle = _parseBlueprint(text);
+        if (puzzle != null) puzzles.add(puzzle);
+      }
+      if (name == null) continue;
+      puzzles.sort(_comparePuzzles);
+      collections.add(
+        PuzzleCollection(id: folder, name: name, puzzles: puzzles),
+      );
+    }
+    return collections;
+  }
+
+  List<PuzzleCollection> _loadDisk() {
     _pathById.clear();
     if (!directory.existsSync()) return const [];
     final collections = <PuzzleCollection>[];
@@ -216,7 +296,23 @@ class LevelStore {
 
   String? _readManifestName(File file) {
     try {
-      final json = jsonDecode(file.readAsStringSync());
+      return _parseManifestName(file.readAsStringSync());
+    } catch (_) {
+      return null;
+    }
+  }
+
+  GridBlueprint? _readBlueprint(File file) {
+    try {
+      return _parseBlueprint(file.readAsStringSync());
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? _parseManifestName(String text) {
+    try {
+      final json = jsonDecode(text);
       if (json is! Map) return null;
       final name = json['name'];
       if (name is! String || name.trim().isEmpty) return null;
@@ -226,9 +322,9 @@ class LevelStore {
     }
   }
 
-  GridBlueprint? _readBlueprint(File file) {
+  GridBlueprint? _parseBlueprint(String text) {
     try {
-      final json = jsonDecode(file.readAsStringSync());
+      final json = jsonDecode(text);
       if (json is! Map) return null;
       return GridBlueprint.fromJson(Map<String, dynamic>.from(json));
     } catch (_) {
