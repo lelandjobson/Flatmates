@@ -929,7 +929,8 @@ ScissorCommit? commitScissor({
   final owner = _strokeOwner(base, path);
   final shift = owner?.separation ?? Offset.zero;
   final display = [
-    for (final point in path) displayPoint(point, base.folds) + shift,
+    for (final point in path)
+      displayPoint(point, base.folds, pieceId: owner?.id) + shift,
   ];
   final cut = cutThroughFolds(
     base,

@@ -90,6 +90,7 @@ class FoldJoint {
     required this.b,
     required this.side,
     required this.facing,
+    this.pieceIds = const {},
   });
 
   final Offset a;
@@ -97,8 +98,20 @@ class FoldJoint {
   final double side;
   final FoldFacing facing;
 
-  FoldJoint copyWith({FoldFacing? facing}) {
-    return FoldJoint(a: a, b: b, side: side, facing: facing ?? this.facing);
+  /// Pieces this joint moves, including pieces cut from them later.
+  ///
+  /// Empty means every piece on the flap side, which is how joints created
+  /// before piece-scoped folds behave.
+  final Set<String> pieceIds;
+
+  FoldJoint copyWith({FoldFacing? facing, Set<String>? pieceIds}) {
+    return FoldJoint(
+      a: a,
+      b: b,
+      side: side,
+      facing: facing ?? this.facing,
+      pieceIds: pieceIds ?? this.pieceIds,
+    );
   }
 }
 

@@ -48,6 +48,7 @@ void main() {
         'papercut_puzzles',
         'craft_editor',
         'grid_puzzles',
+        'dynamic_grid_puzzles',
         'puzzle_editor',
         'tool_animations',
       });

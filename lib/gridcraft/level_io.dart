@@ -15,6 +15,9 @@ const String kLooseCollectionName = 'Puzzles';
 
 const String _manifestName = 'collection.json';
 
+/// `collection.json`. A blank or missing name falls back to the folder name.
+typedef _Manifest = ({String? name, bool hidden});
+
 /// A puzzle collection: a folder of blueprint files. The editor calls each
 /// file a puzzle. [id] is the folder slug, except for [kLooseCollectionId].
 class PuzzleCollection {
@@ -22,13 +25,30 @@ class PuzzleCollection {
     required this.id,
     required this.name,
     required this.puzzles,
+    this.hidden = false,
   });
 
   final String id;
   final String name;
   final List<GridBlueprint> puzzles;
 
+  /// Left out of play, with every puzzle in it. Stored in `collection.json`.
+  /// The puzzle editor still lists it.
+  final bool hidden;
+
   bool get loose => id == kLooseCollectionId;
+
+  /// What play shows: nothing when hidden, otherwise the puzzles not hidden.
+  PuzzleCollection? get playable {
+    if (hidden) return null;
+    final shown = [
+      for (final puzzle in puzzles)
+        if (!puzzle.hidden) puzzle,
+    ];
+    if (shown.isEmpty) return null;
+    if (shown.length == puzzles.length) return this;
+    return PuzzleCollection(id: id, name: name, puzzles: shown);
+  }
 }
 
 enum LevelSaveFailure { blankName, collectionTaken, puzzleTaken }
@@ -106,6 +126,7 @@ class LevelStore {
         id: have.id,
         name: have.name,
         puzzles: puzzles,
+        hidden: have.hidden,
       );
     }
     merged.sort((a, b) => a.name.compareTo(b.name));
@@ -130,7 +151,7 @@ class LevelStore {
     }
     final collections = <PuzzleCollection>[];
     for (final MapEntry(key: folder, value: paths) in files.entries) {
-      String? name;
+      _Manifest? manifest;
       final puzzles = <GridBlueprint>[];
       for (final path in paths) {
         final String text;
@@ -140,16 +161,21 @@ class LevelStore {
           continue;
         }
         if (_basename(path) == _manifestName) {
-          name = _parseManifestName(text) ?? folder;
+          manifest = _parseManifest(text);
           continue;
         }
         final puzzle = _parseBlueprint(text);
         if (puzzle != null) puzzles.add(puzzle);
       }
-      if (name == null) continue;
+      if (manifest == null) continue;
       puzzles.sort(_comparePuzzles);
       collections.add(
-        PuzzleCollection(id: folder, name: name, puzzles: puzzles),
+        PuzzleCollection(
+          id: folder,
+          name: manifest.name ?? folder,
+          puzzles: puzzles,
+          hidden: manifest.hidden,
+        ),
       );
     }
     return collections;
@@ -235,8 +261,13 @@ class LevelStore {
     final oldPaths = Map<String, String>.from(_pathById);
     final root = directory.absolute;
     final destDir = Directory('${root.path}/$collectionSlug');
+    final kept = _readManifest(File('${destDir.path}/$_manifestName'));
     destDir.createSync(recursive: true);
-    _writeManifest(destDir, collectionDisplay);
+    _writeManifest(
+      destDir,
+      collectionDisplay,
+      hidden: kept?.hidden ?? source?.hidden ?? false,
+    );
 
     if (source != null && source.id != collectionSlug) {
       for (final other in neighbors) {
@@ -275,7 +306,7 @@ class LevelStore {
     final manifest = File('${folder.path}/$_manifestName');
     if (!manifest.existsSync()) return null;
     final folderName = _basename(folder.path);
-    final name = _readManifestName(manifest) ?? folderName;
+    final read = _readManifest(manifest);
     final puzzles = <GridBlueprint>[];
     for (final entity in folder.listSync(followLinks: false)) {
       if (entity is! File || !_isPuzzleFile(entity.path)) continue;
@@ -285,18 +316,26 @@ class LevelStore {
       puzzles.add(puzzle);
     }
     puzzles.sort(_comparePuzzles);
-    return PuzzleCollection(id: folderName, name: name, puzzles: puzzles);
-  }
-
-  void _writeManifest(Directory folder, String name) {
-    File('${folder.path}/$_manifestName').writeAsStringSync(
-      const JsonEncoder.withIndent('  ').convert({'name': name}),
+    return PuzzleCollection(
+      id: folderName,
+      name: read?.name ?? folderName,
+      puzzles: puzzles,
+      hidden: read?.hidden ?? false,
     );
   }
 
-  String? _readManifestName(File file) {
+  void _writeManifest(Directory folder, String name, {bool hidden = false}) {
+    File('${folder.path}/$_manifestName').writeAsStringSync(
+      const JsonEncoder.withIndent(
+        '  ',
+      ).convert({'name': name, if (hidden) 'hidden': true}),
+    );
+  }
+
+  _Manifest? _readManifest(File file) {
+    if (!file.existsSync()) return null;
     try {
-      return _parseManifestName(file.readAsStringSync());
+      return _parseManifest(file.readAsStringSync());
     } catch (_) {
       return null;
     }
@@ -310,13 +349,15 @@ class LevelStore {
     }
   }
 
-  String? _parseManifestName(String text) {
+  _Manifest? _parseManifest(String text) {
     try {
       final json = jsonDecode(text);
       if (json is! Map) return null;
       final name = json['name'];
-      if (name is! String || name.trim().isEmpty) return null;
-      return name.trim();
+      return (
+        name: name is String && name.trim().isNotEmpty ? name.trim() : null,
+        hidden: json['hidden'] == true,
+      );
     } catch (_) {
       return null;
     }

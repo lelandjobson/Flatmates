@@ -1,20 +1,15 @@
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
-import '../../gridcraft/piece_glow.dart';
 import '../../gridcraft/scrap.dart';
 
-enum _GridDevSection { completedPiece, tapDebug, paperScore, camera }
+enum _GridDevSection { tapDebug, paperScore, camera }
 
 /// Right-hand puzzle DevTools. The dropdown picks which settings to edit.
 class GridDevPanel extends StatefulWidget {
   const GridDevPanel({
     super.key,
-    required this.glow,
-    required this.onGlowChanged,
-    required this.onSave,
     required this.showTapDebug,
     required this.onShowTapDebugChanged,
     required this.tallyStyle,
@@ -25,9 +20,6 @@ class GridDevPanel extends StatefulWidget {
     required this.onCameraRotatesChanged,
   });
 
-  final PieceGlowSettings glow;
-  final ValueChanged<PieceGlowSettings> onGlowChanged;
-  final Future<void> Function() onSave;
   final bool showTapDebug;
   final ValueChanged<bool> onShowTapDebugChanged;
   final ScrapTallyStyle tallyStyle;
@@ -42,24 +34,7 @@ class GridDevPanel extends StatefulWidget {
 }
 
 class _GridDevPanelState extends State<GridDevPanel> {
-  _GridDevSection _section = _GridDevSection.completedPiece;
-  String _status = 'Save';
-
-  Future<void> _save() async {
-    try {
-      await widget.onSave();
-      if (!mounted) return;
-      setState(() => _status = 'Saved');
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _status = 'Save failed');
-    }
-  }
-
-  void _edit(PieceGlowSettings next) {
-    setState(() => _status = 'Save');
-    widget.onGlowChanged(next);
-  }
+  _GridDevSection _section = _GridDevSection.tapDebug;
 
   @override
   Widget build(BuildContext context) {
@@ -104,10 +79,6 @@ class _GridDevPanelState extends State<GridDevPanel> {
                   style: const TextStyle(color: Colors.white70, fontSize: 12),
                   items: const [
                     DropdownMenuItem(
-                      value: _GridDevSection.completedPiece,
-                      child: Text('Completed piece'),
-                    ),
-                    DropdownMenuItem(
                       value: _GridDevSection.tapDebug,
                       child: Text('Tap debug'),
                     ),
@@ -127,14 +98,7 @@ class _GridDevPanelState extends State<GridDevPanel> {
                 ),
               ),
               const SizedBox(height: 8),
-              if (_section == _GridDevSection.completedPiece)
-                _CompletedPieceSettings(
-                  glow: widget.glow,
-                  status: _status,
-                  onChanged: _edit,
-                  onSave: _save,
-                )
-              else if (_section == _GridDevSection.paperScore)
+              if (_section == _GridDevSection.paperScore)
                 _PaperScoreSettings(
                   style: widget.tallyStyle,
                   onChanged: widget.onTallyStyleChanged,
@@ -155,77 +119,6 @@ class _GridDevPanelState extends State<GridDevPanel> {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _CompletedPieceSettings extends StatelessWidget {
-  const _CompletedPieceSettings({
-    required this.glow,
-    required this.status,
-    required this.onChanged,
-    required this.onSave,
-  });
-
-  final PieceGlowSettings glow;
-  final String status;
-  final ValueChanged<PieceGlowSettings> onChanged;
-  final VoidCallback onSave;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'A finished blueprint piece blends into this color and glows.',
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.45),
-            fontSize: 10,
-            height: 1.3,
-          ),
-        ),
-        const SizedBox(height: 10),
-        const Text(
-          'Glow color',
-          style: TextStyle(color: Colors.white70, fontSize: 11),
-        ),
-        const SizedBox(height: 6),
-        _GlowColorPicker(
-          color: glow.color,
-          onChanged: (color) => onChanged(glow.copyWith(color: color)),
-        ),
-        const SizedBox(height: 10),
-        Text(
-          'Glow amount  ${(glow.amount * 100).round()}%',
-          style: const TextStyle(color: Colors.white70, fontSize: 11),
-        ),
-        SliderTheme(
-          data: SliderTheme.of(context).copyWith(
-            trackHeight: 2,
-            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
-            overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-            activeTrackColor: Colors.white70,
-            inactiveTrackColor: Colors.white24,
-            thumbColor: Colors.white,
-          ),
-          child: Slider(
-            key: const Key('grid-glow-amount'),
-            min: 0,
-            max: 1,
-            value: glow.amount.clamp(0.0, 1.0),
-            onChanged: (amount) => onChanged(glow.copyWith(amount: amount)),
-          ),
-        ),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton(
-            key: const Key('grid-glow-save'),
-            onPressed: onSave,
-            child: Text(status),
-          ),
-        ),
-      ],
     );
   }
 }
@@ -387,173 +280,6 @@ class _TapDebugSettings extends StatelessWidget {
   }
 }
 
-class _GlowColorPicker extends StatelessWidget {
-  const _GlowColorPicker({required this.color, required this.onChanged});
-
-  final Color color;
-  final ValueChanged<Color> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final hsv = HSVColor.fromColor(color);
-    final hex = (color.toARGB32() & 0xFFFFFF)
-        .toRadixString(16)
-        .padLeft(6, '0')
-        .toUpperCase();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Container(
-              width: 22,
-              height: 22,
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: Colors.white24),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              '#$hex',
-              style: const TextStyle(color: Colors.white70, fontSize: 11),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        _SvPad(hsv: hsv, onChanged: (next) => onChanged(next.toColor())),
-        const SizedBox(height: 8),
-        _HueBar(
-          hue: hsv.hue,
-          onChanged: (hue) => onChanged(hsv.withHue(hue).toColor()),
-        ),
-      ],
-    );
-  }
-}
-
-class _SvPad extends StatelessWidget {
-  const _SvPad({required this.hsv, required this.onChanged});
-
-  final HSVColor hsv;
-  final ValueChanged<HSVColor> onChanged;
-
-  void _pick(Offset local, Size size) {
-    if (size.width < 1 || size.height < 1) return;
-    final saturation = (local.dx / size.width).clamp(0.0, 1.0);
-    final value = (1 - local.dy / size.height).clamp(0.0, 1.0);
-    onChanged(hsv.withSaturation(saturation).withValue(value));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      key: const Key('grid-glow-pad'),
-      height: 112,
-      width: double.infinity,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final size = Size(constraints.maxWidth, constraints.maxHeight);
-          return GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onPanDown: (details) => _pick(details.localPosition, size),
-            onPanUpdate: (details) => _pick(details.localPosition, size),
-            child: CustomPaint(
-              painter: _SvPadPainter(hsv: hsv),
-              child: const SizedBox.expand(),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _SvPadPainter extends CustomPainter {
-  const _SvPadPainter({required this.hsv});
-
-  final HSVColor hsv;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    final hue = HSVColor.fromAHSV(1, hsv.hue, 1, 1).toColor();
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, const Radius.circular(6)),
-      Paint()
-        ..shader = ui.Gradient.linear(rect.topLeft, rect.topRight, [
-          const Color(0xFFFFFFFF),
-          hue,
-        ]),
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, const Radius.circular(6)),
-      Paint()
-        ..shader = ui.Gradient.linear(rect.topLeft, rect.bottomLeft, [
-          const Color(0x00000000),
-          const Color(0xFF000000),
-        ]),
-    );
-    final center = Offset(
-      hsv.saturation * size.width,
-      (1 - hsv.value) * size.height,
-    );
-    final ring = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
-      ..color = const Color(0xFFFFFFFF);
-    canvas.drawCircle(center, 6, ring);
-    canvas.drawCircle(
-      center,
-      6,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1
-        ..color = const Color(0xFF000000),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _SvPadPainter oldDelegate) =>
-      oldDelegate.hsv != hsv;
-}
-
-class _HueBar extends StatelessWidget {
-  const _HueBar({required this.hue, required this.onChanged});
-
-  final double hue;
-  final ValueChanged<double> onChanged;
-
-  void _pick(double dx, double width) {
-    if (width < 1) return;
-    onChanged((dx / width).clamp(0.0, 1.0) * 359.999);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 18,
-      width: double.infinity,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final width = constraints.maxWidth;
-          return GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTapDown: (details) => _pick(details.localPosition.dx, width),
-            onHorizontalDragUpdate: (details) =>
-                _pick(details.localPosition.dx, width),
-            child: CustomPaint(
-              painter: _HueBarPainter(hue: hue),
-              child: const SizedBox.expand(),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
 class _PaperScoreSettings extends StatelessWidget {
   const _PaperScoreSettings({required this.style, required this.onChanged});
 
@@ -591,47 +317,4 @@ class _PaperScoreSettings extends StatelessWidget {
       ),
     );
   }
-}
-
-class _HueBarPainter extends CustomPainter {
-  const _HueBarPainter({required this.hue});
-
-  final double hue;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, const Radius.circular(9)),
-      Paint()
-        ..shader = ui.Gradient.linear(
-          rect.topLeft,
-          rect.topRight,
-          [
-            for (var stop = 0; stop <= 6; stop++)
-              HSVColor.fromAHSV(1, stop * 60.0, 1, 1).toColor(),
-          ],
-          [for (var stop = 0; stop <= 6; stop++) stop / 6],
-        ),
-    );
-    final x = (hue / 360) * size.width;
-    final center = Offset(x.clamp(6, size.width - 6), size.height / 2);
-    canvas.drawCircle(
-      center,
-      6,
-      Paint()..color = HSVColor.fromAHSV(1, hue, 1, 1).toColor(),
-    );
-    canvas.drawCircle(
-      center,
-      6,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2
-        ..color = const Color(0xFFFFFFFF),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _HueBarPainter oldDelegate) =>
-      oldDelegate.hue != hue;
 }

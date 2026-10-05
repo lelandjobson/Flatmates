@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui';
 
+import '../crafting/paper_splitting.dart';
 import '../geometry/geometry_algorithms.dart';
 import '../geometry/polygon_union.dart';
 import '../papercut/paper.dart';
@@ -19,6 +20,55 @@ const double foldGapFraction = 0.38;
 
 /// Fold dashes use half a grid cell, so each dash and gap is half as long.
 const double foldDashScale = 0.5;
+
+/// How far a scored crease swings, as a fraction of a full fold.
+const double creaseBendFraction = 0.1;
+
+/// Share of the twitch spent lifting. The rest eases back to flat.
+const double creaseLiftFraction = 0.32;
+
+/// Bend at the end of the fold bar: 135°, three quarters of a fold.
+const double foldPreviewEnd = 0.75;
+
+/// Bend where the flap passes through edge-on. Past this, a release commits.
+const double foldCommitBend = 0.5;
+
+/// Where the 90° marks sit, as a fraction of the way from the center to an end.
+const double foldCommitMark = foldCommitBend / foldPreviewEnd;
+
+/// Signed position on the fold bar. [drag] is the finger offset along the bar
+/// and [halfLength] is the distance from the center to either end.
+double foldBarSigned(double drag, double halfLength) {
+  if (halfLength.abs() < 1e-6) return 0;
+  return (drag / halfLength).clamp(-1.0, 1.0);
+}
+
+/// Preview bend for a signed bar position. The ends are [foldPreviewEnd].
+double foldPreviewBend(double signed) {
+  return signed.abs().clamp(0.0, 1.0) * foldPreviewEnd;
+}
+
+/// True once the bubble has passed an edge-on mark.
+bool foldPreviewCommits(double signed) {
+  return signed.abs() > foldCommitMark;
+}
+
+double _easeOutCubic(double t) {
+  final remaining = 1 - t.clamp(0.0, 1.0);
+  return 1 - remaining * remaining * remaining;
+}
+
+/// Bend for a crease twitch. [t] is 0 at the press and 1 when it has settled.
+///
+/// The paper lifts quickly to [creaseBendFraction], then eases back to flat.
+double creaseFoldBend(double t) {
+  final u = t.clamp(0.0, 1.0);
+  if (u <= creaseLiftFraction) {
+    return creaseBendFraction * _easeOutCubic(u / creaseLiftFraction);
+  }
+  final back = (u - creaseLiftFraction) / (1 - creaseLiftFraction);
+  return creaseBendFraction * (1 - _easeOutCubic(back));
+}
 
 /// Axis-aligned direction perpendicular to edge [a]–[b], pointing into [ring].
 ///
@@ -95,8 +145,21 @@ Offset reflectAcrossLine(Offset point, Offset a, Offset b) {
   return foot * 2 - point;
 }
 
-bool foldApplies(Offset point, FoldJoint joint) {
+/// True when [joint] was scored on [pieceId] or on a piece it was cut from.
+///
+/// An empty [FoldJoint.pieceIds] set still applies to every piece.
+bool foldJointOwnsPiece(FoldJoint joint, String pieceId) {
+  if (joint.pieceIds.isEmpty) return true;
+  if (joint.pieceIds.contains(pieceId)) return true;
+  for (final id in joint.pieceIds) {
+    if (pieceId.startsWith('$id-')) return true;
+  }
+  return false;
+}
+
+bool foldApplies(Offset point, FoldJoint joint, {String? pieceId}) {
   if (joint.facing == FoldFacing.unfolded) return false;
+  if (pieceId != null && !foldJointOwnsPiece(joint, pieceId)) return false;
   final side = sideOfLine(point, joint.a, joint.b);
   if (side.abs() < _eps) return false;
   return side.sign == joint.side.sign;
@@ -110,13 +173,14 @@ bool foldApplies(Offset point, FoldJoint joint) {
 Offset displayPoint(
   Offset point,
   List<FoldJoint> joints, {
+  String? pieceId,
   int? bend,
   double bendT = 1,
 }) {
   var current = point;
   for (var i = 0; i < joints.length; i++) {
     final joint = joints[i];
-    if (!foldApplies(current, joint)) continue;
+    if (!foldApplies(current, joint, pieceId: pieceId)) continue;
     if (i == bend && bendT < 1) {
       current = bendAcrossLine(current, joint.a, joint.b, bendT);
     } else {
@@ -141,21 +205,22 @@ Offset bendAcrossLine(Offset point, Offset a, Offset b, double t) {
 List<Offset> displayRing(
   List<Offset> ring,
   List<FoldJoint> joints, {
+  String? pieceId,
   int? bend,
   double bendT = 1,
 }) {
   return [
     for (final point in ring)
-      displayPoint(point, joints, bend: bend, bendT: bendT),
+      displayPoint(point, joints, pieceId: pieceId, bend: bend, bendT: bendT),
   ];
 }
 
 /// Positive draws above the sheet. Negative draws underneath.
-int foldDepth(Offset point, List<FoldJoint> joints) {
+int foldDepth(Offset point, List<FoldJoint> joints, {String? pieceId}) {
   var depth = 0;
   var current = point;
   for (final joint in joints) {
-    if (!foldApplies(current, joint)) continue;
+    if (!foldApplies(current, joint, pieceId: pieceId)) continue;
     depth += joint.facing == FoldFacing.toward ? 1 : -1;
     current = reflectAcrossLine(current, joint.a, joint.b);
   }
@@ -169,6 +234,7 @@ int foldDepth(Offset point, List<FoldJoint> joints) {
 bool showingBack(
   Offset point,
   List<FoldJoint> joints, {
+  String? pieceId,
   int? bend,
   double bendT = 1,
 }) {
@@ -176,7 +242,7 @@ bool showingBack(
   var current = point;
   for (var i = 0; i < joints.length; i++) {
     final joint = joints[i];
-    if (!foldApplies(current, joint)) continue;
+    if (!foldApplies(current, joint, pieceId: pieceId)) continue;
     final swinging = i == bend && bendT < 1 - 1e-9;
     if (!swinging || bendT >= 0.5) flips++;
     current = swinging
@@ -186,13 +252,267 @@ bool showingBack(
   return flips.isOdd;
 }
 
+/// One face of a piece while a joint is still swinging.
+///
+/// [ring] and [holes] are already in display space, before separation.
+/// [back] is the pink side, and only a flap past edge-on sets it.
+class SwingFace {
+  const SwingFace({
+    required this.ring,
+    this.holes = const [],
+    required this.back,
+  });
+
+  final List<Offset> ring;
+  final List<List<Offset>> holes;
+  final bool back;
+}
+
+/// Splits [ring] along the swinging joint, then bends only the flap.
+///
+/// Stationary faces come first. A flap that has collapsed onto the crease
+/// (edge-on) is left out. [bend] indexes [joints].
+List<SwingFace> swingFaces({
+  required List<Offset> ring,
+  List<List<Offset>> holes = const [],
+  required List<FoldJoint> joints,
+  required int bend,
+  required double bendT,
+  String? pieceId,
+}) {
+  if (ring.length < 3 || bend < 0 || bend >= joints.length) return const [];
+  final joint = joints[bend];
+  if (joint.facing == FoldFacing.unfolded) return const [];
+  final posedRing = [
+    for (final point in ring)
+      _posedPoint(point, joints, pieceId: pieceId, end: bend),
+  ];
+  final posedHoles = [
+    for (final hole in holes)
+      [
+        for (final point in hole)
+          _posedPoint(point, joints, pieceId: pieceId, end: bend),
+      ],
+  ];
+  final chords = _chordsOfLine(joint.a, joint.b, posedRing, posedHoles);
+  final parts = splitPaperByCuts(posedRing, chords, holes: posedHoles);
+  final stationary = <SwingFace>[];
+  final flaps = <SwingFace>[];
+  final showBack = bendT >= 0.5;
+  for (final part in parts) {
+    if (part.$1.length < 3) continue;
+    final sample = _sampleInside(part.$1);
+    final side = sideOfLine(sample, joint.a, joint.b);
+    final flap = side.abs() >= _eps && side.sign == joint.side.sign;
+    final shownRing = _swingRing(
+      part.$1,
+      joints,
+      bend: bend,
+      bendT: bendT,
+      pieceId: pieceId,
+      flap: flap,
+    );
+    if (polygonSignedArea(shownRing).abs() <= 1e-8) continue;
+    final shownHoles = [
+      for (final hole in part.$2)
+        if (hole.length >= 3)
+          _swingRing(
+            hole,
+            joints,
+            bend: bend,
+            bendT: bendT,
+            pieceId: pieceId,
+            flap: flap,
+          ),
+    ];
+    final face = SwingFace(
+      ring: shownRing,
+      holes: shownHoles,
+      back: flap && showBack,
+    );
+    if (flap) {
+      flaps.add(face);
+    } else {
+      stationary.add(face);
+    }
+  }
+  return [...stationary, ...flaps];
+}
+
+/// Grid segments of a swinging piece. A segment that crosses the crease is
+/// cut there, and only the flap side is bent.
+List<(Offset, Offset)> swingGridSegments({
+  required List<(Offset, Offset)> segments,
+  required List<FoldJoint> joints,
+  required int bend,
+  required double bendT,
+  String? pieceId,
+}) {
+  if (bend < 0 || bend >= joints.length) return segments;
+  final joint = joints[bend];
+  final shown = <(Offset, Offset)>[];
+  for (final segment in segments) {
+    final a = _posedPoint(segment.$1, joints, pieceId: pieceId, end: bend);
+    final b = _posedPoint(segment.$2, joints, pieceId: pieceId, end: bend);
+    final sa = sideOfLine(a, joint.a, joint.b);
+    final sb = sideOfLine(b, joint.a, joint.b);
+    final crosses = sa.abs() >= _eps && sb.abs() >= _eps && sa.sign != sb.sign;
+    if (!crosses) {
+      _addSwingSegment(
+        shown,
+        a,
+        b,
+        joints,
+        joint: joint,
+        bend: bend,
+        bendT: bendT,
+        pieceId: pieceId,
+      );
+      continue;
+    }
+    final t = sa / (sa - sb);
+    if (t <= 1e-6 || t >= 1 - 1e-6) {
+      _addSwingSegment(
+        shown,
+        a,
+        b,
+        joints,
+        joint: joint,
+        bend: bend,
+        bendT: bendT,
+        pieceId: pieceId,
+      );
+      continue;
+    }
+    final hit = Offset(a.dx + (b.dx - a.dx) * t, a.dy + (b.dy - a.dy) * t);
+    _addSwingSegment(
+      shown,
+      a,
+      hit,
+      joints,
+      joint: joint,
+      bend: bend,
+      bendT: bendT,
+      pieceId: pieceId,
+    );
+    _addSwingSegment(
+      shown,
+      hit,
+      b,
+      joints,
+      joint: joint,
+      bend: bend,
+      bendT: bendT,
+      pieceId: pieceId,
+    );
+  }
+  return shown;
+}
+
+void _addSwingSegment(
+  List<(Offset, Offset)> shown,
+  Offset a,
+  Offset b,
+  List<FoldJoint> joints, {
+  required FoldJoint joint,
+  required int bend,
+  required double bendT,
+  required String? pieceId,
+}) {
+  Offset place(Offset point) {
+    final side = sideOfLine(point, joint.a, joint.b);
+    final flap = side.abs() >= _eps && side.sign == joint.side.sign;
+    final bent = flap ? bendAcrossLine(point, joint.a, joint.b, bendT) : point;
+    return _posedPoint(bent, joints, pieceId: pieceId, start: bend + 1);
+  }
+
+  final start = place(a);
+  final end = place(b);
+  if ((start - end).distance < 1e-6) return;
+  shown.add((start, end));
+}
+
+List<Offset> _swingRing(
+  List<Offset> ring,
+  List<FoldJoint> joints, {
+  required int bend,
+  required double bendT,
+  required String? pieceId,
+  required bool flap,
+}) {
+  final joint = joints[bend];
+  return [
+    for (final point in ring)
+      _posedPoint(
+        flap ? bendAcrossLine(point, joint.a, joint.b, bendT) : point,
+        joints,
+        pieceId: pieceId,
+        start: bend + 1,
+      ),
+  ];
+}
+
+Offset _posedPoint(
+  Offset point,
+  List<FoldJoint> joints, {
+  String? pieceId,
+  int start = 0,
+  int? end,
+}) {
+  final last = end ?? joints.length;
+  var current = point;
+  for (var i = start; i < last; i++) {
+    final joint = joints[i];
+    if (!foldApplies(current, joint, pieceId: pieceId)) continue;
+    current = reflectAcrossLine(current, joint.a, joint.b);
+  }
+  return current;
+}
+
+List<(Offset, Offset)> _chordsOfLine(
+  Offset a,
+  Offset b,
+  List<Offset> ring,
+  List<List<Offset>> holes,
+) {
+  final ab = b - a;
+  final length = ab.distance;
+  if (length < _eps || ring.length < 3) return const [];
+  final bounds = _ringBounds(ring);
+  if (bounds == null) return const [];
+  final unit = ab / length;
+  final reach = bounds.width + bounds.height + length + 1;
+  return _clipSpanToSolid(a - unit * reach, a + unit * reach, ring, holes);
+}
+
+Offset _sampleInside(List<Offset> ring) {
+  if (ring.length < 3) return ring.isEmpty ? Offset.zero : ring.first;
+  final centroid = polygonCentroid(ring);
+  if (isInsidePolygon(centroid, ring)) return centroid;
+  const offset = 1e-4;
+  for (var i = 0; i < ring.length; i++) {
+    final a = ring[i];
+    final b = ring[(i + 1) % ring.length];
+    final edge = b - a;
+    final len = edge.distance;
+    if (len < 1e-8) continue;
+    final normal = Offset(-edge.dy / len, edge.dx / len);
+    final mid = Offset((a.dx + b.dx) / 2, (a.dy + b.dy) / 2);
+    final left = mid + normal * offset;
+    if (isInsidePolygon(left, ring)) return left;
+    final right = mid - normal * offset;
+    if (isInsidePolygon(right, ring)) return right;
+  }
+  return centroid;
+}
+
 /// Maps a point on the displayed sheet back to unfolded coordinates.
-Offset localPoint(Offset visual, List<FoldJoint> joints) {
+Offset localPoint(Offset visual, List<FoldJoint> joints, {String? pieceId}) {
   var current = visual;
   for (final joint in joints.reversed) {
     if (joint.facing == FoldFacing.unfolded) continue;
     final reflected = reflectAcrossLine(current, joint.a, joint.b);
-    if (foldApplies(reflected, joint)) current = reflected;
+    if (foldApplies(reflected, joint, pieceId: pieceId)) current = reflected;
   }
   return current;
 }
@@ -202,14 +522,18 @@ int topPieceIndex(Offset visual, PapercutSheet sheet) {
   var bestDepth = -1 << 30;
   for (var i = 0; i < sheet.pieces.length; i++) {
     final piece = sheet.pieces[i];
-    final local = localPoint(visual, sheet.folds);
+    final local = localPoint(visual, sheet.folds, pieceId: piece.id);
     if (!isInsidePolygon(local, piece.vertices)) continue;
     var inHole = false;
     for (final hole in piece.holes) {
       if (isInsidePolygon(local, hole)) inHole = true;
     }
     if (inHole) continue;
-    final depth = foldDepth(polygonCentroid(piece.vertices), sheet.folds);
+    final depth = foldDepth(
+      polygonCentroid(piece.vertices),
+      sheet.folds,
+      pieceId: piece.id,
+    );
     if (depth >= bestDepth) {
       bestDepth = depth;
       best = i;
@@ -223,7 +547,8 @@ PapercutSheet addPaperMark(PapercutSheet sheet, List<Offset> visualStroke) {
   final index = topPieceIndex(visualStroke.first, sheet);
   if (index < 0) return sheet;
   final local = [
-    for (final point in visualStroke) localPoint(point, sheet.folds),
+    for (final point in visualStroke)
+      localPoint(point, sheet.folds, pieceId: sheet.pieces[index].id),
   ];
   if (!isInsidePolygon(local.first, sheet.pieces[index].vertices)) return sheet;
   return sheet.copyWith(
@@ -247,6 +572,7 @@ PapercutSheet? foldSheet({
   List<List<Offset>> noFold = const [],
   List<List<Offset>> blueprintPieces = const [],
   Offset cutShift = Offset.zero,
+  String? pieceId,
 }) {
   if (facing == FoldFacing.unfolded) return null;
   final side = sideOfLine(flapPoint, spanA, spanB);
@@ -258,26 +584,70 @@ PapercutSheet? foldSheet({
     flapPoint,
     noFold: noFold,
     blueprintPieces: blueprintPieces,
+    pieceId: pieceId,
   )) {
     return null;
   }
   // [span] is the crease with separation removed. The cut is where the paper
-  // is drawn, so the dragged sheet and anything under it are both split.
+  // is drawn, so the dragged sheet and anything under it are both split
+  // unless [pieceId] names the only sheet that should fold.
   final shift = cutShift == Offset.zero
       ? _sharedSeparation(sheet, spanA, spanB)
       : cutShift;
-  final split = cutThroughFolds(sheet, [
-    spanA + shift,
-    spanB + shift,
-  ], recordStroke: false);
+  final split = cutThroughFolds(
+    sheet,
+    [spanA + shift, spanB + shift],
+    recordStroke: false,
+    onlyPieceId: pieceId,
+  );
   if (split == null) return null;
   final next = split;
   return next.copyWith(
     folds: [
       ...next.folds,
-      FoldJoint(a: spanA, b: spanB, side: side, facing: facing),
+      FoldJoint(
+        a: spanA,
+        b: spanB,
+        side: side,
+        facing: facing,
+        pieceIds: _flapPieceIds(
+          before: sheet,
+          after: next,
+          onlyPieceId: pieceId,
+          a: spanA,
+          b: spanB,
+          side: side,
+        ),
+      ),
     ],
   );
+}
+
+/// Pieces produced from the folded sheet that lie on the flap side of [a]–[b].
+Set<String> _flapPieceIds({
+  required PapercutSheet before,
+  required PapercutSheet after,
+  required String? onlyPieceId,
+  required Offset a,
+  required Offset b,
+  required double side,
+}) {
+  final beforeIds = {for (final piece in before.pieces) piece.id};
+  final sources = onlyPieceId == null
+      ? beforeIds.where((id) => !after.pieces.any((piece) => piece.id == id))
+      : {onlyPieceId};
+  final ids = <String>{};
+  for (final piece in after.pieces) {
+    final fromSource = sources.any(
+      (source) => piece.id == source || piece.id.startsWith('$source-'),
+    );
+    if (!fromSource) continue;
+    final signed = sideOfLine(polygonCentroid(piece.vertices), a, b);
+    if (signed.abs() < _eps || signed.sign != side.sign) continue;
+    ids.add(piece.id);
+  }
+  if (ids.isEmpty && onlyPieceId != null) ids.add(onlyPieceId);
+  return ids;
 }
 
 bool _creaseBlocked(
@@ -287,10 +657,11 @@ bool _creaseBlocked(
   Offset flapPoint, {
   required List<List<Offset>> noFold,
   required List<List<Offset>> blueprintPieces,
+  String? pieceId,
 }) {
-  final localA = localPoint(a, sheet.folds);
-  final localB = localPoint(b, sheet.folds);
-  final localFlap = localPoint(flapPoint, sheet.folds);
+  final localA = localPoint(a, sheet.folds, pieceId: pieceId);
+  final localB = localPoint(b, sheet.folds, pieceId: pieceId);
+  final localFlap = localPoint(flapPoint, sheet.folds, pieceId: pieceId);
   final layers = <(Offset, Offset, Offset)>[(localA, localB, localFlap)];
   for (final joint in sheet.folds) {
     if (joint.facing == FoldFacing.unfolded) continue;
@@ -323,12 +694,13 @@ class FolderGuide {
     required this.line,
     required this.flap,
     required this.separation,
+    required this.pieceId,
   });
 
   /// Crease in display space, with [separation] removed, for [foldSheet].
   ///
-  /// Clipped to the nearest paper piece. The crease runs perpendicular to
-  /// that piece's nearest edge.
+  /// The segment under the reticle, bounded by cuts and paper edges. The
+  /// crease runs perpendicular to the nearest edge.
   final (Offset, Offset) line;
 
   /// A point on the side that folds. Null when the cursor sits on the crease.
@@ -339,14 +711,19 @@ class FolderGuide {
   /// Drawn shift of the paper the crease belongs to.
   final Offset separation;
 
+  /// Topmost paper piece the crease segment belongs to.
+  final String pieceId;
+
   /// [line] where the player sees it, including [separation].
   (Offset, Offset) get drawn => (line.$1 + separation, line.$2 + separation);
 }
 
-/// Crease on the nearest paper, perpendicular to that paper's nearest edge.
+/// Crease on the paper under the reticle, perpendicular to the nearest edge.
 ///
-/// Returns null when [aim] is more than one grid cell from every paper piece.
-/// The cursor's side of the crease stays flat.
+/// The grid line is split by every paper edge, hole, and cut. The segment
+/// that contains the reticle is the one that folds. Returns null when [aim]
+/// is more than one grid cell from every paper piece. The cursor's side of
+/// the crease stays flat.
 FolderGuide? folderGuide(Offset aim, PapercutSheet sheet, double spacing) {
   if (spacing <= 0 || sheet.pieces.isEmpty) return null;
   var bestIndex = -1;
@@ -354,13 +731,22 @@ FolderGuide? folderGuide(Offset aim, PapercutSheet sheet, double spacing) {
   var bestDepth = -1 << 30;
   for (var i = 0; i < sheet.pieces.length; i++) {
     final piece = sheet.pieces[i];
-    final ring = _drawnRing(piece.vertices, piece.separation, sheet.folds);
+    final ring = _drawnRing(
+      piece.vertices,
+      piece.separation,
+      sheet.folds,
+      pieceId: piece.id,
+    );
     final holes = [
       for (final hole in piece.holes)
-        _drawnRing(hole, piece.separation, sheet.folds),
+        _drawnRing(hole, piece.separation, sheet.folds, pieceId: piece.id),
     ];
     final distance = _distanceToSolid(aim, ring, holes);
-    final depth = foldDepth(polygonCentroid(piece.vertices), sheet.folds);
+    final depth = foldDepth(
+      polygonCentroid(piece.vertices),
+      sheet.folds,
+      pieceId: piece.id,
+    );
     final closer = distance < bestDistance - 1e-6;
     final tied = (distance - bestDistance).abs() <= 1e-6 && depth > bestDepth;
     if (!closer && !tied) continue;
@@ -370,11 +756,12 @@ FolderGuide? folderGuide(Offset aim, PapercutSheet sheet, double spacing) {
   }
   if (bestIndex < 0 || bestDistance > spacing) return null;
   final piece = sheet.pieces[bestIndex];
-  final ring = _drawnRing(piece.vertices, piece.separation, sheet.folds);
-  final holes = [
-    for (final hole in piece.holes)
-      _drawnRing(hole, piece.separation, sheet.folds),
-  ];
+  final ring = _drawnRing(
+    piece.vertices,
+    piece.separation,
+    sheet.folds,
+    pieceId: piece.id,
+  );
   final edge = _nearestEdge(aim, ring);
   if (edge == null) return null;
   final direction = axisPerpendicular(edge.$1, edge.$2, ring);
@@ -383,16 +770,20 @@ FolderGuide? folderGuide(Offset aim, PapercutSheet sheet, double spacing) {
     aim: aim,
     direction: direction,
     ring: ring,
-    holes: holes,
+    sheet: sheet,
     spacing: spacing,
   );
   if (span == null) return null;
-  final shift = piece.separation;
+  final mid = Offset.lerp(span.$1, span.$2, 0.5)!;
+  final owner = _topPieceAt(aim, sheet) ?? _topPieceAt(mid, sheet);
+  if (owner == null) return null;
+  final shift = owner.separation;
   final flapDrawn = _oppositeFlap(aim, span.$1, span.$2, spacing);
   return FolderGuide(
     line: (span.$1 - shift, span.$2 - shift),
     flap: flapDrawn == null ? null : flapDrawn - shift,
     separation: shift,
+    pieceId: owner.id,
   );
 }
 
@@ -710,6 +1101,9 @@ _UnfoldHit? _unfoldHit(
 List<(Offset, Offset)> _drawnCrease(FoldJoint joint, PapercutSheet sheet) {
   final drawn = <(Offset, Offset)>[];
   for (final piece in sheet.pieces) {
+    if (joint.pieceIds.isNotEmpty && !foldJointOwnsPiece(joint, piece.id)) {
+      continue;
+    }
     final parts = _clipSpanToSolid(
       joint.a,
       joint.b,
@@ -718,8 +1112,10 @@ List<(Offset, Offset)> _drawnCrease(FoldJoint joint, PapercutSheet sheet) {
     );
     for (final part in parts) {
       drawn.add((
-        displayPoint(part.$1, sheet.folds) + piece.separation,
-        displayPoint(part.$2, sheet.folds) + piece.separation,
+        displayPoint(part.$1, sheet.folds, pieceId: piece.id) +
+            piece.separation,
+        displayPoint(part.$2, sheet.folds, pieceId: piece.id) +
+            piece.separation,
       ));
     }
   }
@@ -736,17 +1132,25 @@ List<(Offset, Offset)> _drawnCrease(FoldJoint joint, PapercutSheet sheet) {
 List<Offset> shownRing(
   List<Offset> ring,
   Offset separation,
-  List<FoldJoint> folds,
-) {
-  return [for (final point in ring) displayPoint(point, folds) + separation];
+  List<FoldJoint> folds, {
+  String? pieceId,
+  int? bend,
+  double bendT = 1,
+}) {
+  return [
+    for (final point in ring)
+      displayPoint(point, folds, pieceId: pieceId, bend: bend, bendT: bendT) +
+          separation,
+  ];
 }
 
 List<Offset> _drawnRing(
   List<Offset> ring,
   Offset separation,
-  List<FoldJoint> folds,
-) {
-  return shownRing(ring, separation, folds);
+  List<FoldJoint> folds, {
+  String? pieceId,
+}) {
+  return shownRing(ring, separation, folds, pieceId: pieceId);
 }
 
 double _distanceToSolid(
@@ -797,11 +1201,12 @@ double _distanceToRing(Offset point, List<Offset> ring) {
   required Offset aim,
   required Offset direction,
   required List<Offset> ring,
-  required List<List<Offset>> holes,
+  required PapercutSheet sheet,
   required double spacing,
 }) {
   final bounds = _ringBounds(ring);
-  if (bounds == null) return null;
+  final all = _drawnBounds(sheet) ?? bounds;
+  if (bounds == null || all == null) return null;
   final horizontal = direction.dx.abs() >= direction.dy.abs();
   final values = horizontal
       ? _interiorGrid(bounds.top, bounds.bottom, spacing)
@@ -812,17 +1217,242 @@ double _distanceToRing(Offset point, List<Offset> ring) {
   });
   for (final value in values) {
     final a = horizontal
-        ? Offset(bounds.left - spacing, value)
-        : Offset(value, bounds.top - spacing);
+        ? Offset(all.left - spacing, value)
+        : Offset(value, all.top - spacing);
     final b = horizontal
-        ? Offset(bounds.right + spacing, value)
-        : Offset(value, bounds.bottom + spacing);
-    final span = _closestSpan(aim, _clipSpanToSolid(a, b, ring, holes));
+        ? Offset(all.right + spacing, value)
+        : Offset(value, all.bottom + spacing);
+    final span = _spanUnderAim(aim, _spansAlongLine(a, b, sheet));
     if (span == null) continue;
     if ((span.$2 - span.$1).distance <= _eps) continue;
     return span;
   }
   return null;
+}
+
+/// Cell edges of [ring], clipped to the paper and kept out of [holes].
+List<(Offset, Offset)> paperGridSegments({
+  required List<Offset> ring,
+  required List<List<Offset>> holes,
+  required double spacing,
+}) {
+  if (spacing <= 0) return const [];
+  final bounds = _ringBounds(ring);
+  if (bounds == null) return const [];
+  final spans = <(Offset, Offset)>[];
+  for (final y in _interiorGrid(bounds.top, bounds.bottom, spacing)) {
+    spans.addAll(
+      _clipSpanToSolid(
+        Offset(bounds.left - spacing, y),
+        Offset(bounds.right + spacing, y),
+        ring,
+        holes,
+      ),
+    );
+  }
+  for (final x in _interiorGrid(bounds.left, bounds.right, spacing)) {
+    spans.addAll(
+      _clipSpanToSolid(
+        Offset(x, bounds.top - spacing),
+        Offset(x, bounds.bottom + spacing),
+        ring,
+        holes,
+      ),
+    );
+  }
+  return spans;
+}
+
+/// Scores [a]–[b] without splitting the paper or leaving a fold.
+PapercutSheet scoreCrease(PapercutSheet sheet, Offset a, Offset b) {
+  if ((a - b).distance <= _eps) return sheet;
+  return sheet.copyWith(scores: [...sheet.scores, ScoreLine(a, b)]);
+}
+
+/// Unit normal to the left of the directed crease [a] → [b].
+Offset? creaseLeftNormal(Offset a, Offset b) {
+  final ab = b - a;
+  final length = ab.distance;
+  if (length < _eps) return null;
+  return Offset(-ab.dy, ab.dx) / length;
+}
+
+/// Point on the side of [creaseA]–[creaseB] that [drag] leaves behind.
+///
+/// A drag toward +x folds the −x side over it. [origin] is a point on the
+/// crease, in the same space as [drag].
+Offset? flapForPerpendicularDrag({
+  required Offset drag,
+  required Offset creaseA,
+  required Offset creaseB,
+  required Offset origin,
+}) {
+  final normal = creaseLeftNormal(creaseA, creaseB);
+  if (normal == null || drag.distance < _eps) return null;
+  final along = drag.dx * normal.dx + drag.dy * normal.dy;
+  if (along.abs() < _eps) return null;
+  final trailing = along > 0 ? -normal : normal;
+  final length = (creaseB - creaseA).distance;
+  return origin + trailing * (length * 0.25 + 0.25);
+}
+
+Rect? _drawnBounds(PapercutSheet sheet) {
+  Offset? min;
+  Offset? max;
+  void grow(Offset point) {
+    final lo = min;
+    final hi = max;
+    if (lo == null || hi == null) {
+      min = point;
+      max = point;
+      return;
+    }
+    min = Offset(math.min(lo.dx, point.dx), math.min(lo.dy, point.dy));
+    max = Offset(math.max(hi.dx, point.dx), math.max(hi.dy, point.dy));
+  }
+
+  for (final piece in sheet.pieces) {
+    final ring = _drawnRing(
+      piece.vertices,
+      piece.separation,
+      sheet.folds,
+      pieceId: piece.id,
+    );
+    for (final point in ring) {
+      grow(point);
+    }
+  }
+  final lo = min;
+  final hi = max;
+  if (lo == null || hi == null) return null;
+  if ((hi.dx - lo.dx).abs() < _eps && (hi.dy - lo.dy).abs() < _eps) return null;
+  return Rect.fromLTRB(lo.dx, lo.dy, hi.dx, hi.dy);
+}
+
+/// Spans of [a]–[b] that sit on paper, split by piece edges and cuts.
+List<(Offset, Offset)> _spansAlongLine(
+  Offset a,
+  Offset b,
+  PapercutSheet sheet,
+) {
+  final delta = b - a;
+  final length = delta.distance;
+  if (length < 1e-8 || sheet.pieces.isEmpty) return const [];
+  final parameters = <double>[0, 1];
+  void addPoint(Offset point) {
+    parameters.add(parameterOnSegment(a, b, point).clamp(0.0, 1.0));
+  }
+
+  void addSegment(Offset c, Offset d) {
+    final hit = segmentIntersection(a, b, c, d);
+    if (hit.isPoint && hit.point != null) {
+      addPoint(hit.point!);
+    } else if (hit.isCollinear) {
+      final start = hit.segmentStart;
+      final end = hit.segmentEnd;
+      if (start != null) addPoint(start);
+      if (end != null) addPoint(end);
+    }
+  }
+
+  void addRing(List<Offset> edges) {
+    if (edges.length < 2) return;
+    for (var i = 0; i < edges.length; i++) {
+      addSegment(edges[i], edges[(i + 1) % edges.length]);
+    }
+  }
+
+  for (final piece in sheet.pieces) {
+    addRing(
+      _drawnRing(
+        piece.vertices,
+        piece.separation,
+        sheet.folds,
+        pieceId: piece.id,
+      ),
+    );
+    for (final hole in piece.holes) {
+      addRing(
+        _drawnRing(hole, piece.separation, sheet.folds, pieceId: piece.id),
+      );
+    }
+    for (final stroke in sheet.cutStrokes) {
+      for (final chain in clipStrokePolylines(stroke, piece)) {
+        final shown = [
+          for (final point in chain)
+            displayPoint(point, sheet.folds, pieceId: piece.id) +
+                piece.separation,
+        ];
+        for (var i = 0; i < shown.length - 1; i++) {
+          addSegment(shown[i], shown[i + 1]);
+        }
+      }
+    }
+  }
+  parameters.sort();
+  Offset at(double t) => Offset(a.dx + delta.dx * t, a.dy + delta.dy * t);
+  final kept = <(Offset, Offset)>[];
+  for (var i = 0; i < parameters.length - 1; i++) {
+    final t0 = parameters[i];
+    final t1 = parameters[i + 1];
+    if ((t1 - t0) * length < 1e-4) continue;
+    final mid = at((t0 + t1) / 2);
+    if (_topPieceAt(mid, sheet) == null) continue;
+    kept.add((at(t0), at(t1)));
+  }
+  return kept;
+}
+
+/// Segment of [parts] whose projection contains [aim], preferring the
+/// midpoint nearest [aim] when the reticle sits on a boundary.
+(Offset, Offset)? _spanUnderAim(Offset aim, List<(Offset, Offset)> parts) {
+  (Offset, Offset)? best;
+  var bestDistance = double.infinity;
+  for (final part in parts) {
+    final ab = part.$2 - part.$1;
+    final len2 = ab.dx * ab.dx + ab.dy * ab.dy;
+    if (len2 < 1e-12) continue;
+    final t =
+        ((aim.dx - part.$1.dx) * ab.dx + (aim.dy - part.$1.dy) * ab.dy) / len2;
+    if (t < -1e-4 || t > 1 + 1e-4) continue;
+    final mid = Offset.lerp(part.$1, part.$2, 0.5)!;
+    final distance = (mid - aim).distance;
+    if (distance >= bestDistance) continue;
+    best = part;
+    bestDistance = distance;
+  }
+  return best;
+}
+
+/// Highest paper under [point], later pieces winning a depth tie.
+PapercutPiece? _topPieceAt(Offset point, PapercutSheet sheet) {
+  PapercutPiece? best;
+  var bestDepth = -1 << 30;
+  var bestIndex = -1;
+  for (var i = 0; i < sheet.pieces.length; i++) {
+    final piece = sheet.pieces[i];
+    final ring = _drawnRing(
+      piece.vertices,
+      piece.separation,
+      sheet.folds,
+      pieceId: piece.id,
+    );
+    final holes = [
+      for (final hole in piece.holes)
+        _drawnRing(hole, piece.separation, sheet.folds, pieceId: piece.id),
+    ];
+    if (_distanceToSolid(point, ring, holes) > 1e-3) continue;
+    final depth = foldDepth(
+      polygonCentroid(piece.vertices),
+      sheet.folds,
+      pieceId: piece.id,
+    );
+    if (depth < bestDepth || (depth == bestDepth && i < bestIndex)) continue;
+    best = piece;
+    bestDepth = depth;
+    bestIndex = i;
+  }
+  return best;
 }
 
 List<double> _interiorGrid(double min, double max, double spacing) {
@@ -926,18 +1556,6 @@ List<(Offset, Offset)> _clipSpanToSolid(
   return kept;
 }
 
-(Offset, Offset)? _closestSpan(Offset aim, List<(Offset, Offset)> parts) {
-  (Offset, Offset)? best;
-  var bestDistance = double.infinity;
-  for (final part in parts) {
-    final distance = _distanceToSegment(aim, part.$1, part.$2);
-    if (distance >= bestDistance) continue;
-    best = part;
-    bestDistance = distance;
-  }
-  return best;
-}
-
 bool _foldBlocked({
   required PapercutSheet sheet,
   required Offset a,
@@ -1016,11 +1634,13 @@ PapercutSheet? cutThroughFolds(
   double thickCut = 0,
   List<List<Offset>> blueprintPieces = const [],
   bool recordStroke = true,
+  String? onlyPieceId,
 }) {
   if (visualStroke.length < 2) return null;
   final targets = <String>[
     for (final piece in sheet.pieces)
-      if (_modelChains(visualStroke, piece, sheet.folds).isNotEmpty) piece.id,
+      if (onlyPieceId == null || piece.id == onlyPieceId)
+        if (_modelChains(visualStroke, piece, sheet.folds).isNotEmpty) piece.id,
   ];
   if (targets.isEmpty) return null;
   var current = sheet;
@@ -1079,7 +1699,7 @@ List<FoldJoint> _appliedFolds(PapercutPiece piece, List<FoldJoint> joints) {
   var current = polygonCentroid(piece.vertices);
   final applied = <FoldJoint>[];
   for (final joint in joints) {
-    if (!foldApplies(current, joint)) continue;
+    if (!foldApplies(current, joint, pieceId: piece.id)) continue;
     applied.add(joint);
     current = reflectAcrossLine(current, joint.a, joint.b);
   }
@@ -1098,10 +1718,15 @@ Offset _sharedSeparation(PapercutSheet sheet, Offset a, Offset b) {
     final drawn = PapercutPiece(
       id: piece.id,
       color: piece.color,
-      vertices: shownRing(piece.vertices, Offset.zero, sheet.folds),
+      vertices: shownRing(
+        piece.vertices,
+        Offset.zero,
+        sheet.folds,
+        pieceId: piece.id,
+      ),
       holes: [
         for (final hole in piece.holes)
-          shownRing(hole, Offset.zero, sheet.folds),
+          shownRing(hole, Offset.zero, sheet.folds, pieceId: piece.id),
       ],
     );
     if (clipStrokePolylines([a, b], drawn).isEmpty) continue;
@@ -1123,9 +1748,15 @@ PapercutPiece _asDrawn(PapercutPiece piece, List<FoldJoint> folds) {
   return PapercutPiece(
     id: piece.id,
     color: piece.color,
-    vertices: shownRing(piece.vertices, piece.separation, folds),
+    vertices: shownRing(
+      piece.vertices,
+      piece.separation,
+      folds,
+      pieceId: piece.id,
+    ),
     holes: [
-      for (final hole in piece.holes) shownRing(hole, piece.separation, folds),
+      for (final hole in piece.holes)
+        shownRing(hole, piece.separation, folds, pieceId: piece.id),
     ],
   );
 }

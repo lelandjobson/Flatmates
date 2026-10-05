@@ -41,3 +41,5 @@ flutter:
     - assets/gridcraft/
     - levels/puzzles/
     - levels/sharp-turns/
+    - levels/side-table/
+    - levels/side-table-consolidated/

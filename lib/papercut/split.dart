@@ -89,7 +89,7 @@ PapercutSheet? subtractRegion(PapercutSheet sheet, List<Offset> region) {
     nextId += built.length;
     for (final part in built) {
       if (isInsidePolygon(polygonCentroid(part.vertices), region)) continue;
-      nextPieces.add(part);
+      nextPieces.add(_keepEarlierHoles(part, piece.holes, region));
     }
   }
   if (!hit) return null;
@@ -196,6 +196,42 @@ double? _segmentParameter(Offset a, Offset b, Offset p, Offset q) {
   if (t < -planarEpsilon || t > 1 + planarEpsilon) return null;
   if (u < -planarEpsilon || u > 1 + planarEpsilon) return null;
   return t;
+}
+
+/// A new punch is cut into the rebuilt outline. Earlier holes are separate
+/// rings, so that rebuild does not carry them. Put back each one that still
+/// sits in [part] and was not swallowed by [region].
+PapercutPiece _keepEarlierHoles(
+  PapercutPiece part,
+  List<List<Offset>> earlier,
+  List<Offset> region,
+) {
+  if (earlier.isEmpty) return part;
+  final holes = [...part.holes];
+  for (final hole in earlier) {
+    if (hole.length < 3) continue;
+    final center = polygonCentroid(hole);
+    if (isInsidePolygon(center, region)) continue;
+    if (!isInsidePolygon(center, part.vertices)) continue;
+    var already = false;
+    for (final kept in holes) {
+      if (kept.length >= 3 && isInsidePolygon(center, kept)) {
+        already = true;
+        break;
+      }
+    }
+    if (already) continue;
+    holes.add(hole);
+  }
+  if (holes.length == part.holes.length) return part;
+  return PapercutPiece(
+    id: part.id,
+    color: part.color,
+    backColor: part.backColor,
+    vertices: part.vertices,
+    holes: holes,
+    separation: part.separation,
+  );
 }
 
 bool _inSolid(Offset point, PapercutPiece piece) {

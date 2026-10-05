@@ -18,6 +18,7 @@ import 'package:flatmates/screens/grid_puzzle_view.dart';
 import 'package:flatmates/ui/fm_theme.dart';
 import 'package:flatmates/ui/game/view_crosshair.dart';
 import 'package:flatmates/gridcraft/scissor_glyph.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -1277,7 +1278,9 @@ void main() {
     );
   });
 
-  testWidgets('a cut follows the blade without turning the sheet', (tester) async {
+  testWidgets('a cut follows the blade without turning the sheet', (
+    tester,
+  ) async {
     final directory = Directory.systemTemp.createTempSync('puzzle-follow');
     addTearDown(() => directory.delete(recursive: true));
     await tester.pumpWidget(
@@ -1376,6 +1379,153 @@ void main() {
     expect((followed.lookAt - blade).distance, lessThan(2));
     expect(followed.roll.abs(), greaterThan(0.4));
   });
+
+  testWidgets('a failure returns the camera and clear does not', (
+    tester,
+  ) async {
+    final directory = Directory.systemTemp.createTempSync('puzzle-fail-camera');
+    addTearDown(() => directory.delete(recursive: true));
+    final base = twinLsBlueprint();
+    final puzzle = base.copyWith(
+      steps: [
+        base.steps.single.copyWith(
+          rules: const GridRules(numbers: [OrderMark(Offset(-1, 1), 2)]),
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      ChangeNotifierProvider(
+        create: (_) => FmThemeData(),
+        child: MaterialApp(
+          home: GridPuzzleView(
+            initial: puzzle,
+            store: LevelStore(directory: directory),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    final opened = _puzzlePainter(tester).camera;
+    final startLook = opened.lookAt;
+    final startHeight = opened.framedHalfHeightMm;
+    final startRoll = opened.roll;
+
+    await _dragLookAt(tester, const Offset(-1, 1));
+    final box = tester.renderObject<RenderBox>(
+      find.byKey(const Key('grid-puzzle-canvas')),
+    );
+    final center = box.localToGlobal(box.size.center(Offset.zero));
+    await tester.sendEventToBinding(
+      PointerScrollEvent(position: center, scrollDelta: const Offset(0, 200)),
+    );
+    await tester.pump();
+
+    final moved = _puzzlePainter(tester).camera;
+    expect((moved.lookAt - startLook).distance, greaterThan(1));
+    expect(moved.framedHalfHeightMm, isNot(closeTo(startHeight, 0.5)));
+
+    await tester.tap(find.byKey(const Key('grid-compass')));
+    await tester.pump();
+    await tester.dragFrom(center, const Offset(120, 0));
+    await tester.pump();
+    expect(_puzzlePainter(tester).camera.roll.abs(), greaterThan(0.4));
+    final parkedLook = _puzzlePainter(tester).camera.lookAt;
+    final parkedHeight = _puzzlePainter(tester).camera.framedHalfHeightMm;
+    final parkedRoll = _puzzlePainter(tester).camera.roll;
+
+    await tester.tap(find.text('Clear'));
+    await tester.pump();
+    final cleared = _puzzlePainter(tester).camera;
+    expect((cleared.lookAt - parkedLook).distance, lessThan(0.01));
+    expect(cleared.framedHalfHeightMm, closeTo(parkedHeight, 0.01));
+    expect(cleared.roll, closeTo(parkedRoll, 1e-6));
+
+    await tester.tap(find.byKey(const Key('grid-compass')));
+    await tester.pump();
+    await tester.tapAt(center);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 800));
+
+    final restored = _puzzlePainter(tester).camera;
+    expect((restored.lookAt - startLook).distance, lessThan(0.01));
+    expect(restored.framedHalfHeightMm, closeTo(startHeight, 0.01));
+    expect(restored.roll, closeTo(startRoll, 1e-6));
+  });
+
+  testWidgets('a zoom does not cut or fold', (tester) async {
+    final directory = Directory.systemTemp.createTempSync('puzzle-zoom');
+    addTearDown(() => directory.delete(recursive: true));
+    await tester.pumpWidget(
+      ChangeNotifierProvider(
+        create: (_) => FmThemeData(),
+        child: MaterialApp(
+          home: GridPuzzleView(
+            initial: twinLsBlueprint(),
+            store: LevelStore(directory: directory),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    final box = tester.renderObject<RenderBox>(
+      find.byKey(const Key('grid-puzzle-canvas')),
+    );
+    final center = box.localToGlobal(box.size.center(Offset.zero));
+
+    Future<void> pinch() async {
+      final first = await tester.startGesture(center);
+      await tester.pump();
+      final second = await tester.startGesture(center + const Offset(48, 0));
+      await tester.pump();
+      await first.moveBy(const Offset(-30, 0));
+      await second.moveBy(const Offset(30, 0));
+      await tester.pump();
+      await first.up();
+      await second.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 40));
+    }
+
+    await pinch();
+    expect(_puzzlePainter(tester).activeCut, isEmpty);
+
+    await tester.tap(find.byTooltip('Folder'));
+    await tester.pump();
+    await pinch();
+    final sheet = _puzzlePainter(tester).sheet;
+    expect(sheet.scores, isEmpty);
+    expect(sheet.folds, isEmpty);
+    expect(_puzzlePainter(tester).activeCut, isEmpty);
+  });
+}
+
+Future<void> _dragLookAt(WidgetTester tester, Offset world) async {
+  final box = tester.renderObject<RenderBox>(
+    find.byKey(const Key('grid-puzzle-canvas')),
+  );
+  final center = box.size.center(Offset.zero);
+  final camera = _puzzlePainter(tester).camera;
+  final here = camera.planePoint(center, box.size)!;
+  final aside = camera.planePoint(center + const Offset(80, 0), box.size)!;
+  final down = camera.planePoint(center + const Offset(0, 80), box.size)!;
+  final perPixelX = (aside.dx - here.dx) / 80;
+  final perPixelY = (down.dy - here.dy) / 80;
+  await tester.dragFrom(
+    box.localToGlobal(center),
+    Offset(
+      -(world.dx - here.dx) / perPixelX,
+      -(world.dy - here.dy) / perPixelY,
+    ),
+  );
+  await tester.pump();
 }
 
 Future<void> _openCameraSettings(WidgetTester tester) async {

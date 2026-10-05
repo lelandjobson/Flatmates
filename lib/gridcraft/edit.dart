@@ -335,6 +335,7 @@ PapercutSheet rotateSheetBy(
           b: turn(joint.b),
           side: joint.side,
           facing: joint.facing,
+          pieceIds: joint.pieceIds,
         ),
     ],
     scores: [

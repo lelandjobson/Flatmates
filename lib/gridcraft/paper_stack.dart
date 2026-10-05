@@ -25,15 +25,38 @@ int blueprintInkCover({
 }) {
   if (pieceIndex < 0 || pieceIndex >= sheet.pieces.length) return 0;
   final piece = sheet.pieces[pieceIndex];
-  var cover = showingBack(local, sheet.folds, bend: bend, bendT: bendT) ? 1 : 0;
+  var cover =
+      showingBack(
+        local,
+        sheet.folds,
+        pieceId: piece.id,
+        bend: bend,
+        bendT: bendT,
+      )
+      ? 1
+      : 0;
   final shown =
-      displayPoint(local, sheet.folds, bend: bend, bendT: bendT) +
+      displayPoint(
+        local,
+        sheet.folds,
+        pieceId: piece.id,
+        bend: bend,
+        bendT: bendT,
+      ) +
       piece.separation;
-  final depth = foldDepth(polygonCentroid(piece.vertices), sheet.folds);
+  final depth = foldDepth(
+    polygonCentroid(piece.vertices),
+    sheet.folds,
+    pieceId: piece.id,
+  );
   for (var i = 0; i < sheet.pieces.length; i++) {
     if (i == pieceIndex) continue;
     final other = sheet.pieces[i];
-    final otherDepth = foldDepth(polygonCentroid(other.vertices), sheet.folds);
+    final otherDepth = foldDepth(
+      polygonCentroid(other.vertices),
+      sheet.folds,
+      pieceId: other.id,
+    );
     final inFront =
         otherDepth > depth || (otherDepth == depth && i > pieceIndex);
     if (!inFront) continue;
@@ -60,13 +83,21 @@ bool _displayedContains(
 }) {
   final ring = [
     for (final point in piece.vertices)
-      displayPoint(point, folds, bend: bend, bendT: bendT) + piece.separation,
+      displayPoint(point, folds, pieceId: piece.id, bend: bend, bendT: bendT) +
+          piece.separation,
   ];
   if (ring.length < 3 || !isInsidePolygon(shown, ring)) return false;
   for (final hole in piece.holes) {
     final drawn = [
       for (final point in hole)
-        displayPoint(point, folds, bend: bend, bendT: bendT) + piece.separation,
+        displayPoint(
+              point,
+              folds,
+              pieceId: piece.id,
+              bend: bend,
+              bendT: bendT,
+            ) +
+            piece.separation,
     ];
     if (drawn.length >= 3 && isInsidePolygon(shown, drawn)) return false;
   }
@@ -122,10 +153,12 @@ List<int> piecesUnder(Offset point, PapercutSheet sheet) {
     final depthA = foldDepth(
       polygonCentroid(sheet.pieces[a].vertices),
       sheet.folds,
+      pieceId: sheet.pieces[a].id,
     );
     final depthB = foldDepth(
       polygonCentroid(sheet.pieces[b].vertices),
       sheet.folds,
+      pieceId: sheet.pieces[b].id,
     );
     final byDepth = depthB.compareTo(depthA);
     if (byDepth != 0) return byDepth;
@@ -211,18 +244,23 @@ bool _sameStack(List<int> a, List<int> b) {
 }
 
 bool _contains(PapercutPiece piece, Offset point, List<FoldJoint> folds) {
-  final ring = shownRing(piece.vertices, piece.separation, folds);
+  final ring = shownRing(
+    piece.vertices,
+    piece.separation,
+    folds,
+    pieceId: piece.id,
+  );
   if (ring.length < 3 || !isInsidePolygon(point, ring)) return false;
   for (final hole in piece.holes) {
-    final drawn = shownRing(hole, piece.separation, folds);
+    final drawn = shownRing(hole, piece.separation, folds, pieceId: piece.id);
     if (drawn.length >= 3 && isInsidePolygon(point, drawn)) return false;
   }
   return true;
 }
 
 bool _areasOverlap(PapercutPiece a, PapercutPiece b, List<FoldJoint> folds) {
-  final ringA = shownRing(a.vertices, a.separation, folds);
-  final ringB = shownRing(b.vertices, b.separation, folds);
+  final ringA = shownRing(a.vertices, a.separation, folds, pieceId: a.id);
+  final ringB = shownRing(b.vertices, b.separation, folds, pieceId: b.id);
   if (ringA.length < 3 || ringB.length < 3) return false;
   if (_strictInside(polygonCentroid(ringA), ringB)) return true;
   if (_strictInside(polygonCentroid(ringB), ringA)) return true;

@@ -8,23 +8,29 @@ class GridBlueprint {
     required this.id,
     required this.name,
     required this.steps,
+    this.hidden = false,
   });
 
   final String id;
   final String name;
   final List<GridStep> steps;
 
-  GridBlueprint copyWith({String? name, List<GridStep>? steps}) {
+  /// Left out of play. The puzzle editor still lists it.
+  final bool hidden;
+
+  GridBlueprint copyWith({String? name, List<GridStep>? steps, bool? hidden}) {
     return GridBlueprint(
       id: id,
       name: name ?? this.name,
       steps: steps ?? this.steps,
+      hidden: hidden ?? this.hidden,
     );
   }
 
   Map<String, dynamic> toJson() => {
     'id': id,
     'name': name,
+    if (hidden) 'hidden': true,
     'steps': [for (final step in steps) step.toJson()],
   };
 
@@ -33,6 +39,7 @@ class GridBlueprint {
     return GridBlueprint(
       id: json['id'] as String? ?? 'level',
       name: json['name'] as String? ?? 'Level',
+      hidden: json['hidden'] == true,
       steps: [
         for (final step in steps)
           GridStep.fromJson(step as Map<String, dynamic>),
@@ -231,7 +238,7 @@ class GridStep {
     this.tools,
     this.attachment = const ScissorAttachment(),
     this.permutation = const LevelPermutation(),
-    this.allowSeparation = false,
+    this.discardFailure = false,
   });
 
   final String id;
@@ -250,10 +257,11 @@ class GridStep {
   final ScissorAttachment attachment;
   final LevelPermutation permutation;
 
-  /// When false, a cut keeps the one paper piece that still holds the unsolved
-  /// blueprint and discards the rest. Splitting that blueprint across two
-  /// pieces fails the level. When true, every new piece stays and steps apart.
-  final bool allowSeparation;
+  /// When false, every new piece from a cut stays and steps apart. When true,
+  /// a cut keeps the one paper piece that still holds the unsolved blueprint
+  /// and scrap fades. Splitting that blueprint across two pieces fails the
+  /// level.
+  final bool discardFailure;
 
   /// Sheet around the outlines and rule marks, grown by [paperMargin] cells.
   Rect get paper {
@@ -339,7 +347,7 @@ class GridStep {
     bool clearTools = false,
     ScissorAttachment? attachment,
     LevelPermutation? permutation,
-    bool? allowSeparation,
+    bool? discardFailure,
   }) {
     return GridStep(
       id: id,
@@ -354,7 +362,7 @@ class GridStep {
       tools: clearTools ? null : (tools ?? this.tools),
       attachment: attachment ?? this.attachment,
       permutation: permutation ?? this.permutation,
-      allowSeparation: allowSeparation ?? this.allowSeparation,
+      discardFailure: discardFailure ?? this.discardFailure,
     );
   }
 
@@ -382,7 +390,7 @@ class GridStep {
     if (!attachment.isEmpty) 'attachments': attachment.toJson(),
     if (!permutation.isEmpty) 'permutations': permutation.toJson(),
     if (!rules.isEmpty) 'rules': rules.toJson(),
-    if (allowSeparation) 'allowSeparation': true,
+    if (discardFailure) 'discardFailure': true,
   };
 
   bool get _stylesStored {
@@ -410,7 +418,7 @@ class GridStep {
           : null,
       attachment: ScissorAttachment.fromJson(json['attachments']),
       permutation: LevelPermutation.fromJson(json['permutations']),
-      allowSeparation: json['allowSeparation'] == true,
+      discardFailure: json['discardFailure'] == true,
       edgeStyles: [
         for (final row in styles)
           [

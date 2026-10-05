@@ -6,10 +6,8 @@ import 'package:vector_math/vector_math_64.dart' hide Colors;
 
 import '../geometry/polygon_union.dart';
 import '../papercut/camera.dart';
-import '../papercut/models.dart';
 import '../papercut/paper.dart';
 import 'blueprint.dart';
-import 'piece_glow.dart';
 import 'celebrate.dart';
 import 'fold.dart';
 import 'paper_stack.dart';
@@ -87,12 +85,15 @@ class GridPuzzlePainter extends CustomPainter {
     this.collisionLeft = const [],
     this.celebrations = const [],
     this.celebrateSeconds = 0,
-    this.lit = const [],
-    this.glow = PieceGlowSettings.standard,
     this.clearedRings = const {},
     this.fadingIds = const {},
     this.fadeOpacity = 1,
     this.hiddenPieceIds = const {},
+    this.highlightIds = const {},
+    this.highlight = 0,
+    this.drawPaper = true,
+    this.drawBlueprint = true,
+    this.blueprintColor,
   });
 
   final PapercutCamera camera;
@@ -176,12 +177,6 @@ class GridPuzzlePainter extends CustomPainter {
   /// Seconds into the celebration clock.
   final double celebrateSeconds;
 
-  /// Completed pieces that stay glowing after their light-up.
-  final List<CelebrationPlayback> lit;
-
-  /// Color and halo for a finished blueprint piece.
-  final PieceGlowSettings glow;
-
   /// Blueprint rings already cut out. Their outlines are not drawn.
   final Set<int> clearedRings;
 
@@ -196,20 +191,38 @@ class GridPuzzlePainter extends CustomPainter {
   /// Pieces drawn as tally cells instead of a solid fill.
   final Set<String> hiddenPieceIds;
 
+  /// Paper pieces flashing while a stroke has already cut them free.
+  final Set<String> highlightIds;
+
+  /// 0–1 pulse of [highlightIds]. The fill lerps toward white.
+  final double highlight;
+
+  /// When false, the sheet fill and its outline are not drawn. Blueprint
+  /// ink, cuts, and folds still are.
+  final bool drawPaper;
+
+  /// When false, blueprint outlines are left to another painter.
+  final bool drawBlueprint;
+
+  /// Outline color for blueprint pieces. The grid puzzle view uses blue.
+  final Color? blueprintColor;
+
   @override
   void paint(Canvas canvas, Size size) {
     if (drawGrid) _paintUnitGrid(canvas, size);
     if (fillShapes) _paintPaperFrame(canvas, size);
-    if (!fillShapes) {
+    if (!fillShapes && drawPaper) {
       final order = [for (var i = 0; i < sheet.pieces.length; i++) i]
         ..sort((a, b) {
           final depthA = foldDepth(
             polygonCentroid(sheet.pieces[a].vertices),
             sheet.folds,
+            pieceId: sheet.pieces[a].id,
           );
           final depthB = foldDepth(
             polygonCentroid(sheet.pieces[b].vertices),
             sheet.folds,
+            pieceId: sheet.pieces[b].id,
           );
           return depthA.compareTo(depthB);
         });
@@ -219,33 +232,71 @@ class GridPuzzlePainter extends CustomPainter {
         final failingPaper =
             failure?.kind == FailureKind.paper && failure?.index == index;
         final pulse = failingPaper ? _failurePulse : 0.0;
+        final highlightT = highlightIds.contains(piece.id)
+            ? highlight.clamp(0.0, 1.0)
+            : 0.0;
         final fade = fadingIds.contains(piece.id) ? fadeOpacity : 1.0;
-        final face = paperSideColor(
-          piece,
-          back: showingBack(
-            polygonCentroid(piece.vertices),
-            sheet.folds,
-            bend: foldBend,
+        final swing = _swinging(piece.id);
+        if (swing) {
+          final faces = swingFaces(
+            ring: piece.vertices,
+            holes: piece.holes,
+            joints: sheet.folds,
+            bend: foldBend!,
             bendT: foldBendT,
-          ),
-        );
-        final paper = face.withValues(alpha: face.a * fade);
-        _fillDisplayed(
-          canvas,
-          size,
-          piece,
-          pulse > 0
-              ? Color.lerp(paper, const Color(0xFFFF1744), pulse)!
-              : paper,
-        );
-        _stroke(
-          canvas,
-          size,
-          _shownRing(piece.vertices, piece.separation),
-          const Color(0xFF1A1A2E).withValues(alpha: fade),
-          width: 1.5,
-          close: true,
-        );
+            pieceId: piece.id,
+          );
+          for (final part in faces) {
+            final ink = paperSideColor(piece, back: part.back);
+            final paper = ink.withValues(alpha: ink.a * fade);
+            _fillRing(
+              canvas,
+              size,
+              _moved(part.ring, piece.separation),
+              [for (final hole in part.holes) _moved(hole, piece.separation)],
+              _paperInk(paper, pulse, highlightT),
+            );
+          }
+          _paintPaperGrid(canvas, size, piece, fade);
+          final outline = const Color(0xFF1A1A2E).withValues(alpha: fade);
+          for (final part in faces) {
+            _stroke(
+              canvas,
+              size,
+              _moved(part.ring, piece.separation),
+              outline,
+              width: 1.5,
+              close: true,
+            );
+          }
+        } else {
+          final face = paperSideColor(
+            piece,
+            back: showingBack(
+              polygonCentroid(piece.vertices),
+              sheet.folds,
+              pieceId: piece.id,
+              bend: foldBend,
+              bendT: foldBendT,
+            ),
+          );
+          final paper = face.withValues(alpha: face.a * fade);
+          _fillDisplayed(
+            canvas,
+            size,
+            piece,
+            _paperInk(paper, pulse, highlightT),
+          );
+          _paintPaperGrid(canvas, size, piece, fade);
+          _stroke(
+            canvas,
+            size,
+            _shownRing(piece.vertices, piece.separation, pieceId: piece.id),
+            const Color(0xFF1A1A2E).withValues(alpha: fade),
+            width: 1.5,
+            close: true,
+          );
+        }
       }
       final picked = pickedPiece;
       if (picked != null && picked >= 0 && picked < sheet.pieces.length) {
@@ -260,7 +311,7 @@ class GridPuzzlePainter extends CustomPainter {
         );
       }
     }
-    _paintBlueprint(canvas, size);
+    if (drawBlueprint) _paintBlueprint(canvas, size);
     _paintDraft(canvas, size);
     _paintRules(canvas, size);
     for (final stroke in sheet.cutStrokes) {
@@ -270,7 +321,10 @@ class GridPuzzlePainter extends CustomPainter {
           _stroke(
             canvas,
             size,
-            [for (final point in mark) _seen(point) + piece.separation],
+            [
+              for (final point in mark)
+                _seen(point, piece.id) + piece.separation,
+            ],
             const Color(0xFF000000),
             width: 1.25,
           );
@@ -343,46 +397,25 @@ class GridPuzzlePainter extends CustomPainter {
     _paintMarquee(canvas);
   }
 
-  Offset _seen(Offset point) =>
-      displayPoint(point, sheet.folds, bend: foldBend, bendT: foldBendT);
+  Offset _seen(Offset point, [String? pieceId]) => displayPoint(
+    point,
+    sheet.folds,
+    pieceId: pieceId,
+    bend: foldBend,
+    bendT: foldBendT,
+  );
 
   bool _bursting(String id) {
-    for (final play in lit) {
-      if (play.pieceId == id) return true;
-    }
     for (final play in celebrations) {
-      if (play.pieceId != id) continue;
-      final until = play.burst
-          ? Celebration.fillSeconds
-          : Celebration.glowSeconds;
-      if (play.local(celebrateSeconds) >= until) return true;
-    }
-    return false;
-  }
-
-  /// Where a playback is drawn. A finished piece's glow stays on that piece
-  /// as it separates from the sheet. A leftover burst stays where the paper was.
-  Offset _playShift(CelebrationPlayback play) {
-    if (play.burst) return play.anchor;
-    for (final piece in sheet.pieces) {
-      if (piece.id == play.pieceId) return piece.separation;
-    }
-    return play.anchor;
-  }
-
-  bool _staysGreen(String id) {
-    for (final play in lit) {
-      if (play.pieceId == id) return true;
-    }
-    for (final play in celebrations) {
-      if (play.pieceId == id && !play.burst) return true;
+      if (play.pieceId != id || !play.burst) continue;
+      if (play.local(celebrateSeconds) >= Celebration.fillSeconds) return true;
     }
     return false;
   }
 
   void _paintCelebration(Canvas canvas, Size size) {
     for (final play in celebrations) {
-      if (!play.burst || _staysGreen(play.pieceId)) continue;
+      if (!play.burst) continue;
       final local = play.local(celebrateSeconds);
       if (local < 0) continue;
       final celebration = play.celebration;
@@ -404,16 +437,6 @@ class GridPuzzlePainter extends CustomPainter {
         continue;
       }
       _paintSparks(canvas, size, play, burst);
-    }
-    for (final play in celebrations) {
-      if (play.burst) continue;
-      final local = play.local(celebrateSeconds);
-      if (local < 0) continue;
-      final fill = (local / Celebration.glowSeconds).clamp(0.0, 1.0);
-      _paintGlowFill(canvas, size, play.celebration, _playShift(play), fill);
-    }
-    for (final play in lit) {
-      _paintGlowFill(canvas, size, play.celebration, _playShift(play), 1);
     }
   }
 
@@ -469,8 +492,7 @@ class GridPuzzlePainter extends CustomPainter {
     canvas.drawPath(sparks, Paint()..color = color);
   }
 
-  /// Leftover paper grows from its center, then bursts. Blueprint pieces use
-  /// [_paintGlowFill] instead.
+  /// Leftover paper grows from its center, then bursts.
   void _paintSolidFill(
     Canvas canvas,
     Size size,
@@ -500,44 +522,6 @@ class GridPuzzlePainter extends CustomPainter {
           bounds.bottomRight,
           colors,
         ),
-    );
-  }
-
-  /// Full-size color blend into [glow], with an outer halo that blooms and rests.
-  void _paintGlowFill(
-    Canvas canvas,
-    Size size,
-    Celebration celebration,
-    Offset shift,
-    double t,
-  ) {
-    if (celebration.ring.length < 3 || t <= 0) return;
-    final path = _closedFill(
-      size,
-      [for (final point in celebration.ring) _seen(point) + shift],
-      [
-        for (final hole in celebration.holes)
-          [for (final point in hole) _seen(point) + shift],
-      ],
-    );
-    if (path == null) return;
-    final spread = glow.amount * pieceGlowHalo(t);
-    if (spread > 0.02) {
-      canvas.drawPath(
-        path,
-        Paint()
-          ..style = PaintingStyle.fill
-          ..color = pieceGlowLight(
-            glow.color,
-          ).withValues(alpha: (0.9 * spread).clamp(0.0, 1.0))
-          ..maskFilter = ui.MaskFilter.blur(ui.BlurStyle.outer, spread * 18),
-      );
-    }
-    canvas.drawPath(
-      path,
-      Paint()
-        ..style = PaintingStyle.fill
-        ..color = pieceGlowFill(paper: kPapercutYellow, glow: glow.color, t: t),
     );
   }
 
@@ -576,15 +560,12 @@ class GridPuzzlePainter extends CustomPainter {
         final failing =
             failure?.kind == FailureKind.piece && failure?.index == i;
         final pulse = failing ? _failurePulse : 0.0;
+        final ink = blueprintColor ?? const Color(0xFF1565C0);
         final color = pulse > 0
-            ? Color.lerp(
-                const Color(0xFF1565C0),
-                const Color(0xFFFF1744),
-                pulse,
-              )!
+            ? Color.lerp(ink, const Color(0xFFFF1744), pulse)!
             : selectedPolygon
             ? const Color(0xFFFFD54F)
-            : const Color(0xFF1565C0);
+            : ink;
         final width = pulse > 0
             ? 2.0 + 4 * pulse
             : (selectedPolygon ? 3.0 : 2.0);
@@ -629,8 +610,15 @@ class GridPuzzlePainter extends CustomPainter {
     Color color,
     double width, {
     bool solid = false,
+    FoldJoint? owner,
   }) {
-    void paint(Offset from, Offset to, Offset shift, int cover) {
+    void paint(
+      Offset from,
+      Offset to,
+      Offset shift,
+      int cover,
+      String? pieceId,
+    ) {
       final ink = _throughPaper(color, cover);
       for (final dash in globalDashSegments(
         from,
@@ -640,7 +628,7 @@ class GridPuzzlePainter extends CustomPainter {
         _stroke(
           canvas,
           size,
-          [_seen(dash.$1) + shift, _seen(dash.$2) + shift],
+          [_seen(dash.$1, pieceId) + shift, _seen(dash.$2, pieceId) + shift],
           ink,
           width: width,
         );
@@ -648,12 +636,13 @@ class GridPuzzlePainter extends CustomPainter {
     }
 
     if (fillShapes || sheet.pieces.isEmpty) {
-      paint(a, b, Offset.zero, 0);
+      paint(a, b, Offset.zero, 0, null);
       return;
     }
     for (var i = 0; i < sheet.pieces.length; i++) {
       final piece = sheet.pieces[i];
       if (_bursting(piece.id)) continue;
+      if (owner != null && !foldJointOwnsPiece(owner, piece.id)) continue;
       for (final part in segmentOnPiece(a, b, piece)) {
         final mid = Offset.lerp(part.$1, part.$2, 0.5)!;
         final cover = solid
@@ -665,7 +654,7 @@ class GridPuzzlePainter extends CustomPainter {
                 bend: foldBend,
                 bendT: foldBendT,
               );
-        paint(part.$1, part.$2, piece.separation, cover);
+        paint(part.$1, part.$2, piece.separation, cover, piece.id);
       }
     }
   }
@@ -690,8 +679,8 @@ class GridPuzzlePainter extends CustomPainter {
           canvas,
           size,
           [
-            _seen(part.$1) + piece.separation,
-            _seen(part.$2) + piece.separation,
+            _seen(part.$1, piece.id) + piece.separation,
+            _seen(part.$2, piece.id) + piece.separation,
           ],
           ink,
           width: 0.75,
@@ -715,8 +704,8 @@ class GridPuzzlePainter extends CustomPainter {
       for (final part in segmentOnPiece(a, b, piece)) {
         final mid = Offset.lerp(part.$1, part.$2, 0.5)!;
         placed.add((
-          _seen(part.$1) + piece.separation,
-          _seen(part.$2) + piece.separation,
+          _seen(part.$1, piece.id) + piece.separation,
+          _seen(part.$2, piece.id) + piece.separation,
           blueprintInkCover(
             pieceIndex: i,
             local: mid,
@@ -763,7 +752,7 @@ class GridPuzzlePainter extends CustomPainter {
     }
     for (final joint in sheet.folds) {
       if (joint.facing == FoldFacing.unfolded) continue;
-      _paintFoldMark(canvas, size, joint.a, joint.b, ink, 1.25);
+      _paintFoldMark(canvas, size, joint.a, joint.b, ink, 1.25, owner: joint);
     }
   }
 
@@ -1283,6 +1272,27 @@ class GridPuzzlePainter extends CustomPainter {
         screen.dy <= size.height + 4;
   }
 
+  bool _swinging(String pieceId) {
+    final bend = foldBend;
+    if (bend == null || foldBendT >= 1 - 1e-9) return false;
+    if (bend < 0 || bend >= sheet.folds.length) return false;
+    final joint = sheet.folds[bend];
+    if (joint.facing == FoldFacing.unfolded) return false;
+    return foldJointOwnsPiece(joint, pieceId);
+  }
+
+  void _fillRing(
+    Canvas canvas,
+    Size size,
+    List<Offset> ring,
+    List<List<Offset>> holes,
+    Color color,
+  ) {
+    final path = _closedFill(size, ring, holes);
+    if (path == null) return;
+    canvas.drawPath(path, Paint()..color = color);
+  }
+
   void _fillDisplayed(
     Canvas canvas,
     Size size,
@@ -1290,14 +1300,14 @@ class GridPuzzlePainter extends CustomPainter {
     Color color,
   ) {
     final path = _path(
-      _shownRing(piece.vertices, piece.separation),
+      _shownRing(piece.vertices, piece.separation, pieceId: piece.id),
       size,
       close: true,
     );
     if (path == null) return;
     for (final hole in piece.holes) {
       final holePath = _path(
-        _shownRing(hole, piece.separation),
+        _shownRing(hole, piece.separation, pieceId: piece.id),
         size,
         close: true,
       );
@@ -1307,11 +1317,55 @@ class GridPuzzlePainter extends CustomPainter {
     canvas.drawPath(path, Paint()..color = color);
   }
 
-  List<Offset> _shownRing(List<Offset> ring, Offset shift) {
+  List<Offset> _shownRing(List<Offset> ring, Offset shift, {String? pieceId}) {
     return _moved(
-      displayRing(ring, sheet.folds, bend: foldBend, bendT: foldBendT),
+      displayRing(
+        ring,
+        sheet.folds,
+        pieceId: pieceId,
+        bend: foldBend,
+        bendT: foldBendT,
+      ),
       shift,
     );
+  }
+
+  void _paintPaperGrid(
+    Canvas canvas,
+    Size size,
+    PapercutPiece piece,
+    double fade,
+  ) {
+    final spacing = step.gridSpacing;
+    if (spacing <= 0 || fade <= 0) return;
+    final ink = const Color(0xFF000000).withValues(alpha: 0.12 * fade);
+    final segments = paperGridSegments(
+      ring: piece.vertices,
+      holes: piece.holes,
+      spacing: spacing,
+    );
+    final bend = foldBend;
+    final shown = _swinging(piece.id) && bend != null
+        ? swingGridSegments(
+            segments: segments,
+            joints: sheet.folds,
+            bend: bend,
+            bendT: foldBendT,
+            pieceId: piece.id,
+          )
+        : [
+            for (final segment in segments)
+              (_seen(segment.$1, piece.id), _seen(segment.$2, piece.id)),
+          ];
+    for (final segment in shown) {
+      _stroke(
+        canvas,
+        size,
+        [segment.$1 + piece.separation, segment.$2 + piece.separation],
+        ink,
+        width: 0.6,
+      );
+    }
   }
 
   List<Offset> _moved(List<Offset> ring, Offset shift) {
@@ -1435,6 +1489,18 @@ class GridPuzzlePainter extends CustomPainter {
     }
     if (close) path.close();
     return path;
+  }
+
+  Color _paperInk(Color paper, double pulse, double highlightT) {
+    if (pulse > 0) return Color.lerp(paper, const Color(0xFFFF1744), pulse)!;
+    if (highlightT > 0) {
+      return Color.lerp(
+        paper,
+        const Color(0xFFFFFFFF),
+        0.28 + 0.62 * highlightT,
+      )!;
+    }
+    return paper;
   }
 
   Offset? _project(Offset point, Size size) {

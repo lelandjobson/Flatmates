@@ -189,6 +189,7 @@ class _PuzzleEditorViewState extends State<PuzzleEditorView> {
       id: collection.id,
       name: _collectionName,
       puzzles: puzzles,
+      hidden: collection.hidden,
     );
   }
 
@@ -1509,8 +1510,11 @@ class _PuzzleEditorViewState extends State<PuzzleEditorView> {
               _step.copyWith(permutation: permutation.copyWith(mirrorX: value)),
             );
           }),
-          _flag('Separate', _step.allowSeparation, (value) {
-            _replaceStep(_step.copyWith(allowSeparation: value));
+          _flag('Discard fails', _step.discardFailure, (value) {
+            _replaceStep(_step.copyWith(discardFailure: value));
+          }),
+          _flag('Hidden', _blueprint.hidden, (value) {
+            _blueprint = _blueprint.copyWith(hidden: value);
           }),
           _flag('Mirror Y', permutation.mirrorY, (value) {
             _replaceStep(
@@ -1982,7 +1986,10 @@ class _LibraryDialogState extends State<_LibraryDialog> {
                               key: Key(
                                 'puzzle-collection-item-${collection.id}',
                               ),
-                              label: collection.name,
+                              label: _shownName(
+                                collection.name,
+                                collection.hidden,
+                              ),
                               selected: collection.id == current?.id,
                               onTap: _busy
                                   ? null
@@ -2003,7 +2010,7 @@ class _LibraryDialogState extends State<_LibraryDialog> {
                             for (final puzzle in puzzles)
                               _row(
                                 key: Key('puzzle-item-${puzzle.id}'),
-                                label: puzzle.name,
+                                label: _shownName(puzzle.name, puzzle.hidden),
                                 selected:
                                     puzzle.id == widget.puzzleId &&
                                     current.id == widget.collectionId,
@@ -2210,3 +2217,6 @@ _ToolHelp _toolHelp(_EditorTool tool) {
   };
   return _ToolHelp(title, body);
 }
+
+/// Library label. Hidden entries are left out of play.
+String _shownName(String name, bool hidden) => hidden ? '$name (hidden)' : name;
