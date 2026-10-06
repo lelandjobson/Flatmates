@@ -8,8 +8,10 @@ import '../ui/fm_screen.dart';
 const kDevMenuRouteNames = {
   'papercut_puzzles',
   'craft_editor',
+  'blueprint_examination',
   'grid_puzzles',
   'dynamic_grid_puzzles',
+  'mixed_crafting_view',
   'puzzle_editor',
   'tool_animations',
 };

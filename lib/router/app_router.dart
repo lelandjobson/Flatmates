@@ -19,6 +19,8 @@ import '../screens/expression_lab_view.dart';
 import '../screens/movement_lab_view.dart';
 import '../screens/craft_editor_view.dart';
 import '../screens/dynamic_grid_puzzles_view.dart';
+import '../screens/mixed_crafting_view.dart';
+import '../screens/blueprint_examination_view.dart';
 import '../screens/grid_puzzle_view.dart';
 import '../screens/puzzle_editor_view.dart';
 import '../screens/tool_animation_view.dart';
@@ -130,6 +132,20 @@ final router = GoRouter(
       path: '/dynamic-grid-puzzles',
       name: 'dynamic_grid_puzzles',
       builder: (context, state) => const DynamicGridPuzzlesView(),
+    ),
+    GoRoute(
+      path: '/mixed-crafting',
+      name: 'mixed_crafting_view',
+      builder: (context, state) => const MixedCraftingView(),
+    ),
+    GoRoute(
+      path: '/blueprint-examination',
+      name: 'blueprint_examination',
+      builder: (context, state) {
+        final extra = state.extra;
+        final blueprint = extra is GridBlueprint ? extra : null;
+        return BlueprintExaminationView(blueprint: blueprint);
+      },
     ),
     GoRoute(
       path: '/grid-puzzles',

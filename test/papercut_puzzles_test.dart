@@ -49,6 +49,7 @@ void main() {
         'craft_editor',
         'grid_puzzles',
         'dynamic_grid_puzzles',
+        'mixed_crafting_view',
         'puzzle_editor',
         'tool_animations',
       });
