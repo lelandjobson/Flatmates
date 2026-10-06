@@ -19,6 +19,21 @@ const double kDimensionGrabRadius = 16;
 /// How close a tap must be to the span between the grabs, in px.
 const double kDimensionSpanSlop = 18;
 
+/// Opening frame: the longer blueprint span fills this much of its ruler.
+const double kDimensionFrameFraction = 0.6;
+
+/// Vertex mark thickness, matching the old dot's diameter.
+const double kDimensionMarkWidth = 9;
+
+/// Vertex marks are this many times longer than they are wide.
+const double kDimensionMarkLengthScale = 2.5;
+
+/// Dimension-widget ticks are this much larger than the vertex-sized mark.
+const double kDimensionWidgetMarkScale = 1.5;
+
+/// Tip width as a fraction of [kDimensionMarkWidth]. The base stays square.
+const double kDimensionMarkTipScale = 0.82;
+
 /// One blueprint vertex already projected into the viewport.
 class ProjectedVertex {
   const ProjectedVertex({required this.world, required this.screen});
@@ -102,6 +117,30 @@ class DimensionRuler {
     grabs[0].world = null;
     grabs[1].fraction = kDimensionHighFraction;
     grabs[1].world = null;
+  }
+
+  /// Stick the grabs to [low] and [high]. The grab nearer the track start
+  /// keeps index 0.
+  void stickTo({
+    required double low,
+    required double high,
+    required DimensionTrack track,
+    required double? Function(double world) screenAlongOf,
+  }) {
+    final placed = <(double world, double fraction)>[];
+    for (final world in [low, high]) {
+      final along = screenAlongOf(world);
+      if (along == null) {
+        reset();
+        return;
+      }
+      placed.add((world, track.fractionAlong(along)));
+    }
+    placed.sort((a, b) => a.$2.compareTo(b.$2));
+    grabs[0].world = placed[0].$1;
+    grabs[0].fraction = placed[0].$2;
+    grabs[1].world = placed[1].$1;
+    grabs[1].fraction = placed[1].$2;
   }
 
   /// Drag [index] along [track]. Snaps when a vertex is within [kDimensionSnapPx].
@@ -189,6 +228,49 @@ class SnapGuide {
 
 double axisCoordinate(DimensionAxis axis, Offset point) {
   return axis == DimensionAxis.horizontal ? point.dx : point.dy;
+}
+
+/// Bounding box of [vertices], or null when there are none.
+Rect? vertexBounds(Iterable<Offset> vertices) {
+  final points = vertices.iterator;
+  if (!points.moveNext()) return null;
+  var minX = points.current.dx;
+  var maxX = minX;
+  var minY = points.current.dy;
+  var maxY = minY;
+  while (points.moveNext()) {
+    final point = points.current;
+    if (point.dx < minX) minX = point.dx;
+    if (point.dx > maxX) maxX = point.dx;
+    if (point.dy < minY) minY = point.dy;
+    if (point.dy > maxY) maxY = point.dy;
+  }
+  return Rect.fromLTRB(minX, minY, maxX, maxY);
+}
+
+/// Half-height that puts the longer world span on [fraction] of its bar.
+///
+/// X is measured on [barX] and Y on [barY]. A zero span does not compete.
+/// Returns null when neither span can be framed.
+double? dimensionFrameHalfHeight({
+  required double spanX,
+  required double spanY,
+  required double barX,
+  required double barY,
+  required double viewportHeight,
+  double fraction = kDimensionFrameFraction,
+}) {
+  if (viewportHeight < 2 || fraction <= 0) return null;
+  double? halfFor(double span, double bar) {
+    if (span <= 1e-9 || bar <= 1e-6) return null;
+    return span * viewportHeight / (2 * fraction * bar);
+  }
+
+  final halfX = halfFor(spanX, barX);
+  final halfY = halfFor(spanY, barY);
+  if (halfX == null) return halfY;
+  if (halfY == null) return halfX;
+  return spanX >= spanY ? halfX : halfY;
 }
 
 /// Nearest vertex on the measured screen axis, within [threshold] px.
@@ -330,14 +412,76 @@ bool tapHitsMeasuredSpan(Offset a, Offset b, Offset tap) {
   return true;
 }
 
+/// A crop mark at [at], reaching toward [toward].
+///
+/// The base is centered on [at] and perpendicular to [toward]. The tip is
+/// narrower and [kDimensionMarkLengthScale] widths away, in that direction.
+/// Corners run base, tip, tip, base.
+/// Bottom ticks point up. Left ticks point right, into the page.
+Offset dimensionWidgetMarkDirection(DimensionAxis axis) {
+  return axis == DimensionAxis.horizontal
+      ? const Offset(0, -1)
+      : const Offset(1, 0);
+}
+
+List<Offset> dimensionCropMark({
+  required Offset at,
+  required Offset toward,
+  double scale = 1,
+}) {
+  final length = toward.distance;
+  final dir = length < 1e-6 ? const Offset(1, 0) : toward / length;
+  final side = Offset(-dir.dy, dir.dx);
+  final width = kDimensionMarkWidth * scale;
+  final half = width / 2;
+  final tipHalf = half * kDimensionMarkTipScale;
+  final reach = dir * (width * kDimensionMarkLengthScale);
+  final tip = at + reach;
+  return [
+    at + side * half,
+    tip + side * tipHalf,
+    tip - side * tipHalf,
+    at - side * half,
+  ];
+}
+
+/// True when [point] is inside the convex [corners], or within [slop] of an edge.
+bool pointHitsPolygon(List<Offset> corners, Offset point, {double slop = 0}) {
+  if (corners.length < 3) return false;
+  double? sign;
+  for (var i = 0; i < corners.length; i++) {
+    final a = corners[i];
+    final b = corners[(i + 1) % corners.length];
+    final edge = b - a;
+    final len = edge.distance;
+    if (len < 1e-6) continue;
+    final dist =
+        (edge.dx * (point.dy - a.dy) - edge.dy * (point.dx - a.dx)) / len;
+    sign ??= dist >= 0 ? 1.0 : -1.0;
+    if (dist * sign < -slop) return false;
+  }
+  return sign != null;
+}
+
 /// Index of the grab under [screen], or null.
 int? hitGrab(DimensionTrack track, DimensionRuler ruler, Offset screen) {
+  final toward = dimensionWidgetMarkDirection(track.axis);
   int? best;
-  var bestDist = kDimensionGrabRadius;
+  var bestDist = double.infinity;
   for (var i = 0; i < ruler.grabs.length; i++) {
-    final dist = (track.at(ruler.grabs[i].fraction) - screen).distance;
-    if (dist > bestDist) continue;
-    if (best != null && dist >= bestDist) continue;
+    final at = track.at(ruler.grabs[i].fraction);
+    final dist = (at - screen).distance;
+    final onMark = pointHitsPolygon(
+      dimensionCropMark(
+        at: at,
+        toward: toward,
+        scale: kDimensionWidgetMarkScale,
+      ),
+      screen,
+      slop: 4,
+    );
+    if (!onMark && dist > kDimensionGrabRadius) continue;
+    if (dist >= bestDist) continue;
     best = i;
     bestDist = dist;
   }

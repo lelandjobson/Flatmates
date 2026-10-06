@@ -37,6 +37,7 @@ class ScissorGlyphPainter extends CustomPainter {
     required this.pose,
     required this.tool,
     this.glyphScale = 1,
+    this.pointScale = 1,
     this.destination,
   });
 
@@ -46,6 +47,9 @@ class ScissorGlyphPainter extends CustomPainter {
 
   /// 1 is the grid-puzzle glyph. Mixed crafting draws it at half size.
   final double glyphScale;
+
+  /// Extra scale on the point at the blade. 1 is the resting dot.
+  final double pointScale;
 
   /// Snapped grid or crease point under the reticle, once the cut has a start.
   final Offset? destination;
@@ -77,7 +81,12 @@ class ScissorGlyphPainter extends CustomPainter {
   /// the line.
   void _paintPoints(Canvas canvas, Size size, Offset tip) {
     final alpha = pose.visible.clamp(0.0, 1.0);
-    paintCraftPoint(canvas, tip, scale: glyphScale, alpha: alpha);
+    paintCraftPoint(
+      canvas,
+      tip,
+      scale: glyphScale * pointScale,
+      alpha: alpha,
+    );
     final end = destination;
     if (end == null) return;
     final screen = _project(end, size);

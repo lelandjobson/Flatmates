@@ -3,10 +3,16 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:vector_math/vector_math_64.dart' hide Colors;
 
+import '../gridcraft/blueprint.dart';
+import '../gridcraft/blueprint_board.dart';
+import '../gridcraft/dimension_measure.dart';
 import '../gridcraft/edit.dart';
+import '../gridcraft/fold.dart';
 import '../gridcraft/fold_glyph.dart';
+import '../gridcraft/level_io.dart';
 import '../gridcraft/mixed_craft.dart';
 import '../gridcraft/mixed_craft_painter.dart';
 import '../gridcraft/paper_stack.dart';
@@ -14,22 +20,103 @@ import '../gridcraft/scissor.dart';
 import '../gridcraft/scissor_glyph.dart';
 import '../gridcraft/tool_animation.dart';
 import '../gridcraft/tool_flight.dart';
+import '../gridcraft/twin_ls.dart';
 import '../papercut/camera.dart';
 import '../papercut/models.dart';
+import '../papercut/paper.dart';
 import '../ui/craft_palette.dart';
+import '../ui/fm_haptics.dart';
 import '../ui/fm_dev_back_button.dart';
 import '../ui/fm_safe_area.dart';
 import '../ui/fm_screen.dart';
 import '../ui/game/game_tool_carousel.dart';
 import '../ui/game/view_crosshair.dart';
 import '../ui/object_radial_menu.dart';
+import 'blueprint_board_page.dart';
 
 enum _CraftTool { select, scissors, folder }
 
 enum _SelectMode { point, marquee }
 
-/// Papercraft surface. The sheet is 24×24 real units and reads as 6×6 at the
-/// opening grid scale. There is no blueprint.
+enum _CutPulse { idle, engage, wipe }
+
+/// One performed stroke, in drawn space, while the blade travels it.
+class _CutWipe {
+  const _CutWipe({
+    required this.from,
+    required this.to,
+    required this.direction,
+    required this.stroke,
+    required this.sheetId,
+    required this.pieceId,
+    required this.fromScale,
+    required this.roll,
+    required this.open,
+  });
+
+  final Offset from;
+  final Offset to;
+  final Offset direction;
+  final List<Offset> stroke;
+  final String sheetId;
+  final String pieceId;
+  final double fromScale;
+
+  /// Seated glyph, frozen so the travel does not roll or recock the blades.
+  final double roll;
+  final double open;
+}
+
+/// One performed crease, in drawn space, while the folder travels it.
+class _FoldWipe {
+  const _FoldWipe({
+    required this.from,
+    required this.to,
+    required this.direction,
+    required this.sheetId,
+    required this.pieceId,
+    required this.face,
+    required this.fold,
+    required this.fromScale,
+    required this.roll,
+    required this.open,
+  });
+
+  final Offset from;
+  final Offset to;
+  final Offset direction;
+  final String sheetId;
+  final String pieceId;
+  final Offset face;
+
+  /// True folds the flap. False scores the crease.
+  final bool fold;
+  final double fromScale;
+  final double roll;
+  final double open;
+}
+
+/// How long the cut point grows before a stroke, and how long a fold mark travels.
+const Duration _kCutPulse = Duration(milliseconds: 200);
+
+/// Horizontal settle when the carets change boards.
+const Duration _kBoardPan = Duration(milliseconds: 320);
+
+/// The paper lifts and settles flat after a crease, matching the grid puzzles.
+const Duration _kCreaseFlutter = Duration(milliseconds: 300);
+
+/// A scored crease swinging back to flat. The joint is not part of the sheet.
+class _CreaseFlutter {
+  const _CreaseFlutter({required this.sheetId, required this.joint});
+
+  final String sheetId;
+  final FoldJoint joint;
+}
+
+/// Papercraft bench to the right of the blueprint dimension board.
+///
+/// The sheet is 24×24 real units and reads as 6×6 at the opening grid scale.
+/// Carets at the top move between the two. Pieces travel with the radial arrows.
 class MixedCraftingView extends StatefulWidget {
   const MixedCraftingView({super.key});
 
@@ -53,6 +140,15 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
   late final AnimationController _gridFade;
 
   MixedCraftArea _area = mixedOpeningArea();
+  int _page = 0;
+  late GridBlueprint _blueprint;
+  late List<BoardStepChoice> _choices;
+  late String _choiceKey;
+  int _stepIndex = 0;
+  final Map<String, StepBoard> _boards = {};
+  bool _showPlacedDimensions = false;
+  final List<BoardTransfer?> _undoTransfers = [];
+  final List<BoardTransfer?> _redoTransfers = [];
   int _scale = kMixedDefaultScale;
   _CraftTool _tool = _CraftTool.select;
   _SelectMode _selectMode = _SelectMode.point;
@@ -67,21 +163,27 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
 
   CutLock? _cut;
   bool _cutGlowing = false;
+  _CutPulse _cutPulseKind = _CutPulse.idle;
+  _CutWipe? _cutWipe;
+  double _pointScale = 1;
+  late final AnimationController _cutPulse;
 
-  String? _foldSheetId;
-  Offset? _foldStart;
-  Offset? _foldEnd;
-  bool _foldGlowing = false;
-  DateTime? _foldTapAt;
-  Timer? _foldTimer;
+  CutLock? _fold;
+  _CutPulse _foldPulseKind = _CutPulse.idle;
+  _FoldWipe? _foldWipe;
+  double _foldPointScale = 1;
+  late final AnimationController _foldPulse;
+  _CreaseFlutter? _flutter;
+  late final AnimationController _creaseAnim;
 
   Offset? _marqueeStart;
   Offset? _marqueeCurrent;
 
   bool _moving = false;
   MixedCraftArea? _moveOrigin;
-  Offset? _moveAnchor;
-  Offset? _moveCenter;
+
+  /// Unsnapped translation of this move, following the reticle.
+  Offset _moveFree = Offset.zero;
 
   List<String> _pickStack = const [];
   int _pickClicks = 0;
@@ -92,6 +194,11 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
   @override
   void initState() {
     super.initState();
+    final opened = twinLsBlueprint();
+    _blueprint = opened;
+    _choices = choicesForBlueprint(opened);
+    _choiceKey = boardStepKey(opened.id, _stepIndex);
+    _loadBoardChoices();
     _flightAnim = AnimationController(vsync: this, duration: kArriveDuration)
       ..addListener(() {
         if (mounted) setState(() {});
@@ -103,6 +210,20 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
             if (mounted) setState(() {});
           })
           ..addStatusListener(_onFoldFlightStatus);
+    _cutPulse = AnimationController(vsync: this, duration: _kCutPulse)
+      ..addListener(_onCutPulseTick)
+      ..addStatusListener(_onCutPulseStatus);
+    _foldPulse = AnimationController(vsync: this, duration: _kCutPulse)
+      ..addListener(_onFoldPulseTick)
+      ..addStatusListener(_onFoldPulseStatus);
+    _creaseAnim = AnimationController(vsync: this, duration: _kCreaseFlutter)
+      ..addListener(() {
+        if (mounted) setState(() {});
+      })
+      ..addStatusListener((status) {
+        if (status != AnimationStatus.completed || !mounted) return;
+        setState(() => _flutter = null);
+      });
     _gridFade = AnimationController(vsync: this, duration: kGridScaleFade)
       ..addListener(() {
         if (mounted) setState(() {});
@@ -114,7 +235,9 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
 
   @override
   void dispose() {
-    _foldTimer?.cancel();
+    _creaseAnim.dispose();
+    _foldPulse.dispose();
+    _cutPulse.dispose();
     _gridFade.dispose();
     _foldFlightAnim.dispose();
     _flightAnim.dispose();
@@ -129,10 +252,137 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
     _gridFade.forward(from: 0);
   }
 
-  void _apply(MixedCraftArea? next) {
+  StepBoard get _board => _boards.putIfAbsent(_choiceKey, StepBoard.new);
+
+  GridStep? get _currentStep {
+    if (_blueprint.steps.isEmpty) return null;
+    return _blueprint.steps[_stepIndex.clamp(0, _blueprint.steps.length - 1)];
+  }
+
+  void _pushCraft(MixedCraftArea before, {BoardTransfer? transfer}) {
+    _history.push(before);
+    _undoTransfers.add(transfer);
+    if (_undoTransfers.length > kMixedHistoryDepth) {
+      _undoTransfers.removeAt(0);
+    }
+    _redoTransfers.clear();
+  }
+
+  void _apply(MixedCraftArea? next, {BoardTransfer? transfer}) {
     if (next == null) return;
-    _history.push(_area);
+    _pushCraft(_area, transfer: transfer);
     _area = next;
+  }
+
+  bool _undoCraft() {
+    final previous = _history.undo(_area);
+    if (previous == null) return false;
+    final transfer = _undoTransfers.isEmpty
+        ? null
+        : _undoTransfers.removeLast();
+    _redoTransfers.add(transfer);
+    transfer?.undo(_boards);
+    _area = previous;
+    return true;
+  }
+
+  bool _redoCraft() {
+    final next = _history.redo(_area);
+    if (next == null) return false;
+    final transfer = _redoTransfers.isEmpty
+        ? null
+        : _redoTransfers.removeLast();
+    _undoTransfers.add(transfer);
+    transfer?.redo(_boards);
+    _area = next;
+    return true;
+  }
+
+  Future<void> _loadBoardChoices() async {
+    final store = LevelStore(bundle: rootBundle);
+    final collections = await store.loadCollections();
+    final side = [
+      for (final collection in collections)
+        if (collection.id == 'side-table') ...collection.puzzles,
+    ];
+    if (!mounted) return;
+    final choices = choicesForBlueprint(twinLsBlueprint());
+    final seen = {for (final choice in choices) choice.key};
+    for (final puzzle in side) {
+      for (final choice in choicesForBlueprint(puzzle)) {
+        if (seen.add(choice.key)) choices.add(choice);
+      }
+    }
+    setState(() {
+      _choices = choices;
+      if (!_choices.any((choice) => choice.key == _choiceKey)) {
+        final first = _choices.first;
+        _choiceKey = first.key;
+        _blueprint = first.blueprint;
+        _stepIndex = first.stepIndex;
+      }
+    });
+  }
+
+  void _selectBoardStep(String? key) {
+    if (key == null || key == _choiceKey) return;
+    final choice = _choices.where((item) => item.key == key).firstOrNull;
+    if (choice == null) return;
+    setState(() {
+      _choiceKey = key;
+      _blueprint = choice.blueprint;
+      _stepIndex = choice.stepIndex;
+    });
+  }
+
+  void _sendSelectionToBoard() {
+    final step = _currentStep;
+    if (step == null || _area.selected.isEmpty) return;
+    final board = _board;
+    final center = vertexBounds(step.vertices)?.center ?? Offset.zero;
+    final taken = takeCraftSelection(
+      _area,
+      center: center,
+      nextId: board.nextId,
+    );
+    if (taken == null) return;
+    setState(() {
+      _moving = false;
+      board.nextId = taken.nextId;
+      board.addPieces(taken.pieces);
+      board.selected
+        ..clear()
+        ..addAll(taken.pieces.map((piece) => piece.id));
+      _apply(
+        taken.craft,
+        transfer: BoardTransfer(
+          stepKey: _choiceKey,
+          pieces: [for (final piece in taken.pieces) piece.clone()],
+          addedToBoard: true,
+        ),
+      );
+    });
+  }
+
+  void _receiveFromBoard() {
+    final board = _board;
+    final selected = [
+      for (final piece in board.pieces)
+        if (board.selected.contains(piece.id)) piece.clone(),
+    ];
+    if (selected.isEmpty) return;
+    final placed = placePiecesOnCraft(_area, selected, center: Offset.zero);
+    setState(() {
+      board.removeIds(selected.map((piece) => piece.id));
+      _apply(
+        placed,
+        transfer: BoardTransfer(
+          stepKey: _choiceKey,
+          pieces: selected,
+          addedToBoard: false,
+        ),
+      );
+    });
   }
 
   void _frame() {
@@ -178,15 +428,20 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
   void _clearCut() {
     _cut = null;
     _cutGlowing = false;
+    _cutWipe = null;
+    _cutPulseKind = _CutPulse.idle;
+    _pointScale = 1;
+    if (_cutPulse.isAnimating) _cutPulse.stop();
   }
 
   void _clearFold() {
-    _foldTimer?.cancel();
-    _foldSheetId = null;
-    _foldStart = null;
-    _foldEnd = null;
-    _foldGlowing = false;
-    _foldTapAt = null;
+    _fold = null;
+    _foldWipe = null;
+    _flutter = null;
+    if (_creaseAnim.isAnimating) _creaseAnim.stop();
+    _foldPulseKind = _CutPulse.idle;
+    _foldPointScale = 1;
+    if (_foldPulse.isAnimating) _foldPulse.stop();
   }
 
   void _setTool(_CraftTool tool) {
@@ -218,13 +473,8 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
       _marqueeStart = event.localPosition;
       _marqueeCurrent = event.localPosition;
     } else if (_moving) {
-      final world = _world(event.localPosition);
-      final center = selectionCenter(_area);
-      if (world != null && center != null) {
-        _moveOrigin = _area;
-        _moveAnchor = world;
-        _moveCenter = center;
-      }
+      _moveOrigin = _area;
+      _moveFree = Offset.zero;
     }
     setState(() {});
   }
@@ -249,9 +499,9 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
       setState(() {});
       return;
     }
-    if (_moving && _moveOrigin != null && _moveAnchor != null) {
-      final world = _world(event.localPosition);
-      if (world != null) _dragMove(world);
+    if (_moving && _moveOrigin != null) {
+      if (!_dragged) return;
+      _followReticle(event.localPosition - previous);
       setState(() {});
       return;
     }
@@ -290,10 +540,6 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
       _onTap();
     } else if (_tool == _CraftTool.scissors && _cut != null) {
       _cutGlowing = true;
-    } else if (_tool == _CraftTool.folder &&
-        _foldStart != null &&
-        _foldEnd == null) {
-      _foldGlowing = true;
     }
     _downScreen = null;
     setState(() {});
@@ -310,8 +556,7 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
     _marqueeCurrent = null;
     if (_moveOrigin != null) _area = _moveOrigin!;
     _moveOrigin = null;
-    _moveAnchor = null;
-    _moveCenter = null;
+    _moveFree = Offset.zero;
     _multiTouch = false;
     _dragged = false;
   }
@@ -365,100 +610,337 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
   }
 
   void _cutTap(Offset aim) {
+    if (_cutWipe != null) return;
     final lock = _cut;
     if (lock == null) {
-      _cut = lockCut(aim, _area, _scale);
+      // The glyph is already on the nearest edge. The tap starts there even
+      // when the reticle sits well inside the paper.
+      _cut = lockCut(aim, _area, _scale, maxCells: null);
       _cutGlowing = false;
+      if (_cut != null) _beginEngage();
       return;
     }
-    final end = _resolvedEnd(lock, aim);
-    if (end == null) return;
-    final next = commitCut(_area, lock.sheetId, lock.point, end);
-    if (next == null) return;
-    _apply(next);
-    _clearCut();
-  }
-
-  /// Model-space end of the locked cut. The reticle picks a grid or crease
-  /// point, and the stroke continues through that point to the far edge.
-  Offset? _resolvedEnd(CutLock lock, Offset aim) {
+    final end = _dictatedEnd(lock, aim);
+    if (end == null || (end - lock.point).distance < 1e-3) return;
     final piece = pieceForKey(_area, mixedPieceKey(lock.sheetId, lock.pieceId));
     final separation = piece?.separation ?? Offset.zero;
-    final through = snapCraft(aim, _scale, _area) - separation;
-    final ring = piece?.vertices;
-    if (ring == null) return through;
-    return cutSpanEnd(lock.point, through, ring) ?? through;
+    final from = lock.point + separation;
+    final to = end + separation;
+    final delta = to - from;
+    if (delta.distance < 1e-3) return;
+    final direction = delta / delta.distance;
+    _seatTool(_flight, _flightAnim, anchor: to, direction: direction);
+    final seated = _flight.pose(0);
+    _cutWipe = _CutWipe(
+      from: from,
+      to: to,
+      direction: direction,
+      stroke: [...lock.path, end],
+      sheetId: lock.sheetId,
+      pieceId: lock.pieceId,
+      fromScale: _pointScale,
+      roll: seated.roll,
+      open: seated.open,
+    );
+    _cutPulseKind = _CutPulse.wipe;
+    unawaited(fmHaptic(FmHapticStyle.lightImpact));
+    _cutPulse.duration = cutWipeDuration(delta.distance);
+    _cutPulse.forward(from: 0);
+  }
+
+  void _beginEngage() {
+    _cutPulseKind = _CutPulse.engage;
+    _pointScale = 1;
+    unawaited(fmHaptic(FmHapticStyle.mediumImpact));
+    _cutPulse.duration = _kCutPulse;
+    _cutPulse.forward(from: 0);
+  }
+
+  void _onCutPulseTick() {
+    final t = _cutPulse.value;
+    if (_cutPulseKind == _CutPulse.engage) {
+      _pointScale = 1 + 3 * Curves.easeOut.transform(t);
+    } else if (_cutPulseKind == _CutPulse.wipe) {
+      final from = _cutWipe?.fromScale ?? 4;
+      _pointScale = from + (1 - from) * _approach(t);
+    }
+    if (mounted) setState(() {});
+  }
+
+  void _onCutPulseStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    final kind = _cutPulseKind;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _cutPulseKind != kind) return;
+      if (kind == _CutPulse.engage) {
+        _cutPulseKind = _CutPulse.idle;
+        _pointScale = 4;
+        setState(() {});
+        return;
+      }
+      if (kind == _CutPulse.wipe) _finishCutWipe();
+    });
+  }
+
+  void _finishCutWipe() {
+    final wipe = _cutWipe;
+    _cutWipe = null;
+    _cutPulseKind = _CutPulse.idle;
+    if (wipe == null) return;
+    final committed = commitCut(_area, wipe.sheetId, wipe.stroke);
+    if (committed == null) {
+      _seatTool(
+        _flight,
+        _flightAnim,
+        anchor: wipe.from,
+        direction: wipe.direction,
+      );
+      _pointScale = 4;
+      setState(() {});
+      return;
+    }
+    _apply(committed.area);
+    if (!committed.stoppedInside) {
+      _seatTool(
+        _flight,
+        _flightAnim,
+        anchor: wipe.to,
+        direction: wipe.direction,
+      );
+      _cut = null;
+      _cutGlowing = false;
+      _pointScale = 1;
+      setState(() {});
+      return;
+    }
+    final end = wipe.stroke.last;
+    final previous = wipe.stroke[wipe.stroke.length - 2];
+    final delta = end - previous;
+    final piece = pieceForKey(
+      committed.area,
+      mixedPieceKey(wipe.sheetId, wipe.pieceId),
+    );
+    final direction = delta.distance < 1e-6
+        ? wipe.direction
+        : delta / delta.distance;
+    _cut = CutLock(
+      sheetId: wipe.sheetId,
+      pieceId: piece?.id ?? wipe.pieceId,
+      path: wipe.stroke,
+      direction: direction,
+    );
+    _cutGlowing = false;
+    _seatTool(
+      _flight,
+      _flightAnim,
+      anchor: end + (piece?.separation ?? Offset.zero),
+      direction: direction,
+    );
+    setState(() {});
+    _beginEngage();
+  }
+
+  /// Model-space end under the reticle. The stroke stops on a grid point or
+  /// a piece vertex, including when that point is still inside the paper.
+  Offset? _dictatedEnd(CutLock lock, Offset aim) {
+    final piece = pieceForKey(_area, mixedPieceKey(lock.sheetId, lock.pieceId));
+    final separation = piece?.separation ?? Offset.zero;
+    return snapCut(aim, _scale, _area) - separation;
   }
 
   void _foldTap(Offset aim) {
-    final start = _foldStart;
-    if (start == null) {
-      final lock = lockFold(aim, _area, _scale);
-      if (lock != null) {
-        final piece = pieceForKey(
-          _area,
-          mixedPieceKey(lock.sheetId, lock.pieceId),
-        );
-        _foldSheetId = lock.sheetId;
-        _foldStart = lock.point + (piece?.separation ?? Offset.zero);
-        _foldGlowing = false;
+    if (_foldWipe != null) return;
+    final lock = _fold;
+    if (lock == null) {
+      _fold = lockCut(aim, _area, _scale, maxCells: null);
+      if (_fold != null) {
+        _beginFoldEngage();
         return;
       }
       final opened = unfoldUnder(_area, aim);
       if (opened != null) _apply(opened);
       return;
     }
-    if (_foldEnd == null) {
-      final end = snapCraft(aim, _scale, _area);
-      if ((end - start).distance < 1e-3) return;
-      _foldEnd = end;
-      _foldGlowing = true;
-      return;
-    }
-    _foldFaceTap(aim);
+    final chord = _foldChord(aim);
+    if (chord == null) return;
+    _beginFoldWipe(chord);
   }
 
-  void _foldFaceTap(Offset aim) {
-    final sheetId = _foldSheetId;
-    final start = _foldStart;
-    final end = _foldEnd;
-    if (sheetId == null || start == null || end == null) return;
-    final now = DateTime.now();
-    if (_foldTapAt != null && now.difference(_foldTapAt!) <= stackTapInterval) {
-      _foldTimer?.cancel();
-      _foldTapAt = null;
-      _apply(foldSpan(_area, sheetId, start, end, aim));
-      _clearFold();
-      return;
+  /// Crease from the locked edge through the reticle, out the far side.
+  FoldChord? _foldChord(Offset aim) {
+    final lock = _fold;
+    if (lock == null) return null;
+    final piece = pieceForKey(_area, mixedPieceKey(lock.sheetId, lock.pieceId));
+    final separation = piece?.separation ?? Offset.zero;
+    return foldThroughPiece(
+      _area,
+      lock.point + separation,
+      snapCut(aim, _scale, _area),
+    );
+  }
+
+  /// A point just beside the crease, so the fold has a side to turn.
+  Offset _flapBeside(Offset start, Offset end) {
+    final delta = end - start;
+    final dir = delta / delta.distance;
+    final mid = Offset.lerp(start, end, 0.5)!;
+    return mid + Offset(-dir.dy, dir.dx);
+  }
+
+  void _beginFoldEngage() {
+    _foldPulseKind = _CutPulse.engage;
+    _foldPointScale = 1;
+    unawaited(fmHaptic(FmHapticStyle.mediumImpact));
+    _foldPulse.duration = _kCutPulse;
+    _foldPulse.forward(from: 0);
+  }
+
+  void _beginFoldWipe(FoldChord chord) {
+    if (_foldWipe != null) return;
+    final delta = chord.end - chord.start;
+    if (delta.distance < 1e-3) return;
+    final direction = delta / delta.distance;
+    _seatTool(
+      _foldFlight,
+      _foldFlightAnim,
+      anchor: chord.end,
+      direction: direction,
+    );
+    final seated = _foldFlight.pose(0);
+    _foldWipe = _FoldWipe(
+      from: chord.start,
+      to: chord.end,
+      direction: direction,
+      sheetId: chord.sheetId,
+      pieceId: chord.pieceId,
+      face: _flapBeside(chord.start, chord.end),
+      fold: false,
+      fromScale: _foldPointScale,
+      roll: seated.roll,
+      open: seated.open,
+    );
+    _foldPulseKind = _CutPulse.wipe;
+    unawaited(fmHaptic(FmHapticStyle.lightImpact));
+    _foldPulse.duration = cutWipeDuration(delta.distance);
+    _foldPulse.forward(from: 0);
+    setState(() {});
+  }
+
+  void _onFoldPulseTick() {
+    final t = _foldPulse.value;
+    if (_foldPulseKind == _CutPulse.engage) {
+      _foldPointScale = 1 + 3 * Curves.easeOut.transform(t);
+    } else if (_foldPulseKind == _CutPulse.wipe) {
+      final from = _foldWipe?.fromScale ?? 4;
+      _foldPointScale = from + (1 - from) * _approach(t);
     }
-    _foldTapAt = now;
-    _foldTimer?.cancel();
-    _foldTimer = Timer(stackTapInterval, () {
-      if (!mounted || _foldEnd == null || _foldSheetId != sheetId) return;
-      setState(() {
-        _apply(scoreSpan(_area, sheetId, start, end, aim));
-        _clearFold();
-      });
+    if (mounted) setState(() {});
+  }
+
+  void _onFoldPulseStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    final kind = _foldPulseKind;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _foldPulseKind != kind) return;
+      if (kind == _CutPulse.engage) {
+        _foldPulseKind = _CutPulse.idle;
+        _foldPointScale = 4;
+        setState(() {});
+        return;
+      }
+      if (kind == _CutPulse.wipe) _finishFoldWipe();
     });
   }
 
-  void _dragMove(Offset world) {
+  void _finishFoldWipe() {
+    final wipe = _foldWipe;
+    _foldWipe = null;
+    _foldPulseKind = _CutPulse.idle;
+    if (wipe == null) return;
+    final next = wipe.fold
+        ? foldSpan(_area, wipe.sheetId, wipe.from, wipe.to, wipe.face)
+        : scoreSpan(_area, wipe.sheetId, wipe.from, wipe.to, wipe.face);
+    if (next == null) {
+      _seatTool(
+        _foldFlight,
+        _foldFlightAnim,
+        anchor: wipe.from,
+        direction: wipe.direction,
+      );
+      _foldPointScale = 4;
+      setState(() {});
+      return;
+    }
+    _apply(next);
+    _seatTool(
+      _foldFlight,
+      _foldFlightAnim,
+      anchor: wipe.to,
+      direction: wipe.direction,
+    );
+    _fold = null;
+    _foldPointScale = 1;
+    _beginCreaseFlutter(wipe, next);
+    setState(() {});
+  }
+
+  /// Lifts the scored flap and lets it fall flat, the way a grid puzzle creases.
+  void _beginCreaseFlutter(_FoldWipe wipe, MixedCraftArea scored) {
+    final sheet = scored.sheetById(wipe.sheetId);
+    final piece = pieceForKey(
+      scored,
+      mixedPieceKey(wipe.sheetId, wipe.pieceId),
+    );
+    if (sheet == null || piece == null) return;
+    final shift = piece.separation;
+    final a = wipe.from - shift;
+    final b = wipe.to - shift;
+    final side = sideOfLine(wipe.face - shift, a, b);
+    if (side.abs() < 1e-4) return;
+    _flutter = _CreaseFlutter(
+      sheetId: wipe.sheetId,
+      joint: FoldJoint(
+        a: a,
+        b: b,
+        side: side,
+        facing: FoldFacing.toward,
+        pieceIds: {piece.id},
+      ),
+    );
+    _creaseAnim.forward(from: 0);
+  }
+
+  /// Slides the sheet under the reticle and carries the selection with it.
+  /// A vertex within [kMixedSnapPixels] of a grid point lands on that point.
+  /// Otherwise the piece stays where the pan left it.
+  void _followReticle(Offset screenDelta) {
     final origin = _moveOrigin;
-    final anchor = _moveAnchor;
-    final center = _moveCenter;
-    if (origin == null || anchor == null || center == null) return;
-    final snapped = snapCraft(center + (world - anchor), _scale, origin);
-    _area = movePieces(origin, snapped - center) ?? origin;
+    if (origin == null || screenDelta == Offset.zero) return;
+    final before = _aim();
+    _pan(screenDelta);
+    final after = _aim();
+    if (before != null && after != null) _moveFree += after - before;
+    final placed = movePieces(origin, _moveFree) ?? origin;
+    final snap = vertexGridSnap(placed, _scale, _snapRadius());
+    _area = snap == null ? placed : (movePieces(placed, snap) ?? placed);
+  }
+
+  double _snapRadius() {
+    final shorter = math.min(_viewport.width, _viewport.height);
+    return snapWorldRadius(
+      pixels: kMixedSnapPixels,
+      halfHeight: _camera.framedHalfHeightMm,
+      shorterSide: shorter,
+    );
   }
 
   void _finishMove() {
     final origin = _moveOrigin;
     if (origin != null && !identical(_area, origin)) {
-      _history.push(origin);
+      _pushCraft(origin);
     }
     _moveOrigin = null;
-    _moveAnchor = null;
-    _moveCenter = null;
+    _moveFree = Offset.zero;
     _moving = false;
   }
 
@@ -499,6 +981,16 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
   (Offset, Offset)? _segment() {
     final aim = _aim();
     if (_tool == _CraftTool.scissors) {
+      final wipe = _cutWipe;
+      if (wipe != null) {
+        final tip = Offset.lerp(
+          wipe.from,
+          wipe.to,
+          _approach(_cutPulse.value),
+        )!;
+        if ((wipe.to - tip).distance < 0.05) return null;
+        return (tip, wipe.to);
+      }
       final lock = _cut;
       if (lock == null || aim == null) return null;
       final piece = pieceForKey(
@@ -506,16 +998,40 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
         mixedPieceKey(lock.sheetId, lock.pieceId),
       );
       final separation = piece?.separation ?? Offset.zero;
-      final end = _resolvedEnd(lock, aim);
+      final end = _dictatedEnd(lock, aim);
       if (end == null) return null;
       return (lock.point + separation, end + separation);
     }
-    final start = _foldStart;
-    if (_tool != _CraftTool.folder || start == null) return null;
-    final end = _foldEnd;
-    if (end != null) return (start, end);
+    if (_tool != _CraftTool.folder || _fold == null) return null;
+    final wipe = _foldWipe;
+    if (wipe != null) {
+      final tip = Offset.lerp(wipe.from, wipe.to, _approach(_foldPulse.value))!;
+      if ((wipe.to - tip).distance < 0.05) return null;
+      return (tip, wipe.to);
+    }
     if (aim == null) return null;
-    return (start, snapCraft(aim, _scale, _area));
+    final chord = _foldChord(aim);
+    if (chord == null) return null;
+    return (chord.start, chord.end);
+  }
+
+  /// Stroke progress that leaves quickly and settles at the end.
+  double _approach(double t) => Curves.easeOutCubic.transform(t);
+
+  /// Parks the flight on [anchor] so the next frame does not play a second trip.
+  void _seatTool(
+    ToolFlight flight,
+    AnimationController anim, {
+    required Offset anchor,
+    required Offset direction,
+  }) {
+    final aim = _aim() ?? anchor;
+    final length = direction.distance;
+    final dir = length < 1e-6 ? const Offset(1, 0) : direction / length;
+    flight.seat(
+      ToolCue(anchor: anchor, direction: dir, aim: aim, reach: _scale * 0.75),
+    );
+    if (anim.isAnimating) anim.stop();
   }
 
   void _queueScissorSync() {
@@ -528,8 +1044,39 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
     });
   }
 
+  ToolPose _scissorPose() {
+    final pose = _flight.pose(_flightAnim.value);
+    final wipe = _cutWipe;
+    if (wipe == null) return pose;
+    final t = _approach(_cutPulse.value);
+    // The seated glyph travels the line. A cutting pose would zero its yaw
+    // and leave a second graphic behind when the wipe ends.
+    return ToolPose(
+      tip: Offset.lerp(wipe.from, wipe.to, t)!,
+      direction: wipe.direction,
+      roll: wipe.roll,
+      open: wipe.open,
+      lateral: 0,
+      visible: pose.visible <= 0 ? 1 : pose.visible,
+    );
+  }
+
+  ToolPose _folderPose() {
+    final pose = _foldFlight.pose(_foldFlightAnim.value);
+    final wipe = _foldWipe;
+    if (wipe == null) return pose;
+    return ToolPose(
+      tip: Offset.lerp(wipe.from, wipe.to, _approach(_foldPulse.value))!,
+      direction: wipe.direction,
+      roll: wipe.roll,
+      open: wipe.open,
+      lateral: 0,
+      visible: pose.visible <= 0 ? 1 : pose.visible,
+    );
+  }
+
   void _syncScissors() {
-    if (!mounted || _viewport.width < 2) return;
+    if (!mounted || _viewport.width < 2 || _cutWipe != null) return;
     if (_flight.phase == ToolFlightPhase.cut) return;
     final next = _scissorCue();
     final duration = _flight.offer(
@@ -545,30 +1092,19 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
     final aim = _aim();
     if (aim == null) return null;
     final lock = _cut;
-    if (lock == null) {
-      final preview = lockCut(aim, _area, _scale, maxCells: null);
-      if (preview == null) return null;
-      final piece = pieceForKey(
-        _area,
-        mixedPieceKey(preview.sheetId, preview.pieceId),
-      );
-      if (piece == null) return null;
-      final march = placeOnRing(preview.point, piece.vertices);
-      if (march == null) return null;
-      return ToolCue(
-        anchor: preview.point + piece.separation,
-        direction: march.direction,
-        aim: aim,
-        reach: _scale * 0.75,
-      );
-    }
+    if (lock == null) return _shownEdgeCue(aim);
+    final piece = pieceForKey(_area, mixedPieceKey(lock.sheetId, lock.pieceId));
+    if (piece == null) return null;
+    var direction = lock.direction;
     final line = _segment();
-    if (line == null) return null;
-    final delta = line.$2 - line.$1;
-    if (delta.distance < 1e-6) return null;
+    if (line != null) {
+      final delta = line.$2 - line.$1;
+      if (delta.distance > 1e-6) direction = delta / delta.distance;
+    }
+    if (direction.distance < 1e-6) direction = const Offset(1, 0);
     return ToolCue(
-      anchor: line.$1,
-      direction: delta / delta.distance,
+      anchor: lock.point + piece.separation,
+      direction: direction,
       aim: aim,
       reach: _scale * 0.75,
     );
@@ -624,7 +1160,7 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
   }
 
   void _syncFolder() {
-    if (!mounted || _viewport.width < 2) return;
+    if (!mounted || _viewport.width < 2 || _foldWipe != null) return;
     if (_foldFlight.phase == ToolFlightPhase.cut) return;
     final next = _folderCue();
     final duration = _foldFlight.offer(
@@ -635,35 +1171,42 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
     if (duration != null) _playFoldFlight(duration);
   }
 
+  /// Nearest paper edge, with no distance cutoff. Cut and fold both start here.
+  ToolCue? _shownEdgeCue(Offset aim) {
+    final preview = lockCut(aim, _area, _scale, maxCells: null);
+    if (preview == null) return null;
+    final piece = pieceForKey(
+      _area,
+      mixedPieceKey(preview.sheetId, preview.pieceId),
+    );
+    if (piece == null) return null;
+    final march = placeOnRing(preview.point, piece.vertices);
+    if (march == null) return null;
+    return ToolCue(
+      anchor: preview.point + piece.separation,
+      direction: march.direction,
+      aim: aim,
+      reach: _scale * 0.75,
+    );
+  }
+
   ToolCue? _folderCue() {
     if (_tool != _CraftTool.folder) return null;
     final aim = _aim();
     if (aim == null) return null;
-    final start = _foldStart;
-    if (start == null) {
-      final preview = lockFold(aim, _area, _scale, maxCells: null);
-      if (preview == null) return null;
-      final piece = pieceForKey(
-        _area,
-        mixedPieceKey(preview.sheetId, preview.pieceId),
-      );
-      if (piece == null) return null;
-      final march = placeOnRing(preview.point, piece.vertices);
-      if (march == null) return null;
-      return ToolCue(
-        anchor: preview.point + piece.separation,
-        direction: march.direction,
-        aim: aim,
-        reach: _scale * 0.75,
-      );
+    final lock = _fold;
+    if (lock == null) return _shownEdgeCue(aim);
+    final piece = pieceForKey(_area, mixedPieceKey(lock.sheetId, lock.pieceId));
+    if (piece == null) return null;
+    var direction = lock.direction;
+    final chord = _foldWipe == null ? _foldChord(aim) : null;
+    final along = chord == null ? null : chord.end - chord.start;
+    if (along != null && along.distance > 1e-6) {
+      direction = along / along.distance;
     }
-    final end = _foldEnd ?? snapCraft(aim, _scale, _area);
-    final delta = end - start;
-    final direction = delta.distance < 1e-6
-        ? (_foldFlight.target?.direction ?? const Offset(1, 0))
-        : delta / delta.distance;
+    if (direction.distance < 1e-6) direction = const Offset(1, 0);
     return ToolCue(
-      anchor: start,
+      anchor: lock.point + piece.separation,
       direction: direction,
       aim: aim,
       reach: _scale * 0.75,
@@ -710,228 +1253,371 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
   Widget build(BuildContext context) {
     _queueScissorSync();
     _queueFoldSync();
+    const background = kPapercutBackground;
     return FmScreen(
-      backgroundColor: kPapercutBackground,
-      overlays: const [FmDevBackButton()],
+      backgroundColor: background,
+      overlays: [const FmDevBackButton(), _pageCarets()],
       background: LayoutBuilder(
         builder: (context, constraints) {
-          _viewport = Size(constraints.maxWidth, constraints.maxHeight);
-          if (!_framed && _viewport.width > 2) {
-            _framed = true;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!mounted) return;
-              _frame();
-              setState(() {});
-            });
-          }
-          final chrome = _chrome(_viewport);
-          final aim = _aim();
-          final snap = aim == null ? null : snapCraft(aim, _scale, _area);
-          final cutMark = _tool == _CraftTool.scissors && _cut != null
-              ? snap
-              : null;
-          final foldMark = _tool == _CraftTool.folder && _foldStart != null
-              ? (_foldEnd ?? snap)
-              : null;
-          final hover = _tool == _CraftTool.select || aim == null
-              ? null
-              : pieceUnderAim(_area, aim);
-          final segment = _segment();
-          final screenCenter = selectionCenter(_area);
-          final menuCenter = screenCenter == null
-              ? null
-              : _camera.camera.projectToScreen(
-                  Vector3(screenCenter.dx, screenCenter.dy, 0),
-                  _viewport,
+          final width = constraints.maxWidth;
+          final height = constraints.maxHeight;
+          return ClipRect(
+            child: TweenAnimationBuilder<double>(
+              tween: Tween<double>(end: _page.toDouble()),
+              duration: _kBoardPan,
+              curve: Curves.easeOutCubic,
+              builder: (context, page, child) {
+                return OverflowBox(
+                  alignment: Alignment.topLeft,
+                  minWidth: width * 2,
+                  maxWidth: width * 2,
+                  minHeight: height,
+                  maxHeight: height,
+                  child: Transform.translate(
+                    offset: Offset(-page * width, 0),
+                    child: child,
+                  ),
                 );
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              Positioned.fill(
-                child: Listener(
-                  behavior: HitTestBehavior.opaque,
-                  onPointerSignal: (event) {
-                    if (event is! PointerScrollEvent ||
-                        event.scrollDelta.dy == 0) {
-                      return;
-                    }
-                    _zoom(math.exp(-event.scrollDelta.dy * 0.002));
-                    setState(() {});
-                  },
-                  onPointerDown: _onPointerDown,
-                  onPointerMove: _onPointerMove,
-                  onPointerUp: _onPointerUp,
-                  onPointerCancel: _onPointerCancel,
-                  child: AnimatedBuilder(
-                    animation: _camera,
-                    builder: (context, _) {
-                      return CustomPaint(
-                        key: const Key('mixed-craft-canvas'),
-                        painter: MixedCraftPainter(
-                          camera: _camera,
-                          area: _area,
-                          grids: _grids.opacities(_gridFade.value),
-                          view: _visible(),
-                          hoverKey: hover,
-                          segment: segment,
-                          segmentGlows: _tool == _CraftTool.scissors
-                              ? _cutGlowing
-                              : _foldGlowing || _foldEnd != null,
-                          foldSegment: _tool == _CraftTool.folder,
-                          marquee: _marqueeRect(),
-                          marqueeCross:
-                              _marqueeStart != null &&
-                              _marqueeCurrent != null &&
-                              marqueePick(_marqueeStart!, _marqueeCurrent!) ==
-                                  MarqueePick.cross,
-                        ),
-                        child: const SizedBox.expand(),
-                      );
-                    },
+              },
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizedBox(
+                    width: width,
+                    child: BlueprintBoardPage(
+                      stepKey: _choiceKey,
+                      blueprint: _blueprint,
+                      stepIndex: _stepIndex,
+                      choices: _choices,
+                      board: _board,
+                      showPlacedDimensions: _showPlacedDimensions,
+                      onShowPlacedDimensions: (value) =>
+                          setState(() => _showPlacedDimensions = value),
+                      onStep: _selectBoardStep,
+                      onSendToCraft: _receiveFromBoard,
+                    ),
                   ),
-                ),
-              ),
-              if (_tool == _CraftTool.scissors ||
-                  _flight.phase != ToolFlightPhase.absent)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: AnimatedBuilder(
-                      animation: _flightAnim,
-                      builder: (context, _) {
-                        return CustomPaint(
-                          painter: ScissorGlyphPainter(
-                            camera: _camera,
-                            pose: _flight.pose(_flightAnim.value),
-                            tool: _scissors,
-                            glyphScale: 0.5,
-                            destination: cutMark,
-                          ),
+                  SizedBox(
+                    width: width,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        _viewport = Size(
+                          constraints.maxWidth,
+                          constraints.maxHeight,
+                        );
+                        if (!_framed && _viewport.width > 2) {
+                          _framed = true;
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (!mounted) return;
+                            _frame();
+                            setState(() {});
+                          });
+                        }
+                        final chrome = _chrome(_viewport);
+                        final aim = _aim();
+                        final snap = aim == null
+                            ? null
+                            : snapCut(aim, _scale, _area);
+                        final cutMark = _cutWipe != null
+                            ? _cutWipe!.to
+                            : (_tool == _CraftTool.scissors && _cut != null
+                                  ? snap
+                                  : null);
+                        final foldMark = _foldWipe != null
+                            ? _foldWipe!.to
+                            : (_tool == _CraftTool.folder &&
+                                      _fold != null &&
+                                      aim != null
+                                  ? _foldChord(aim)?.end
+                                  : null);
+                        final hover = aim == null
+                            ? null
+                            : pieceUnderAim(_area, aim);
+                        final segment = _segment();
+                        final screenCenter = selectionCenter(_area);
+                        final menuCenter = screenCenter == null
+                            ? null
+                            : _camera.camera.projectToScreen(
+                                Vector3(screenCenter.dx, screenCenter.dy, 0),
+                                _viewport,
+                              );
+                        return Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            Positioned.fill(
+                              child: Listener(
+                                behavior: HitTestBehavior.opaque,
+                                onPointerSignal: (event) {
+                                  if (event is! PointerScrollEvent ||
+                                      event.scrollDelta.dy == 0) {
+                                    return;
+                                  }
+                                  _zoom(
+                                    math.exp(-event.scrollDelta.dy * 0.002),
+                                  );
+                                  setState(() {});
+                                },
+                                onPointerDown: _onPointerDown,
+                                onPointerMove: _onPointerMove,
+                                onPointerUp: _onPointerUp,
+                                onPointerCancel: _onPointerCancel,
+                                child: AnimatedBuilder(
+                                  animation: _camera,
+                                  builder: (context, _) {
+                                    return CustomPaint(
+                                      key: const Key('mixed-craft-canvas'),
+                                      painter: MixedCraftPainter(
+                                        camera: _camera,
+                                        area: _area,
+                                        grids: _grids.opacities(
+                                          _gridFade.value,
+                                        ),
+                                        view: _visible(),
+                                        hoverKey: hover,
+                                        segment: segment,
+                                        segmentGlows:
+                                            _tool == _CraftTool.scissors
+                                            ? _cutGlowing
+                                            : _fold != null,
+                                        foldSegment: _tool == _CraftTool.folder,
+                                        marquee: _marqueeRect(),
+                                        marqueeCross:
+                                            _marqueeStart != null &&
+                                            _marqueeCurrent != null &&
+                                            marqueePick(
+                                                  _marqueeStart!,
+                                                  _marqueeCurrent!,
+                                                ) ==
+                                                MarqueePick.cross,
+                                        flutterSheetId: _flutter?.sheetId,
+                                        flutterJoint: _flutter?.joint,
+                                        flutterBendT: _flutter == null
+                                            ? 0
+                                            : creaseFoldBend(_creaseAnim.value),
+                                        background: background,
+                                      ),
+                                      child: const SizedBox.expand(),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                            if (_tool == _CraftTool.scissors ||
+                                _flight.phase != ToolFlightPhase.absent)
+                              Positioned.fill(
+                                child: IgnorePointer(
+                                  child: AnimatedBuilder(
+                                    animation: Listenable.merge([
+                                      _flightAnim,
+                                      _cutPulse,
+                                    ]),
+                                    builder: (context, _) {
+                                      return CustomPaint(
+                                        painter: ScissorGlyphPainter(
+                                          camera: _camera,
+                                          pose: _scissorPose(),
+                                          tool: _scissors,
+                                          glyphScale: 0.5,
+                                          pointScale:
+                                              _cut == null && _cutWipe == null
+                                              ? 1
+                                              : _pointScale,
+                                          destination: cutMark,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                            if (_tool == _CraftTool.folder ||
+                                _foldFlight.phase != ToolFlightPhase.absent)
+                              Positioned.fill(
+                                child: IgnorePointer(
+                                  child: AnimatedBuilder(
+                                    animation: Listenable.merge([
+                                      _foldFlightAnim,
+                                      _foldPulse,
+                                    ]),
+                                    builder: (context, _) {
+                                      return CustomPaint(
+                                        painter: FoldGlyphPainter(
+                                          camera: _camera,
+                                          pose: _folderPose(),
+                                          destination: foldMark,
+                                          pointScale:
+                                              _fold == null && _foldWipe == null
+                                              ? 1
+                                              : _foldPointScale,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                            const IgnorePointer(child: ViewCrosshair()),
+                            if (_tool == _CraftTool.select &&
+                                menuCenter != null &&
+                                _area.selected.isNotEmpty &&
+                                _marqueeStart == null &&
+                                _moveOrigin == null)
+                              Positioned.fill(
+                                child: ObjectRadialMenu(
+                                  center: menuCenter,
+                                  actions: [
+                                    RadialAction(
+                                      icon: Icons.arrow_back,
+                                      label: 'Dimension',
+                                      tint: const Color(0xFF90CAF9),
+                                      side: RadialActionSide.left,
+                                      onTap: _sendSelectionToBoard,
+                                    ),
+                                    RadialAction(
+                                      icon: Icons.open_with,
+                                      label: 'Move',
+                                      tint: const Color(0xFF90A4AE),
+                                      onTap: () =>
+                                          setState(() => _moving = true),
+                                    ),
+                                    RadialAction(
+                                      icon: Icons.rotate_right,
+                                      label: 'Rotate',
+                                      tint: const Color(0xFFFFD54F),
+                                      onTap: () => setState(
+                                        () => _apply(rotateSelection(_area)),
+                                      ),
+                                    ),
+                                    RadialAction(
+                                      icon: Icons.visibility_off,
+                                      label: 'Hide',
+                                      tint: const Color(0xFF78909C),
+                                      onTap: () => setState(
+                                        () => _apply(hideSelection(_area)),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            FmSafePositioned(
+                              right: 8,
+                              top: 56,
+                              minimum: kFmScreenInset,
+                              child: _paperRail(chrome),
+                            ),
+                            FmSafePositioned(
+                              left: 8,
+                              bottom: 8,
+                              minimum: kFmScreenInset,
+                              child: _cornerColumn(
+                                chrome: chrome,
+                                top: _historyButton(
+                                  key: const Key('mixed-undo'),
+                                  icon: Icons.undo,
+                                  enabled: _history.canUndo,
+                                  onTap: () {
+                                    if (!_undoCraft()) return;
+                                    setState(() {
+                                      _clearCut();
+                                      _clearFold();
+                                    });
+                                  },
+                                ),
+                                bottom: _scaleButton(
+                                  key: const Key('mixed-minus'),
+                                  icon: Icons.remove,
+                                  onTap: () => _stepScale(finer: false),
+                                ),
+                              ),
+                            ),
+                            FmSafePositioned(
+                              right: 8,
+                              bottom: 8,
+                              minimum: kFmScreenInset,
+                              child: _cornerColumn(
+                                chrome: chrome,
+                                top: _historyButton(
+                                  key: const Key('mixed-redo'),
+                                  icon: Icons.redo,
+                                  enabled: _history.canRedo,
+                                  onTap: () {
+                                    if (!_redoCraft()) return;
+                                    setState(() {
+                                      _clearCut();
+                                      _clearFold();
+                                    });
+                                  },
+                                ),
+                                bottom: _scaleButton(
+                                  key: const Key('mixed-plus'),
+                                  icon: Icons.add,
+                                  onTap: () => _stepScale(finer: true),
+                                ),
+                              ),
+                            ),
+                            FmSafePositioned(
+                              left: 0,
+                              right: 0,
+                              bottom: 8,
+                              minimum: kFmScreenInset,
+                              child: _toolbar(chrome),
+                            ),
+                          ],
                         );
                       },
                     ),
                   ),
-                ),
-              if (_tool == _CraftTool.folder ||
-                  _foldFlight.phase != ToolFlightPhase.absent)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: AnimatedBuilder(
-                      animation: _foldFlightAnim,
-                      builder: (context, _) {
-                        return CustomPaint(
-                          painter: FoldGlyphPainter(
-                            camera: _camera,
-                            pose: _foldFlight.pose(_foldFlightAnim.value),
-                            destination: foldMark,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              const IgnorePointer(child: ViewCrosshair()),
-              if (_tool == _CraftTool.select &&
-                  menuCenter != null &&
-                  _area.selected.isNotEmpty &&
-                  _marqueeStart == null &&
-                  _moveOrigin == null)
-                Positioned.fill(
-                  child: ObjectRadialMenu(
-                    center: menuCenter,
-                    actions: [
-                      RadialAction(
-                        icon: Icons.open_with,
-                        label: 'Move',
-                        tint: const Color(0xFF90A4AE),
-                        onTap: () => setState(() => _moving = true),
-                      ),
-                      RadialAction(
-                        icon: Icons.rotate_right,
-                        label: 'Rotate',
-                        tint: const Color(0xFFFFD54F),
-                        onTap: () =>
-                            setState(() => _apply(rotateSelection(_area))),
-                      ),
-                      RadialAction(
-                        icon: Icons.visibility_off,
-                        label: 'Hide',
-                        tint: const Color(0xFF78909C),
-                        onTap: () =>
-                            setState(() => _apply(hideSelection(_area))),
-                      ),
-                    ],
-                  ),
-                ),
-              FmSafePositioned(
-                right: 8,
-                top: 56,
-                minimum: kFmScreenInset,
-                child: _paperRail(chrome),
+                ],
               ),
-              FmSafePositioned(
-                left: 8,
-                bottom: 8,
-                minimum: kFmScreenInset,
-                child: _cornerColumn(
-                  chrome: chrome,
-                  top: _historyButton(
-                    key: const Key('mixed-undo'),
-                    icon: Icons.undo,
-                    enabled: _history.canUndo,
-                    onTap: () {
-                      final previous = _history.undo(_area);
-                      if (previous == null) return;
-                      setState(() {
-                        _area = previous;
-                        _clearCut();
-                        _clearFold();
-                      });
-                    },
-                  ),
-                  bottom: _scaleButton(
-                    key: const Key('mixed-plus'),
-                    icon: Icons.add,
-                    onTap: () => _stepScale(finer: true),
-                  ),
-                ),
-              ),
-              FmSafePositioned(
-                right: 8,
-                bottom: 8,
-                minimum: kFmScreenInset,
-                child: _cornerColumn(
-                  chrome: chrome,
-                  top: _historyButton(
-                    key: const Key('mixed-redo'),
-                    icon: Icons.redo,
-                    enabled: _history.canRedo,
-                    onTap: () {
-                      final next = _history.redo(_area);
-                      if (next == null) return;
-                      setState(() {
-                        _area = next;
-                        _clearCut();
-                        _clearFold();
-                      });
-                    },
-                  ),
-                  bottom: _scaleButton(
-                    key: const Key('mixed-minus'),
-                    icon: Icons.remove,
-                    onTap: () => _stepScale(finer: false),
-                  ),
-                ),
-              ),
-              FmSafePositioned(
-                left: 0,
-                right: 0,
-                bottom: 8,
-                minimum: kFmScreenInset,
-                child: _toolbar(chrome),
-              ),
-            ],
+            ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _pageCarets() {
+    return FmSafePositioned(
+      top: 8,
+      left: 0,
+      right: 0,
+      minimum: kFmScreenInset,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _caret(
+            key: const Key('board-caret-left'),
+            icon: Icons.chevron_left,
+            enabled: _page > 0,
+            onTap: () => setState(() => _page = 0),
+          ),
+          const SizedBox(width: 8),
+          _caret(
+            key: const Key('board-caret-right'),
+            icon: Icons.chevron_right,
+            enabled: _page < 1,
+            onTap: () => setState(() => _page = 1),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _caret({
+    required Key key,
+    required IconData icon,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      key: key,
+      onTap: enabled ? onTap : null,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.all(6),
+        child: Icon(
+          icon,
+          size: 32,
+          color: Colors.white.withValues(alpha: enabled ? 0.92 : 0.28),
+        ),
       ),
     );
   }

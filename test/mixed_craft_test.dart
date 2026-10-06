@@ -13,6 +13,23 @@ import 'package:provider/provider.dart';
 
 void main() {
   group('mixed craft sheet', () {
+    test('the paper lattice thins out as the dot grid does', () {
+      final piece = mixedOpeningArea().sheets.single.paper.pieces.single;
+      final fine = paperGridSegments(
+        ring: piece.vertices,
+        holes: piece.holes,
+        spacing: 4,
+      );
+      final coarse = paperGridSegments(
+        ring: piece.vertices,
+        holes: piece.holes,
+        spacing: 12,
+      );
+      expect(fine, isNotEmpty);
+      expect(coarse, isNotEmpty);
+      expect(coarse.length, lessThan(fine.length));
+    });
+
     test('the opening sheet is 24 units about the origin', () {
       final piece = mixedOpeningArea().sheets.single.paper.pieces.single;
       expect(piece.vertices[1].dx - piece.vertices[0].dx, 24);
@@ -138,58 +155,126 @@ void main() {
       expect(lock!.point, const Offset(-12, 0));
     });
 
+    test('the shown scissors lock the nearest edge from a far reticle', () {
+      final area = mixedOpeningArea();
+      final shown = lockCut(Offset.zero, area, 4, maxCells: null);
+      expect(shown, isNotNull);
+      expect(shown!.point.distance, 12);
+    });
+
+    test('a full crossing takes 150ms and a shorter cut keeps that speed', () {
+      expect(
+        cutWipeDuration(kMixedPaperSize),
+        const Duration(milliseconds: 150),
+      );
+      expect(
+        cutWipeDuration(kMixedPaperSize / 2),
+        const Duration(milliseconds: 75),
+      );
+      expect(
+        cutWipeDuration(kMixedPaperSize / 6),
+        const Duration(milliseconds: 25),
+      );
+      expect(cutWipeDuration(0), Duration.zero);
+    });
+
     test('a through cut splits and leaves the pieces unmoved', () {
       final area = mixedOpeningArea();
-      final next = commitCut(
-        area,
-        'sheet-1',
-        const Offset(-12, 0),
-        const Offset(12, 0),
-      );
+      final next = commitCut(area, 'sheet-1', const [
+        Offset(-12, 0),
+        Offset(12, 0),
+      ]);
       expect(next, isNotNull);
-      expect(next!.sheets.single.paper.pieces.length, greaterThan(1));
-      for (final piece in next.sheets.single.paper.pieces) {
+      expect(next!.stoppedInside, isFalse);
+      expect(next.area.sheets.single.paper.pieces.length, greaterThan(1));
+      for (final piece in next.area.sheets.single.paper.pieces) {
         expect(piece.separation, Offset.zero);
       }
-      expect(pieceUnderAim(next, const Offset(0, 6)), isNotNull);
+      expect(pieceUnderAim(next.area, const Offset(0, 6)), isNotNull);
       expect(
-        pieceUnderAim(next, const Offset(0, 6)),
-        isNot(pieceUnderAim(next, const Offset(0, -6))),
+        pieceUnderAim(next.area, const Offset(0, 6)),
+        isNot(pieceUnderAim(next.area, const Offset(0, -6))),
       );
     });
 
-    test('a cut that stops inside the sheet does not split', () {
+    test('a cut may stop inside the sheet and continue from there', () {
       final area = mixedOpeningArea();
+      final stopped = commitCut(area, 'sheet-1', const [
+        Offset(-12, 0),
+        Offset.zero,
+      ]);
+      expect(stopped, isNotNull);
+      expect(stopped!.stoppedInside, isTrue);
+      expect(stopped.area.sheets.single.paper.pieces, hasLength(1));
+      expect(stopped.area.sheets.single.paper.cutStrokes.single, [
+        const Offset(-12, 0),
+        Offset.zero,
+      ]);
+      final continued = commitCut(stopped.area, 'sheet-1', const [
+        Offset(-12, 0),
+        Offset.zero,
+        Offset(4, 0),
+      ])!;
+      expect(continued.stoppedInside, isTrue);
+      expect(continued.area.sheets.single.paper.pieces, hasLength(1));
+      expect(continued.area.sheets.single.paper.cutStrokes, hasLength(1));
       expect(
-        commitCut(area, 'sheet-1', const Offset(-12, 0), Offset.zero),
-        isNull,
+        continued.area.sheets.single.paper.cutStrokes.single.last,
+        const Offset(4, 0),
       );
-      expect(area.sheets.single.paper.pieces, hasLength(1));
+      final exited = commitCut(continued.area, 'sheet-1', const [
+        Offset(-12, 0),
+        Offset.zero,
+        Offset(4, 0),
+        Offset(12, 0),
+      ])!;
+      expect(exited.stoppedInside, isFalse);
+      expect(exited.area.sheets.single.paper.pieces.length, greaterThan(1));
+    });
+  });
+
+  group('mixed craft fold', () {
+    test('a shared start folds through either piece and stops there', () {
+      final cut = commitCut(mixedOpeningArea(), 'sheet-1', const [
+        Offset(-12, 0),
+        Offset(12, 0),
+      ])!;
+      final up = foldThroughPiece(cut.area, Offset.zero, const Offset(0, 6));
+      final down = foldThroughPiece(cut.area, Offset.zero, const Offset(0, -6));
+      expect(up, isNotNull);
+      expect(down, isNotNull);
+      expect(up!.end, const Offset(0, 12));
+      expect(down!.end, const Offset(0, -12));
+      expect(up.pieceId, isNot(down.pieceId));
+      final past = foldThroughPiece(cut.area, Offset.zero, const Offset(0, 40));
+      expect(past!.end, const Offset(0, 12));
     });
 
-    test('an interior aim leaves through the far edge', () {
+    test('a fold ray runs through the aim and out the far edge', () {
       const ring = [
         Offset(-12, -12),
         Offset(12, -12),
         Offset(12, 12),
         Offset(-12, 12),
       ];
-      final end = cutSpanEnd(const Offset(-12, 0), Offset.zero, ring);
-      expect(end, isNotNull);
-      expect(end!.dx, closeTo(12, 1e-6));
-      expect(end.dy, closeTo(0, 1e-6));
-      final split = commitCut(
-        mixedOpeningArea(),
-        'sheet-1',
-        const Offset(-12, 0),
-        end,
+      expect(
+        rayThroughRing(const Offset(-12, 0), Offset.zero, ring),
+        const Offset(12, 0),
       );
-      expect(split, isNotNull);
-      expect(split!.sheets.single.paper.pieces.length, greaterThan(1));
+      expect(
+        rayThroughRing(const Offset(-12, 0), const Offset(20, 0), ring),
+        const Offset(12, 0),
+      );
+      final angled = rayThroughRing(
+        const Offset(-12, 0),
+        const Offset(0, 4),
+        ring,
+      );
+      expect(angled, isNotNull);
+      expect(angled!.dx, closeTo(12, 1e-6));
+      expect(angled.dy, closeTo(8, 1e-6));
     });
-  });
 
-  group('mixed craft fold', () {
     test('a fold start inside the sheet does not lock and an edge does', () {
       final area = mixedOpeningArea();
       expect(lockFold(Offset.zero, area, 4), isNull);
@@ -244,6 +329,33 @@ void main() {
       )!;
       expect(snapCraft(const Offset(1, 0.2), 4, scored), const Offset(1, 0));
     });
+
+    test('a cut snaps to the grid or a vertex and ignores a crease', () {
+      final area = mixedOpeningArea();
+      final scored = scoreSpan(
+        area,
+        'sheet-1',
+        const Offset(-12, 0),
+        const Offset(12, 0),
+        const Offset(0, 6),
+      )!;
+      final folded = foldSpan(
+        scored,
+        'sheet-1',
+        const Offset(-12, 0),
+        const Offset(12, 0),
+        const Offset(0, 6),
+      )!;
+      expect(snapCut(const Offset(1, 0.2), 4, folded), const Offset(0, 0));
+      final shifted = movePieces(
+        area.copy(selected: {'sheet-1/paper'}),
+        const Offset(1, 0),
+      )!;
+      expect(
+        snapCut(const Offset(-11.2, 11.8), 4, shifted),
+        const Offset(-11, 12),
+      );
+    });
   });
 
   group('mixed craft history', () {
@@ -252,12 +364,10 @@ void main() {
       final area = mixedOpeningArea().copy(selected: {'sheet-1/paper'});
 
       history.push(area);
-      final cut = commitCut(
-        area,
-        'sheet-1',
-        const Offset(-12, 0),
-        const Offset(12, 0),
-      )!;
+      final cut = commitCut(area, 'sheet-1', const [
+        Offset(-12, 0),
+        Offset(12, 0),
+      ])!.area;
       final restoredCut = history.undo(cut)!;
       expect(restoredCut.sheets.single.paper.pieces, hasLength(1));
       final redone = history.redo(restoredCut)!;
@@ -296,6 +406,21 @@ void main() {
       expect(history.canRedo, isFalse);
     });
 
+    test('a close vertex snaps to the grid and a far one does not', () {
+      final area = mixedOpeningArea().copy(selected: {'sheet-1/paper'});
+      final nudged = movePieces(area, const Offset(1, 0))!;
+      expect(vertexGridSnap(nudged, 4, 1.5), const Offset(-1, 0));
+      expect(vertexGridSnap(nudged, 4, 0.4), isNull);
+      expect(
+        snapWorldRadius(
+          pixels: kMixedSnapPixels,
+          halfHeight: 30,
+          shorterSide: 600,
+        ),
+        closeTo(kMixedSnapPixels * 60 / 600, 1e-9),
+      );
+    });
+
     test('a quarter turn bakes the moved sheet onto the grid', () {
       final area = mixedOpeningArea().copy(selected: {'sheet-1/paper'});
       final moved = movePieces(area, const Offset(4, 0))!;
@@ -314,6 +439,7 @@ void main() {
       ),
     );
     await tester.pump();
+    await _openCraftBench(tester);
 
     expect(find.text('Yellow'), findsOneWidget);
     expect(find.text('Green'), findsOneWidget);
@@ -329,6 +455,10 @@ void main() {
 
     expect(button(const Key('mixed-undo')).onTap, isNull);
     expect(button(const Key('mixed-redo')).onTap, isNull);
+    expect(
+      tester.getCenter(find.byKey(const Key('mixed-plus'))).dx,
+      greaterThan(tester.getCenter(find.byKey(const Key('mixed-minus'))).dx),
+    );
 
     await tester.tap(find.byKey(const Key('mixed-plus')));
     await tester.pump();
@@ -364,6 +494,7 @@ void main() {
       ),
     );
     await tester.pump();
+    await _openCraftBench(tester);
 
     GestureDetector button(Key key) {
       return tester.widget<GestureDetector>(find.byKey(key));
@@ -394,9 +525,86 @@ void main() {
     await pan(Offset(-24 * pixelsPerUnit, 0));
     await tester.tap(canvas);
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump();
     expect(button(const Key('mixed-undo')).onTap, isNotNull);
     await tester.pumpAndSettle();
   });
+
+  testWidgets('a second tap creases through the shown start', (tester) async {
+    tester.view.physicalSize = const Size(800, 600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider(
+        create: (_) => FmThemeData(),
+        child: const MaterialApp(home: MixedCraftingView()),
+      ),
+    );
+    await tester.pump();
+    await _openCraftBench(tester);
+
+    GestureDetector button(Key key) {
+      return tester.widget<GestureDetector>(find.byKey(key));
+    }
+
+    await tester.tap(find.byIcon(Icons.flip));
+    await tester.pump();
+
+    final canvas = find.byKey(const Key('mixed-craft-canvas'));
+    await tester.tap(canvas);
+    await tester.pump();
+    expect(button(const Key('mixed-undo')).onTap, isNull);
+
+    await tester.tap(canvas);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump();
+    expect(button(const Key('mixed-undo')).onTap, isNotNull);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(button(const Key('mixed-undo')).onTap, isNotNull);
+  });
+
+  testWidgets('a tap starts the cut from the shown scissors', (tester) async {
+    tester.view.physicalSize = const Size(800, 600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider(
+        create: (_) => FmThemeData(),
+        child: const MaterialApp(home: MixedCraftingView()),
+      ),
+    );
+    await tester.pump();
+    await _openCraftBench(tester);
+
+    GestureDetector button(Key key) {
+      return tester.widget<GestureDetector>(find.byKey(key));
+    }
+
+    await tester.tap(find.byIcon(Icons.content_cut));
+    await tester.pump();
+
+    final canvas = find.byKey(const Key('mixed-craft-canvas'));
+    await tester.tap(canvas);
+    await tester.pump();
+    expect(button(const Key('mixed-undo')).onTap, isNull);
+
+    await tester.tap(canvas);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump();
+    expect(button(const Key('mixed-undo')).onTap, isNotNull);
+  });
+}
+
+Future<void> _openCraftBench(WidgetTester tester) async {
+  await tester.tap(find.byKey(const Key('board-caret-right')));
+  await tester.pumpAndSettle();
 }
 
 List<int> _walk(int scale, {required bool finer}) {

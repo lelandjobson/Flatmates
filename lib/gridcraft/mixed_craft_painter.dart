@@ -6,6 +6,7 @@ import '../papercut/paper.dart';
 import 'fold.dart';
 import 'mixed_craft.dart';
 import 'painter.dart';
+import 'scissor.dart';
 
 /// Crafting lattice, paper, and the candidate cut or crease.
 class MixedCraftPainter extends CustomPainter {
@@ -14,12 +15,16 @@ class MixedCraftPainter extends CustomPainter {
     required this.area,
     required this.grids,
     required this.view,
+    required this.background,
     this.hoverKey,
     this.segment,
     this.segmentGlows = false,
     this.foldSegment = false,
     this.marquee,
     this.marqueeCross = false,
+    this.flutterSheetId,
+    this.flutterJoint,
+    this.flutterBendT = 0,
   });
 
   final PapercutCamera camera;
@@ -35,26 +40,56 @@ class MixedCraftPainter extends CustomPainter {
   final Rect? marquee;
   final bool marqueeCross;
 
-  static const _highlight = Color(0xFFFFE14A);
+  /// Temporary joint for a crease flutter. It is not stored on the sheet.
+  final String? flutterSheetId;
+  final FoldJoint? flutterJoint;
+
+  /// 0 is flat, and the twitch peaks near [creaseBendFraction].
+  final double flutterBendT;
+
+  /// Screen color behind the paper. Cuts are painted in it so a slit reads
+  /// as the backdrop showing through.
+  final Color background;
+
+  static const _selectionLine = Color(0xFFFFFFFF);
+  static const _overlay = Color(0xFFFFE14A);
 
   @override
   void paint(Canvas canvas, Size size) {
     _paintGrid(canvas, size);
     for (final sheet in area.sheets) {
+      final pose = _pose(sheet);
       for (final piece in sheet.paper.pieces) {
         final key = mixedPieceKey(sheet.id, piece.id);
         if (area.hidden.contains(key)) continue;
         final ring = shownRing(
           piece.vertices,
           piece.separation,
-          sheet.paper.folds,
+          pose.folds,
           pieceId: piece.id,
+          bend: pose.bend,
+          bendT: pose.bendT,
         );
-        _paintPaper(canvas, size, ring, piece.color);
+        _paintPaper(
+          canvas,
+          size,
+          ring,
+          piece.color,
+          onFill: (path) => _paintPaperGrid(
+            canvas,
+            size,
+            path,
+            piece,
+            pose.folds,
+            bend: pose.bend,
+            bendT: pose.bendT,
+          ),
+        );
       }
     }
     _paintCreases(canvas, size);
     for (final sheet in area.sheets) {
+      final pose = _pose(sheet);
       for (final piece in sheet.paper.pieces) {
         final key = mixedPieceKey(sheet.id, piece.id);
         if (area.hidden.contains(key)) continue;
@@ -64,13 +99,22 @@ class MixedCraftPainter extends CustomPainter {
         final ring = shownRing(
           piece.vertices,
           piece.separation,
-          sheet.paper.folds,
+          pose.folds,
           pieceId: piece.id,
+          bend: pose.bend,
+          bendT: pose.bendT,
         );
         if (selected) {
-          _fill(canvas, size, ring, _highlight.withValues(alpha: 0.2));
+          _fill(canvas, size, ring, _overlay.withValues(alpha: 0.2));
         }
-        _stroke(canvas, size, ring, _highlight, width: 2.5, close: true);
+        _stroke(canvas, size, ring, _selectionLine, width: 2.5, close: true);
+      }
+    }
+    for (final sheet in area.sheets) {
+      for (final piece in sheet.paper.pieces) {
+        final key = mixedPieceKey(sheet.id, piece.id);
+        if (area.hidden.contains(key)) continue;
+        _paintCutMarks(canvas, size, piece, sheet, _pose(sheet));
       }
     }
     final line = segment;
@@ -141,12 +185,19 @@ class MixedCraftPainter extends CustomPainter {
         screen.dy <= size.height + 4;
   }
 
-  void _paintPaper(Canvas canvas, Size size, List<Offset> ring, Color color) {
+  void _paintPaper(
+    Canvas canvas,
+    Size size,
+    List<Offset> ring,
+    Color color, {
+    void Function(Path path)? onFill,
+  }) {
     final path = _path(ring, size, close: true);
     if (path == null) return;
     final shadow = path.shift(const Offset(2, 2));
     canvas.drawPath(shadow, Paint()..color = const Color(0x14000000));
     canvas.drawPath(path, Paint()..color = color.withValues(alpha: 0.85));
+    onFill?.call(path);
     canvas.drawPath(
       path,
       Paint()
@@ -155,6 +206,100 @@ class MixedCraftPainter extends CustomPainter {
         ..strokeWidth = 1.5
         ..strokeJoin = StrokeJoin.round,
     );
+  }
+
+  /// Light lattice on the sheet, clipped to the face. Each entry of [grids]
+  /// is one spacing, so a scale fade draws the outgoing and incoming lines
+  /// together, the same way the dots behind the paper do.
+  ({List<FoldJoint> folds, int? bend, double bendT}) _pose(MixedSheet sheet) {
+    final joint = flutterJoint;
+    if (joint == null || flutterSheetId != sheet.id) {
+      return (folds: sheet.paper.folds, bend: null, bendT: 1);
+    }
+    return (
+      folds: [...sheet.paper.folds, joint],
+      bend: sheet.paper.folds.length,
+      bendT: flutterBendT,
+    );
+  }
+
+  void _paintPaperGrid(
+    Canvas canvas,
+    Size size,
+    Path clip,
+    PapercutPiece piece,
+    List<FoldJoint> folds, {
+    int? bend,
+    double bendT = 1,
+  }) {
+    if (grids.isEmpty) return;
+    canvas.save();
+    canvas.clipPath(clip);
+    final layers = grids.entries.toList()
+      ..sort((a, b) => b.key.compareTo(a.key));
+    for (final layer in layers) {
+      if (layer.value <= 0.001 || layer.key <= 0) continue;
+      final ink = const Color(
+        0xFF000000,
+      ).withValues(alpha: 0.12 * layer.value);
+      final segments = paperGridSegments(
+        ring: piece.vertices,
+        holes: piece.holes,
+        spacing: layer.key.toDouble(),
+      );
+      for (final segment in segments) {
+        final a =
+            displayPoint(
+              segment.$1,
+              folds,
+              pieceId: piece.id,
+              bend: bend,
+              bendT: bendT,
+            ) +
+            piece.separation;
+        final b =
+            displayPoint(
+              segment.$2,
+              folds,
+              pieceId: piece.id,
+              bend: bend,
+              bendT: bendT,
+            ) +
+            piece.separation;
+        _stroke(canvas, size, [a, b], ink, width: 0.6);
+      }
+    }
+    canvas.restore();
+  }
+
+  void _paintCutMarks(
+    Canvas canvas,
+    Size size,
+    PapercutPiece piece,
+    MixedSheet sheet,
+    ({List<FoldJoint> folds, int? bend, double bendT}) pose,
+  ) {
+    for (final stroke in sheet.paper.cutStrokes) {
+      for (final mark in cutMarksOnPiece(stroke, piece)) {
+        _stroke(
+          canvas,
+          size,
+          [
+            for (final point in mark)
+              displayPoint(
+                point,
+                pose.folds,
+                pieceId: piece.id,
+                bend: pose.bend,
+                bendT: pose.bendT,
+              ) +
+                  piece.separation,
+          ],
+          background,
+          width: 1.25,
+        );
+      }
+    }
   }
 
   void _paintCreases(Canvas canvas, Size size) {
@@ -180,10 +325,9 @@ class MixedCraftPainter extends CustomPainter {
   }
 
   void _paintSegment(Canvas canvas, Size size, Offset a, Offset b) {
-    final color = segmentGlows
-        ? const Color.fromRGBO(102, 187, 106, 1)
-        : (foldSegment ? const Color(0xFFFFB74D) : const Color(0xFFE8FFF3));
-    _stroke(canvas, size, [a, b], color, width: segmentGlows ? 4 : 3);
+    final color = foldSegment ? const Color(0xFFFFB74D) : background;
+    final width = foldSegment && segmentGlows ? 4.0 : 3.0;
+    _stroke(canvas, size, [a, b], color, width: width);
   }
 
   void _paintMarquee(Canvas canvas, Rect box) {

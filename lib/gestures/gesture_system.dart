@@ -1,7 +1,21 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+
+/// Angle of the segment from [a] to [b], in radians.
+double pointerPairAngle(Offset a, Offset b) {
+  return math.atan2(b.dy - a.dy, b.dx - a.dx);
+}
+
+/// Wraps [radians] into (-pi, pi].
+double wrapRadians(double radians) {
+  var wrapped = radians % (2 * math.pi);
+  if (wrapped > math.pi) wrapped -= 2 * math.pi;
+  if (wrapped <= -math.pi) wrapped += 2 * math.pi;
+  return wrapped;
+}
 
 const double kDragSlopThreshold = 10.0;
 const Duration kClickTimeout = Duration(milliseconds: 500);
@@ -19,15 +33,15 @@ enum GestureType {
 
 extension GestureTypeLabel on GestureType {
   String get label => switch (this) {
-        GestureType.idle => 'Idle',
-        GestureType.oneFingerClick => '1-Finger Click',
-        GestureType.oneFingerHold => '1-Finger Hold',
-        GestureType.oneFingerDrag => '1-Finger Drag',
-        GestureType.twoFingerHold => '2-Finger Hold',
-        GestureType.twoFingerDrag => '2-Finger Drag',
-        GestureType.threeFingerHold => '3+ Finger Hold',
-        GestureType.threeFingerDrag => '3+ Finger Drag',
-      };
+    GestureType.idle => 'Idle',
+    GestureType.oneFingerClick => '1-Finger Click',
+    GestureType.oneFingerHold => '1-Finger Hold',
+    GestureType.oneFingerDrag => '1-Finger Drag',
+    GestureType.twoFingerHold => '2-Finger Hold',
+    GestureType.twoFingerDrag => '2-Finger Drag',
+    GestureType.threeFingerHold => '3+ Finger Hold',
+    GestureType.threeFingerDrag => '3+ Finger Drag',
+  };
 
   bool get isClick => this == GestureType.oneFingerClick;
 
@@ -70,6 +84,7 @@ class GestureState {
     this.focalDelta = Offset.zero,
     this.span = 0,
     this.spanScale = 1,
+    this.rotation = 0,
   });
 
   static const idle = GestureState(
@@ -89,6 +104,10 @@ class GestureState {
   /// [span] / span at the start of the current multi-touch episode (1 if N/A).
   /// Prefer this over frame-to-frame scale ratios to avoid jitter accumulation.
   final double spanScale;
+
+  /// Angle of the first two contacts since this episode began, in radians.
+  /// Zero when fewer than two pointers are down. Wrapped to (-pi, pi].
+  final double rotation;
 
   int get pointerCount => pointers.length;
   List<Offset> get positions => pointers.map((p) => p.position).toList();
@@ -129,6 +148,8 @@ class _GestureClassifierState extends State<GestureClassifier> {
   Timer? _holdTimer;
   int _lastPointerCount = 0;
   double _gestureStartSpan = 0;
+  double _gestureStartAngle = 0;
+  double _panZoomRotation = 0;
 
   // Trackpad / Magic Mouse pan-zoom (synthetic two-finger gesture).
   bool _panZoomActive = false;
@@ -186,6 +207,8 @@ class _GestureClassifierState extends State<GestureClassifier> {
     _lastFocalPoint = _panZoomFocal;
     _lastPointerCount = 2;
     _gestureStartSpan = 1;
+    _gestureStartAngle = 0;
+    _panZoomRotation = 0;
     _emitPanZoom();
   }
 
@@ -194,6 +217,7 @@ class _GestureClassifierState extends State<GestureClassifier> {
     _panZoomFocal = event.localPosition;
     // `scale` is cumulative from pan-zoom start; treat it as spanScale directly.
     _panZoomScale = event.scale <= 0 ? 1.0 : event.scale;
+    _panZoomRotation = event.rotation;
     _emitPanZoom();
   }
 
@@ -201,8 +225,10 @@ class _GestureClassifierState extends State<GestureClassifier> {
     if (!_panZoomActive) return;
     _panZoomActive = false;
     _panZoomScale = 1;
+    _panZoomRotation = 0;
     _lastPointerCount = 0;
     _gestureStartSpan = 0;
+    _gestureStartAngle = 0;
     _lastFocalPoint = Offset.zero;
     widget.onGestureUpdate?.call(GestureState.idle);
   }
@@ -218,6 +244,7 @@ class _GestureClassifierState extends State<GestureClassifier> {
         focalDelta: focalDelta,
         span: _panZoomScale,
         spanScale: _panZoomScale,
+        rotation: _panZoomRotation,
       ),
     );
   }
@@ -246,23 +273,25 @@ class _GestureClassifierState extends State<GestureClassifier> {
   void _classify() {
     final count = _pointers.length;
     final slopThreshold = widget.dragSlopThreshold;
-    final anyMoved =
-        _pointers.values.any((p) => p.displacement > slopThreshold);
+    final anyMoved = _pointers.values.any(
+      (p) => p.displacement > slopThreshold,
+    );
 
     final Offset focalPoint;
     if (count == 0) {
       focalPoint = Offset.zero;
     } else {
-      focalPoint = _pointers.values
-              .map((p) => p.position)
-              .reduce((a, b) => a + b) /
+      focalPoint =
+          _pointers.values.map((p) => p.position).reduce((a, b) => a + b) /
           count.toDouble();
     }
 
     final span = _computeSpan();
+    final angle = _computeAngle();
     if (count != _lastPointerCount) {
       _lastPointerCount = count;
       _gestureStartSpan = span;
+      _gestureStartAngle = angle;
       // Re-baseline focal so the first frame after a count change has 0 delta.
       _lastFocalPoint = focalPoint;
     }
@@ -273,6 +302,7 @@ class _GestureClassifierState extends State<GestureClassifier> {
     final spanScale = (count >= 2 && _gestureStartSpan > 1e-3)
         ? span / _gestureStartSpan
         : 1.0;
+    final rotation = count >= 2 ? wrapRadians(angle - _gestureStartAngle) : 0.0;
 
     final GestureType type;
     switch (count) {
@@ -297,24 +327,37 @@ class _GestureClassifierState extends State<GestureClassifier> {
     }
 
     final snapshots = _pointers.values
-        .map((p) => PointerSnapshot(
-              pointerId: p.pointerId,
-              position: p.position,
-              initialPosition: p.initialPosition,
-              displacement: p.displacement,
-              totalDistance: p.totalDistance,
-              hasMoved: p.displacement > slopThreshold,
-            ))
+        .map(
+          (p) => PointerSnapshot(
+            pointerId: p.pointerId,
+            position: p.position,
+            initialPosition: p.initialPosition,
+            displacement: p.displacement,
+            totalDistance: p.totalDistance,
+            hasMoved: p.displacement > slopThreshold,
+          ),
+        )
         .toList(growable: false);
 
-    widget.onGestureUpdate?.call(GestureState(
-      type: type,
-      pointers: snapshots,
-      focalPoint: focalPoint,
-      focalDelta: focalDelta,
-      span: span,
-      spanScale: spanScale,
-    ));
+    widget.onGestureUpdate?.call(
+      GestureState(
+        type: type,
+        pointers: snapshots,
+        focalPoint: focalPoint,
+        focalDelta: focalDelta,
+        span: span,
+        spanScale: spanScale,
+        rotation: rotation,
+      ),
+    );
+  }
+
+  double _computeAngle() {
+    if (_pointers.length < 2) return 0;
+    final points = _pointers.values
+        .map((pointer) => pointer.position)
+        .toList(growable: false);
+    return pointerPairAngle(points[0], points[1]);
   }
 
   @override
@@ -335,10 +378,10 @@ class _GestureClassifierState extends State<GestureClassifier> {
 
 class _PointerTracker {
   _PointerTracker({required this.pointerId, required this.position})
-      : initialPosition = position,
-        anchorPosition = position,
-        downTime = DateTime.now(),
-        totalDistance = 0;
+    : initialPosition = position,
+      anchorPosition = position,
+      downTime = DateTime.now(),
+      totalDistance = 0;
 
   final int pointerId;
   Offset position;

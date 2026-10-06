@@ -37,6 +37,99 @@ void main() {
     expect(ruler.bothStuck, isFalse);
   });
 
+  test('a ruler sticks to two world coordinates in track order', () {
+    final ruler = DimensionRuler(DimensionAxis.horizontal);
+    ruler.stickTo(
+      low: 0,
+      high: 7,
+      track: track,
+      screenAlongOf: (world) => 700 - world * 50,
+    );
+    expect(ruler.bothStuck, isTrue);
+    expect(ruler.grabs[0].world, 7);
+    expect(ruler.grabs[1].world, 0);
+    expect(ruler.grabs[0].fraction, closeTo(track.fractionAlong(350), 1e-9));
+    expect(ruler.grabs[1].fraction, closeTo(track.fractionAlong(700), 1e-9));
+  });
+
+  test('a crop mark is a tapered tick toward the page center', () {
+    final right = dimensionCropMark(
+      at: const Offset(100, 200),
+      toward: const Offset(1, 0),
+    );
+    expect((right[0] - right[3]).distance, closeTo(kDimensionMarkWidth, 1e-9));
+    expect(
+      (right[1] - right[2]).distance,
+      closeTo(kDimensionMarkWidth * kDimensionMarkTipScale, 1e-9),
+    );
+    final base = (right[0] + right[3]) / 2;
+    final tip = (right[1] + right[2]) / 2;
+    expect(base, const Offset(100, 200));
+    expect(tip.dx - base.dx, closeTo(kDimensionMarkWidth * kDimensionMarkLengthScale, 1e-9));
+    expect(tip.dy, closeTo(base.dy, 1e-9));
+
+    final up = dimensionCropMark(
+      at: const Offset(40, 80),
+      toward: const Offset(0, -4),
+    );
+    final upBase = (up[0] + up[3]) / 2;
+    final upTip = (up[1] + up[2]) / 2;
+    expect(upBase, const Offset(40, 80));
+    expect(upTip.dy, lessThan(upBase.dy));
+    expect(upTip.dx, closeTo(upBase.dx, 1e-9));
+    expect((up[0] - up[3]).dx.abs(), closeTo(kDimensionMarkWidth, 1e-9));
+
+    final ruler = DimensionRuler(DimensionAxis.horizontal);
+    ruler.grabs[0].fraction = 0.4;
+    final at = track.at(0.4);
+    final reach =
+        kDimensionMarkWidth *
+        kDimensionMarkLengthScale *
+        kDimensionWidgetMarkScale;
+    final toward = dimensionWidgetMarkDirection(DimensionAxis.horizontal);
+    expect(hitGrab(track, ruler, at + toward * (reach * 0.7)), 0);
+    expect(hitGrab(track, ruler, at + toward * (reach + 12)), isNull);
+    final grown = dimensionCropMark(
+      at: at,
+      toward: toward,
+      scale: kDimensionWidgetMarkScale,
+    );
+    expect(
+      (grown[0] - grown[3]).distance,
+      closeTo(kDimensionMarkWidth * kDimensionWidgetMarkScale, 1e-9),
+    );
+  });
+
+  test('the longer span is framed to 60% of its bar', () {
+    final wide = dimensionFrameHalfHeight(
+      spanX: 7,
+      spanY: 2,
+      barX: 800,
+      barY: 400,
+      viewportHeight: 600,
+    );
+    expect(wide, closeTo(7 * 600 / (1.2 * 800), 1e-9));
+
+    final tall = dimensionFrameHalfHeight(
+      spanX: 2,
+      spanY: 7,
+      barX: 800,
+      barY: 400,
+      viewportHeight: 600,
+    );
+    expect(tall, closeTo(7 * 600 / (1.2 * 400), 1e-9));
+    expect(
+      dimensionFrameHalfHeight(
+        spanX: 0,
+        spanY: 0,
+        barX: 800,
+        barY: 400,
+        viewportHeight: 600,
+      ),
+      isNull,
+    );
+  });
+
   test('a grab snaps to the nearest vertex and keeps the colinear pool', () {
     final vertices = sampleVertices();
     final hit = nearestSnap(
@@ -313,6 +406,26 @@ void main() {
     await tester.pump();
   });
 
+  testWidgets('a trackpad pinch zooms the examination', (tester) async {
+    final state = await pumpExamination(tester);
+    double span() {
+      final a = state.projectPlane(const Offset(0, 0))!;
+      final b = state.projectPlane(const Offset(3, 0))!;
+      return (b - a).distance;
+    }
+
+    final before = span();
+    final center = canvasGlobal(tester, const Offset(400, 300));
+    await tester.sendEventToBinding(PointerPanZoomStartEvent(position: center));
+    await tester.sendEventToBinding(
+      PointerPanZoomUpdateEvent(position: center, scale: 1.6),
+    );
+    await tester.pump();
+    expect(span(), greaterThan(before * 1.4));
+    await tester.sendEventToBinding(PointerPanZoomEndEvent(position: center));
+    await tester.pump();
+  });
+
   testWidgets('the examination view paints a blueprint step', (tester) async {
     await pumpExamination(tester);
 
@@ -330,8 +443,16 @@ void main() {
     (tester) async {
       final state = await pumpExamination(tester);
       final look = state.projectPlane(const Offset(0, 0))!;
+      expect(
+        {
+          state.horizontalRuler.grabs[0].world,
+          state.horizontalRuler.grabs[1].world,
+        },
+        {0.0, 7.0},
+      );
 
-      await dragHorizontalGrab(tester, state, 0, look.dx);
+      final loose = state.projectPlane(const Offset(6, 0))!;
+      await dragHorizontalGrab(tester, state, 1, loose.dx);
       expect(
         state.projectPlane(const Offset(0, 0)),
         offsetMoreOrLessEquals(look),
@@ -434,17 +555,23 @@ void main() {
 
   testWidgets('the left ruler snaps to a vertical pool', (tester) async {
     final state = await pumpExamination(tester);
-    final y0 = state.projectPlane(const Offset(0, 0))!;
-    final y2 = state.projectPlane(const Offset(0, 2))!;
-    await dragVerticalGrab(tester, state, 0, y0.dy);
-    await dragVerticalGrab(tester, state, 1, y2.dy);
-
     expect(state.verticalRuler.bothStuck, isTrue);
     expect(
       {state.verticalRuler.grabs[0].world, state.verticalRuler.grabs[1].world},
       {0.0, 2.0},
     );
-    expect(state.horizontalRuler.bothStuck, isFalse);
+
+    final loose = state.projectPlane(const Offset(0, 0.5))!;
+    await dragVerticalGrab(tester, state, 0, loose.dy);
+    expect(state.verticalRuler.grabs[0].world, isNull);
+
+    final y1 = state.projectPlane(const Offset(0, 1))!;
+    await dragVerticalGrab(tester, state, 0, y1.dy);
+    expect(state.verticalRuler.bothStuck, isTrue);
+    expect(
+      {state.verticalRuler.grabs[0].world, state.verticalRuler.grabs[1].world},
+      {0.0, 1.0},
+    );
   });
 
   testWidgets('the step menu lists the Ls and the side table', (tester) async {
@@ -499,8 +626,50 @@ void main() {
 
     expect(find.text('Second'), findsOneWidget);
     expect(state.lockedDimensions, isEmpty);
-    expect(state.horizontalRuler.grabs[0].world, isNull);
-    expect(state.horizontalRuler.grabs[1].fraction, kDimensionHighFraction);
+    expect(
+      {
+        state.horizontalRuler.grabs[0].world,
+        state.horizontalRuler.grabs[1].world,
+      },
+      {0.0, 2.0},
+    );
+    expect(
+      {state.verticalRuler.grabs[0].world, state.verticalRuler.grabs[1].world},
+      {0.0, 2.0},
+    );
+  });
+
+  testWidgets('the opening frame snaps to the blueprint extents', (
+    tester,
+  ) async {
+    final state = await pumpExamination(tester);
+    expect(state.horizontalRuler.bothStuck, isTrue);
+    expect(state.verticalRuler.bothStuck, isTrue);
+    expect(
+      {
+        state.horizontalRuler.grabs[0].world,
+        state.horizontalRuler.grabs[1].world,
+      },
+      {0.0, 7.0},
+    );
+    expect(
+      {state.verticalRuler.grabs[0].world, state.verticalRuler.grabs[1].world},
+      {0.0, 2.0},
+    );
+
+    final center = state.projectPlane(const Offset(3.5, 1))!;
+    expect(center.dx, closeTo(400, 2));
+    expect(center.dy, closeTo(300, 2));
+
+    final left = state.projectPlane(const Offset(0, 1))!;
+    final right = state.projectPlane(const Offset(7, 1))!;
+    final bar = state.dimensionChrome!.horizontal.length;
+    expect((right - left).distance, closeTo(bar * 0.6, bar * 0.02));
+
+    final low = state.projectPlane(const Offset(3.5, 0))!;
+    final high = state.projectPlane(const Offset(3.5, 2))!;
+    final vertical = state.dimensionChrome!.vertical.length;
+    expect((high - low).distance, lessThan(vertical * 0.6));
   });
 }
 

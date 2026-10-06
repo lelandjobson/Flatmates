@@ -9,14 +9,21 @@ import 'fold.dart';
 
 const Color _blueprintInk = Color(0xFF1565C0);
 const Color _gridInk = Color(0x47FFFFFF);
-const Color _scanInk = Color(0x66FFEB3B);
-const Color _vertexInk = Color(0xFFFFEB3B);
-const Color _trackInk = Color(0x73FFFFFF);
-const Color _spanInk = Color(0xCCFFFFFF);
-const Color _grabFree = Color(0xB3BDBDBD);
-const Color _grabStuck = Color(0xFFFFFFFF);
+const Color _toolInk = Color(0xFFFFFFFF);
 const Color _labelFree = Color(0xFFB0B0B0);
-const Color _labelStuck = Color(0xFFFFFFFF);
+
+/// Left ruler, and the vertices that share its world Y.
+const Color kDimensionLeft = Color(0xFFFFEB3B);
+
+/// Bottom ruler, and the vertices that share its world X.
+const Color kDimensionBottom = Color(0xFF42A5F5);
+
+/// Colinear vertex marks. Two axes at one vertex stack, blue then yellow.
+const double kDimensionDotOpacity = 0.5;
+
+Color dimensionAxisColor(DimensionAxis axis) {
+  return axis == DimensionAxis.vertical ? kDimensionLeft : kDimensionBottom;
+}
 
 /// Outlines, the grid inside each blueprint piece, snap guides, and locked
 /// dimensions. The screen rulers are [DimensionChromePainter].
@@ -80,13 +87,17 @@ class BlueprintExaminationPainter extends CustomPainter {
   }
 
   void _paintGuides(Canvas canvas, Size size) {
-    final scan = Paint()
-      ..color = _scanInk
-      ..strokeWidth = 1;
-    final dot = Paint()..color = _vertexInk;
+    final dots = {
+      DimensionAxis.horizontal: <Offset>{},
+      DimensionAxis.vertical: <Offset>{},
+    };
     for (final guide in guides) {
+      final color = dimensionAxisColor(guide.axis);
       final along = _screenAlong(guide, size);
       if (along != null) {
+        final scan = Paint()
+          ..color = color.withValues(alpha: 0.4)
+          ..strokeWidth = 1;
         if (guide.axis == DimensionAxis.horizontal) {
           canvas.drawLine(Offset(along, 0), Offset(along, size.height), scan);
         } else {
@@ -100,8 +111,17 @@ class BlueprintExaminationPainter extends CustomPainter {
         }
         final screen = _project(vertex, size);
         if (screen == null) continue;
-        canvas.drawCircle(screen, 4.5, dot);
+        dots[guide.axis]!.add(screen);
       }
+    }
+    _paintDots(canvas, dots[DimensionAxis.horizontal]!, kDimensionBottom);
+    _paintDots(canvas, dots[DimensionAxis.vertical]!, kDimensionLeft);
+  }
+
+  void _paintDots(Canvas canvas, Set<Offset> dots, Color color) {
+    final paint = Paint()..color = color.withValues(alpha: kDimensionDotOpacity);
+    for (final screen in dots) {
+      canvas.drawCircle(screen, kDimensionMarkWidth / 2, paint);
     }
   }
 
@@ -198,7 +218,7 @@ class DimensionChromePainter extends CustomPainter {
       track.start,
       track.end,
       Paint()
-        ..color = _trackInk
+        ..color = _toolInk
         ..strokeWidth = 1.5
         ..strokeCap = StrokeCap.round,
     );
@@ -209,13 +229,13 @@ class DimensionChromePainter extends CustomPainter {
         a,
         b,
         Paint()
-          ..color = _spanInk
+          ..color = _toolInk
           ..strokeWidth = 2
           ..strokeCap = StrokeCap.round,
       );
     }
-    paintDimensionPip(canvas, a, ruler.grabs[0].stuck);
-    paintDimensionPip(canvas, b, ruler.grabs[1].stuck);
+    paintDimensionPip(canvas, a, track.axis);
+    paintDimensionPip(canvas, b, track.axis);
     paintDimensionLabel(
       canvas,
       a: a,
@@ -244,12 +264,12 @@ void paintDimensionMark(
     a,
     b,
     Paint()
-      ..color = aStuck && bStuck ? _spanInk : _trackInk
+      ..color = _toolInk
       ..strokeWidth = 2
       ..strokeCap = StrokeCap.round,
   );
-  paintDimensionPip(canvas, a, aStuck);
-  paintDimensionPip(canvas, b, bStuck);
+  paintDimensionPip(canvas, a, axis);
+  paintDimensionPip(canvas, b, axis);
   paintDimensionLabel(
     canvas,
     a: a,
@@ -260,12 +280,17 @@ void paintDimensionMark(
   );
 }
 
-void paintDimensionPip(Canvas canvas, Offset at, bool stuck) {
-  canvas.drawCircle(
-    at,
-    stuck ? 6 : 5.5,
-    Paint()..color = stuck ? _grabStuck : _grabFree,
-  );
+void paintDimensionPip(Canvas canvas, Offset at, DimensionAxis axis) {
+  final path = Path()
+    ..addPolygon(
+      dimensionCropMark(
+        at: at,
+        toward: dimensionWidgetMarkDirection(axis),
+        scale: kDimensionWidgetMarkScale,
+      ),
+      true,
+    );
+  canvas.drawPath(path, Paint()..color = _toolInk);
 }
 
 void paintDimensionLabel(
@@ -285,7 +310,7 @@ void paintDimensionLabel(
     text: TextSpan(
       text: label,
       style: TextStyle(
-        color: emphasis ? _labelStuck : _labelFree,
+        color: emphasis ? _toolInk : _labelFree,
         fontSize: 13,
         fontWeight: FontWeight.w600,
       ),

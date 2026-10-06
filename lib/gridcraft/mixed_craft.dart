@@ -13,6 +13,20 @@ import 'scissor.dart';
 /// Real size of a mixed-crafting sheet. At grid scale 4 it reads as 6×6.
 const double kMixedPaperSize = 24;
 
+/// Time for the scissors to cross one sheet, edge to edge.
+const Duration kMixedCutCrossing = Duration(milliseconds: 150);
+
+/// Wipe time for a stroke of [length]. A full sheet takes [kMixedCutCrossing],
+/// and a shorter stroke takes that same fraction, so the blade keeps one speed.
+Duration cutWipeDuration(double length) {
+  if (!(length > 0) || kMixedPaperSize <= 0) return Duration.zero;
+  final microseconds =
+      kMixedCutCrossing.inMicroseconds * length / kMixedPaperSize;
+  final whole = microseconds.round();
+  if (whole <= 0) return const Duration(microseconds: 1);
+  return Duration(microseconds: whole);
+}
+
 /// Cell sizes, coarse to fine. Plus steps toward 1. Minus steps toward 12.
 const List<int> kMixedGridScales = [12, 8, 6, 4, 3, 2, 1];
 
@@ -25,6 +39,9 @@ const int kMixedHistoryDepth = 50;
 
 /// How close an aim must be, in cells, before a cut or a fold locks onto an edge.
 const double kMixedEdgeCells = 0.45;
+
+/// Screen pixels inside which a moving vertex catches a crafting-grid point.
+const double kMixedSnapPixels = 12;
 
 /// One placed sheet. Hidden pieces live on the area, not here.
 class MixedSheet {
@@ -204,17 +221,26 @@ class GridScaleCrossfade {
   }
 }
 
-/// Where a cut locks on. [point] is in the piece's model space.
+/// Where a cut locks on. [path] is in the piece's model space. The blade sits
+/// on [point], the last place the stroke has reached.
 class CutLock {
   const CutLock({
     required this.sheetId,
     required this.pieceId,
-    required this.point,
+    required this.path,
+    this.direction = const Offset(1, 0),
   });
 
   final String sheetId;
   final String pieceId;
-  final Offset point;
+
+  /// Entry on the paper edge, then each point the blade has stopped at.
+  final List<Offset> path;
+
+  /// Unit direction the blades were last aimed.
+  final Offset direction;
+
+  Offset get point => path.last;
 }
 
 CutLock? lockCut(
@@ -243,9 +269,15 @@ CutLock? lockCut(
   if (maxCells != null && (drawn - aim).distance > scale * maxCells) {
     return null;
   }
-  if (placeOnRing(edge.model, piece.vertices) == null) return null;
+  final march = placeOnRing(edge.model, piece.vertices);
+  if (march == null) return null;
   final owner = owners[edge.index];
-  return CutLock(sheetId: owner.$1, pieceId: owner.$2, point: edge.model);
+  return CutLock(
+    sheetId: owner.$1,
+    pieceId: owner.$2,
+    path: [edge.model],
+    direction: march.direction,
+  );
 }
 
 /// Fold start. Same edge snap as [lockCut]: an interior aim does not lock.
@@ -260,31 +292,149 @@ CutLock? lockFold(
 
 /// Far side of [ring] on the ray from [start] through [through].
 ///
-/// [through] is the grid or crease point under the reticle, in model space.
-/// The cut keeps going until it leaves the piece, so an interior aim still
-/// splits the paper. Null when the ray does not leave the ring.
-Offset? cutSpanEnd(Offset start, Offset through, List<Offset> ring) {
+/// A fold does not stop on the aimed point. The crease is the whole chord.
+Offset? rayThroughRing(Offset start, Offset through, List<Offset> ring) {
+  if (ring.length < 3) return null;
   final delta = through - start;
-  if (delta.distance < 1e-4 || ring.length < 3) return null;
+  if (delta.distance < 1e-4) return null;
   return nextOutlineHit(from: start, direction: delta, closed: [ring]);
 }
 
-/// Splits [sheetId] along [start]–[end] in model space. Null when it does not
-/// come out through another edge.
-MixedCraftArea? commitCut(
+/// A crease from a shared start through one piece, in drawn space.
+class FoldChord {
+  const FoldChord({
+    required this.sheetId,
+    required this.pieceId,
+    required this.start,
+    required this.end,
+  });
+
+  final String sheetId;
+  final String pieceId;
+
+  /// Edge the fold starts on, then the far side of that same piece.
+  final Offset start;
+  final Offset end;
+}
+
+/// Ray from [start] through [through], stopping where it leaves the piece.
+///
+/// Any piece whose outline contains [start] can take the fold. The ray enters
+/// one of them and does not run on into a neighbor.
+FoldChord? foldThroughPiece(
   MixedCraftArea area,
-  String sheetId,
   Offset start,
-  Offset end,
+  Offset through,
 ) {
-  final sheet = area.sheetById(sheetId);
-  if (sheet == null) return null;
-  if ((end - start).distance < 1e-3) return null;
-  final next = applyPapercutCut(sheet.paper, [start, end]);
-  if (next == null || next.pieces.length <= sheet.paper.pieces.length) {
-    return null;
+  if ((through - start).distance < 1e-4) return null;
+  FoldChord? best;
+  var bestScore = 1 << 30;
+  var depth = 0;
+  for (final sheet in area.sheets.reversed) {
+    final pieces = sheet.paper.pieces;
+    for (var i = pieces.length - 1; i >= 0; i--) {
+      final piece = pieces[i];
+      depth++;
+      if (area.hidden.contains(mixedPieceKey(sheet.id, piece.id))) continue;
+      if (!_outlineContains(start - piece.separation, piece)) continue;
+      final hit = rayThroughRing(
+        start - piece.separation,
+        through - piece.separation,
+        piece.vertices,
+      );
+      if (hit == null) continue;
+      final end = hit + piece.separation;
+      if ((end - start).distance < 1e-3) continue;
+      final mid = Offset.lerp(start - piece.separation, hit, 0.5)!;
+      if (!isInsidePolygon(mid, piece.vertices)) continue;
+      final aimed = _onRing(through - piece.separation, piece.vertices);
+      final score = (aimed ? 0 : 100000) + depth;
+      if (score >= bestScore) continue;
+      bestScore = score;
+      best = FoldChord(
+        sheetId: sheet.id,
+        pieceId: piece.id,
+        start: start,
+        end: end,
+      );
+    }
   }
-  return _replace(area, sheetId, next);
+  return best;
+}
+
+bool _outlineContains(Offset local, PapercutPiece piece) {
+  final rings = [piece.vertices, ...piece.holes];
+  for (final ring in rings) {
+    if (ring.length < 2) continue;
+    for (var i = 0; i < ring.length; i++) {
+      final on = _projectSegment(
+        local,
+        ring[i],
+        ring[(i + 1) % ring.length],
+      );
+      if ((on - local).distance <= 1e-2) return true;
+    }
+  }
+  return false;
+}
+
+/// A committed cut. [stoppedInside] means the stroke ended in the paper, so
+/// the blade can continue from [stroke]'s last point.
+class CutCommit {
+  const CutCommit({required this.area, required this.stoppedInside});
+
+  final MixedCraftArea area;
+  final bool stoppedInside;
+}
+
+/// Cuts [sheetId] along [stroke] in model space, stopping at the last point.
+///
+/// The stroke may end inside a piece. Null only when it misses the paper.
+/// A stroke that continues a partial cut replaces that partial mark.
+CutCommit? commitCut(MixedCraftArea area, String sheetId, List<Offset> stroke) {
+  final sheet = area.sheetById(sheetId);
+  if (sheet == null || stroke.length < 2) return null;
+  if ((stroke.last - stroke[stroke.length - 2]).distance < 1e-3) return null;
+  final cut = applyPapercutCut(sheet.paper, stroke, recordStroke: false);
+  if (cut == null) return null;
+  final previous = sheet.paper.cutStrokes;
+  final extendsLast =
+      previous.isNotEmpty && _strokeExtends(previous.last, stroke);
+  final strokes = extendsLast
+      ? [...previous.sublist(0, previous.length - 1), stroke]
+      : [...previous, stroke];
+  final recorded = cut.copyWith(cutStrokes: strokes);
+  return CutCommit(
+    area: _replace(area, sheetId, recorded),
+    stoppedInside: recorded.pieces.any(
+      (piece) => _inInterior(stroke.last, piece),
+    ),
+  );
+}
+
+/// True when [next] starts with every point of [previous] and then goes on.
+bool _strokeExtends(List<Offset> previous, List<Offset> next) {
+  if (previous.length < 2 || next.length <= previous.length) return false;
+  for (var i = 0; i < previous.length; i++) {
+    if ((previous[i] - next[i]).distance > 1e-3) return false;
+  }
+  return true;
+}
+
+bool _inInterior(Offset point, PapercutPiece piece) {
+  if (!isInsidePolygon(point, piece.vertices)) return false;
+  for (var i = 0; i < piece.vertices.length; i++) {
+    final on = _projectSegment(
+      point,
+      piece.vertices[i],
+      piece.vertices[(i + 1) % piece.vertices.length],
+    );
+    if ((on - point).distance <= 1e-3) return false;
+  }
+  for (final hole in piece.holes) {
+    if (isInsidePolygon(point, hole)) return false;
+  }
+  return true;
 }
 
 MixedCraftArea? scoreSpan(
@@ -337,6 +487,49 @@ MixedCraftArea? unfoldUnder(MixedCraftArea area, Offset aim) {
     return _replace(area, sheet.id, next);
   }
   return null;
+}
+
+/// World distance that covers [pixels] on the shorter side of the view.
+double snapWorldRadius({
+  required double pixels,
+  required double halfHeight,
+  required double shorterSide,
+}) {
+  if (shorterSide < 1 || halfHeight <= 0) return 0;
+  return pixels * (2 * halfHeight / shorterSide);
+}
+
+/// Translation that lands the closest selected vertex on a crafting-grid
+/// point, when that point is within [radius]. Null when every vertex is
+/// farther than that, so the piece can sit off the grid.
+Offset? vertexGridSnap(MixedCraftArea area, int scale, double radius) {
+  if (radius <= 0 || scale <= 0 || area.selected.isEmpty) return null;
+  final cell = scale.toDouble();
+  Offset? best;
+  var bestDistance = radius;
+  for (final sheet in area.sheets) {
+    for (final piece in sheet.paper.pieces) {
+      if (!area.selected.contains(mixedPieceKey(sheet.id, piece.id))) continue;
+      final ring = shownRing(
+        piece.vertices,
+        piece.separation,
+        sheet.paper.folds,
+        pieceId: piece.id,
+      );
+      for (final vertex in ring) {
+        final grid = Offset(
+          (vertex.dx / cell).round() * cell,
+          (vertex.dy / cell).round() * cell,
+        );
+        final distance = (grid - vertex).distance;
+        if (distance > bestDistance) continue;
+        bestDistance = distance;
+        best = grid - vertex;
+      }
+    }
+  }
+  if (best == null || best.distance < 1e-6) return null;
+  return best;
 }
 
 MixedCraftArea? movePieces(MixedCraftArea area, Offset delta) {
@@ -570,6 +763,33 @@ Offset snapCraft(Offset point, int scale, MixedCraftArea area) {
     if (distance + 1e-6 < bestDistance) {
       best = on;
       bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+/// Nearest crafting-grid point or piece vertex. A cut does not travel along
+/// a fold or a score.
+Offset snapCut(Offset point, int scale, MixedCraftArea area) {
+  final cell = scale.toDouble();
+  var best = Offset(
+    (point.dx / cell).round() * cell,
+    (point.dy / cell).round() * cell,
+  );
+  var bestDistance = (best - point).distance;
+  for (final sheet in area.sheets) {
+    for (final piece in sheet.paper.pieces) {
+      if (area.hidden.contains(mixedPieceKey(sheet.id, piece.id))) continue;
+      final rings = [piece.vertices, ...piece.holes];
+      for (final ring in rings) {
+        for (final vertex in ring) {
+          final drawn = vertex + piece.separation;
+          final distance = (drawn - point).distance;
+          if (distance + 1e-6 >= bestDistance) continue;
+          best = drawn;
+          bestDistance = distance;
+        }
+      }
     }
   }
   return best;

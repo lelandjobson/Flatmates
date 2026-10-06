@@ -15,6 +15,7 @@ class FoldGlyphPainter extends CustomPainter {
     required this.camera,
     required this.pose,
     this.glyphScale = 0.5,
+    this.pointScale = 1,
     this.destination,
   });
 
@@ -24,7 +25,10 @@ class FoldGlyphPainter extends CustomPainter {
   /// Mixed crafting draws this at half size, matching the scissors.
   final double glyphScale;
 
-  /// Snapped grid or crease point under the reticle, once the fold has a start.
+  /// Extra scale on the point at the tip. 1 is the resting dot.
+  final double pointScale;
+
+  /// Far end of the crease, once the fold has a start.
   final Offset? destination;
 
   static const _color = Color(0xFFFFB74D);
@@ -56,7 +60,12 @@ class FoldGlyphPainter extends CustomPainter {
     );
     canvas.restore();
 
-    paintCraftPoint(canvas, tip, scale: glyphScale, alpha: alpha);
+    paintCraftPoint(
+      canvas,
+      tip,
+      scale: glyphScale * pointScale,
+      alpha: alpha,
+    );
     final end = destination;
     if (end == null) return;
     final screen = _project(end, size);

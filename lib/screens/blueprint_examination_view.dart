@@ -80,6 +80,9 @@ class BlueprintExaminationViewState extends State<BlueprintExaminationView> {
   Offset? _pinchCentroid;
   _GrabDrag? _drag;
 
+  /// Trackpad pinch scale since the gesture began. Each update is cumulative.
+  double _trackpadScale = 1;
+
   DimensionRuler get horizontalRuler => _horizontal;
 
   DimensionRuler get verticalRuler => _vertical;
@@ -121,14 +124,42 @@ class BlueprintExaminationViewState extends State<BlueprintExaminationView> {
 
   void _frame() {
     final step = _step;
-    if (step == null || _viewport.width < 2) return;
+    final chrome = _chrome;
+    if (step == null || chrome == null || _viewport.height < 2) return;
     _camera.setRoll(0);
-    final paper = step.paper;
-    final span = math.max(paper.width, paper.height);
-    _camera.frameSheet(
-      _viewport,
-      sheetMm: math.max(span, step.gridSpacing),
-      center: paper.center,
+    final bounds = vertexBounds(step.vertices);
+    if (bounds == null) return;
+    final half =
+        dimensionFrameHalfHeight(
+          spanX: bounds.width,
+          spanY: bounds.height,
+          barX: chrome.horizontal.length,
+          barY: chrome.vertical.length,
+          viewportHeight: _viewport.height,
+        ) ??
+        dimensionFrameHalfHeight(
+          spanX: step.gridSpacing,
+          spanY: 0,
+          barX: chrome.horizontal.length,
+          barY: chrome.vertical.length,
+          viewportHeight: _viewport.height,
+        );
+    if (half == null) return;
+    _camera.moveLook(
+      lookAt: bounds.center,
+      halfHeight: half.clamp(_kZoomMinHalfHeight, _kZoomMaxHalfHeight),
+    );
+    _horizontal.stickTo(
+      low: bounds.left,
+      high: bounds.right,
+      track: chrome.horizontal,
+      screenAlongOf: (world) => _screenAlong(DimensionAxis.horizontal, world),
+    );
+    _vertical.stickTo(
+      low: bounds.top,
+      high: bounds.bottom,
+      track: chrome.vertical,
+      screenAlongOf: (world) => _screenAlong(DimensionAxis.vertical, world),
     );
   }
 
@@ -195,6 +226,34 @@ class BlueprintExaminationViewState extends State<BlueprintExaminationView> {
         _framed = false;
       }
     });
+  }
+
+  void _onSignal(PointerSignalEvent event) {
+    if (event is PointerScaleEvent) {
+      _zoom(event.scale);
+      return;
+    }
+    if (event is PointerScrollEvent && event.scrollDelta.dy != 0) {
+      _zoom(math.exp(-event.scrollDelta.dy * 0.002));
+    }
+  }
+
+  void _onTrackpadStart(PointerPanZoomStartEvent event) {
+    _trackpadScale = 1;
+  }
+
+  void _onTrackpadUpdate(PointerPanZoomUpdateEvent event) {
+    final scale = event.scale;
+    if (scale > 0 && (scale / _trackpadScale - 1).abs() > 1e-6) {
+      _zoom(scale / _trackpadScale);
+      _trackpadScale = scale;
+    }
+    if (event.localPanDelta != Offset.zero) _pan(event.localPanDelta);
+  }
+
+  void _onTrackpadEnd(PointerPanZoomEndEvent event) {
+    _trackpadScale = 1;
+    _follow();
   }
 
   void _zoom(double scale) {
@@ -520,13 +579,10 @@ class BlueprintExaminationViewState extends State<BlueprintExaminationView> {
               Positioned.fill(
                 child: Listener(
                   behavior: HitTestBehavior.opaque,
-                  onPointerSignal: (event) {
-                    if (event is! PointerScrollEvent ||
-                        event.scrollDelta.dy == 0) {
-                      return;
-                    }
-                    _zoom(math.exp(-event.scrollDelta.dy * 0.002));
-                  },
+                  onPointerSignal: _onSignal,
+                  onPointerPanZoomStart: _onTrackpadStart,
+                  onPointerPanZoomUpdate: _onTrackpadUpdate,
+                  onPointerPanZoomEnd: _onTrackpadEnd,
                   onPointerDown: _onPointerDown,
                   onPointerMove: _onPointerMove,
                   onPointerUp: _onPointerUp,
