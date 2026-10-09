@@ -132,6 +132,55 @@ void main() {
       expect(gridded.single.vertices[0], const Offset(0, 0));
     });
 
+    test('stretch off keeps side grabs quiet and corners uniform', () {
+      const bounds = Rect.fromLTRB(0, 0, 2, 2);
+      expect(
+        hitTransformHandle(
+          const Offset(2, 1),
+          bounds,
+          0.3,
+          box: kCombinedTransform,
+        ),
+        isNull,
+      );
+      expect(
+        hitTransformHandle(
+          const Offset(2, 2),
+          bounds,
+          0.3,
+          box: kCombinedTransform,
+        ),
+        TransformHandle.maxXMaxY,
+      );
+      expect(kCombinedTransform.stretch, isFalse);
+      expect(kCombinedTransform.rotation, isTrue);
+
+      final uniform = stretchToPointer(
+        handle: TransformHandle.maxXMaxY,
+        bounds: bounds,
+        pointer: const Offset(4, 4),
+        blueprintVertices: const [],
+        spacing: 1,
+        radius: 0.1,
+        uniform: true,
+      );
+      expect(uniform.scaleX, closeTo(2, 1e-9));
+      expect(uniform.scaleY, closeTo(uniform.scaleX, 1e-9));
+    });
+
+    test('the rotation ring steps by five degrees', () {
+      expect(snapRotationDelta(7), 5);
+      expect(snapRotationDelta(8), 10);
+      expect(snapRotationDelta(-3), -5);
+      expect(kRotationSnapDegrees, 5);
+      final ring = RotationWidget.layout(
+        center: const Offset(100, 100),
+        halfDiagonal: 20,
+      );
+      expect(ring.hits(ring.handle), isTrue);
+      expect(ring.hits(const Offset(0, 0)), isFalse);
+    });
+
     test('a rotate-from-point settles a vertex onto its target', () {
       const pivot = Offset.zero;
       const moving = [Offset(1, 0)];

@@ -559,28 +559,18 @@ MixedCraftArea? movePieces(MixedCraftArea area, Offset delta) {
 }
 
 MixedCraftArea? rotateSelection(MixedCraftArea area) {
-  if (area.selected.isEmpty) return null;
-  final cloud = <Offset>[];
-  for (final sheet in area.sheets) {
-    for (final piece in sheet.paper.pieces) {
-      if (!area.selected.contains(mixedPieceKey(sheet.id, piece.id))) continue;
-      cloud.addAll(
-        shownRing(
-          piece.vertices,
-          piece.separation,
-          sheet.paper.folds,
-          pieceId: piece.id,
-        ),
-      );
-    }
-  }
-  if (cloud.isEmpty) return null;
-  var center = Offset.zero;
-  for (final point in cloud) {
-    center += point;
-  }
-  center = center / cloud.length.toDouble();
+  final center = selectionCenter(area);
+  if (center == null) return null;
+  return mapSelectedGeometry(area, (point) => _quarter(point, center));
+}
 
+/// Bakes the selected pieces through [map]. Separation lands in the vertices.
+MixedCraftArea? mapSelectedGeometry(
+  MixedCraftArea area,
+  Offset Function(Offset point) map,
+) {
+  if (area.selected.isEmpty) return null;
+  var changed = false;
   final sheets = <MixedSheet>[];
   for (final sheet in area.sheets) {
     final selectedRings = <List<Offset>>[];
@@ -591,6 +581,7 @@ MixedCraftArea? rotateSelection(MixedCraftArea area) {
         pieces.add(piece);
         continue;
       }
+      changed = true;
       final ring = shownRing(
         piece.vertices,
         piece.separation,
@@ -607,7 +598,7 @@ MixedCraftArea? rotateSelection(MixedCraftArea area) {
               sheet.paper.folds,
               pieceId: piece.id,
             ))
-              _quarter(point, center),
+              map(point),
           ],
       ];
       pieces.add(
@@ -615,7 +606,7 @@ MixedCraftArea? rotateSelection(MixedCraftArea area) {
           id: piece.id,
           color: piece.color,
           backColor: piece.backColor,
-          vertices: [for (final point in ring) _quarter(point, center)],
+          vertices: [for (final point in ring) map(point)],
           holes: holes,
         ),
       );
@@ -624,7 +615,6 @@ MixedCraftArea? rotateSelection(MixedCraftArea area) {
       sheets.add(sheet);
       continue;
     }
-    Offset turn(Offset point) => _quarter(point, center);
     bool onSelection(Offset point) {
       for (final ring in selectedRings) {
         if (_onRing(point, ring)) return true;
@@ -641,15 +631,15 @@ MixedCraftArea? rotateSelection(MixedCraftArea area) {
           scores: [
             for (final score in paper.scores)
               onSelection(score.a) && onSelection(score.b)
-                  ? ScoreLine(turn(score.a), turn(score.b))
+                  ? ScoreLine(map(score.a), map(score.b))
                   : score,
           ],
           folds: [
             for (final joint in paper.folds)
               onSelection(joint.a) && onSelection(joint.b)
                   ? FoldJoint(
-                      a: turn(joint.a),
-                      b: turn(joint.b),
+                      a: map(joint.a),
+                      b: map(joint.b),
                       side: joint.side,
                       facing: joint.facing,
                       pieceIds: joint.pieceIds,
@@ -659,14 +649,41 @@ MixedCraftArea? rotateSelection(MixedCraftArea area) {
           cutStrokes: [
             for (final stroke in paper.cutStrokes)
               stroke.isNotEmpty && stroke.every(onSelection)
-                  ? [for (final point in stroke) turn(point)]
+                  ? [for (final point in stroke) map(point)]
                   : stroke,
           ],
         ),
       ),
     );
   }
+  if (!changed) return null;
   return area.copy(sheets: sheets);
+}
+
+Rect? craftSelectionBounds(MixedCraftArea area) {
+  double? minX;
+  double? maxX;
+  double? minY;
+  double? maxY;
+  for (final sheet in area.sheets) {
+    for (final piece in sheet.paper.pieces) {
+      if (!area.selected.contains(mixedPieceKey(sheet.id, piece.id))) continue;
+      final ring = shownRing(
+        piece.vertices,
+        piece.separation,
+        sheet.paper.folds,
+        pieceId: piece.id,
+      );
+      for (final point in ring) {
+        minX = minX == null || point.dx < minX ? point.dx : minX;
+        maxX = maxX == null || point.dx > maxX ? point.dx : maxX;
+        minY = minY == null || point.dy < minY ? point.dy : minY;
+        maxY = maxY == null || point.dy > maxY ? point.dy : maxY;
+      }
+    }
+  }
+  if (minX == null || maxX == null || minY == null || maxY == null) return null;
+  return Rect.fromLTRB(minX, minY, maxX, maxY);
 }
 
 MixedCraftArea? hideSelection(MixedCraftArea area) {

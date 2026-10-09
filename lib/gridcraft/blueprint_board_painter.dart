@@ -1,10 +1,12 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:vector_math/vector_math_64.dart' hide Colors;
 
 import '../papercut/camera.dart';
 import 'blueprint_board.dart';
 
-/// Paper parked on the blueprint, plus the transform box while scaling.
+/// Paper parked on the blueprint, plus the transform box while transforming.
 class BlueprintBoardPainter extends CustomPainter {
   BlueprintBoardPainter({
     required this.camera,
@@ -12,6 +14,8 @@ class BlueprintBoardPainter extends CustomPainter {
     required this.selected,
     this.marquee,
     this.transform,
+    this.box = const TransformBox(stretch: true),
+    this.rotation,
     this.pivot,
     this.snap,
   });
@@ -21,6 +25,8 @@ class BlueprintBoardPainter extends CustomPainter {
   final Set<String> selected;
   final Rect? marquee;
   final Rect? transform;
+  final TransformBox box;
+  final RotationWidget? rotation;
   final Offset? pivot;
   final Offset? snap;
 
@@ -47,6 +53,8 @@ class BlueprintBoardPainter extends CustomPainter {
     }
     final box = transform;
     if (box != null) _paintBox(canvas, size, box);
+    final ring = rotation;
+    if (ring != null) _paintRing(canvas, ring);
     final mark = pivot ?? snap;
     if (mark != null) _paintDot(canvas, size, mark, pivot != null);
     final band = marquee;
@@ -80,13 +88,67 @@ class BlueprintBoardPainter extends CustomPainter {
       ..color = const Color(0xFF1A1A1A)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.2;
-    for (final handle in transformHandlePoints(bounds)) {
-      final screen = _project(handle, size);
+    final points = transformHandlePoints(bounds);
+    for (final handle in TransformHandle.values) {
+      if (!box.stretch && !transformHandleIsCorner(handle)) continue;
+      final screen = _project(points[handle.index], size);
       if (screen == null) continue;
       final rect = Rect.fromCenter(center: screen, width: 10, height: 10);
       canvas.drawRect(rect, paint);
       canvas.drawRect(rect, line);
     }
+  }
+
+  void _paintRing(Canvas canvas, RotationWidget ring) {
+    final center = ring.center;
+    canvas.drawCircle(
+      center,
+      ring.radius,
+      Paint()
+        ..color = const Color(0x66FFFFFF)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
+    );
+    final tick = Paint()
+      ..color = const Color(0x99FFFFFF)
+      ..strokeWidth = 1.4;
+    for (var i = 0; i < 8; i++) {
+      final angle = i * math.pi / 4;
+      final inner = ring.radius - 6;
+      final outer = ring.radius + 6;
+      canvas.drawLine(
+        center + Offset(math.cos(angle), math.sin(angle)) * inner,
+        center + Offset(math.cos(angle), math.sin(angle)) * outer,
+        tick,
+      );
+    }
+    final handle = ring.handle;
+    canvas.drawCircle(handle, RotationWidget.handleRadius, Paint()..color = _selection);
+    canvas.drawCircle(
+      handle,
+      RotationWidget.handleRadius,
+      Paint()
+        ..color = const Color(0xFF1A1A1A)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4,
+    );
+    if (ring.degrees.abs() < 0.1) return;
+    final label = TextPainter(
+      text: TextSpan(
+        text: '${ring.degrees.round()}°',
+        style: const TextStyle(
+          color: _selection,
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    label.layout();
+    label.paint(
+      canvas,
+      center - Offset(label.width / 2, ring.radius + 22),
+    );
   }
 
   void _paintDot(Canvas canvas, Size size, Offset world, bool locked) {

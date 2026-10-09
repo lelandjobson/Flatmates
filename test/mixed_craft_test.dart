@@ -605,6 +605,8 @@ void main() {
 Future<void> _openCraftBench(WidgetTester tester) async {
   await tester.tap(find.byKey(const Key('board-caret-right')));
   await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('board-caret-right')));
+  await tester.pumpAndSettle();
 }
 
 List<int> _walk(int scale, {required bool finer}) {

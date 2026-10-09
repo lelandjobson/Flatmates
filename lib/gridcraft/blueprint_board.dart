@@ -450,6 +450,81 @@ Offset? nearestSnapVertex(Offset aim, List<Offset> vertices, double radius) {
   return best;
 }
 
+/// What the selection box is allowed to do.
+///
+/// [stretch] turns on the side grabs, which scale one axis. With it off,
+/// only the corners move, and they scale both axes together. [rotation]
+/// draws the ring that turns the selection.
+class TransformBox {
+  const TransformBox({this.stretch = false, this.rotation = false});
+
+  final bool stretch;
+  final bool rotation;
+}
+
+/// Uniform corners and a rotation ring. Side grabs stay off.
+const TransformBox kCombinedTransform = TransformBox(rotation: true);
+
+/// Rotation ring steps, matching the crafting gizmo.
+const double kRotationSnapDegrees = 5;
+
+/// Signed degrees in (-180, 180], on the nearest [kRotationSnapDegrees] step.
+double snapRotationDelta(double degrees) {
+  var wrapped = degrees % 360;
+  if (wrapped > 180) wrapped -= 360;
+  if (wrapped < -180) wrapped += 360;
+  return (wrapped / kRotationSnapDegrees).round() * kRotationSnapDegrees;
+}
+
+/// Screen-space ring around a transform box.
+class RotationWidget {
+  const RotationWidget({
+    required this.center,
+    required this.radius,
+    required this.degrees,
+  });
+
+  final Offset center;
+  final double radius;
+  final double degrees;
+
+  static const double hitSlop = 18;
+  static const double handleRadius = 11;
+
+  /// Screen atan2 grows clockwise. World rotation grows the other way.
+  static const double rotationSign = -1;
+
+  static RotationWidget layout({
+    required Offset center,
+    required double halfDiagonal,
+    double degrees = 0,
+  }) {
+    return RotationWidget(
+      center: center,
+      radius: math.max(halfDiagonal + 28, 64),
+      degrees: degrees,
+    );
+  }
+
+  double get _angle => rotationSign * degrees * math.pi / 180;
+
+  Offset get handle =>
+      center + Offset(math.cos(_angle), math.sin(_angle)) * radius;
+
+  bool hits(Offset screen) {
+    if ((screen - handle).distance <= handleRadius + 8) return true;
+    return ((screen - center).distance - radius).abs() <= hitSlop;
+  }
+
+  static double degreesFromScreen({
+    required double startAngle,
+    required double currentAngle,
+  }) {
+    final delta = wrapRadians(currentAngle - startAngle);
+    return snapRotationDelta(rotationSign * delta * 180 / math.pi);
+  }
+}
+
 /// Edge and corner grabs. Index 0 is the max-Y edge, then max-X, min-Y, min-X,
 /// then the four corners from min-X/max-Y clockwise.
 enum TransformHandle {
@@ -518,16 +593,23 @@ Offset stretchAnchor(TransformHandle handle, Rect bounds) {
   };
 }
 
-TransformHandle? hitTransformHandle(Offset world, Rect bounds, double radius) {
+TransformHandle? hitTransformHandle(
+  Offset world,
+  Rect bounds,
+  double radius, {
+  TransformBox box = const TransformBox(stretch: true),
+}) {
   if (radius <= 0) return null;
   final points = transformHandlePoints(bounds);
   TransformHandle? best;
   var bestDistance = radius;
   for (var i = 0; i < points.length; i++) {
+    final handle = TransformHandle.values[i];
+    if (!box.stretch && !transformHandleIsCorner(handle)) continue;
     final distance = (points[i] - world).distance;
     if (distance > bestDistance) continue;
     bestDistance = distance;
-    best = TransformHandle.values[i];
+    best = handle;
   }
   return best;
 }
@@ -555,9 +637,17 @@ PieceStretch stretchToPointer({
   required List<Offset> blueprintVertices,
   required double spacing,
   required double radius,
+  bool uniform = false,
 }) {
   final anchor = stretchAnchor(handle, bounds);
   final origin = transformHandlePoints(bounds)[handle.index];
+  if (uniform && transformHandleIsCorner(handle)) {
+    final snapped = _snapCorner(pointer, blueprintVertices, spacing, radius);
+    final base = (origin - anchor).distance;
+    var scale = base < 1e-6 ? 1.0 : (snapped - anchor).distance / base;
+    if (scale < 0.05) scale = 0.05;
+    return PieceStretch(scaleX: scale, scaleY: scale, anchor: anchor);
+  }
   if (transformHandleIsCorner(handle)) {
     final snapped = _snapCorner(pointer, blueprintVertices, spacing, radius);
     return PieceStretch(

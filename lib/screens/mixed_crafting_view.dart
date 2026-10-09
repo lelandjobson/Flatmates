@@ -8,6 +8,8 @@ import 'package:vector_math/vector_math_64.dart' hide Colors;
 
 import '../gridcraft/blueprint.dart';
 import '../gridcraft/blueprint_board.dart';
+import '../gridcraft/blueprint_board_painter.dart';
+import '../gridcraft/cube_blueprint.dart';
 import '../gridcraft/dimension_measure.dart';
 import '../gridcraft/edit.dart';
 import '../gridcraft/fold.dart';
@@ -33,6 +35,7 @@ import '../ui/game/game_tool_carousel.dart';
 import '../ui/game/view_crosshair.dart';
 import '../ui/object_radial_menu.dart';
 import 'blueprint_board_page.dart';
+import 'craft_model_page.dart';
 
 enum _CraftTool { select, scissors, folder }
 
@@ -101,6 +104,7 @@ const Duration _kCutPulse = Duration(milliseconds: 200);
 
 /// Horizontal settle when the carets change boards.
 const Duration _kBoardPan = Duration(milliseconds: 320);
+const int _kBoardCount = 3;
 
 /// The paper lifts and settles flat after a crease, matching the grid puzzles.
 const Duration _kCreaseFlutter = Duration(milliseconds: 300);
@@ -113,10 +117,10 @@ class _CreaseFlutter {
   final FoldJoint joint;
 }
 
-/// Papercraft bench to the right of the blueprint dimension board.
+/// Folded model, dimension board, and papercraft bench, in that order.
 ///
 /// The sheet is 24×24 real units and reads as 6×6 at the opening grid scale.
-/// Carets at the top move between the two. Pieces travel with the radial arrows.
+/// Carets at the top step one board at a time. Pieces travel with the radial arrows.
 class MixedCraftingView extends StatefulWidget {
   const MixedCraftingView({super.key});
 
@@ -181,6 +185,16 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
 
   bool _moving = false;
   MixedCraftArea? _moveOrigin;
+  bool _transforming = false;
+  MixedCraftArea? _transformOrigin;
+  Rect? _transformBounds;
+  TransformHandle? _transformHandle;
+  bool _turning = false;
+  Offset? _turnPivot;
+  double? _turnStart;
+  double _turnDegrees = 0;
+  Offset? _ringCenter;
+  double? _ringRadius;
 
   /// Unsnapped translation of this move, following the reticle.
   Offset _moveFree = Offset.zero;
@@ -194,7 +208,7 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
   @override
   void initState() {
     super.initState();
-    final opened = twinLsBlueprint();
+    final opened = cubeBlueprint();
     _blueprint = opened;
     _choices = choicesForBlueprint(opened);
     _choiceKey = boardStepKey(opened.id, _stepIndex);
@@ -306,8 +320,11 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
         if (collection.id == 'side-table') ...collection.puzzles,
     ];
     if (!mounted) return;
-    final choices = choicesForBlueprint(twinLsBlueprint());
+    final choices = choicesForBlueprint(cubeBlueprint());
     final seen = {for (final choice in choices) choice.key};
+    for (final choice in choicesForBlueprint(twinLsBlueprint())) {
+      if (seen.add(choice.key)) choices.add(choice);
+    }
     for (final puzzle in side) {
       for (final choice in choicesForBlueprint(puzzle)) {
         if (seen.add(choice.key)) choices.add(choice);
@@ -448,6 +465,7 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
     setState(() {
       _tool = tool;
       _moving = false;
+      _clearTransform();
       _clearCut();
       _clearFold();
       _marqueeStart = null;
@@ -469,7 +487,9 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
     }
     _dragged = false;
     _downScreen = event.localPosition;
-    if (_tool == _CraftTool.select && _selectMode == _SelectMode.marquee) {
+    if (_transforming) {
+      _transformDown(event.localPosition);
+    } else if (_tool == _CraftTool.select && _selectMode == _SelectMode.marquee) {
       _marqueeStart = event.localPosition;
       _marqueeCurrent = event.localPosition;
     } else if (_moving) {
@@ -505,6 +525,16 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
       setState(() {});
       return;
     }
+    if (_transforming && _transformHandle != null && _dragged) {
+      _dragTransformHandle(event.localPosition);
+      setState(() {});
+      return;
+    }
+    if (_transforming && _turning && _dragged) {
+      _dragTransformTurn(event.localPosition);
+      setState(() {});
+      return;
+    }
     // A tap must not slide the sheet out from under the reticle before the
     // finger comes up. Panning starts only after the press is a drag.
     if (!_dragged) return;
@@ -536,6 +566,8 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
       _finishMarquee();
     } else if (_moving && dragged) {
       _finishMove();
+    } else if (_transforming) {
+      _finishTransform(dragged);
     } else if (!dragged) {
       _onTap();
     } else if (_tool == _CraftTool.scissors && _cut != null) {
@@ -557,6 +589,13 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
     if (_moveOrigin != null) _area = _moveOrigin!;
     _moveOrigin = null;
     _moveFree = Offset.zero;
+    if (_transformOrigin != null) _area = _transformOrigin!;
+    _transformOrigin = null;
+    _transformHandle = null;
+    _turning = false;
+    _turnDegrees = 0;
+    _ringCenter = null;
+    _ringRadius = null;
     _multiTouch = false;
     _dragged = false;
   }
@@ -934,6 +973,146 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
     );
   }
 
+  double _handleRadius() {
+    final shorter = math.min(_viewport.width, _viewport.height);
+    return snapWorldRadius(
+      pixels: 16,
+      halfHeight: _camera.framedHalfHeightMm,
+      shorterSide: shorter,
+    );
+  }
+
+  void _clearTransform() {
+    _transforming = false;
+    _transformOrigin = null;
+    _transformHandle = null;
+    _transformBounds = null;
+    _turning = false;
+    _turnPivot = null;
+    _turnStart = null;
+    _turnDegrees = 0;
+    _ringCenter = null;
+    _ringRadius = null;
+  }
+
+  void _transformDown(Offset screen) {
+    final bounds = craftSelectionBounds(_area);
+    if (bounds == null) return;
+    final ring = _rotationWidget(bounds);
+    if (ring != null && kCombinedTransform.rotation && ring.hits(screen)) {
+      _turning = true;
+      _transformOrigin = _area;
+      _transformBounds = bounds;
+      _turnPivot = bounds.center;
+      _turnStart = math.atan2(
+        screen.dy - ring.center.dy,
+        screen.dx - ring.center.dx,
+      );
+      _turnDegrees = 0;
+      _ringCenter = ring.center;
+      _ringRadius = ring.radius;
+      return;
+    }
+    final world = _world(screen);
+    if (world == null) return;
+    final handle = hitTransformHandle(
+      world,
+      bounds,
+      _handleRadius(),
+      box: kCombinedTransform,
+    );
+    if (handle == null) return;
+    _transformHandle = handle;
+    _transformOrigin = _area;
+    _transformBounds = bounds;
+  }
+
+  void _dragTransformHandle(Offset screen) {
+    final origin = _transformOrigin;
+    final bounds = _transformBounds;
+    final handle = _transformHandle;
+    final world = _world(screen);
+    if (origin == null || bounds == null || handle == null || world == null) {
+      return;
+    }
+    final stretch = stretchToPointer(
+      handle: handle,
+      bounds: bounds,
+      pointer: world,
+      blueprintVertices: const [],
+      spacing: _scale.toDouble(),
+      radius: _snapRadius(),
+      uniform: !kCombinedTransform.stretch,
+    );
+    _area =
+        mapSelectedGeometry(
+          origin,
+          (point) => applyStretchPoint(point, stretch),
+        ) ??
+        origin;
+  }
+
+  void _dragTransformTurn(Offset screen) {
+    final origin = _transformOrigin;
+    final pivot = _turnPivot;
+    final start = _turnStart;
+    final center = _ringCenter;
+    if (origin == null || pivot == null || start == null || center == null) {
+      return;
+    }
+    final arm = screen - center;
+    if (arm.distance < 1e-6) return;
+    final degrees = RotationWidget.degreesFromScreen(
+      startAngle: start,
+      currentAngle: math.atan2(arm.dy, arm.dx),
+    );
+    _turnDegrees = degrees;
+    _area =
+        mapSelectedGeometry(
+          origin,
+          (point) => rotateAround(point, pivot, degrees * math.pi / 180),
+        ) ??
+        origin;
+  }
+
+  void _finishTransform(bool dragged) {
+    final dismiss = !dragged && _transformHandle == null && !_turning;
+    final origin = _transformOrigin;
+    if (dragged && origin != null && !identical(_area, origin)) {
+      _pushCraft(origin);
+    } else if (!dragged && origin != null) {
+      _area = origin;
+    }
+    _transformOrigin = null;
+    _transformHandle = null;
+    _transformBounds = null;
+    _turning = false;
+    _turnPivot = null;
+    _turnStart = null;
+    _turnDegrees = 0;
+    _ringCenter = null;
+    _ringRadius = null;
+    if (dismiss) _transforming = false;
+  }
+
+  RotationWidget? _rotationWidget(Rect bounds) {
+    if (_ringCenter != null && _ringRadius != null) {
+      return RotationWidget(
+        center: _ringCenter!,
+        radius: _ringRadius!,
+        degrees: _turnDegrees,
+      );
+    }
+    final center = _project(bounds.center);
+    final corner = _project(bounds.topLeft);
+    if (center == null || corner == null) return null;
+    return RotationWidget.layout(
+      center: center,
+      halfDiagonal: (corner - center).distance,
+      degrees: _turnDegrees,
+    );
+  }
+
   void _finishMove() {
     final origin = _moveOrigin;
     if (origin != null && !identical(_area, origin)) {
@@ -1269,8 +1448,8 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
               builder: (context, page, child) {
                 return OverflowBox(
                   alignment: Alignment.topLeft,
-                  minWidth: width * 2,
-                  maxWidth: width * 2,
+                  minWidth: width * _kBoardCount,
+                  maxWidth: width * _kBoardCount,
                   minHeight: height,
                   maxHeight: height,
                   child: Transform.translate(
@@ -1282,6 +1461,13 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  SizedBox(
+                    width: width,
+                    child: CraftModelPage(
+                      blueprint: _blueprint,
+                      stepIndex: _stepIndex,
+                    ),
+                  ),
                   SizedBox(
                     width: width,
                     child: BlueprintBoardPage(
@@ -1334,6 +1520,12 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
                             ? null
                             : pieceUnderAim(_area, aim);
                         final segment = _segment();
+                        final transformBounds = _transforming
+                            ? craftSelectionBounds(_area)
+                            : null;
+                        final ring = transformBounds == null
+                            ? null
+                            : _rotationWidget(transformBounds);
                         final screenCenter = selectionCenter(_area);
                         final menuCenter = screenCenter == null
                             ? null
@@ -1454,12 +1646,29 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
                                   ),
                                 ),
                               ),
-                            const IgnorePointer(child: ViewCrosshair()),
+                            if (transformBounds != null)
+                              Positioned.fill(
+                                child: IgnorePointer(
+                                  child: CustomPaint(
+                                    painter: BlueprintBoardPainter(
+                                      camera: _camera,
+                                      pieces: const [],
+                                      selected: const {},
+                                      transform: transformBounds,
+                                      box: kCombinedTransform,
+                                      rotation: ring,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            if (!_transforming)
+                              const IgnorePointer(child: ViewCrosshair()),
                             if (_tool == _CraftTool.select &&
                                 menuCenter != null &&
                                 _area.selected.isNotEmpty &&
                                 _marqueeStart == null &&
-                                _moveOrigin == null)
+                                _moveOrigin == null &&
+                                !_transforming)
                               Positioned.fill(
                                 child: ObjectRadialMenu(
                                   center: menuCenter,
@@ -1479,12 +1688,13 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
                                           setState(() => _moving = true),
                                     ),
                                     RadialAction(
-                                      icon: Icons.rotate_right,
-                                      label: 'Rotate',
-                                      tint: const Color(0xFFFFD54F),
-                                      onTap: () => setState(
-                                        () => _apply(rotateSelection(_area)),
-                                      ),
+                                      icon: Icons.crop_rotate,
+                                      label: 'Transform',
+                                      tint: const Color(0xFF80CBC4),
+                                      onTap: () => setState(() {
+                                        _moving = false;
+                                        _transforming = true;
+                                      }),
                                     ),
                                     RadialAction(
                                       icon: Icons.visibility_off,
@@ -1587,14 +1797,14 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
             key: const Key('board-caret-left'),
             icon: Icons.chevron_left,
             enabled: _page > 0,
-            onTap: () => setState(() => _page = 0),
+            onTap: () => setState(() => _page -= 1),
           ),
           const SizedBox(width: 8),
           _caret(
             key: const Key('board-caret-right'),
             icon: Icons.chevron_right,
-            enabled: _page < 1,
-            onTap: () => setState(() => _page = 1),
+            enabled: _page < _kBoardCount - 1,
+            onTap: () => setState(() => _page += 1),
           ),
         ],
       ),

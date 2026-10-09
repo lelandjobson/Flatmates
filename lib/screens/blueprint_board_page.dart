@@ -4,7 +4,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:vector_math/vector_math_64.dart' hide Colors;
 
-import '../gestures/gesture_system.dart';
 import '../gridcraft/blueprint.dart';
 import '../gridcraft/blueprint_board.dart';
 import '../gridcraft/blueprint_board_painter.dart';
@@ -28,7 +27,7 @@ const double _kZoomMinHalfHeight = 0.25;
 const double _kZoomMaxHalfHeight = 800;
 const double _kTapSlop = 18;
 
-enum _BoardAct { none, move, scale, rotate }
+enum _BoardAct { none, move, transform }
 
 class _GrabDrag {
   const _GrabDrag(this.axis, this.index);
@@ -95,12 +94,14 @@ class _BlueprintBoardPageState extends State<BlueprintBoardPage> {
   TransformHandle? _handle;
   List<BoardPiece>? _scaleOrigin;
   Rect? _scaleBounds;
-  List<BoardPiece>? _twistOrigin;
-  double? _twistAngle;
 
-  Offset? _pivot;
+  bool _turning = false;
   List<BoardPiece>? _turnOrigin;
+  Offset? _turnPivot;
   double? _turnStart;
+  double _turnDegrees = 0;
+  Offset? _ringCenter;
+  double? _ringRadius;
 
   List<String> _pickStack = const [];
   int _pickClicks = 0;
@@ -150,11 +151,13 @@ class _BlueprintBoardPageState extends State<BlueprintBoardPage> {
     _handle = null;
     _scaleOrigin = null;
     _scaleBounds = null;
-    _twistOrigin = null;
-    _twistAngle = null;
-    _pivot = null;
+    _turning = false;
     _turnOrigin = null;
+    _turnPivot = null;
     _turnStart = null;
+    _turnDegrees = 0;
+    _ringCenter = null;
+    _ringRadius = null;
     _marqueeStart = null;
     _marqueeCurrent = null;
   }
@@ -357,12 +360,6 @@ class _BlueprintBoardPageState extends State<BlueprintBoardPage> {
   }
 
   void _onTrackpadUpdate(PointerPanZoomUpdateEvent event) {
-    if (_act == _BoardAct.scale && _ids.isNotEmpty) {
-      _beginTwist();
-      _twist(event.rotation);
-      setState(() {});
-      return;
-    }
     final scale = event.scale;
     if (scale > 0 && (scale / _trackpadScale - 1).abs() > 1e-6) {
       _zoom(scale / _trackpadScale);
@@ -373,7 +370,6 @@ class _BlueprintBoardPageState extends State<BlueprintBoardPage> {
 
   void _onTrackpadEnd(PointerPanZoomEndEvent event) {
     _trackpadScale = 1;
-    _endTwist();
     if (_tool == BoardTool.dimension) _follow();
   }
 
@@ -388,7 +384,7 @@ class _BlueprintBoardPageState extends State<BlueprintBoardPage> {
       _marqueeStart = null;
       _marqueeCurrent = null;
       _handle = null;
-      if (_act == _BoardAct.scale) _beginTwist();
+      _turning = false;
       setState(() {});
       return;
     }
@@ -431,25 +427,34 @@ class _BlueprintBoardPageState extends State<BlueprintBoardPage> {
     } else if (_act == _BoardAct.move) {
       _moveOrigin = [for (final piece in widget.board.pieces) piece.clone()];
       _moveFree = Offset.zero;
-    } else if (_act == _BoardAct.scale) {
-      final world = _world(screen);
+    } else if (_act == _BoardAct.transform) {
       final bounds = selectionBounds(widget.board.pieces, _ids);
-      if (world != null && bounds != null) {
-        final handle = hitTransformHandle(world, bounds, _handleRadius());
-        if (handle != null) {
-          _handle = handle;
-          _scaleOrigin = [
-            for (final piece in widget.board.pieces) piece.clone(),
-          ];
-          _scaleBounds = bounds;
+      final ring = bounds == null ? null : _rotationWidget(bounds);
+      if (ring != null && kCombinedTransform.rotation && ring.hits(screen)) {
+        _turning = true;
+        _turnOrigin = [for (final piece in widget.board.pieces) piece.clone()];
+        _turnPivot = bounds!.center;
+        _turnStart = math.atan2(screen.dy - ring.center.dy, screen.dx - ring.center.dx);
+        _turnDegrees = 0;
+        _ringCenter = ring.center;
+        _ringRadius = ring.radius;
+      } else {
+        final world = _world(screen);
+        if (world != null && bounds != null) {
+          final handle = hitTransformHandle(
+            world,
+            bounds,
+            _handleRadius(),
+            box: kCombinedTransform,
+          );
+          if (handle != null) {
+            _handle = handle;
+            _scaleOrigin = [
+              for (final piece in widget.board.pieces) piece.clone(),
+            ];
+            _scaleBounds = bounds;
+          }
         }
-      }
-    } else if (_act == _BoardAct.rotate && _pivot != null) {
-      final world = _world(screen);
-      _turnOrigin = [for (final piece in widget.board.pieces) piece.clone()];
-      if (world != null) {
-        final arm = world - _pivot!;
-        _turnStart = math.atan2(arm.dy, arm.dx);
       }
     }
     setState(() {});
@@ -492,15 +497,12 @@ class _BlueprintBoardPageState extends State<BlueprintBoardPage> {
       setState(() {});
       return;
     }
-    if (_act == _BoardAct.scale && _handle != null && _moved) {
+    if (_act == _BoardAct.transform && _handle != null && _moved) {
       _dragHandle(event.localPosition);
       setState(() {});
       return;
     }
-    if (_act == _BoardAct.rotate &&
-        _pivot != null &&
-        _turnOrigin != null &&
-        _moved) {
+    if (_act == _BoardAct.transform && _turning && _turnOrigin != null && _moved) {
       _dragTurn(event.localPosition);
       setState(() {});
       return;
@@ -513,7 +515,6 @@ class _BlueprintBoardPageState extends State<BlueprintBoardPage> {
   void _onPointerUp(PointerUpEvent event) {
     _pointers.remove(event.pointer);
     if (_pointers.isNotEmpty) {
-      if (_pointers.length < 2) _endTwist();
       _span = null;
       _pinchCentroid = null;
       setState(() {});
@@ -529,7 +530,6 @@ class _BlueprintBoardPageState extends State<BlueprintBoardPage> {
     _pinchCentroid = null;
     _down = null;
     _drag = null;
-    _endTwist();
     if (multi) {
       if (_tool == BoardTool.dimension) _follow();
       setState(() {});
@@ -551,18 +551,18 @@ class _BlueprintBoardPageState extends State<BlueprintBoardPage> {
       _act = _BoardAct.none;
       _moveOrigin = null;
       _moveFree = Offset.zero;
-    } else if (_act == _BoardAct.scale && _handle != null) {
+    } else if (_act == _BoardAct.transform && (_handle != null || _turning)) {
       _handle = null;
       _scaleOrigin = null;
       _scaleBounds = null;
-    } else if (_act == _BoardAct.rotate && _pivot != null && moved) {
-      _act = _BoardAct.none;
-      _pivot = null;
+      _turning = false;
       _turnOrigin = null;
+      _turnPivot = null;
       _turnStart = null;
-    } else if (_act == _BoardAct.rotate && _pivot == null && !moved) {
-      _lockPivot();
-    } else if (_act == _BoardAct.scale && !moved && _handle == null) {
+      _turnDegrees = 0;
+      _ringCenter = null;
+      _ringRadius = null;
+    } else if (_act == _BoardAct.transform && !moved) {
       _act = _BoardAct.none;
     } else if (!moved &&
         _act == _BoardAct.none &&
@@ -582,7 +582,6 @@ class _BlueprintBoardPageState extends State<BlueprintBoardPage> {
     _span = null;
     _pinchCentroid = null;
     _down = null;
-    _endTwist();
     if (_tool == BoardTool.dimension) _follow();
     setState(() {});
   }
@@ -590,10 +589,6 @@ class _BlueprintBoardPageState extends State<BlueprintBoardPage> {
   void _twoFinger() {
     if (_pointers.length < 2) return;
     final points = _pointers.values.toList();
-    if (_act == _BoardAct.scale && _twistOrigin != null) {
-      _twist(pointerPairAngle(points[0], points[1]));
-      return;
-    }
     final centroid = (points[0] + points[1]) / 2;
     final span = (points[0] - points[1]).distance;
     final previousCentroid = _pinchCentroid;
@@ -604,32 +599,6 @@ class _BlueprintBoardPageState extends State<BlueprintBoardPage> {
     if (previousSpan != null && previousSpan > 12 && span > 12) {
       _zoom(span / previousSpan);
     }
-  }
-
-  void _beginTwist() {
-    if (_act != _BoardAct.scale || _ids.isEmpty || _twistOrigin != null) return;
-    _twistOrigin = [for (final piece in widget.board.pieces) piece.clone()];
-    if (_pointers.length < 2) return;
-    final points = _pointers.values.toList();
-    _twistAngle = pointerPairAngle(points[0], points[1]);
-  }
-
-  void _twist(double angle) {
-    final origin = _twistOrigin;
-    final start = _twistAngle;
-    if (origin == null) return;
-    if (start == null) {
-      _twistAngle = angle;
-      return;
-    }
-    final pivot = selectionCentroid(origin, _ids);
-    if (pivot == null) return;
-    _setPieces(rotatePieces(origin, _ids, pivot, wrapRadians(angle - start)));
-  }
-
-  void _endTwist() {
-    _twistOrigin = null;
-    _twistAngle = null;
   }
 
   void _moveGrab(_GrabDrag drag, Offset screen) {
@@ -761,6 +730,7 @@ class _BlueprintBoardPageState extends State<BlueprintBoardPage> {
           blueprintVertices: step.vertices,
           spacing: step.gridSpacing,
           radius: _snapRadius(),
+          uniform: !kCombinedTransform.stretch,
         ),
       ),
     );
@@ -768,40 +738,38 @@ class _BlueprintBoardPageState extends State<BlueprintBoardPage> {
 
   void _dragTurn(Offset screen) {
     final origin = _turnOrigin;
-    final pivot = _pivot;
+    final pivot = _turnPivot;
     final start = _turnStart;
-    final world = _world(screen);
-    if (origin == null || pivot == null || start == null || world == null) {
+    final center = _ringCenter;
+    if (origin == null || pivot == null || start == null || center == null) {
       return;
     }
-    final arm = world - pivot;
+    final arm = screen - center;
     if (arm.distance < 1e-6) return;
-    final free = wrapRadians(math.atan2(arm.dy, arm.dx) - start);
-    final snapped = snapTurn(
-      moving: [
-        for (final piece in origin)
-          if (_ids.contains(piece.id)) ...piece.vertices,
-      ],
-      pivot: pivot,
-      radians: free,
-      targets: [
-        if (_step != null) ..._step!.vertices,
-        for (final piece in origin)
-          if (!_ids.contains(piece.id)) ...piecePoints(piece),
-      ],
-      radius: _snapRadius(),
+    final degrees = RotationWidget.degreesFromScreen(
+      startAngle: start,
+      currentAngle: math.atan2(arm.dy, arm.dx),
     );
-    _setPieces(rotatePieces(origin, _ids, pivot, snapped));
+    _turnDegrees = degrees;
+    _setPieces(rotatePieces(origin, _ids, pivot, degrees * math.pi / 180));
   }
 
-  void _lockPivot() {
-    final aim = _aim();
-    if (aim == null) return;
-    final step = _step;
-    _pivot = nearestSnapVertex(aim, [
-      if (step != null) ...step.vertices,
-      for (final piece in widget.board.pieces) ...piecePoints(piece),
-    ], _snapRadius());
+  RotationWidget? _rotationWidget(Rect bounds) {
+    if (_ringCenter != null && _ringRadius != null) {
+      return RotationWidget(
+        center: _ringCenter!,
+        radius: _ringRadius!,
+        degrees: _turnDegrees,
+      );
+    }
+    final center = _project(bounds.center);
+    final corner = _project(bounds.topLeft);
+    if (center == null || corner == null) return null;
+    return RotationWidget.layout(
+      center: center,
+      halfDiagonal: (corner - center).distance,
+      degrees: _turnDegrees,
+    );
   }
 
   void _selectTap(Offset aim) {
@@ -888,8 +856,11 @@ class _BlueprintBoardPageState extends State<BlueprintBoardPage> {
           _tool,
           showInSelect: widget.showPlacedDimensions,
         );
-        final box = _act == _BoardAct.scale
+        final box = _act == _BoardAct.transform
             ? selectionBounds(widget.board.pieces, _ids)
+            : null;
+        final ring = box != null && kCombinedTransform.rotation
+            ? _rotationWidget(box)
             : null;
         final menuCenter = _menuCenter();
         final chromeSize = _chromeSize(_viewport);
@@ -918,10 +889,8 @@ class _BlueprintBoardPageState extends State<BlueprintBoardPage> {
                         selected: _ids,
                         marquee: _marqueeRect(),
                         transform: box,
-                        pivot: _act == _BoardAct.rotate ? _pivot : null,
-                        snap: _act == _BoardAct.rotate && _pivot == null
-                            ? _liveSnap()
-                            : null,
+                        box: kCombinedTransform,
+                        rotation: ring,
                       ),
                       painter: step == null
                           ? null
@@ -951,7 +920,7 @@ class _BlueprintBoardPageState extends State<BlueprintBoardPage> {
                   ),
                 ),
               ),
-            if (_tool == BoardTool.select && _act != _BoardAct.scale)
+            if (_tool == BoardTool.select && _act != _BoardAct.transform)
               const IgnorePointer(child: ViewCrosshair()),
             if (menuCenter != null &&
                 _tool == BoardTool.select &&
@@ -969,19 +938,10 @@ class _BlueprintBoardPageState extends State<BlueprintBoardPage> {
                       onTap: () => setState(() => _act = _BoardAct.move),
                     ),
                     RadialAction(
-                      icon: Icons.aspect_ratio,
-                      label: 'Scale',
+                      icon: Icons.crop_rotate,
+                      label: 'Transform',
                       tint: const Color(0xFF80CBC4),
-                      onTap: () => setState(() => _act = _BoardAct.scale),
-                    ),
-                    RadialAction(
-                      icon: Icons.rotate_right,
-                      label: 'Rotate',
-                      tint: const Color(0xFFFFD54F),
-                      onTap: () => setState(() {
-                        _pivot = null;
-                        _act = _BoardAct.rotate;
-                      }),
+                      onTap: () => setState(() => _act = _BoardAct.transform),
                     ),
                     RadialAction(
                       icon: Icons.arrow_forward,
@@ -1023,16 +983,6 @@ class _BlueprintBoardPageState extends State<BlueprintBoardPage> {
     final center = selectionCentroid(widget.board.pieces, _ids);
     if (center == null) return null;
     return _project(center);
-  }
-
-  Offset? _liveSnap() {
-    final aim = _aim();
-    if (aim == null) return null;
-    final step = _step;
-    return nearestSnapVertex(aim, [
-      if (step != null) ...step.vertices,
-      for (final piece in widget.board.pieces) ...piecePoints(piece),
-    ], _snapRadius());
   }
 
   Widget _devPanel() {
