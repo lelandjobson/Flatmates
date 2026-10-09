@@ -26,6 +26,7 @@ import '../screens/puzzle_editor_view.dart';
 import '../screens/tool_animation_view.dart';
 import '../screens/papercut_puzzles_view.dart';
 import '../screens/test_3d_map_view.dart';
+import '../screens/flatgram_view.dart';
 
 /// Swap between '/dev-routes' and '/' to start at the dev menu or title screen.
 const kInitialLocation = '/dev-routes';
@@ -169,5 +170,11 @@ final router = GoRouter(
       name: 'tool_animations',
       builder: (context, state) => const ToolAnimationView(),
     ),
+    GoRoute(
+      path: '/flatgram',
+      name: 'flatgram',
+      builder: (context, state) => const FlatgramView(),
+    ),
   ],
 );
+

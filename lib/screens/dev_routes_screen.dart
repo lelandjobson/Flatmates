@@ -6,6 +6,7 @@ import '../ui/fm_screen.dart';
 
 /// Route names listed in the dev menu. Every other [GoRoute] stays registered.
 const kDevMenuRouteNames = {
+  'flatgram',
   'papercut_puzzles',
   'craft_editor',
   'blueprint_examination',
@@ -15,6 +16,7 @@ const kDevMenuRouteNames = {
   'puzzle_editor',
   'tool_animations',
 };
+
 
 class DevRoutesScreen extends StatelessWidget {
   const DevRoutesScreen({super.key});
