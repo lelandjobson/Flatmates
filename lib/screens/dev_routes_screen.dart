@@ -5,16 +5,12 @@ import '../router/app_router.dart';
 import '../ui/fm_screen.dart';
 
 /// Route names listed in the dev menu. Every other [GoRoute] stays registered.
+/// This branch is the grid puzzle play view, plus the screens that author,
+/// inspect, and animate it.
 const kDevMenuRouteNames = {
-  'flatgram',
-  'tilewalk',
-  'line_puzzle',
-  'papercut_puzzles',
-  'craft_editor',
   'blueprint_examination',
   'grid_puzzles',
   'dynamic_grid_puzzles',
-  'mixed_crafting_view',
   'puzzle_editor',
   'tool_animations',
 };

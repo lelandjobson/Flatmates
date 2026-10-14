@@ -35,7 +35,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('dev menu', () {
-    test('keeps every route and lists only papercut puzzles', () {
+    test('keeps every route and lists the grid puzzle views', () {
       final names = router.configuration.routes
           .whereType<GoRoute>()
           .map((route) => route.name)
@@ -45,11 +45,9 @@ void main() {
         containsAll(['gameview', 'legacy_crafting', 'papercut_puzzles']),
       );
       expect(kDevMenuRouteNames, {
-        'papercut_puzzles',
-        'craft_editor',
+        'blueprint_examination',
         'grid_puzzles',
         'dynamic_grid_puzzles',
-        'mixed_crafting_view',
         'puzzle_editor',
         'tool_animations',
       });
@@ -531,7 +529,9 @@ void main() {
     });
   });
 
-  testWidgets('dev menu opens the papercut puzzles view', (tester) async {
+  testWidgets('dev menu lists grid puzzles and papercut still opens', (
+    tester,
+  ) async {
     router.go('/dev-routes');
     await tester.pumpWidget(
       ChangeNotifierProvider(
@@ -542,9 +542,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('gameview'), findsNothing);
-    expect(find.textContaining('papercut_puzzles'), findsOneWidget);
+    expect(find.textContaining('papercut_puzzles'), findsNothing);
+    expect(find.text('grid_puzzles  →  /grid-puzzles'), findsOneWidget);
 
-    await tester.tap(find.textContaining('papercut_puzzles'));
+    router.goNamed('papercut_puzzles');
     await tester.pumpAndSettle();
 
     expect(find.text('One square'), findsOneWidget);
