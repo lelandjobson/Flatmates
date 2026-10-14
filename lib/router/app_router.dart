@@ -27,6 +27,8 @@ import '../screens/tool_animation_view.dart';
 import '../screens/papercut_puzzles_view.dart';
 import '../screens/test_3d_map_view.dart';
 import '../screens/flatgram_view.dart';
+import '../screens/tilewalk_view.dart';
+import '../screens/line_puzzle_view.dart';
 
 /// Swap between '/dev-routes' and '/' to start at the dev menu or title screen.
 const kInitialLocation = '/dev-routes';
@@ -175,6 +177,15 @@ final router = GoRouter(
       name: 'flatgram',
       builder: (context, state) => const FlatgramView(),
     ),
+    GoRoute(
+      path: '/tilewalk',
+      name: 'tilewalk',
+      builder: (context, state) => const TilewalkView(),
+    ),
+    GoRoute(
+      path: '/line-puzzle',
+      name: 'line_puzzle',
+      builder: (context, state) => const LinePuzzleView(),
+    ),
   ],
 );
-
