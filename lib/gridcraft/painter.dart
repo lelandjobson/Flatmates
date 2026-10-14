@@ -59,6 +59,7 @@ class GridPuzzlePainter extends CustomPainter {
     this.ghostCuts = const [],
     this.blockedCuts = const [],
     this.activeCut = const [],
+    this.completedSpans = const [],
     this.ghostSeparation,
     this.fillShapes = false,
     this.drawGrid = true,
@@ -109,6 +110,12 @@ class GridPuzzlePainter extends CustomPainter {
   final int? pickedPiece;
   final List<(Offset, Offset)> ghostCuts;
   final List<(Offset, Offset)> blockedCuts;
+
+  /// Blueprint-edge overlaps already cut or folded, with a 0–1 fade to green.
+  ///
+  /// The third value is how far that span has faded. A partial of an edge is
+  /// its own span.
+  final List<(Offset, Offset, double)> completedSpans;
 
   /// Corners of the cut still in progress, in model space.
   ///
@@ -312,6 +319,7 @@ class GridPuzzlePainter extends CustomPainter {
       }
     }
     if (drawBlueprint) _paintBlueprint(canvas, size);
+    if (drawBlueprint) _paintCompletedSpans(canvas, size);
     _paintDraft(canvas, size);
     _paintRules(canvas, size);
     for (final stroke in sheet.cutStrokes) {
@@ -594,6 +602,25 @@ class GridPuzzlePainter extends CustomPainter {
           at,
           budget,
           shift: fillShapes ? Offset.zero : markSeparation(at, sheet.pieces),
+        );
+      }
+    }
+  }
+
+  /// Completed blueprint overlaps, drawn over the outline so the fade reads.
+  void _paintCompletedSpans(Canvas canvas, Size size) {
+    const ink = Color(0xFF1565C0);
+    const done = Color(0xFF2E7D32);
+    for (final span in completedSpans) {
+      final t = span.$3.clamp(0.0, 1.0);
+      final color = Color.lerp(ink, done, t)!;
+      for (final part in _inkSpans(span.$1, span.$2)) {
+        _stroke(
+          canvas,
+          size,
+          [part.$1, part.$2],
+          _throughPaper(color, part.$3),
+          width: 2.5 + t,
         );
       }
     }

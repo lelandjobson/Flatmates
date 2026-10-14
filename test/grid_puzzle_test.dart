@@ -1168,6 +1168,95 @@ void main() {
     expect(errors, isEmpty);
   });
 
+  test('an explicit segment along an edge commits', () {
+    final step = twinLsBlueprint().steps.single;
+    final commit = commitScissor(
+      march: const ScissorMarch(path: [Offset.zero], direction: Offset(1, 0)),
+      step: step,
+      base: _sheet(step),
+      explicitEnd: const Offset(2, 0),
+    );
+    expect(commit, isNotNull);
+    expect(
+      blueprintEdgeOverlaps(step, Offset.zero, const Offset(2, 0)),
+      isNotEmpty,
+    );
+    expect(piercedBlueprint(step, Offset.zero, const Offset(2, 0)), isNull);
+  });
+
+  test('a partial of a blueprint edge is the completed span', () {
+    final step = twinLsBlueprint().steps.single;
+    final overlaps = blueprintEdgeOverlaps(
+      step,
+      const Offset(1, 0),
+      const Offset(2, 0),
+    );
+    expect(overlaps, hasLength(1));
+    expect(overlaps.single.$1, const Offset(1, 0));
+    expect(overlaps.single.$2, const Offset(2, 0));
+
+    final again = spansOutside(overlaps, [
+      (const Offset(0, 0), const Offset(3, 0)),
+    ]);
+    expect(again, hasLength(2));
+    expect(again.first.$1, const Offset(0, 0));
+    expect(again.first.$2, const Offset(1, 0));
+    expect(again.last.$1, const Offset(2, 0));
+    expect(again.last.$2, const Offset(3, 0));
+  });
+
+  testWidgets('a drag previews the cut and a matched edge fades green', (
+    tester,
+  ) async {
+    final directory = Directory.systemTemp.createTempSync('puzzle-drag-cut');
+    addTearDown(() => directory.delete(recursive: true));
+    await tester.pumpWidget(
+      ChangeNotifierProvider(
+        create: (_) => FmThemeData(),
+        child: MaterialApp(
+          home: GridPuzzleView(
+            initial: twinLsBlueprint(),
+            store: LevelStore(directory: directory),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    final start = _globalFor(tester, const Offset(0, 0));
+    final end = _globalFor(tester, const Offset(2, 0));
+    final gesture = await tester.startGesture(start);
+    await tester.pump();
+    await gesture.moveTo(end);
+    await tester.pump();
+
+    final preview = _puzzlePainter(tester);
+    expect(preview.ghostCuts, isNotEmpty);
+    expect(preview.activeCut, isEmpty);
+    final shown = preview.ghostCuts.single;
+    expect((shown.$1 - const Offset(0, 0)).distance, lessThan(1e-6));
+    expect((shown.$2 - const Offset(2, 0)).distance, lessThan(1e-6));
+
+    await gesture.up();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+    final cutting = _puzzlePainter(tester).activeCut;
+    expect(cutting.length, greaterThanOrEqualTo(2));
+    expect((cutting.last - cutting.first).distance, greaterThan(0.05));
+
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    final done = _puzzlePainter(tester).completedSpans;
+    expect(done, isNotEmpty);
+    final span = done.single;
+    expect((span.$1 - const Offset(0, 0)).distance, lessThan(1e-6));
+    expect((span.$2 - const Offset(2, 0)).distance, lessThan(1e-6));
+    expect(span.$3, greaterThan(0.9));
+  });
+
   testWidgets('grid puzzles opens the blueprint it was given', (tester) async {
     final directory = Directory.systemTemp.createTempSync('puzzle-play');
     addTearDown(() => directory.delete(recursive: true));
@@ -1227,25 +1316,20 @@ void main() {
     await tester.pump();
 
     expect(find.byType(ViewCrosshair), findsOneWidget);
-    final seated = _glyphPainter(tester).pose.tip;
 
     final box = tester.renderObject<RenderBox>(
       find.byKey(const Key('grid-puzzle-canvas')),
     );
     final center = box.localToGlobal(box.size.center(Offset.zero));
-    await tester.dragFrom(center, const Offset(180, 0));
-    await tester.pump();
+    await _panScreen(tester, const Offset(180, 0));
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pump();
 
     final panned = _puzzlePainter(tester);
     final paper = panned.step.paper;
     expect((panned.camera.lookAt - paper.center).distance, greaterThan(1));
-    final followed = _glyphPainter(tester).pose;
-    expect(followed.visible, greaterThan(0));
-    expect((followed.tip - seated).distance, greaterThan(0.4));
 
-    await tester.tapAt(center);
+    await tester.dragFrom(center, const Offset(80, 0));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 40));
 
@@ -1298,34 +1382,18 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pump();
 
-    final box = tester.renderObject<RenderBox>(
-      find.byKey(const Key('grid-puzzle-canvas')),
-    );
-    final center = box.size.center(Offset.zero);
-    final camera = _puzzlePainter(tester).camera;
     final paper = _puzzlePainter(tester).step.paper;
-    final here = camera.planePoint(center, box.size)!;
-    final aside = camera.planePoint(center + const Offset(80, 0), box.size)!;
-    final perPixel = (aside.dx - here.dx) / 80;
-    final drag = (paper.left + 0.45 - here.dx) / perPixel;
-    await tester.dragFrom(box.localToGlobal(center), Offset(-drag, 0));
-    await tester.pump();
     final before = _puzzlePainter(tester).camera.lookAt;
-    await tester.tapAt(box.localToGlobal(center));
+    final end = const Offset(0, 0);
+    await _dragWorld(tester, Offset(paper.left, 0), end);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 40));
     final opening = _puzzlePainter(tester);
     final cut = opening.activeCut;
     expect(cut.length, greaterThanOrEqualTo(2));
-    final edge = cut.first;
-    final tip = cut.last;
     expect(
-      (opening.camera.lookAt - edge).distance,
-      greaterThan((tip - edge).distance),
-    );
-    expect(
-      (opening.camera.lookAt - edge).distance,
-      greaterThan((before - edge).distance),
+      (opening.camera.lookAt - end).distance,
+      lessThan((before - end).distance),
     );
 
     await tester.pump(const Duration(milliseconds: 1000));
@@ -1358,19 +1426,8 @@ void main() {
     await tester.tap(find.text('Rotate camera'));
     await tester.pump();
 
-    final box = tester.renderObject<RenderBox>(
-      find.byKey(const Key('grid-puzzle-canvas')),
-    );
-    final center = box.size.center(Offset.zero);
-    final camera = _puzzlePainter(tester).camera;
     final paper = _puzzlePainter(tester).step.paper;
-    final here = camera.planePoint(center, box.size)!;
-    final aside = camera.planePoint(center + const Offset(80, 0), box.size)!;
-    final perPixel = (aside.dx - here.dx) / 80;
-    final drag = (paper.left - here.dx) / perPixel;
-    await tester.dragFrom(box.localToGlobal(center), Offset(-drag, 0));
-    await tester.pump();
-    await tester.tapAt(box.localToGlobal(center));
+    await _dragWorld(tester, Offset(paper.left, 0), const Offset(0, 0));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 1000));
 
@@ -1445,7 +1502,7 @@ void main() {
 
     await tester.tap(find.byKey(const Key('grid-compass')));
     await tester.pump();
-    await tester.tapAt(center);
+    await _dragWorld(tester, const Offset(-2, 1), const Offset(0, 1));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pump();
@@ -1518,14 +1575,48 @@ Future<void> _dragLookAt(WidgetTester tester, Offset world) async {
   final down = camera.planePoint(center + const Offset(0, 80), box.size)!;
   final perPixelX = (aside.dx - here.dx) / 80;
   final perPixelY = (down.dy - here.dy) / 80;
-  await tester.dragFrom(
-    box.localToGlobal(center),
+  await _panScreen(
+    tester,
     Offset(
       -(world.dx - here.dx) / perPixelX,
       -(world.dy - here.dy) / perPixelY,
     ),
   );
+}
+
+/// Two fingers, so a scissor drag is not taken as a cut.
+Future<void> _panScreen(WidgetTester tester, Offset delta) async {
+  final box = tester.renderObject<RenderBox>(
+    find.byKey(const Key('grid-puzzle-canvas')),
+  );
+  final origin = box.localToGlobal(box.size.center(Offset.zero));
+  final first = await tester.startGesture(origin);
   await tester.pump();
+  final second = await tester.startGesture(origin + const Offset(48, 0));
+  await tester.pump();
+  await first.moveBy(delta);
+  await second.moveBy(delta);
+  await tester.pump();
+  await first.up();
+  await second.up();
+  await tester.pump();
+}
+
+Offset _globalFor(WidgetTester tester, Offset world) {
+  final box = tester.renderObject<RenderBox>(
+    find.byKey(const Key('grid-puzzle-canvas')),
+  );
+  final local = _puzzlePainter(
+    tester,
+  ).camera.camera.projectToScreen(Vector3(world.dx, world.dy, 0), box.size);
+  expect(local, isNotNull);
+  return box.localToGlobal(local!);
+}
+
+Future<void> _dragWorld(WidgetTester tester, Offset from, Offset to) async {
+  final start = _globalFor(tester, from);
+  final end = _globalFor(tester, to);
+  await tester.dragFrom(start, end - start);
 }
 
 Future<void> _openCameraSettings(WidgetTester tester) async {

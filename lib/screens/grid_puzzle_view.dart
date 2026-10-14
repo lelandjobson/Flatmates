@@ -62,6 +62,16 @@ const Duration _kTallyDuration = Duration(seconds: 3);
 const Duration _kFocusDuration = Duration(milliseconds: 320);
 const Duration _kCelebrateDuration = Celebration.duration;
 const Duration _kAdvanceDuration = Duration(milliseconds: 780);
+const Duration _kGreenFade = Duration(milliseconds: 420);
+
+/// One blueprint overlap that has been cut or folded, and which fade it belongs to.
+class _DoneSpan {
+  const _DoneSpan(this.a, this.b, this.generation);
+
+  final Offset a;
+  final Offset b;
+  final int generation;
+}
 
 /// Plays one level of a blueprint. Authoring lives in the puzzle editor.
 class GridPuzzleView extends StatefulWidget {
@@ -100,6 +110,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   Timer? _foldHold;
   late AnimationController _fadeAnim;
   late AnimationController _tallyAnim;
+  late AnimationController _greenFade;
   late AnimationController _rollNudge;
   late AnimationController _flightAnim;
   late AnimationController _focusAnim;
@@ -117,6 +128,13 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   List<Offset> _splitTo = const [];
   List<CelebrationPlayback> _celebrations = const [];
   Set<int> _liberated = {};
+  final List<_DoneSpan> _completed = [];
+  final List<List<_DoneSpan>> _undoGreen = [];
+  int _greenGen = 0;
+
+  /// Finger-down point of a scissor drag, in grid space. The release snaps.
+  Offset? _cutDragStart;
+  Offset? _cutDragEnd;
   bool _won = false;
   bool _collectionWon = false;
   bool _advancing = false;
@@ -284,6 +302,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _tallyAnim = AnimationController(vsync: this, duration: _kTallyDuration)
       ..addListener(_onTallyTick)
       ..addStatusListener(_onTallyStatus);
+    _greenFade = AnimationController(vsync: this, duration: _kGreenFade);
     _rollNudge = AnimationController(vsync: this, duration: _kTurnDuration)
       ..addListener(_onRollNudge);
     _flightAnim = AnimationController(vsync: this, duration: kArriveDuration)
@@ -329,6 +348,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _creaseAnim.dispose();
     _fadeAnim.dispose();
     _tallyAnim.dispose();
+    _greenFade.dispose();
     _turnAnim.dispose();
     _failAnim.dispose();
     _flash.dispose();
@@ -488,6 +508,10 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _undo.clear();
     _undoProgress.clear();
     _undoLiberated.clear();
+    _undoGreen.clear();
+    _completed.clear();
+    _cutDragStart = null;
+    _cutDragEnd = null;
     _progress = const CutProgress();
     _cutQueue.clear();
     _folderUses = 0;
@@ -617,80 +641,12 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _flight.reset();
   }
 
-  bool get _entryGemsRemain => entryGemsRemain(_step.rules, _progress);
-
-  /// Nearest number gem the blade may still enter through.
-  Offset? _openGemNear(Offset world) {
-    final rules = _step.rules;
-    final reach = _step.gridSpacing * 1.5;
-    Offset? best;
-    var bestDistance = reach;
-    void consider(Offset point) {
-      final distance = (point - world).distance;
-      if (distance >= bestDistance) return;
-      bestDistance = distance;
-      best = point;
-    }
-
-    for (final mark in rules.numbers) {
-      if (mark.number < _progress.nextNumber) continue;
-      consider(mark.point);
-    }
-    return best;
-  }
-
   bool get _cutting => _flight.phase == ToolFlightPhase.cut || _armingCut;
 
   /// True after the first stroke, when side taps choose the next cut.
   bool get _directing {
     final march = _march;
     return march != null && march.path.length > 1;
-  }
-
-  void _onScissorTap(Offset world) {
-    if (_cutting || _failing || _won) return;
-    if (_march == null) {
-      if (_entryGemsRemain) {
-        final gem = _openGemNear(world);
-        if (gem == null) return;
-        final edge = _nearestEdge(gem);
-        setState(() {
-          _marchBase = _sheet;
-          _march = placeAtEntry(gem, _step.paper);
-          _bladePieceId = edge == null
-              ? (_sheet.pieces.isEmpty ? null : _sheet.pieces.first.id)
-              : _sheet.pieces[edge.index].id;
-        });
-      } else {
-        final edge = _nearestEdge(world);
-        if (edge == null) return;
-        final placed = _placeOn(edge);
-        if (placed == null) return;
-        setState(() {
-          _marchBase = _sheet;
-          _march = placed;
-          _bladePieceId = _sheet.pieces[edge.index].id;
-        });
-      }
-    }
-    final ghost = _scissorGhost(world);
-    if (ghost == null) {
-      if (_cameraFollowsTool) {
-        _pinScissor();
-      } else if (_march != null) {
-        _lockToolCamera();
-      }
-      _syncFlight();
-      return;
-    }
-    _startCut(world);
-    if (_march != null && !_cameraFollowsTool) _lockToolCamera();
-  }
-
-  void _startCut([Offset? aim]) {
-    final ghost = _scissorGhost(aim ?? _aimWorld());
-    if (ghost == null) return;
-    _beginStroke(ghost.$1, ghost.$2);
   }
 
   bool _beginStroke(Offset modelFrom, Offset modelTo) {
@@ -939,17 +895,6 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     ];
   }
 
-  ScissorMarch? _placeOn(PieceEdgeTarget edge) {
-    final piece = _sheet.pieces[edge.index];
-    final onPiece = placeOnRing(edge.model, piece.vertices);
-    if (onPiece != null) return onPiece;
-    for (final hole in piece.holes) {
-      final onHole = placeOnRing(edge.model, hole);
-      if (onHole != null) return onHole;
-    }
-    return placeScissor(edge.model, _step.paper);
-  }
-
   /// Maps a point on the drawn paper back to grid space.
   Offset _toModel(Offset aim) {
     for (final piece in _sheet.pieces) {
@@ -1035,6 +980,10 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       _undo.clear();
       _undoProgress.clear();
       _undoLiberated.clear();
+      _undoGreen.clear();
+      _completed.clear();
+      _cutDragStart = null;
+      _cutDragEnd = null;
       _progress = const CutProgress();
       _cutQueue.clear();
       _folderUses = 0;
@@ -1182,15 +1131,19 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     if (march == null || base == null) return null;
     _failed = false;
     final direction = _strokeDirection ?? _paperHeading(march.position);
-    final end = march.previewEnd(
-      _step,
-      base,
-      direction: direction,
-      closed: _bladeOutlines(_bladePiece()),
-      skipCollinear: _skipPenciled,
-    );
+    final explicit = _modelEnd;
+    final end =
+        explicit ??
+        march.previewEnd(
+          _step,
+          base,
+          direction: direction,
+          closed: _bladeOutlines(_bladePiece()),
+          skipCollinear: _skipPenciled,
+        );
     if (end == null ||
         cutRidesBoundary(march.position, end, _paperEdges(_bladePiece()))) {
+      _dropExplicitMarch(explicit);
       return null;
     }
     final ruling = _liveRules.consider(
@@ -1199,7 +1152,10 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       _progress,
       paper: _step.paper,
     );
-    if (!ruling.allowed) return null;
+    if (!ruling.allowed) {
+      _dropExplicitMarch(explicit);
+      return null;
+    }
     if (ruling.failed) {
       _failLevel(ruling.cause ?? const FailureCue(FailureKind.color, 0));
       return null;
@@ -1214,18 +1170,25 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       _failLevel(mirror);
       return null;
     }
-    if (_mirrorsBlocked(march.position, end)) return null;
+    if (_mirrorsBlocked(march.position, end)) {
+      _dropExplicitMarch(explicit);
+      return null;
+    }
     final commit = commitScissor(
       march: march,
       step: _step,
       base: base,
       direction: direction,
       closed: _bladeOutlines(_bladePiece()),
+      explicitEnd: explicit,
     );
     _strokeDirection = null;
     _modelEnd = null;
     _cutRoll = null;
-    if (commit == null) return null;
+    if (commit == null) {
+      _dropExplicitMarch(explicit);
+      return null;
+    }
     final settled = _dropCelebrated(
       _withMirrors(commit.sheet, [...march.path, end]),
     );
@@ -1266,16 +1229,18 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
             winning: winning,
           )
         : settled;
+    final keepMarch = explicit == null ? commit.march : null;
     setState(() {
       _sheet = split ? settled : spread;
-      _march = commit.march;
-      if (split) {
+      _march = keepMarch;
+      if (keepMarch == null) {
         _marchBase = null;
         _bladePieceId = null;
       }
     });
     _noteTouch(march.position, end);
     if (_failed || _failIfRemovedEarly()) return null;
+    _noteCompleted(march.position, end);
     if (!split) {
       _pinScissor();
       _playCutCelebration();
@@ -1771,6 +1736,40 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     });
     _foldSettle.forward(from: 0);
     _playCutCelebration();
+    _noteCompleted(guide.line.$1, guide.line.$2);
+  }
+
+  /// Drops a drag cut that the commit refused, so the next drag can start.
+  void _dropExplicitMarch(Offset? explicit) {
+    if (explicit == null) return;
+    setState(() {
+      _march = null;
+      _marchBase = null;
+      _bladePieceId = null;
+    });
+  }
+
+  /// Fades the blueprint overlaps of [from]–[to] to green.
+  void _noteCompleted(Offset from, Offset to) {
+    final fresh = spansOutside([
+      for (final span in _completed) (span.a, span.b),
+    ], blueprintEdgeOverlaps(_step, from, to));
+    if (fresh.isEmpty) return;
+    final generation = ++_greenGen;
+    setState(() {
+      for (final span in fresh) {
+        _completed.add(_DoneSpan(span.$1, span.$2, generation));
+      }
+    });
+    _greenFade.forward(from: 0);
+  }
+
+  List<(Offset, Offset, double)> _completedPaint() {
+    final t = Curves.easeOut.transform(_greenFade.value);
+    return [
+      for (final span in _completed)
+        (span.a, span.b, span.generation == _greenGen ? t : 1),
+    ];
   }
 
   void _onFoldSettle(AnimationStatus status) {
@@ -2102,6 +2101,10 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       _undo.clear();
       _undoProgress.clear();
       _undoLiberated.clear();
+      _undoGreen.clear();
+      _completed.clear();
+      _cutDragStart = null;
+      _cutDragEnd = null;
       _progress = const CutProgress();
       _cutQueue.clear();
       _picked = null;
@@ -2123,10 +2126,12 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _undo.add(_sheet.clone());
     _undoProgress.add(_progress);
     _undoLiberated.add({..._liberated});
+    _undoGreen.add(List<_DoneSpan>.of(_completed));
     if (_undo.length > 40) {
       _undo.removeAt(0);
       _undoProgress.removeAt(0);
       if (_undoLiberated.isNotEmpty) _undoLiberated.removeAt(0);
+      if (_undoGreen.isNotEmpty) _undoGreen.removeAt(0);
     }
   }
 
@@ -2149,6 +2154,9 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       _won = false;
       _collectionWon = false;
       _liberated = _undoLiberated.isEmpty ? {} : _undoLiberated.removeLast();
+      _completed
+        ..clear()
+        ..addAll(_undoGreen.isEmpty ? const [] : _undoGreen.removeLast());
     });
     _syncFlight();
   }
@@ -2199,61 +2207,6 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     reticle: _crosshair,
     toolOnScreen: _trackedToolScreen(),
   );
-
-  /// Larger offset from the aim point. A tap above and left is up when the
-  /// vertical component is greater, and left when the horizontal one is.
-  _CutSide? _tapSide(Offset? local) {
-    if (local == null || _viewport.width < 2 || _viewport.height < 2) {
-      return null;
-    }
-    final side = dominantScreenSide(
-      local - _directionOrigin(),
-      deadZone: _kCrosshairCutRadius,
-    );
-    return switch (side) {
-      ScreenSide.up => _CutSide.up,
-      ScreenSide.down => _CutSide.down,
-      ScreenSide.left => _CutSide.left,
-      ScreenSide.right => _CutSide.right,
-      null => null,
-    };
-  }
-
-  void _noteTap(Offset? local) {
-    if (!_showTapDebug || local == null || _viewport.width < 2) return;
-    final side = _tapSide(local);
-    setState(() {
-      _debugTap = local;
-      _debugSide = side?.name ?? 'forward';
-    });
-  }
-
-  _CutSide _cutSide(ScreenSide side) {
-    return switch (side) {
-      ScreenSide.up => _CutSide.up,
-      ScreenSide.down => _CutSide.down,
-      ScreenSide.left => _CutSide.left,
-      ScreenSide.right => _CutSide.right,
-    };
-  }
-
-  /// One stroke from a swipe. A cut already traveling stores the side.
-  void _aimSeatedCut(_CutSide? side) {
-    if (_cutting) {
-      _enqueueCut(side);
-      return;
-    }
-    _performCut(side);
-  }
-
-  void _chooseCut(Offset? local) {
-    if (_cutting) {
-      _enqueueCut(_tapSide(local));
-      return;
-    }
-    if (!_directing) return;
-    _performCut(_tapSide(local));
-  }
 
   void _enqueueCut(_CutSide? side) {
     _cutQueue.add(side);
@@ -2435,10 +2388,11 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                             _foldSettle,
                             _fadeAnim,
                             _tallyAnim,
+                            _greenFade,
                           ]),
                           builder: (context, _) {
                             final aim = _aimWorld();
-                            final ghosts = _ruledGhosts(_displayGhosts(aim));
+                            final ghosts = _ruledGhosts(_displayGhosts());
                             final guide = _folderGuide(aim);
                             return CustomPaint(
                               painter: GridPuzzlePainter(
@@ -2461,6 +2415,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                                 ghostCuts: ghosts.$1,
                                 blockedCuts: ghosts.$2,
                                 activeCut: _activeCut(),
+                                completedSpans: _completedPaint(),
                                 ghostSeparation: _ghostShift(aim),
                                 gatheredColors: _progress.collectedColors,
                                 nextNumber: _progress.nextNumber,
@@ -2680,6 +2635,8 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   /// be recorded first or that end is taken as a press.
   void _noteZoom() {
     _zoomed = true;
+    _cutDragStart = null;
+    _cutDragEnd = null;
     _cancelFoldHold();
     if (!_foldingMode) return;
     _foldSigned = 0;
@@ -2698,7 +2655,27 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _dragFree = null;
     _dragPiece = null;
     _pointerDown = true;
+    _cutDragStart = null;
+    _cutDragEnd = null;
+    // A pinch can end while one finger is still down, which leaves the zoom
+    // latch set. The next one-finger press is a new gesture.
+    if (details.pointerCount < 2) _zoomed = false;
     if (details.pointerCount >= 2) _noteZoom();
+    if (!_zoomed &&
+        details.pointerCount < 2 &&
+        _tool == _GridTool.scissors &&
+        !_cutting &&
+        !_failing &&
+        !_won &&
+        !_rolling &&
+        !_advancing &&
+        !_collectionWon) {
+      final model = _modelAt(details.localFocalPoint);
+      if (model != null) {
+        _cutDragStart = model;
+        _cutDragEnd = _snapOffset(model);
+      }
+    }
     _cancelFoldHold();
     if (!_zoomed &&
         _tool == _GridTool.folder &&
@@ -2733,6 +2710,17 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     }
     if (_foldingMode) {
       if (!_zoomed) _updateFoldPreview(local);
+      return;
+    }
+    if (_cutDragStart != null && details.pointerCount < 2 && !_zoomed) {
+      final model = _modelAt(local);
+      if (model != null) {
+        final snapped = _snapOffset(model);
+        if (snapped != _cutDragEnd) {
+          setState(() => _cutDragEnd = snapped);
+          _syncFlight();
+        }
+      }
       return;
     }
     if (_fixedToolCamera) return;
@@ -2802,9 +2790,15 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     final end = _lastFocal;
     final net = down == null || end == null ? Offset.zero : end - down;
     final swiped = net.distance > 12;
-    if (_tool == _GridTool.scissors && swiped && (_cutting || _directing)) {
-      final side = swipeCutSide(net, deadZone: 12);
-      if (side != null) _aimSeatedCut(_cutSide(side));
+    if (_tool == _GridTool.scissors) {
+      final start = _cutDragStart;
+      final drop = _cutDragEnd;
+      _cutDragStart = null;
+      _cutDragEnd = null;
+      if (!zoomed && start != null && drop != null) {
+        _releaseCut(start, drop);
+      }
+      _syncFlight();
       return;
     }
     if (_tool == _GridTool.folder) {
@@ -2825,24 +2819,56 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       }
       return;
     }
-    if (_tool == _GridTool.scissors) {
-      _noteTap(_lastFocal);
-      if (_cutting) {
-        _enqueueCut(_tapSide(_lastFocal));
-        return;
-      }
-      if (_directing) {
-        _chooseCut(_lastFocal);
-        return;
-      }
-    }
     final world = _aimWorld();
     if (world == null) return;
-    if (_tool == _GridTool.scissors) {
-      _onScissorTap(world);
-    } else if (_tool == _GridTool.holePunch) {
-      _onPunch(world);
+    if (_tool == _GridTool.holePunch) _onPunch(world);
+  }
+
+  Offset? _modelAt(Offset screen) {
+    final world = _camera.planePoint(screen, _viewport);
+    if (world == null) return null;
+    return _toModel(world);
+  }
+
+  String? _pieceIdAlong(Offset from, Offset to) {
+    for (final piece in _sheet.pieces) {
+      if (segmentOnPiece(from, to, piece).isNotEmpty) return piece.id;
     }
+    return null;
+  }
+
+  Offset _separationOf(String? id) {
+    if (id == null) return Offset.zero;
+    for (final piece in _sheet.pieces) {
+      if (piece.id == id) return piece.separation;
+    }
+    return Offset.zero;
+  }
+
+  /// Commits a drag whose end already sits on a grid point.
+  void _releaseCut(Offset start, Offset end) {
+    if (_cutting || _failing || _won) return;
+    if ((end - start).distance < 1e-4) return;
+    final ruling = _liveRules.consider(
+      start,
+      end,
+      _progress,
+      paper: _step.paper,
+    );
+    if (!ruling.allowed && !ruling.failed) return;
+    final delta = end - start;
+    setState(() {
+      _marchBase = _sheet;
+      _march = ScissorMarch(path: [start], direction: delta / delta.distance);
+      _bladePieceId = _pieceIdAlong(start, end);
+    });
+    if (!_cameraFollowsTool) _lockToolCamera();
+    if (_beginStroke(start, end)) return;
+    setState(() {
+      _march = null;
+      _marchBase = null;
+      _bladePieceId = null;
+    });
   }
 
   void _dragSelected(Offset screen) {
@@ -2883,18 +2909,6 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     );
   }
 
-  (Offset, Offset)? _cueSegment(Offset? aim) {
-    if (_directing) {
-      final from = _march?.position;
-      final forward = _arrival();
-      if (from == null || forward == null) return null;
-      final cut = mostForwardCut(_forwardOptions(), forward);
-      if (cut == null) return null;
-      return (from, cut.end);
-    }
-    return _scissorGhost(aim);
-  }
-
   PapercutPiece? _targetPiece(Offset? aim) {
     final blade = _bladePiece();
     if (blade != null) return blade;
@@ -2906,47 +2920,6 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
 
   Offset? _ghostShift(Offset? aim) => _targetPiece(aim)?.separation;
 
-  (Offset, Offset)? _scissorGhost(Offset? aim) {
-    if (_tool != _GridTool.scissors || _failing) return null;
-    final edge = _march != null || aim == null || _entryGemsRemain
-        ? null
-        : _nearestEdge(aim);
-    final gem = _march == null && aim != null && _entryGemsRemain
-        ? _openGemNear(aim)
-        : null;
-    final from = _march?.position ?? gem ?? edge?.model;
-    if (from == null) return null;
-    final piece =
-        _bladePiece() ?? (edge == null ? null : _sheet.pieces[edge.index]);
-    final rings = _paperEdges(piece);
-    final outlines = _bladeOutlines(piece);
-    final aimed = nextOutlineHit(
-      from: from,
-      direction: _paperHeading(from, piece: piece, aim: aim),
-      closed: outlines,
-      open: [...openBlueprint(_step), ..._sheet.cutStrokes],
-      skipCollinear: _skipPenciled,
-    );
-    if (aimed != null && !cutRidesBoundary(from, aimed, rings)) {
-      return (from, aimed);
-    }
-    if (aimed == null || !cutRidesBoundary(from, aimed, rings)) return null;
-    final inward = piece == null
-        ? null
-        : inwardOnRing(from, piece.vertices) ??
-              _inwardOnHoles(from, piece.holes);
-    if (inward == null) return null;
-    final end = nextOutlineHit(
-      from: from,
-      direction: inward,
-      closed: outlines,
-      open: [...openBlueprint(_step), ..._sheet.cutStrokes],
-      skipCollinear: _skipPenciled,
-    );
-    if (end == null || cutRidesBoundary(from, end, rings)) return null;
-    return (from, end);
-  }
-
   List<List<Offset>> _paperEdges(PapercutPiece? piece) {
     if (piece != null) return [piece.vertices, ...piece.holes];
     return [
@@ -2954,27 +2927,20 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     ];
   }
 
-  Offset? _inwardOnHoles(Offset point, List<List<Offset>> holes) {
-    for (final hole in holes) {
-      final direction = inwardOnRing(point, hole);
-      if (direction != null) return direction;
-    }
-    return null;
-  }
-
   (List<(Offset, Offset)>, List<(Offset, Offset)>) _ruledGhosts(
     List<(Offset, Offset)> ghosts,
   ) {
-    if (_liveRules.isEmpty) return (ghosts, const []);
     final open = <(Offset, Offset)>[];
     final blocked = <(Offset, Offset)>[];
     for (final ghost in ghosts) {
-      if (_liveRules.allows(
+      final ruling = _liveRules.consider(
         ghost.$1,
         ghost.$2,
         _progress,
         paper: _step.paper,
-      )) {
+      );
+      final pierced = piercedBlueprint(_step, ghost.$1, ghost.$2) != null;
+      if (ruling.allowed && !ruling.failed && !pierced) {
         open.add(ghost);
       } else {
         blocked.add(ghost);
@@ -2999,17 +2965,14 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     return activeCutPoints(march.path, tip: tip);
   }
 
-  List<(Offset, Offset)> _displayGhosts(Offset? aim) {
+  List<(Offset, Offset)> _displayGhosts() {
     if (_tool != _GridTool.scissors) return const [];
     if (_flight.phase == ToolFlightPhase.cut) return const [];
-    if (_directing) {
-      final from = _march?.position;
-      if (from == null) return const [];
-      return [for (final cut in _forwardOptions()) (from, cut.end)];
-    }
-    final ghost = _scissorGhost(aim);
-    if (ghost == null) return const [];
-    return [ghost];
+    final start = _cutDragStart;
+    final end = _cutDragEnd;
+    if (start == null || end == null) return const [];
+    if ((end - start).distance < 1e-4) return const [];
+    return [(start, end)];
   }
 
   String? _ruleStatus() {
@@ -3084,19 +3047,16 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
 
   ToolCue? _cue() {
     if (_tool != _GridTool.scissors) return null;
-    final aim = _aimWorld();
-    if (aim == null) return null;
-    final ghost = _cueSegment(aim);
-    if (ghost == null) return null;
-    final shift = _targetPiece(aim)?.separation ?? Offset.zero;
-    final anchor = ghost.$1 + shift;
-    final end = ghost.$2 + shift;
-    final delta = end - anchor;
-    if (delta.distance < 1e-6) return null;
+    final start = _cutDragStart;
+    final end = _cutDragEnd;
+    if (start == null || end == null) return null;
+    final delta = end - start;
+    if (delta.distance < 1e-4) return null;
+    final shift = _separationOf(_pieceIdAlong(start, end));
     return ToolCue(
-      anchor: anchor,
+      anchor: start + shift,
       direction: delta / delta.distance,
-      aim: aim,
+      aim: end + shift,
       reach: _step.gridSpacing * 0.75,
     );
   }

@@ -6,7 +6,9 @@ A **level** is one blueprint step (`GridStep`). A **blueprint**, also called a *
 
 In play, a **collection** is that folder, and a **puzzle** is one blueprint in the folder. Puzzles run in collection order: name, then id. The grid puzzle view opens both from two buttons. Finishing a puzzle slides the next one in from offscreen right, then drops the finished puzzle and puts the new one back at the coordinates it was authored with. Finishing the last puzzle shows the victory screen for the collection. A collection or a puzzle can be **hidden** (`"hidden": true` in `collection.json` or the puzzle file): play leaves it out, and the puzzle editor still lists it, marked hidden.
 
-A **blueprint piece** is one closed ring on a level. It is a separate part. A tool cannot cross its boundary. Paper may be cut along a penned edge, up to that edge, and onward only when the next collinear edge allows it. An open polyline is also a valid drawn shape: it is not joined back to its first point, and the blade still stops on it. A **paper piece** is a `PapercutPiece` on the runtime sheet. Do not call a paper piece a blueprint piece.
+A **blueprint piece** is one closed ring on a level. It is a separate part. A tool cannot cross its boundary. Paper may be cut along a penned edge or up to that edge. Entering the interior of a blueprint piece fails the level. An open polyline is also a valid drawn shape: it is not joined back to its first point, and a cut still stops on it. A **paper piece** is a `PapercutPiece` on the runtime sheet. Do not call a paper piece a blueprint piece.
+
+In play, a scissor cut is a drag. The finger-down point is the start, and the release snaps to a grid point. A preview shows that segment while the finger is down. The scissors then travel it, and the cut fills in behind the blade. A cut or a fold that lies along part of a blueprint edge fades that part green. The rest of the edge stays as it was.
 
 An **attachment** changes how a tool behaves. It is authored on the level. The player does not toggle it during play.
 

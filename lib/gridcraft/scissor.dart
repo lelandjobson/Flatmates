@@ -272,6 +272,137 @@ List<ForwardCut> forwardCuts({
 }
 
 /// True when [from] to [to] lies on a paper edge. That slide does not cut.
+/// Portions of blueprint edges that [from]–[to] lies along.
+///
+/// The overlap can be shorter than the edge. Each returned span is that
+/// overlap, so a cut through the middle of an edge marks only the middle.
+List<(Offset, Offset)> blueprintEdgeOverlaps(
+  GridStep step,
+  Offset from,
+  Offset to, {
+  double epsilon = 1e-3,
+}) {
+  final spans = <(Offset, Offset)>[];
+  for (var i = 0; i < step.polygons.length; i++) {
+    final ring = step.polygons[i];
+    if (ring.length < 2) continue;
+    final count = step.isRingClosed(i) ? ring.length : ring.length - 1;
+    for (var edge = 0; edge < count; edge++) {
+      final overlap = collinearOverlap(
+        from,
+        to,
+        ring[edge],
+        ring[(edge + 1) % ring.length],
+        epsilon: epsilon,
+      );
+      if (overlap != null) spans.add(overlap);
+    }
+  }
+  return spans;
+}
+
+/// [fresh] spans with the parts already in [covered] removed.
+///
+/// Spans that are not on the same line are left whole. A later cut can
+/// extend an earlier partial without painting that partial again.
+List<(Offset, Offset)> spansOutside(
+  List<(Offset, Offset)> covered,
+  List<(Offset, Offset)> fresh, {
+  double epsilon = 1e-3,
+}) {
+  final open = <(Offset, Offset)>[];
+  for (final span in fresh) {
+    open.addAll(_subtractSpan(span.$1, span.$2, covered, epsilon));
+  }
+  return open;
+}
+
+/// Overlap of segment [a]–[b] with segment [c]–[d], or null when they
+/// are not on the same line or only meet at an endpoint sliver.
+(Offset, Offset)? collinearOverlap(
+  Offset a,
+  Offset b,
+  Offset c,
+  Offset d, {
+  double epsilon = 1e-3,
+}) {
+  final delta = b - a;
+  final length = delta.distance;
+  if (length < epsilon) return null;
+  final dir = delta / length;
+  double cross(Offset point) {
+    final rel = point - a;
+    return rel.dx * dir.dy - rel.dy * dir.dx;
+  }
+
+  if (cross(c).abs() > epsilon || cross(d).abs() > epsilon) return null;
+  double along(Offset point) {
+    final rel = point - a;
+    return rel.dx * dir.dx + rel.dy * dir.dy;
+  }
+
+  final c0 = along(c);
+  final c1 = along(d);
+  final start = math.max(0.0, math.min(c0, c1));
+  final end = math.min(length, math.max(c0, c1));
+  if (end - start < epsilon) return null;
+  return (a + dir * start, a + dir * end);
+}
+
+List<(Offset, Offset)> _subtractSpan(
+  Offset a,
+  Offset b,
+  List<(Offset, Offset)> covered,
+  double epsilon,
+) {
+  final delta = b - a;
+  final length = delta.distance;
+  if (length < epsilon) return const [];
+  final dir = delta / length;
+  double cross(Offset point) {
+    final rel = point - a;
+    return rel.dx * dir.dy - rel.dy * dir.dx;
+  }
+
+  double along(Offset point) {
+    final rel = point - a;
+    return rel.dx * dir.dx + rel.dy * dir.dy;
+  }
+
+  final gaps = <(double, double)>[(0, length)];
+  for (final other in covered) {
+    if (cross(other.$1).abs() > epsilon || cross(other.$2).abs() > epsilon) {
+      continue;
+    }
+    var lo = along(other.$1);
+    var hi = along(other.$2);
+    if (hi < lo) {
+      final swap = lo;
+      lo = hi;
+      hi = swap;
+    }
+    lo = lo.clamp(0.0, length);
+    hi = hi.clamp(0.0, length);
+    if (hi - lo < epsilon) continue;
+    final next = <(double, double)>[];
+    for (final gap in gaps) {
+      if (hi <= gap.$1 + epsilon || lo >= gap.$2 - epsilon) {
+        next.add(gap);
+        continue;
+      }
+      if (lo > gap.$1 + epsilon) next.add((gap.$1, lo));
+      if (hi < gap.$2 - epsilon) next.add((hi, gap.$2));
+    }
+    gaps
+      ..clear()
+      ..addAll(next);
+  }
+  return [
+    for (final gap in gaps)
+      if (gap.$2 - gap.$1 > epsilon) (a + dir * gap.$1, a + dir * gap.$2),
+  ];
+}
+
 bool cutRidesBoundary(Offset from, Offset to, List<List<Offset>> rings) {
   if ((to - from).distance < 1e-8) return false;
   for (final ring in rings) {
@@ -904,6 +1035,7 @@ ScissorCommit? commitScissor({
   required PapercutSheet base,
   Offset? direction,
   List<List<Offset>>? closed,
+  Offset? explicitEnd,
 }) {
   final dir = direction ?? march.direction;
   final aimed = ScissorMarch(
@@ -911,18 +1043,20 @@ ScissorCommit? commitScissor({
     direction: dir,
     locked: march.locked,
   );
-  final end = aimed.previewEnd(
-    step,
-    base,
-    closed: closed,
-    skipCollinear: (a, b) => penciledRidesPennedNeighbor(
-      step.polygons,
-      step.edgeStyles,
-      a,
-      b,
-      closed: step.ringClosed,
-    ),
-  );
+  final end =
+      explicitEnd ??
+      aimed.previewEnd(
+        step,
+        base,
+        closed: closed,
+        skipCollinear: (a, b) => penciledRidesPennedNeighbor(
+          step.polygons,
+          step.edgeStyles,
+          a,
+          b,
+          closed: step.ringClosed,
+        ),
+      );
   if (end == null) return null;
   final path = [...march.path, end];
   final thick = step.attachment.thickCut;
