@@ -31,12 +31,62 @@ enum CubeFaceRole { front, back, left, right, top, bottom }
 ///
 /// Each shared side is penciled on both squares. Every outer edge stays penned.
 GridBlueprint cubeBlueprint() {
+  final net = _crossNet(Offset.zero);
+  return GridBlueprint(
+    id: 'cube',
+    name: 'Cube',
+    steps: [
+      GridStep(
+        id: 'cube',
+        label: 'Cube',
+        gridSpacing: 1,
+        paperMargin: 2,
+        polygons: net.polygons,
+        edgeStyles: net.edgeStyles,
+      ),
+    ],
+  );
+}
+
+const String kBoxStackId = 'box-stack';
+
+/// Where the second cross of [boxStackBlueprint] sits. It nests against the
+/// first one cell clear of it, so each cuts out on its own.
+const Offset kBoxStackSecondNet = Offset(6, 11);
+
+/// Two Latin crosses on one sheet, one per box of a stack of two cubes.
+/// Rings 0–5 are the bottom box and rings 6–11 the top, hubs first.
+GridBlueprint boxStackBlueprint({CraftLink? craft}) {
+  final bottom = _crossNet(Offset.zero);
+  final top = _crossNet(kBoxStackSecondNet);
+  return GridBlueprint(
+    id: kBoxStackId,
+    name: 'Box Stack',
+    steps: [
+      GridStep(
+        id: kBoxStackId,
+        label: 'Box Stack',
+        gridSpacing: 1,
+        paperMargin: 2,
+        polygons: [...bottom.polygons, ...top.polygons],
+        edgeStyles: [...bottom.edgeStyles, ...top.edgeStyles],
+        craft: craft,
+      ),
+    ],
+  );
+}
+
+({List<List<Offset>> polygons, List<List<EdgeStyle>> edgeStyles}) _crossNet(
+  Offset origin,
+) {
   List<Offset> square(double left, double bottom) {
+    final x = origin.dx + left;
+    final y = origin.dy + bottom;
     return [
-      Offset(left, bottom),
-      Offset(left + kCubeFace, bottom),
-      Offset(left + kCubeFace, bottom + kCubeFace),
-      Offset(left, bottom + kCubeFace),
+      Offset(x, y),
+      Offset(x + kCubeFace, y),
+      Offset(x + kCubeFace, y + kCubeFace),
+      Offset(x, y + kCubeFace),
     ];
   }
 
@@ -50,32 +100,22 @@ GridBlueprint cubeBlueprint() {
     return [style(bottom), style(right), style(top), style(left)];
   }
 
-  return GridBlueprint(
-    id: 'cube',
-    name: 'Cube',
-    steps: [
-      GridStep(
-        id: 'cube',
-        label: 'Cube',
-        gridSpacing: 1,
-        paperMargin: 2,
-        polygons: [
-          square(5, 5),
-          square(0, 5),
-          square(10, 5),
-          square(15, 5),
-          square(5, 10),
-          square(5, 0),
-        ],
-        edgeStyles: [
-          edges(bottom: true, right: true, top: true, left: true),
-          edges(right: true),
-          edges(right: true, left: true),
-          edges(left: true),
-          edges(bottom: true),
-          edges(top: true),
-        ],
-      ),
+  return (
+    polygons: [
+      square(5, 5),
+      square(0, 5),
+      square(10, 5),
+      square(15, 5),
+      square(5, 10),
+      square(5, 0),
+    ],
+    edgeStyles: [
+      edges(bottom: true, right: true, top: true, left: true),
+      edges(right: true),
+      edges(right: true, left: true),
+      edges(left: true),
+      edges(bottom: true),
+      edges(top: true),
     ],
   );
 }

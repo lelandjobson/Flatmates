@@ -12,8 +12,8 @@ import 'celebrate.dart';
 import 'craft_plane.dart';
 import 'criteria.dart';
 import 'fold.dart';
-import 'folded_model.dart' show FaceMark;
-import 'model_painter.dart' show kBlueprintInk, paintFaceMark;
+import 'folded_model.dart' show Decal;
+import 'model_painter.dart' show kBlueprintInk, paintDecal;
 import 'paper_stack.dart';
 import 'rules.dart';
 import 'scissor.dart';
@@ -105,7 +105,7 @@ class GridPuzzlePainter extends CustomPainter {
     this.plane,
     this.gridOpacity = 1,
     this.sheetOpacity = 1,
-    this.marks = const [],
+    this.decals = const [],
     this.gridBounds,
   });
 
@@ -229,11 +229,13 @@ class GridPuzzlePainter extends CustomPainter {
   /// 0–1 strength of the dot grid.
   final double gridOpacity;
 
-  /// 0–1 strength of everything above the grid: paper, ink, and marks.
+  /// 0–1 strength of everything above the grid: paper, ink, marks, and
+  /// decals.
   final double sheetOpacity;
 
-  /// Letters and up arrows tying blueprint faces to the folded model.
-  final List<FaceMark> marks;
+  /// Letters tying blueprint pieces to the folded model, drawn on the paper
+  /// that holds them.
+  final List<Decal> decals;
 
   /// Dot grid limit in plane coordinates. Null fills the view.
   final Rect? gridBounds;
@@ -358,7 +360,7 @@ class GridPuzzlePainter extends CustomPainter {
     if (drawBlueprint) _paintBlueprint(canvas, size);
     _paintDraft(canvas, size);
     _paintRules(canvas, size);
-    _paintFaceMarks(canvas, size);
+    _paintDecals(canvas, size);
     for (final stroke in sheet.cutStrokes) {
       for (final piece in sheet.pieces) {
         if (_bursting(piece.id)) continue;
@@ -1147,14 +1149,17 @@ class GridPuzzlePainter extends CustomPainter {
 
   Offset _shifted(Offset point) => point + markSeparation(point, sheet.pieces);
 
-  void _paintFaceMarks(Canvas canvas, Size size) {
-    for (final mark in marks) {
-      final shift = fillShapes
-          ? Offset.zero
-          : markSeparation(mark.center, sheet.pieces);
-      paintFaceMark(
+  void _paintDecals(Canvas canvas, Size size) {
+    for (final decal in decals) {
+      var shift = Offset.zero;
+      if (!fillShapes) {
+        final owner = markOwner(decal.center, sheet.pieces);
+        if (owner == null) continue;
+        shift = owner.separation;
+      }
+      paintDecal(
         canvas,
-        mark,
+        decal,
         (point) => _project(point + shift, size),
         color: blueprintColor ?? kBlueprintInk,
       );

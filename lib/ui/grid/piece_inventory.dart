@@ -4,12 +4,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../gridcraft/blueprint.dart';
-import '../../gridcraft/model_painter.dart' show kBlueprintInk;
+import '../../gridcraft/folded_model.dart' show Decal;
+import '../../gridcraft/model_painter.dart' show kBlueprintInk, paintDecal;
+import '../../gridcraft/scissor.dart' show markOwner;
 import '../../papercut/paper.dart';
 
-/// Right-hand column of paper pieces to lay on a model face. Tap a piece to
-/// pick it, or drag it sideways out of the column; the drag carries the
-/// piece id.
+/// Right-hand bar of stowed paper pieces, labelled along its inner edge. Tap
+/// a piece to pick it, or drag it sideways out of the bar; the drag carries
+/// the piece id. Fills the height it is given.
 class PieceInventory extends StatelessWidget {
   const PieceInventory({
     super.key,
@@ -18,12 +20,17 @@ class PieceInventory extends StatelessWidget {
     required this.onPick,
     this.selectedId,
     this.previewing,
+    this.accepting = false,
+    this.decals = const [],
   });
 
   final List<PapercutPiece> pieces;
 
   /// Blueprint ink drawn on each thumbnail, clipped to the paper.
   final GridStep step;
+
+  /// Drawn on the thumbnail of the piece that holds each one.
+  final List<Decal> decals;
   final ValueChanged<String> onPick;
   final String? selectedId;
 
@@ -31,68 +38,113 @@ class PieceInventory extends StatelessWidget {
   /// thumbnail under the finger hides.
   final ValueListenable<bool>? previewing;
 
+  /// Paper is held over the bar and would be stowed on release.
+  final bool accepting;
+
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
+    const accent = Color(0xFFFF9F43);
+    return AnimatedContainer(
+      key: const Key('grid-inventory'),
+      duration: const Duration(milliseconds: 140),
+      width: 116,
+      height: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xF01A1A1A),
-        borderRadius: BorderRadius.circular(12),
+        color: accepting ? const Color(0xF0262019) : const Color(0xF01A1A1A),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: accepting ? accent : Colors.white10,
+          width: accepting ? 2 : 1,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x66000000),
+            blurRadius: 18,
+            offset: Offset(-4, 6),
+          ),
+        ],
       ),
-      child: SizedBox(
-        width: 92,
-        child: pieces.isEmpty
-            ? const Padding(
-                padding: EdgeInsets.all(12),
-                child: Text(
-                  'No paper',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white54, fontSize: 12),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 22,
+            child: Center(
+              child: RotatedBox(
+                quarterTurns: 3,
+                child: AnimatedDefaultTextStyle(
+                  duration: const Duration(milliseconds: 140),
+                  style: TextStyle(
+                    color: accepting ? accent : Colors.white54,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 4,
+                  ),
+                  child: const Text(
+                    'INVENTORY',
+                    key: Key('grid-inventory-label'),
+                    maxLines: 1,
+                  ),
                 ),
-              )
-            : ListView.separated(
-                key: const Key('grid-piece-inventory'),
-                padding: const EdgeInsets.all(8),
-                shrinkWrap: true,
-                itemCount: pieces.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 8),
-                itemBuilder: (context, index) {
-                  final piece = pieces[index];
-                  final selected = piece.id == selectedId;
-                  final thumbnail = CustomPaint(
-                    painter: _ThumbnailPainter(piece: piece, step: step),
-                  );
-                  return Draggable<String>(
-                    data: piece.id,
-                    affinity: Axis.horizontal,
-                    dragAnchorStrategy: pointerDragAnchorStrategy,
-                    feedback: _DragFeedback(
-                      previewing: previewing,
-                      child: thumbnail,
-                    ),
-                    childWhenDragging: const SizedBox(height: 76),
-                    child: GestureDetector(
-                      key: Key('grid-inventory-${piece.id}'),
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => onPick(piece.id),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 160),
-                        height: 76,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF262626),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: selected
-                                ? const Color(0xFFFFD54F)
-                                : Colors.white12,
-                            width: selected ? 2 : 1,
+              ),
+            ),
+          ),
+          Container(width: 1, color: Colors.white10),
+          Expanded(
+            child: pieces.isEmpty
+                ? const SizedBox.expand()
+                : ListView.separated(
+                    key: const Key('grid-piece-inventory'),
+                    padding: const EdgeInsets.all(8),
+                    itemCount: pieces.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
+                    itemBuilder: (context, index) {
+                      final piece = pieces[index];
+                      final selected = piece.id == selectedId;
+                      final thumbnail = CustomPaint(
+                        painter: _ThumbnailPainter(
+                          piece: piece,
+                          step: step,
+                          decals: [
+                            for (final decal in decals)
+                              if (markOwner(decal.center, [piece]) != null)
+                                decal,
+                          ],
+                        ),
+                      );
+                      return Draggable<String>(
+                        data: piece.id,
+                        affinity: Axis.horizontal,
+                        dragAnchorStrategy: pointerDragAnchorStrategy,
+                        feedback: _DragFeedback(
+                          previewing: previewing,
+                          child: thumbnail,
+                        ),
+                        childWhenDragging: const SizedBox(height: 76),
+                        child: GestureDetector(
+                          key: Key('grid-inventory-${piece.id}'),
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => onPick(piece.id),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 160),
+                            height: 76,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF262626),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: selected
+                                    ? const Color(0xFFFFD54F)
+                                    : Colors.white12,
+                                width: selected ? 2 : 1,
+                              ),
+                            ),
+                            child: thumbnail,
                           ),
                         ),
-                        child: thumbnail,
-                      ),
-                    ),
-                  );
-                },
-              ),
+                      );
+                    },
+                  ),
+          ),
+        ],
       ),
     );
   }
@@ -125,10 +177,15 @@ class _DragFeedback extends StatelessWidget {
 }
 
 class _ThumbnailPainter extends CustomPainter {
-  _ThumbnailPainter({required this.piece, required this.step});
+  _ThumbnailPainter({
+    required this.piece,
+    required this.step,
+    required this.decals,
+  });
 
   final PapercutPiece piece;
   final GridStep step;
+  final List<Decal> decals;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -181,6 +238,9 @@ class _ThumbnailPainter extends CustomPainter {
         );
       }
     }
+    for (final decal in decals) {
+      paintDecal(canvas, decal, place);
+    }
     canvas.restore();
     canvas.drawPath(
       paper,
@@ -194,5 +254,6 @@ class _ThumbnailPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _ThumbnailPainter oldDelegate) =>
       !identical(oldDelegate.piece, piece) ||
-      !identical(oldDelegate.step, step);
+      !identical(oldDelegate.step, step) ||
+      !listEquals(oldDelegate.decals, decals);
 }

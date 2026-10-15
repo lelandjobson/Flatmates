@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flatmates/gridcraft/blueprint.dart';
+import 'package:flatmates/gridcraft/cube_blueprint.dart';
 import 'package:flatmates/gridcraft/cube_craft.dart';
 import 'package:flatmates/gridcraft/folded_model.dart';
 import 'package:flatmates/gridcraft/placement.dart';
@@ -126,7 +127,41 @@ void main() {
     expect(placementMatches(moved, cross, model, level), isTrue);
   });
 
-  test('placed geometry and marks follow the placement', () {
+  test('each box of the stack takes only its own cross', () {
+    final stack = GridBlueprint.fromJson(
+      jsonDecode(File(kBoxStackLevelPath).readAsStringSync())
+          as Map<String, dynamic>,
+    ).steps.single;
+    final stackModel = foldedModelFromCraft(
+      CraftV1.fromJson(
+        jsonDecode(
+              File('$kBoxStackCraftDirectory/craft.json').readAsStringSync(),
+            )
+            as Map<String, dynamic>,
+      ),
+      1,
+      stack,
+    )!;
+    final top = PapercutPiece(
+      id: 'top',
+      color: kPapercutYellow,
+      vertices: [for (final point in _cross) point + kBoxStackSecondNet],
+    );
+    for (final face in [stackModel.faceOfRing(0)!, stackModel.faceOfRing(3)!]) {
+      final placement = PiecePlacement(pieceId: 'cross', face: face);
+      expect(placementMatches(placement, cross, stackModel, stack), isTrue);
+      final wrong = PiecePlacement(pieceId: 'top', face: face);
+      expect(placementMatches(wrong, top, stackModel, stack), isFalse);
+    }
+    for (final face in [stackModel.faceOfRing(6)!, stackModel.faceOfRing(9)!]) {
+      final placement = PiecePlacement(pieceId: 'top', face: face);
+      expect(placementMatches(placement, top, stackModel, stack), isTrue);
+      final wrong = PiecePlacement(pieceId: 'cross', face: face);
+      expect(placementMatches(wrong, cross, stackModel, stack), isFalse);
+    }
+  });
+
+  test('placed geometry and decals follow the placement', () {
     const placement = PiecePlacement(
       pieceId: 'cross',
       face: 0,
@@ -139,7 +174,11 @@ void main() {
     expect(piece.vertices.first, placement.apply(_cross.first));
     final step = placedStep(level, placement);
     expect(step.polygons[0][0], placement.apply(level.polygons[0][0]));
-    final marks = placedMarks(faceMarks(model), placement);
-    expect(marks.first.up, const Offset(-1, 0));
+    final decals = placedDecals(faceDecals(model), placement);
+    expect(decals.first.up, const Offset(-1, 0));
+    expect(
+      decals.first.center,
+      placement.apply(faceDecals(model).first.center),
+    );
   });
 }

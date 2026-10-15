@@ -13,6 +13,9 @@ class RotationGizmo extends StatelessWidget {
     required this.rotationSign,
     required this.onRotationChanged,
     required this.onDismiss,
+    this.ringRadius = 90.0,
+    this.snapDegrees = 5.0,
+    this.tickCount = 8,
   });
 
   final Offset center;
@@ -27,14 +30,25 @@ class RotationGizmo extends StatelessWidget {
   final ValueChanged<double> onRotationChanged;
   final VoidCallback onDismiss;
 
-  static const double _ringRadius = 90.0;
+  /// Ring size on screen. A gizmo around an object sizes it to reach past it.
+  final double ringRadius;
+
+  /// Dragged angles land on multiples of this.
+  final double snapDegrees;
+  final int tickCount;
+
   static const double _handleRadius = 12.0;
-  static const double _snapIncrement = 5.0;
-  static const int _tickCount = 8;
+
+  /// Keeps the labels readable over light paper.
+  static const List<Shadow> _labelShadows = [
+    Shadow(color: Color(0xCC000000), blurRadius: 4),
+  ];
   static const double _dragPad = 30.0;
 
+  double get _ringRadius => ringRadius;
+
   double _snapAngle(double deg) {
-    var snapped = (deg / _snapIncrement).round() * _snapIncrement;
+    var snapped = (deg / snapDegrees).round() * snapDegrees;
     snapped = snapped % 360;
     if (snapped < 0) snapped += 360;
     return snapped.toDouble();
@@ -49,8 +63,10 @@ class RotationGizmo extends StatelessWidget {
     final handleDx = center.dx + math.cos(handleScreenAngle) * _ringRadius;
     final handleDy = center.dy + math.sin(handleScreenAngle) * _ringRadius;
 
-    const gizmoLocalCenter =
-        Offset(_ringRadius + _dragPad, _ringRadius + _dragPad);
+    final gizmoLocalCenter = Offset(
+      _ringRadius + _dragPad,
+      _ringRadius + _dragPad,
+    );
 
     return Stack(
       clipBehavior: Clip.none,
@@ -60,14 +76,11 @@ class RotationGizmo extends StatelessWidget {
           top: center.dy - _ringRadius - 20,
           child: IgnorePointer(
             child: CustomPaint(
-              size: Size(
-                (_ringRadius + 20) * 2,
-                (_ringRadius + 20) * 2,
-              ),
+              size: Size((_ringRadius + 20) * 2, (_ringRadius + 20) * 2),
               painter: RingPainter(
                 ringRadius: _ringRadius,
                 rotationDeg: rotationDeg,
-                tickCount: _tickCount,
+                tickCount: tickCount,
                 screenRefAngle: screenRefAngle,
                 rotationSign: rotationSign,
               ),
@@ -87,6 +100,7 @@ class RotationGizmo extends StatelessWidget {
                   color: Colors.white,
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
+                  shadows: _labelShadows,
                 ),
               ),
             ),
@@ -102,8 +116,9 @@ class RotationGizmo extends StatelessWidget {
                 objectName,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  color: Colors.white54,
+                  color: Colors.white70,
                   fontSize: 10,
+                  shadows: _labelShadows,
                 ),
               ),
             ),
@@ -190,7 +205,9 @@ class _CircularHitRegion extends SingleChildRenderObjectWidget {
 
   @override
   void updateRenderObject(
-      BuildContext context, _RenderCircularHit renderObject) {
+    BuildContext context,
+    _RenderCircularHit renderObject,
+  ) {
     renderObject.radius = radius;
     renderObject.innerRadius = innerRadius;
   }
@@ -239,6 +256,14 @@ class RingPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final c = Offset(size.width / 2, size.height / 2);
 
+    canvas.drawCircle(
+      c,
+      ringRadius,
+      Paint()
+        ..color = const Color(0x59000000)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 7.0,
+    );
     final ringPaint = Paint()
       ..color = Colors.white24
       ..style = PaintingStyle.stroke
@@ -255,10 +280,14 @@ class RingPainter extends CustomPainter {
       final inner = ringRadius - 6;
       final outer = ringRadius + 6;
       canvas.drawLine(
-        Offset(c.dx + math.cos(screenAngle) * inner,
-            c.dy + math.sin(screenAngle) * inner),
-        Offset(c.dx + math.cos(screenAngle) * outer,
-            c.dy + math.sin(screenAngle) * outer),
+        Offset(
+          c.dx + math.cos(screenAngle) * inner,
+          c.dy + math.sin(screenAngle) * inner,
+        ),
+        Offset(
+          c.dx + math.cos(screenAngle) * outer,
+          c.dy + math.sin(screenAngle) * outer,
+        ),
         tickPaint,
       );
     }
@@ -282,6 +311,8 @@ class RingPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(RingPainter oldDelegate) =>
+      oldDelegate.ringRadius != ringRadius ||
+      oldDelegate.tickCount != tickCount ||
       oldDelegate.rotationDeg != rotationDeg ||
       oldDelegate.screenRefAngle != screenRefAngle ||
       oldDelegate.rotationSign != rotationSign;

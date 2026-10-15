@@ -42,11 +42,25 @@ import '../ui/game/view_crosshair.dart';
 import '../ui/fm_dev_back_button.dart';
 import '../ui/grid/piece_inventory.dart';
 import '../ui/grid/play_library_dialog.dart';
+import '../ui/rotation_gizmo.dart';
 import '../ui/fm_haptics.dart';
 import '../ui/fm_safe_area.dart';
 import '../ui/fm_screen.dart';
 
 enum _GridTool { select, scissors, folder, holePunch }
+
+/// Inventory and model paper, saved with each undo step.
+class _OffDesk {
+  const _OffDesk({
+    required this.pieces,
+    required this.stowed,
+    required this.placements,
+  });
+
+  final Map<String, PapercutPiece> pieces;
+  final List<String> stowed;
+  final List<PiecePlacement> placements;
+}
 
 /// Flat crafting on the sheet, or the folded model in 3D.
 enum _ViewMode { flat, model }
@@ -83,6 +97,14 @@ const double _kDoubleTapSlop = 32;
 const Duration _kSettle = Duration(milliseconds: 250);
 const Duration _kPreselectFade = Duration(milliseconds: 180);
 
+/// Target index for the desk, the world sheet the 2D view crafts on. Model
+/// faces are 0 and up.
+const int _kDesk = -1;
+
+/// Desk paper in 3D, when the desk is not focused.
+const Color _kDeskGrey = Color(0xFF9E9E9E);
+const double _kDeskOpacity = 0.1;
+
 /// Paper on a model face floats this far off it, in grid units.
 const double _kPaperLift = 0.04;
 
@@ -90,6 +112,20 @@ const double _kPaperLift = 0.04;
 const double _kModelTurn = -1.9;
 const double _kModelTilt = 0.55;
 const double _kMaxTilt = 85 * math.pi / 180;
+
+/// After a wrap the camera backs out past the model framing, then turns once
+/// around it. The lap keeps its tilt in this range so the turn reads.
+const Duration _kBackOutDuration = Duration(milliseconds: 450);
+const double _kBackOutMargin = 1.25;
+const Duration _kLapDuration = Duration(milliseconds: 1700);
+const double _kLapTiltMin = 0.3;
+const double _kLapTiltMax = 0.9;
+const int _kWrapPoints = 100;
+
+/// The rotate icon and ring stay this far inside the view, clear of the top
+/// bar and the model bar.
+const EdgeInsets _kGimbalInset = EdgeInsets.fromLTRB(16, 170, 16, 120);
+const Duration _kScorePopDuration = Duration(milliseconds: 700);
 
 /// Plays one level of a blueprint. Authoring lives in the puzzle editor.
 class GridPuzzleView extends StatefulWidget {
@@ -138,11 +174,22 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   late AnimationController _modeAnim;
   late AnimationController _flyAnim;
   late AnimationController _wrapAnim;
+
+  /// Back-out and lap after a wrap, for [_lapIsland].
+  late AnimationController _lapAnim;
+  int? _lapIsland;
+  bool _lapBackedOut = false;
+  double _lapTurn = 0;
+  double _lapTilt = _kModelTilt;
+
+  /// Islands that already scored, so undoing and wrapping again adds nothing.
+  final Set<int> _scoredIslands = {};
+  late AnimationController _scorePop;
   _ViewMode _mode = _ViewMode.flat;
   Map<String, CraftV1> _crafts = const {};
   GridStep? _modelStep;
   FoldedModel? _modelCache;
-  List<FaceMark> _marks = const [];
+  List<Decal> _decals = const [];
   CameraPose? _flatPose;
 
   /// Orbit pose to return to when face focus ends, after the camera flew onto
@@ -184,10 +231,34 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   /// Placed pieces in order. Matching ones are wrapped; the rest lie loose.
   final List<PiecePlacement> _placements = [];
 
-  /// Sheet the placements were made from. A different sheet clears them.
-  PapercutSheet? _placedSheet;
+  /// Paper off the desk, by id: stowed in the inventory or on the model. The
+  /// sheet holds only desk paper, so tools never reach these.
+  final Map<String, PapercutPiece> _offDesk = {};
+
+  /// Inventory, in the order pieces were stowed.
+  final List<String> _stowed = [];
+  final List<_OffDesk> _undoOffDesk = [];
+
+  /// 0 while the desk paper is grey in 3D, 1 with it shown as paper.
+  late AnimationController _deskAnim;
+
+  /// Desk paper dragged in desk focus: its id, the plane point grabbed, and
+  /// its separation then.
+  String? _deskDragId;
+  Offset? _deskGrab;
+  Offset _deskGrabFrom = Offset.zero;
+
+  /// Desk paper is held over the inventory and would be stowed on release.
+  bool _overInventory = false;
+  final GlobalKey _inventoryKey = GlobalKey();
   int? _wrapIsland;
   bool _placeDragging = false;
+
+  /// The piece in hand shows its rotation ring while it is this one. Turns
+  /// are taken from [_gimbalFrom] while the paper is still at [_gimbalLast].
+  String? _gimbalPiece;
+  PiecePlacement? _gimbalFrom;
+  PiecePlacement? _gimbalLast;
   Offset? _placeGrab;
   Offset _placeGrabOffset = Offset.zero;
   DateTime? _lastTapTime;
@@ -389,7 +460,19 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     )..addListener(_onFlyTick);
     _wrapAnim = AnimationController(vsync: this, duration: _kWrapDuration)
       ..addStatusListener(_onWrapStatus);
+    _lapAnim =
+        AnimationController(
+            vsync: this,
+            duration: _kBackOutDuration + _kLapDuration,
+          )
+          ..addListener(_onLapTick)
+          ..addStatusListener(_onLapStatus);
+    _scorePop = AnimationController(vsync: this, duration: _kScorePopDuration);
     _preselectTicker = createTicker(_onPreselectTick);
+    _deskAnim = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+    );
     _loadStep(0, _blueprint);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -428,9 +511,12 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _preselectTicker.dispose();
     _preselectFill.dispose();
     _dropShown.dispose();
+    _deskAnim.dispose();
     _modeAnim.dispose();
     _flyAnim.dispose();
     _wrapAnim.dispose();
+    _lapAnim.dispose();
+    _scorePop.dispose();
     _focusAnim.dispose();
     _flightAnim.dispose();
     _rollNudge.dispose();
@@ -1146,6 +1232,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     setState(() {
       _blueprint = _blueprint.copyWith(steps: steps);
       _sheet = _freshSheet(origin);
+      _clearOffDesk();
       _march = null;
       _marchBase = null;
       _bladePieceId = null;
@@ -2213,6 +2300,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     setState(() {
       _blueprint = _blueprint.copyWith(steps: steps);
       _sheet = _freshSheet(_step);
+      _clearOffDesk();
       _march = null;
       _marchBase = null;
       _bladePieceId = null;
@@ -2240,11 +2328,32 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _undo.add(_sheet.clone());
     _undoProgress.add(_progress);
     _undoLiberated.add({..._liberated});
+    _undoOffDesk.add(
+      _OffDesk(
+        pieces: {..._offDesk},
+        stowed: [..._stowed],
+        placements: [..._placements, ?_placing],
+      ),
+    );
     if (_undo.length > 40) {
       _undo.removeAt(0);
       _undoProgress.removeAt(0);
       if (_undoLiberated.isNotEmpty) _undoLiberated.removeAt(0);
+      if (_undoOffDesk.isNotEmpty) _undoOffDesk.removeAt(0);
     }
+  }
+
+  /// Paper leaves the stores for the inventory and the model. The sheet is
+  /// reset alongside.
+  void _clearOffDesk() {
+    _offDesk.clear();
+    _stowed.clear();
+    _placements.clear();
+    _placing = null;
+    _dropping = null;
+    _wrapIsland = null;
+    _undoOffDesk.clear();
+    _scoredIslands.clear();
   }
 
   void _undoLast() {
@@ -2256,6 +2365,20 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _stopTally();
     setState(() {
       _sheet = _undo.removeLast();
+      if (_undoOffDesk.isNotEmpty) {
+        final off = _undoOffDesk.removeLast();
+        _offDesk
+          ..clear()
+          ..addAll(off.pieces);
+        _stowed
+          ..clear()
+          ..addAll(off.stowed);
+        _placements
+          ..clear()
+          ..addAll(off.placements);
+        _placing = null;
+        _wrapIsland = null;
+      }
       if (_undoProgress.isNotEmpty) _progress = _undoProgress.removeLast();
       _march = null;
       _marchBase = null;
@@ -2513,13 +2636,43 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     final craft = _crafts[link.id];
     if (craft == null) return null;
     _modelStep = _step;
-    _modelCache = foldedModelFromCraft(craft, link.step, _step);
-    _marks = _modelCache == null ? const [] : faceMarks(_modelCache!);
+    final built = foldedModelFromCraft(craft, link.step, _step);
+    _modelCache = built == null ? null : _floatOverDesk(built);
+    _decals = _modelCache == null ? const [] : faceDecals(_modelCache!);
     return _modelCache;
   }
 
+  /// The model hovers above the middle of the blueprint's paper, clear of
+  /// the desk by about half its size.
+  FoldedModel _floatOverDesk(FoldedModel model) {
+    final middle = _step.paper.center;
+    final bounds = model.bounds;
+    final size = bounds.max - bounds.min;
+    final gap = math.max(_step.gridSpacing * 2, size.z * 0.5);
+    return model.moved(
+      Vector3(
+        middle.dx - model.center.x,
+        middle.dy - model.center.y,
+        gap - bounds.min.z,
+      ),
+    );
+  }
+
+  /// The desk in 3D: the blueprint's paper and every desk piece, with a
+  /// margin.
+  Rect get _deskRect {
+    var rect = _step.paper;
+    for (final piece in _sheet.pieces) {
+      if (piece.vertices.isEmpty) continue;
+      rect = rect.expandToInclude(
+        pointBounds(piece.vertices).shift(piece.separation),
+      );
+    }
+    return rect.inflate(_step.gridSpacing * 2);
+  }
+
   void _toggleMode() {
-    if (_modeAnim.isAnimating || _flyAnim.isAnimating) return;
+    if (_modeAnim.isAnimating || _flyAnim.isAnimating || _lapping) return;
     if (_inModel) {
       _leaveFocus(fly: false);
       _camera.beginToggle();
@@ -2546,11 +2699,6 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     if (_foldingMode) {
       _foldSigned = 0;
       _releaseFoldingMode();
-    }
-    if (!identical(_placedSheet, _sheet)) {
-      _placements.clear();
-      _placing = null;
-      _placedSheet = _sheet;
     }
     _flatPose = _camera.pose;
     _camera.beginToggle();
@@ -2607,6 +2755,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     if (_modeAnim.isAnimating) _modeAnim.stop();
     if (_flyAnim.isAnimating) _flyAnim.stop();
     if (_wrapAnim.isAnimating) _wrapAnim.stop();
+    _stopLap();
     if (_inModel || !_camera.targetFlat) {
       _camera.beginToggle();
       _camera.setBlend(1);
@@ -2626,10 +2775,10 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _focusFace = null;
     _orbitPose = null;
     _flatPose = null;
-    _placing = null;
-    _placements.clear();
-    _placedSheet = null;
-    _wrapIsland = null;
+    _clearOffDesk();
+    _deskAnim.value = 0;
+    _deskDragId = null;
+    _overInventory = false;
     _placeDragging = false;
     _lastTapTime = null;
     _settleTimer?.cancel();
@@ -2644,7 +2793,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
 
   void _frameModel() {
     final model = _model;
-    if (model == null || _modeAnim.isAnimating) return;
+    if (model == null || _modeAnim.isAnimating || _lapping) return;
     _leaveFocus(fly: false);
     _camera.beginFly(_modelFraming(model));
     _flyAnim.forward(from: 0);
@@ -2680,7 +2829,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   /// The reticle's face. Focus keeps the focused face preselected.
   void _updatePreselect() {
     final model = _model;
-    if (!_inModel || model == null) {
+    if (!_inModel || model == null || _lapping) {
       _setPreselect(null);
       return;
     }
@@ -2688,10 +2837,36 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       _setPreselect(_focusFace);
       return;
     }
-    final ray = _camera.camera.unprojectRay(_crosshair, _viewport);
-    _setPreselect(
-      ray == null ? null : pickFace(model, ray.origin, ray.direction)?.face,
-    );
+    _setPreselect(_targetAt(model, _crosshair));
+  }
+
+  /// The model face or the desk nearest along the ray through [screen].
+  int? _targetAt(FoldedModel model, Offset screen) {
+    final ray = _camera.camera.unprojectRay(screen, _viewport);
+    if (ray == null) return null;
+    final face = pickFace(model, ray.origin, ray.direction);
+    final desk = _planeHit(CraftPlane.sheet, screen);
+    final onDesk = desk != null && _deskRect.contains(desk.at);
+    if (face == null) return onDesk ? _kDesk : null;
+    if (onDesk && desk.distance < face.distance) return _kDesk;
+    return face.face;
+  }
+
+  /// Desk paper under [screen], topmost first, unless a model face is in
+  /// front of it.
+  int? _deskPieceAt(FoldedModel model, Offset screen) {
+    final hit = _planeHit(CraftPlane.sheet, screen);
+    if (hit == null) return null;
+    final ray = _camera.camera.unprojectRay(screen, _viewport);
+    final face = ray == null
+        ? null
+        : pickFace(model, ray.origin, ray.direction);
+    if (face != null && face.distance < hit.distance) return null;
+    for (var i = _sheet.pieces.length - 1; i >= 0; i--) {
+      final piece = _sheet.pieces[i];
+      if (ownsPoint(piece.vertices, hit.at - piece.separation)) return i;
+    }
+    return null;
   }
 
   void _setPreselect(int? face) {
@@ -2730,14 +2905,29 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _commitPlacing();
     setState(() => _focusFace = face);
     _setPreselect(face);
+    _syncDesk();
     unawaited(fmHapticSmallClick());
   }
 
+  /// Desk paper shows as paper while the desk is focused, grey otherwise.
+  void _syncDesk() {
+    if (_focusFace == _kDesk) {
+      _deskAnim.forward();
+    } else {
+      _deskAnim.reverse();
+    }
+  }
+
   /// Flies the camera square onto the focused face. Leaving focus flies back.
+  /// On the desk this is the 2D crafting view.
   void _focusCamera() {
     final model = _model;
     final face = _focusFace;
     if (model == null || face == null || _modeAnim.isAnimating) return;
+    if (face == _kDesk) {
+      _toggleMode();
+      return;
+    }
     _orbitPose ??= _camera.pose;
     final modelFace = model.faces[face];
     final middle = modelFace.centroid;
@@ -2764,7 +2954,9 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     final back = _orbitPose;
     _orbitPose = null;
     _planeGrab = null;
+    _deskDragId = null;
     setState(() => _focusFace = null);
+    _syncDesk();
     _updatePreselect();
     if (!fly || back == null) return;
     _camera.beginFly(back);
@@ -2772,11 +2964,58 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   }
 
   PapercutPiece? _pieceById(String id) {
+    final off = _offDesk[id];
+    if (off != null) return off;
     for (final piece in _sheet.pieces) {
       if (piece.id == id) return piece;
     }
     return null;
   }
+
+  /// Moves desk paper into the inventory. [undo] is false when the drag that
+  /// brought it here already saved an undo step.
+  void _stow(String id, {bool undo = true}) {
+    final index = _sheet.pieces.indexWhere((piece) => piece.id == id);
+    if (index < 0 || _locked || _advancing) return;
+    if (undo) _pushUndo();
+    final piece = _sheet.pieces[index];
+    setState(() {
+      _sheet = _sheet.copyWith(pieces: [..._sheet.pieces]..removeAt(index));
+      _offDesk[id] = piece.copyWith(separation: Offset.zero);
+      _stowed.add(id);
+      if (_picked != null && _picked! >= _sheet.pieces.length) _picked = null;
+      _stacks.adopt(_picked);
+    });
+    unawaited(fmHapticSmallClick());
+  }
+
+  /// Lays stowed paper back on the desk, nudged by [separation].
+  void _unstow(String id, Offset separation) {
+    final piece = _offDesk[id];
+    if (piece == null || !_stowed.contains(id) || _locked || _advancing) {
+      return;
+    }
+    _pushUndo();
+    setState(() {
+      _offDesk.remove(id);
+      _stowed.remove(id);
+      _sheet = _sheet.copyWith(
+        pieces: [
+          ..._sheet.pieces,
+          piece.copyWith(separation: separation),
+        ],
+      );
+    });
+    unawaited(fmHapticSmallClick());
+  }
+
+  /// Separation that puts [piece]'s middle on the desk point [at].
+  Offset _deskNudge(PapercutPiece piece, Offset at) =>
+      _snapOffset(at - pointBounds(piece.vertices).center);
+
+  /// Plane of a model face, or the world sheet for the desk.
+  CraftPlane _planeOf(FoldedModel model, int target) =>
+      target == _kDesk ? CraftPlane.sheet : _facePlane(model, target);
 
   bool _matches(PiecePlacement placement) {
     final model = _model;
@@ -2801,36 +3040,50 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     return _wrapped.length == model.islands.length;
   }
 
-  /// Paper the inventory offers: every piece not already wrapped.
-  List<PapercutPiece> get _inventory {
-    final wrappedIds = {
-      for (final placement in _wrapped.values) placement.pieceId,
-    };
-    return [
-      for (final piece in _sheet.pieces)
-        if (!wrappedIds.contains(piece.id) && piece.vertices.length >= 3) piece,
-    ];
-  }
+  /// Paper the inventory offers: what was stowed and is not in hand.
+  List<PapercutPiece> get _inventory => [
+    for (final id in _stowed)
+      if (_offDesk[id] case final piece?)
+        if (id != _placing?.pieceId && piece.vertices.length >= 3) piece,
+  ];
 
   /// The face that takes paper: the focused one, else the preselected one.
   int? get _targetFace => _focusFace ?? _preselect;
 
-  /// Focus keeps the inventory open. Otherwise it opens once the camera
-  /// rests on a preselected face, and stays open through a drop.
-  bool get _inventoryShown =>
-      _inModel &&
-      !_modeAnim.isAnimating &&
-      (_focusFace != null ||
-          _dropping != null ||
-          (_settled && _preselect != null));
+  /// The inventory is out while paper can be moved into or out of it: with
+  /// the select tool on the flat desk and in desk focus. Over a model face it
+  /// offers stowed paper in focus, or once the camera rests on the face, and
+  /// stays out through a drop.
+  bool get _inventoryShown {
+    if (_model == null || _modeAnim.isAnimating || _lapping) return false;
+    if (!_inModel) return _tool == _GridTool.select;
+    if (_focusFace == _kDesk || _dropping != null) return true;
+    if (_inventory.isEmpty) return false;
+    return _focusFace != null || (_settled && _preselect != null);
+  }
+
+  /// Where paper from the inventory goes: the desk on the flat view, else the
+  /// focused or preselected target.
+  int? get _paperTarget => _inModel ? _targetFace : _kDesk;
 
   void _pickPiece(String id) {
     final model = _model;
-    final face = _targetFace;
+    final target = _paperTarget;
     final piece = _pieceById(id);
-    if (model == null || face == null || piece == null) return;
+    if (model == null || target == null || piece == null) return;
+    if (target == _kDesk) {
+      final at = _inModel
+          ? _planeHit(CraftPlane.sheet, _crosshair)?.at
+          : _aimWorld();
+      final spot = at != null && _deskRect.contains(at)
+          ? at
+          : _step.paper.center;
+      _unstow(id, _deskNudge(piece, spot));
+      if (_inModel) _enterFocus(_kDesk);
+      return;
+    }
     if (_placing?.pieceId == id) return;
-    _hold(face, startPlacement(piece, face, model, _step.gridSpacing));
+    _hold(target, startPlacement(piece, target, model, _step.gridSpacing));
   }
 
   /// Focuses [face] with [placement] in hand.
@@ -2838,20 +3091,37 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _enterFocus(face);
     _commitPlacing();
     _placements.removeWhere((laid) => laid.pieceId == placement.pieceId);
+    _stowed.remove(placement.pieceId);
     setState(() => _placing = placement);
     _settlePlacing();
   }
 
   /// Where a dragged inventory piece would land with its middle at [global].
+  /// On the desk the offset is the piece's separation.
   PiecePlacement? _dropAt(String id, Offset global) {
     final model = _model;
-    final face = _targetFace;
+    final face = _paperTarget;
     final piece = _pieceById(id);
     final box = _dropKey.currentContext?.findRenderObject();
     if (model == null || face == null || piece == null || box is! RenderBox) {
       return null;
     }
-    final hit = _planeHit(_facePlane(model, face), box.globalToLocal(global));
+    final local = box.globalToLocal(global);
+    if (face == _kDesk) {
+      final at = _inModel
+          ? _planeHit(CraftPlane.sheet, local)?.at
+          : _camera.planePoint(local, _viewport);
+      if (at == null) return null;
+      if (_inModel && !_deskRect.inflate(_step.gridSpacing * 4).contains(at)) {
+        return null;
+      }
+      return PiecePlacement(
+        pieceId: id,
+        face: _kDesk,
+        offset: _deskNudge(piece, at),
+      );
+    }
+    final hit = _planeHit(_facePlane(model, face), local);
     if (hit == null) return null;
     final modelFace = model.faces[face];
     if ((hit.at - modelFace.centroid).distance > model.radius * 3) return null;
@@ -2881,7 +3151,28 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _dropShown.value = false;
     setState(() => _dropping = null);
     if (placement == null) return;
+    if (placement.face == _kDesk) {
+      _unstow(placement.pieceId, placement.offset);
+      if (_inModel) _enterFocus(_kDesk);
+      return;
+    }
     _hold(placement.face, placement);
+  }
+
+  /// [screen] is over the inventory column, give or take a finger.
+  bool _overInventoryAt(Offset screen) {
+    if (!_inventoryShown) return false;
+    final column = _inventoryKey.currentContext?.findRenderObject();
+    final canvas = _dropKey.currentContext?.findRenderObject();
+    if (column is! RenderBox || canvas is! RenderBox) return false;
+    if (!column.hasSize || column.size.isEmpty) return false;
+    final rect = column.localToGlobal(Offset.zero) & column.size;
+    return rect.inflate(16).contains(canvas.localToGlobal(screen));
+  }
+
+  void _setOverInventory(bool over) {
+    if (over == _overInventory) return;
+    setState(() => _overInventory = over);
   }
 
   /// Plane coordinates under [screen] and the ray distance to them, in front
@@ -2916,8 +3207,9 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   bool _onFocusedWork(FoldedModel model, Offset screen) {
     final face = _focusFace;
     if (face == null) return false;
-    final hit = _planeHit(_facePlane(model, face), screen);
+    final hit = _planeHit(_planeOf(model, face), screen);
     if (hit == null) return false;
+    if (face == _kDesk) return _deskRect.contains(hit.at);
     if (ownsPoint(model.faces[face].outline, hit.at)) return true;
     final placing = _placing;
     final piece = placing == null ? null : _pieceById(placing.pieceId);
@@ -2951,36 +3243,251 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     unawaited(fmHapticSmallClick());
   }
 
-  void _turnPlacing(int direction) {
+  /// The paper's middle, on the half grid so a quarter turn stays on cells.
+  Offset _turnPivot(PapercutPiece placed) =>
+      snapToGrid(pointBounds(placed.vertices).center * 2, _step.gridSpacing) /
+      2;
+
+  /// Turns the piece in hand to [turns] quarter turns about its middle.
+  /// Every turn is taken from where the ring started, so turning back puts
+  /// the paper exactly where it was; sliding the paper starts afresh.
+  void _turnPlacingTo(int turns) {
     final placing = _placing;
-    final model = _model;
-    if (placing == null || model == null) return;
-    final pivot =
-        snapToGrid(model.faces[placing.face].centroid * 2, _step.gridSpacing) /
-        2;
-    setState(() {
-      _placing = placing.turned(direction, pivot, _step.gridSpacing);
-    });
+    final piece = placing == null ? null : _pieceById(placing.pieceId);
+    if (placing == null || piece == null) return;
+    var from = _gimbalFrom;
+    if (from == null || placing != _gimbalLast) {
+      from = placing;
+      _gimbalFrom = from;
+    }
+    final steps = (turns - from.turns) % 4;
+    final pivot = _turnPivot(placedPiece(piece, from));
+    final next = PiecePlacement(
+      pieceId: from.pieceId,
+      face: from.face,
+      offset: snapToGrid(
+        turn(from.offset - pivot, steps) + pivot,
+        _step.gridSpacing,
+      ),
+      quarterTurns: (from.quarterTurns + steps) % 4,
+    );
+    if (next == placing) return;
+    _gimbalLast = next;
+    setState(() => _placing = next);
+    unawaited(fmHapticSmallClick());
     _settlePlacing();
+  }
+
+  /// On the piece in hand: a rotate icon, or once tapped, a ring around the
+  /// paper that turns it by quarter turns as it is dragged.
+  Widget? _placeGimbal() {
+    final model = _model;
+    final placing = _placing;
+    final face = _focusFace;
+    if (!_inModel || model == null || placing == null || face == null) {
+      return null;
+    }
+    if (face == _kDesk || placing.face != face || _placeDragging) return null;
+    if (_flyAnim.isAnimating || _modeAnim.isAnimating || _lapping) return null;
+    final piece = _pieceById(placing.pieceId);
+    if (piece == null) return null;
+    final placed = placedPiece(piece, placing);
+    final plane = _facePlane(
+      model,
+      face,
+    ).lifted(model.outwardSides[face] * _kPaperLift);
+    Offset? screen(Offset point) =>
+        _camera.camera.projectToScreen(plane.world(point), _viewport);
+    final pivot = _turnPivot(placed);
+    final center = screen(pivot);
+    final alongX = screen(pivot + const Offset(1, 0));
+    final alongY = screen(pivot + const Offset(0, 1));
+    if (center == null || alongX == null || alongY == null) return null;
+    final corners = [for (final point in placed.vertices) ?screen(point)];
+    if (corners.isEmpty) return null;
+    final safe = Rect.fromLTRB(
+      _kGimbalInset.left,
+      _kGimbalInset.top,
+      _viewport.width - _kGimbalInset.right - (_inventoryShown ? 132 : 0),
+      _viewport.height - _kGimbalInset.bottom,
+    );
+    if (safe.width < 80 || safe.height < 80) return null;
+    var reach = 0.0;
+    for (final corner in corners) {
+      reach = math.max(reach, (corner - center).distance);
+    }
+    if (_gimbalPiece == placing.pieceId) {
+      final ex = alongX - center;
+      final ey = alongY - center;
+      final radius = math.min(
+        (reach + 18).clamp(56.0, 220.0),
+        math.min(safe.width, safe.height) / 2 - 36,
+      );
+      return RotationGizmo(
+        key: const Key('grid-place-gimbal'),
+        center: Offset(
+          center.dx.clamp(safe.left + radius, safe.right - radius),
+          center.dy.clamp(safe.top + radius, safe.bottom - radius),
+        ),
+        rotationDeg: placing.turns * 90.0,
+        objectName: 'Paper',
+        screenRefAngle: math.atan2(ex.dy, ex.dx),
+        rotationSign: ex.dx * ey.dy - ex.dy * ey.dx < 0 ? -1 : 1,
+        ringRadius: radius,
+        snapDegrees: 90,
+        tickCount: 4,
+        onRotationChanged: (deg) => _turnPlacingTo((deg / 90).round() % 4),
+        onDismiss: () => setState(() => _gimbalPiece = null),
+      );
+    }
+    const icon = 34.0;
+    final box = pointBounds(corners);
+    final visible = box.intersect(safe);
+    final Offset at;
+    if (visible.width <= 0 || visible.height <= 0) {
+      return null;
+    } else if (visible == box) {
+      at = Offset(box.right + 6, box.top - icon - 6);
+    } else {
+      at = Offset(visible.right - icon - 6, visible.top + 6);
+    }
+    final clamped = Offset(
+      at.dx.clamp(safe.left, safe.right - icon),
+      at.dy.clamp(safe.top, safe.bottom - icon),
+    );
+    return Stack(
+      children: [
+        Positioned(
+          left: clamped.dx,
+          top: clamped.dy,
+          child: GestureDetector(
+            key: const Key('grid-place-rotate'),
+            onTap: () => setState(() => _gimbalPiece = placing.pieceId),
+            child: Container(
+              width: icon,
+              height: icon,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.black.withValues(alpha: 0.8),
+                border: Border.all(color: Colors.white54, width: 1.5),
+              ),
+              child: const Icon(
+                Icons.rotate_right,
+                color: Colors.white,
+                size: 20,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   void _onWrapStatus(AnimationStatus status) {
     if (status != AnimationStatus.completed) return;
+    final island = _wrapIsland;
     setState(() => _wrapIsland = null);
     if (_modelComplete) unawaited(fmHapticSmallClick());
+    if (island != null) _beginLap(island);
   }
 
+  bool get _lapping => _lapAnim.isAnimating;
+
+  /// Backs out past the model framing, along the current view with its tilt
+  /// held in range, then turns once around the model.
+  void _beginLap(int island) {
+    final model = _model;
+    if (model == null || !_inModel || _modeAnim.isAnimating) return;
+    if (_flyAnim.isAnimating) _flyAnim.stop();
+    _leaveFocus(fly: false);
+    final n = _camera.viewDirection;
+    _lapTurn = math.atan2(n.y, n.x);
+    _lapTilt = math
+        .asin(n.z.clamp(-1.0, 1.0))
+        .clamp(_kLapTiltMin, _kLapTiltMax);
+    final framing = _modelFraming(model);
+    _camera.beginFly(
+      CameraPose(
+        lookAt: framing.lookAt,
+        lookAtZ: framing.lookAtZ,
+        halfHeight: math.max(
+          framing.halfHeight * _kBackOutMargin,
+          _camera.framedHalfHeightMm,
+        ),
+      ).withAngles(
+        _camera.anglesAlong(
+          _turntableDirection(_lapTurn, _lapTilt),
+          up: _modelUp,
+        ),
+      ),
+    );
+    _lapIsland = island;
+    _lapBackedOut = false;
+    _setPreselect(null);
+    _lapAnim.forward(from: 0);
+  }
+
+  void _onLapTick() {
+    final split =
+        _kBackOutDuration.inMicroseconds /
+        (_kBackOutDuration + _kLapDuration).inMicroseconds;
+    final t = _lapAnim.value;
+    if (t < split) {
+      _camera.setFly(Curves.easeOutCubic.transform(t / split));
+      return;
+    }
+    if (!_lapBackedOut) {
+      _camera.setFly(1);
+      _lapBackedOut = true;
+    }
+    final s = Curves.easeInOutCubic.transform((t - split) / (1 - split));
+    _camera.orbitTo(
+      _turntableDirection(_lapTurn + 2 * math.pi * s, _lapTilt),
+      up: _modelUp,
+    );
+  }
+
+  void _onLapStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    final island = _lapIsland;
+    _lapIsland = null;
+    if (!mounted) return;
+    _updatePreselect();
+    if (island == null || !_scoredIslands.add(island)) return;
+    setState(() => _collectionScore += _kWrapPoints);
+    _scorePop.forward(from: 0);
+    unawaited(fmHapticSmallClick());
+  }
+
+  void _stopLap() {
+    if (_lapAnim.isAnimating) _lapAnim.stop();
+    _lapIsland = null;
+  }
+
+  /// Takes back the piece in hand or the last laid piece, into the inventory.
   void _undoModel() {
-    if (_placing != null) {
-      setState(() => _placing = null);
+    final placing = _placing;
+    if (placing != null) {
+      setState(() {
+        _placing = null;
+        _restow(placing.pieceId);
+      });
       return;
     }
     if (_placements.isEmpty) return;
     if (_wrapAnim.isAnimating) _wrapAnim.stop();
+    if (_lapping) {
+      _stopLap();
+      _updatePreselect();
+    }
     setState(() {
-      _placements.removeLast();
+      _restow(_placements.removeLast().pieceId);
       _wrapIsland = null;
     });
+  }
+
+  void _restow(String id) {
+    if (_offDesk.containsKey(id) && !_stowed.contains(id)) _stowed.add(id);
   }
 
   void _modelScaleStart(ScaleStartDetails details) {
@@ -2990,13 +3497,27 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _gestureScale = 1;
     _placeDragging = false;
     _planeGrab = null;
+    _deskDragId = null;
+    _dragNudged = false;
     final model = _model;
     final face = _focusFace;
     if (model == null || face == null) return;
-    if (details.pointerCount != 1 || _modeAnim.isAnimating) return;
+    if (details.pointerCount != 1 || _modeAnim.isAnimating || _lapping) return;
     final down = _pointerDownAt ?? details.localFocalPoint;
-    final grab = _planeHit(_facePlane(model, face), down)?.at;
+    final grab = _planeHit(_planeOf(model, face), down)?.at;
     if (grab == null) return;
+    if (face == _kDesk) {
+      final index = _deskPieceAt(model, down);
+      if (index == null) {
+        _planeGrab = grab;
+        return;
+      }
+      final piece = _sheet.pieces[index];
+      _deskDragId = piece.id;
+      _deskGrab = grab;
+      _deskGrabFrom = piece.separation;
+      return;
+    }
     var placing = _placing;
     final piece = placing == null ? null : _pieceById(placing.pieceId);
     final onHand =
@@ -3024,10 +3545,12 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _lastFocal = local;
     _moved += delta.distance;
     final model = _model;
-    if (model == null || _modeAnim.isAnimating) return;
+    if (model == null || _modeAnim.isAnimating || _lapping) return;
     if (details.pointerCount >= 2) {
       _placeDragging = false;
       _planeGrab = null;
+      _deskDragId = null;
+      _setOverInventory(false);
       if (_gestureScale > 0) {
         _camera.zoomByScale(details.scale / _gestureScale);
       }
@@ -3037,13 +3560,17 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
           delta,
           _viewport,
           anchor: model.center,
-          limit: model.radius * 2,
+          limit: _panLimit(model),
         );
       }
       return;
     }
     if (_placeDragging) {
       _dragPlacing(model, local);
+      return;
+    }
+    if (_deskDragId != null) {
+      _dragDesk(local);
       return;
     }
     if (_flyAnim.isAnimating) return;
@@ -3056,16 +3583,44 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _turntable(-delta.dx * 0.008, delta.dy * 0.008);
   }
 
+  /// How far the look-at point may wander from the model: past the model and
+  /// across the desk.
+  double _panLimit(FoldedModel model) =>
+      math.max(model.radius * 2, _deskRect.longestSide);
+
   /// Slides the camera along [face] so [grab] stays under the finger.
   void _panOnPlane(FoldedModel model, int face, Offset grab, Offset screen) {
-    final plane = _facePlane(model, face);
+    final plane = _planeOf(model, face);
     final at = _planeHit(plane, screen)?.at;
     if (at == null) return;
     _camera.shiftTarget(
       plane.world(grab) - plane.world(at),
       anchor: model.center,
-      limit: model.radius * 2,
+      limit: _panLimit(model),
     );
+  }
+
+  /// Slides desk paper in desk focus, snapped like the flat view's drag.
+  void _dragDesk(Offset screen) {
+    final id = _deskDragId;
+    final grab = _deskGrab;
+    final at = _planeHit(CraftPlane.sheet, screen)?.at;
+    if (id == null || grab == null || at == null) return;
+    final index = _sheet.pieces.indexWhere((piece) => piece.id == id);
+    if (index < 0) return;
+    if (!_dragNudged) {
+      if (_moved < 6) return;
+      _pushUndo();
+      _dragNudged = true;
+    }
+    _setOverInventory(_overInventoryAt(screen));
+    final next = _snapOffset(_deskGrabFrom + (at - grab));
+    final piece = _sheet.pieces[index];
+    if (next == piece.separation) return;
+    final pieces = [..._sheet.pieces];
+    pieces[index] = piece.copyWith(separation: next);
+    setState(() => _sheet = _sheet.copyWith(pieces: pieces));
+    unawaited(fmHapticSmallClick());
   }
 
   void _dragPlacing(FoldedModel model, Offset screen) {
@@ -3089,11 +3644,20 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
 
   void _modelScaleEnd(ScaleEndDetails details) {
     final dragged = _placeDragging && _moved > 4;
-    _placeDragging = false;
+    if (_placeDragging) setState(() => _placeDragging = false);
     _placeGrab = null;
     _planeGrab = null;
+    final deskId = _deskDragId;
+    final stow = _overInventory && _dragNudged;
+    _deskDragId = null;
+    _setOverInventory(false);
     if (dragged) {
       _settlePlacing();
+      return;
+    }
+    if (deskId != null && _dragNudged) {
+      _dragNudged = false;
+      if (stow) _stow(deskId, undo: false);
       return;
     }
     if (_moved > 12 || details.pointerCount >= 2) return;
@@ -3116,50 +3680,63 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   }
 
   /// A tap on paper laid on the preselected face picks it up and focuses the
-  /// face.
+  /// face. On the preselected desk, a tap on desk paper focuses the desk.
   void _onModelTap(Offset screen) {
     final model = _model;
     final face = _targetFace;
-    if (model == null || face == null || _modeAnim.isAnimating) return;
+    if (model == null || face == null || _modeAnim.isAnimating || _lapping) {
+      return;
+    }
+    if (face == _kDesk) {
+      if (_focusFace == null && _deskPieceAt(model, screen) != null) {
+        _enterFocus(_kDesk);
+      }
+      return;
+    }
     final loose = _looseAt(model, face, screen);
     if (loose != null) _hold(face, loose);
   }
 
-  /// A double-tap off the focused face and its paper ends focus.
+  /// A double-tap on grey desk paper focuses the desk. Anywhere off the
+  /// focused face and its paper ends focus.
   void _onModelDoubleTap(Offset screen) {
     final model = _model;
-    if (model == null || _modeAnim.isAnimating) return;
+    if (model == null || _modeAnim.isAnimating || _lapping) return;
     if (_onFocusedWork(model, screen)) return;
+    if (_deskPieceAt(model, screen) != null) {
+      _enterFocus(_kDesk);
+      return;
+    }
     _leaveFocus();
   }
 
-  /// Sheet on the table in 3D: the paper not laid on the model.
+  /// 1 with the desk paper drawn as paper, toward 0 as it greys in 3D.
+  double get _deskShown => math.max(1 - _modelness, _deskAnim.value);
+
+  /// Desk paper as drawn: grey and faint in 3D unless the desk is focused,
+  /// plus the inventory piece being dropped on it.
   PapercutSheet _tableSheet() {
-    if (_modeAnim.value <= 0) return _sheet;
-    final laid = {
-      for (final placement in _placements) placement.pieceId,
-      if (_placing != null) _placing!.pieceId,
-      if (_dropping != null) _dropping!.pieceId,
-    };
-    if (laid.isEmpty) return _sheet;
+    final drop = _dropping;
+    final dropped = drop == null || drop.face != _kDesk
+        ? null
+        : _offDesk[drop.pieceId]?.copyWith(separation: drop.offset);
+    final shown = _deskShown;
+    if (dropped == null && shown >= 1) return _sheet;
+    PapercutPiece tint(PapercutPiece piece) => shown >= 1
+        ? piece
+        : piece.copyWith(
+            color: Color.lerp(_kDeskGrey, piece.color, shown),
+            backColor: Color.lerp(_kDeskGrey, piece.backColor, shown),
+          );
     return _sheet.copyWith(
       pieces: [
-        for (final piece in _sheet.pieces)
-          if (!laid.contains(piece.id)) piece,
+        for (final piece in _sheet.pieces) tint(piece),
+        if (dropped != null) tint(dropped),
       ],
     );
   }
 
   ModelPainter _modelPainter(FoldedModel model) {
-    final ghostT = _modelness;
-    final ghostPoses = <int, Matrix4>{};
-    if (ghostT < 1) {
-      for (final island in model.islands) {
-        ghostPoses.addAll(
-          wrapPose(model, island.first, ghostT, from: Matrix4.identity()),
-        );
-      }
-    }
     final paperPoses = <int, Matrix4>{};
     final paperColors = <int, Color>{};
     final glow = <int, double>{};
@@ -3170,12 +3747,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       final t = wrapping
           ? Curves.easeInOutCubic.transform(_wrapAnim.value)
           : 1.0;
-      final poses = ghostT < 1
-          ? {
-              for (final face in model.islands[entry.key])
-                face: ghostPoses[face]!,
-            }
-          : wrapPose(model, placement.face, t);
+      final poses = wrapPose(model, placement.face, t);
       paperPoses.addAll(poses);
       for (final face in poses.keys) {
         paperColors[face] = piece?.color ?? kPapercutYellow;
@@ -3202,13 +3774,13 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     return ModelPainter(
       camera: _camera,
       model: model,
-      ghostPoses: ghostPoses,
-      ghostOpacity: math.min(1.0, ghostT * 1.6),
-      marks: _marks,
+      decals: _decals,
       paperPoses: paperPoses,
       paperColors: paperColors,
       loose: loose,
       highlight: _preselectFill.value,
+      desk: _deskRect,
+      deskHighlight: _preselectFill.value[_kDesk] ?? 0,
       glow: glow,
       complete: _modelComplete ? 0.55 + 0.45 * _flash.value : 0,
     );
@@ -3238,17 +3810,27 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       ring: [for (final point in piece.vertices) world(point)],
       color: piece.color,
       ink: ink,
+      plane: plane,
+      decals: placedDecals(_decalsOn(piece), placement),
     );
   }
+
+  /// Decals [piece] carries, in level coordinates.
+  List<Decal> _decalsOn(PapercutPiece piece) => [
+    for (final decal in _decals)
+      if (markOwner(decal.center, [piece]) != null) decal,
+  ];
 
   /// The face drawn like the crafting sheet, with the paper on it: the drop
   /// preview, else the piece in hand.
   (int, PiecePlacement?)? get _facePlacement {
     if (_flyAnim.isAnimating) return null;
     final dropping = _dropping;
-    if (dropping != null) return (dropping.face, dropping);
+    if (dropping != null && dropping.face != _kDesk) {
+      return (dropping.face, dropping);
+    }
     final face = _focusFace;
-    if (face == null) return null;
+    if (face == null || face == _kDesk) return null;
     return (face, _placing);
   }
 
@@ -3295,10 +3877,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       plane: plane,
       gridOpacity: 0.45,
       gridBounds: _faceGridBounds(model, face),
-      marks: placedMarks([
-        for (final mark in _marks)
-          if (ownsPoint(piece.vertices, mark.center)) mark,
-      ], placing),
+      decals: placedDecals(_decalsOn(piece), placing),
     );
   }
 
@@ -3331,7 +3910,10 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                   child: DragTarget<String>(
                     key: _dropKey,
                     onWillAcceptWithDetails: (_) =>
-                        _inModel && _targetFace != null,
+                        _model != null &&
+                        !_modeAnim.isAnimating &&
+                        !_lapping &&
+                        _paperTarget != null,
                     onMove: _onDropMove,
                     onLeave: _onDropLeave,
                     onAcceptWithDetails: _onDrop,
@@ -3373,6 +3955,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                               _fadeAnim,
                               _tallyAnim,
                               _modeAnim,
+                              _deskAnim,
                             ]),
                             builder: (context, _) {
                               final aim = _inModel || _modeAnim.value > 0
@@ -3387,9 +3970,15 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                                   camera: _camera,
                                   step: _step,
                                   sheet: _tableSheet(),
-                                  gridOpacity: 1 - modelness,
-                                  sheetOpacity: 1 - 0.72 * modelness,
-                                  marks: model == null ? const [] : _marks,
+                                  gridOpacity: math.max(
+                                    1 - modelness,
+                                    0.45 * _deskAnim.value,
+                                  ),
+                                  gridBounds: modelness > 0 ? _deskRect : null,
+                                  sheetOpacity:
+                                      _kDeskOpacity +
+                                      (1 - _kDeskOpacity) * _deskShown,
+                                  decals: model == null ? const [] : _decals,
                                   march: null,
                                   flash: _flash.value,
                                   rulerX: aim == null
@@ -3476,11 +4065,14 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                           _flash,
                           _preselectFill,
                         ]),
-                        builder: (context, _) => CustomPaint(
-                          key: const Key('grid-model-layer'),
-                          painter: _modelPainter(model),
-                          foregroundPainter: _facePainter(model),
-                          child: const SizedBox.expand(),
+                        builder: (context, _) => Opacity(
+                          opacity: _modelness,
+                          child: CustomPaint(
+                            key: const Key('grid-model-layer'),
+                            painter: _modelPainter(model),
+                            foregroundPainter: _facePainter(model),
+                            child: const SizedBox.expand(),
+                          ),
                         ),
                       ),
                     ),
@@ -3539,6 +4131,14 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                           ),
                         ),
                       ),
+                    ),
+                  ),
+                if (_inModel)
+                  Positioned.fill(
+                    child: AnimatedBuilder(
+                      animation: _camera,
+                      builder: (context, _) =>
+                          _placeGimbal() ?? const SizedBox.shrink(),
                     ),
                   ),
                 if (_tallying)
@@ -3634,35 +4234,39 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                       onCameraRotatesChanged: _setCameraRotates,
                     ),
                   ),
-                if (_inModel)
+                if (_model != null)
                   FmSafePositioned(
                     right: 8,
                     top: 210,
                     bottom: 72,
-                    child: Align(
-                      alignment: Alignment.topRight,
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 200),
-                        transitionBuilder: (child, animation) => FadeTransition(
-                          opacity: animation,
-                          child: SlideTransition(
-                            position: Tween(
-                              begin: const Offset(0.4, 0),
-                              end: Offset.zero,
-                            ).animate(animation),
-                            child: child,
-                          ),
-                        ),
-                        child: _inventoryShown
-                            ? PieceInventory(
-                                pieces: _inventory,
-                                step: _step,
-                                selectedId: _placing?.pieceId,
-                                onPick: _pickPiece,
-                                previewing: _dropShown,
-                              )
-                            : const SizedBox.shrink(),
+                    child: AnimatedSwitcher(
+                      key: _inventoryKey,
+                      duration: const Duration(milliseconds: 320),
+                      reverseDuration: const Duration(milliseconds: 220),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      layoutBuilder: (current, previous) => Stack(
+                        alignment: Alignment.centerRight,
+                        children: [...previous, ?current],
                       ),
+                      transitionBuilder: (child, animation) => SlideTransition(
+                        position: Tween(
+                          begin: const Offset(1.2, 0),
+                          end: Offset.zero,
+                        ).animate(animation),
+                        child: child,
+                      ),
+                      child: _inventoryShown
+                          ? PieceInventory(
+                              pieces: _inventory,
+                              step: _step,
+                              decals: _decals,
+                              selectedId: _placing?.pieceId,
+                              onPick: _pickPiece,
+                              previewing: _dropShown,
+                              accepting: _overInventory,
+                            )
+                          : const SizedBox.shrink(),
                     ),
                   ),
                 FmSafePositioned(
@@ -3811,10 +4415,18 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     }
     if (_failing) return;
     final nudged = _dragNudged;
+    final dragged = _dragPiece;
+    final stow = _overInventory;
+    _setOverInventory(false);
     _dragPiece = null;
     _dragNudged = false;
     _dragFree = null;
     _pointerDown = false;
+    if (stow && nudged && dragged != null && dragged < _sheet.pieces.length) {
+      _cancelFoldHold();
+      _stow(_sheet.pieces[dragged].id, undo: false);
+      return;
+    }
     _cancelFoldHold();
     final zoomed = _zoomed || details.pointerCount >= 2;
     if (zoomed) _zoomed = true;
@@ -3895,6 +4507,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     final start = _camera.planePoint(from, _viewport);
     final end = _camera.planePoint(screen, _viewport);
     _dragSample = screen;
+    _setOverInventory(_model != null && _overInventoryAt(screen));
     if (start == null || end == null) return;
     final world = end - start;
     if (world == Offset.zero) return;
@@ -4262,6 +4875,58 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     );
   }
 
+  /// Collection score. A wrap pops it and floats its points below.
+  Widget _score() {
+    return AnimatedBuilder(
+      animation: _scorePop,
+      builder: (context, _) {
+        final t = _scorePop.value;
+        final popping = _scorePop.isAnimating;
+        return Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            Transform.scale(
+              scale: popping ? 1 + 0.35 * math.sin(math.pi * t) : 1,
+              child: KeyedSubtree(
+                key: const Key('grid-score'),
+                child: Text(
+                  '$_collectionScore',
+                  key: _scoreKey,
+                  style: TextStyle(
+                    color: Color.lerp(
+                      Colors.white,
+                      kPreselectColor,
+                      popping ? math.sin(math.pi * t) : 0,
+                    ),
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+            if (popping)
+              Positioned(
+                top: 30 + 14 * t,
+                child: Opacity(
+                  opacity: (1 - t).clamp(0.0, 1.0),
+                  child: const Text(
+                    '+$_kWrapPoints',
+                    key: Key('grid-score-gain'),
+                    style: TextStyle(
+                      color: kPreselectColor,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _header() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -4277,15 +4942,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Text(
-                '$_collectionScore',
-                key: _scoreKey,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
+              child: _score(),
             ),
             Expanded(
               child: _libraryButton(
@@ -4518,6 +5175,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     }
 
     final focused = _focusFace != null;
+    final desk = _focusFace == _kDesk;
     final holding = _placing != null;
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -4527,10 +5185,14 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
           child: Text(
             _modelComplete
                 ? 'Every piece is wrapped.'
+                : desk
+                ? 'Slide paper on the desk, or drag it right to stow it.'
                 : focused
                 ? (holding
                       ? 'Slide and turn the paper until the face glows.'
                       : 'Drag a paper piece onto the face.')
+                : _preselect == _kDesk
+                ? 'Double-tap desk paper to work on the desk.'
                 : _preselect != null
                 ? 'Drag a paper piece onto the highlighted face.'
                 : 'Drag to orbit. Aim the reticle at a face.',
@@ -4549,21 +5211,9 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                 onPressed: _leaveFocus,
               ),
               button(
-                key: const Key('grid-place-turn-left'),
-                icon: Icons.rotate_left,
-                label: 'Turn',
-                onPressed: holding ? () => _turnPlacing(1) : null,
-              ),
-              button(
-                key: const Key('grid-place-turn-right'),
-                icon: Icons.rotate_right,
-                label: 'Turn',
-                onPressed: holding ? () => _turnPlacing(-1) : null,
-              ),
-              button(
                 key: const Key('grid-focus-camera'),
                 icon: Icons.center_focus_strong,
-                label: 'Focus camera',
+                label: desk ? 'Craft' : 'Focus camera',
                 onPressed: _focusCamera,
               ),
             ] else

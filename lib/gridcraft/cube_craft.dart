@@ -8,43 +8,143 @@ import '../papercut/craft_v1.dart';
 import '../papercut/fold_pose.dart';
 import 'blueprint.dart';
 import 'cube_blueprint.dart';
+import 'folded_model.dart' show stepIslands;
 
 const String kCubeCraftId = 'craft_Cube';
 const String kCubeCraftDirectory = 'assets/craft_viewer/$kCubeCraftId';
 
+const String kBoxStackCraftId = 'craft_BoxStack';
+const String kBoxStackCraftDirectory = 'assets/craft_viewer/$kBoxStackCraftId';
+const String kBoxStackLevelPath = 'levels/boxes/$kBoxStackId.json';
+
+/// How far the top box of the stack turns about the vertical, from above.
+const double kBoxStackTwist = 15 * math.pi / 180;
+
 /// Version-1 craft for [cubeBlueprint]. Every square is one face of a single
 /// island. The hub is the root. Each other face turns a quarter about the
 /// penciled edge it shares with its parent, toward +z.
-Map<String, dynamic> cubeCraftJson() {
-  final step = cubeBlueprint().steps.single;
+Map<String, dynamic> cubeCraftJson() =>
+    _netCraftJson(kCubeCraftId, 'Cube', cubeBlueprint().steps.single);
+
+String cubeCraftJsonText() => _jsonText(cubeCraftJson());
+
+/// Folded faces of [cubeCraftJson] as OBJ, one object per face.
+String cubeCraftObj() => _craftObj(kCubeCraftId, cubeCraftJson());
+
+/// [boxStackBlueprint] linked to its craft.
+GridBlueprint boxStackLevel() =>
+    boxStackBlueprint(craft: const CraftLink(id: kBoxStackCraftId, step: 1));
+
+/// Level file text, with each point and each ring's edge styles on one line.
+String boxStackLevelJsonText() => _jsonText(boxStackLevel().toJson())
+    .replaceAllMapped(
+      RegExp(r'\[\s+(-?[\d.]+),\s+(-?[\d.]+)\s+\]'),
+      (match) => '[${match[1]}, ${match[2]}]',
+    )
+    .replaceAllMapped(
+      RegExp(r'\[\s+("\w+"(?:,\s+"\w+")*)\s+\]'),
+      (match) => '[${match[1]!.split(RegExp(r',\s+')).join(', ')}]',
+    );
+
+/// Version-1 craft for [boxStackBlueprint]: one cube island per cross, folded
+/// as in [cubeCraftJson]. Each cube then stands on its side with its hub
+/// facing −y, centered over the sheet. The second sits on the first's lid,
+/// turned by [kBoxStackTwist].
+Map<String, dynamic> boxStackCraftJson() {
+  final step = boxStackBlueprint().steps.single;
+  final center = polygonBounds(step.polygons).center;
+  return _netCraftJson(
+    kBoxStackCraftId,
+    'BoxStack',
+    step,
+    rootPose: (island, hub) {
+      final middle = _center(step.polygons[hub]);
+      const half = kCubeFace / 2;
+      return Matrix4.translation(
+          Vector3(center.dx, center.dy, half + island * kCubeFace),
+        )
+        ..rotateZ(island * kBoxStackTwist)
+        ..multiply(_standOnSide)
+        ..translateByVector3(Vector3(-middle.dx, -middle.dy, -half));
+    },
+  );
+}
+
+String boxStackCraftJsonText() => _jsonText(boxStackCraftJson());
+
+String boxStackCraftObj() => _craftObj(kBoxStackCraftId, boxStackCraftJson());
+
+/// Carries x to −x, y to z, and z to y: a cube folded up from a hub on the
+/// sheet turns onto its side, the hub facing −y and reading upright.
+final Matrix4 _standOnSide = Matrix4(
+  -1,
+  0,
+  0,
+  0, //
+  0,
+  0,
+  1,
+  0, //
+  0,
+  1,
+  0,
+  0, //
+  0,
+  0,
+  0,
+  1,
+);
+
+/// One island per set of rings joined by penciled edges. Each island's hub,
+/// the ring with every edge penciled, is its root. [rootPose] places a root;
+/// null leaves it where it lies.
+Map<String, dynamic> _netCraftJson(
+  String craftId,
+  String layerName,
+  GridStep step, {
+  Matrix4? Function(int island, int hub)? rootPose,
+}) {
   final rings = step.polygons;
-  final hub = _hubIndex(step);
-  final parents = _foldTree(step, hub);
-  const pieceKey = '$kCubeCraftId#0';
+  final islands = [for (final set in stepIslands(step)) set.toList()..sort()]
+    ..sort((a, b) => a.first.compareTo(b.first));
+  final islandOf = <int, int>{};
+  final parents = List<int?>.filled(rings.length, null);
+  final roots = <int, Matrix4?>{};
+  for (var k = 0; k < islands.length; k++) {
+    final hub = _hubIndex(step, islands[k]);
+    for (final ring in islands[k]) {
+      islandOf[ring] = k;
+    }
+    final tree = _foldTree(step, islands[k], hub);
+    for (final entry in tree.entries) {
+      parents[entry.key] = entry.value;
+    }
+    roots[hub] = rootPose?.call(k, hub);
+  }
+  final pieceKey = '$craftId#0';
+  final layer = '$layerName::1';
 
   Map<String, dynamic> common(int ring) => {
     'flatmates.surfaceId': '$ring',
-    'flatmates.groupId': kCubeCraftId,
+    'flatmates.groupId': craftId,
     'flatmates.pieceKey': pieceKey,
-    'flatmates.islandId': '0',
+    'flatmates.islandId': '${islandOf[ring]}',
     'flatmates.craftingStep': '1',
-    'flatmates.layer': 'Cube::1',
+    'flatmates.layer': layer,
   };
 
   final faces = <Map<String, dynamic>>[];
   for (var i = 0; i < rings.length; i++) {
+    if (!islandOf.containsKey(i)) continue;
     final ring = rings[i];
     final parent = parents[i];
     final Map<String, dynamic> transform;
     if (parent == null) {
-      final identity = [
-        for (var r = 0; r < 4; r++)
-          for (var c = 0; c < 4; c++) r == c ? 1.0 : 0.0,
-      ];
+      final pose = roots[i] ?? Matrix4.identity();
       transform = {
         'type': 'movement',
-        'forward': identity,
-        'inverse': identity,
+        'forward': _rowMajor(Matrix4.inverted(pose)),
+        'inverse': _rowMajor(pose),
       };
     } else {
       final (a, b) = _sharedEdge(ring, rings[parent])!;
@@ -64,12 +164,14 @@ Map<String, dynamic> cubeCraftJson() {
         ],
       ],
       'transform': transform,
-      'id': _faceId(i),
+      'id': _faceId(islandOf[i]!, i),
     });
   }
 
   final edges = <Map<String, dynamic>>[];
   for (var i = 0; i < rings.length; i++) {
+    final island = islandOf[i];
+    if (island == null) continue;
     final ring = rings[i];
     final styles = step.edgeStyleOf(i);
     for (var e = 0; e < ring.length; e++) {
@@ -77,26 +179,26 @@ Map<String, dynamic> cubeCraftJson() {
       final b = ring[(e + 1) % ring.length];
       int? other;
       if (styles[e] == EdgeStyle.penciled) {
-        for (var j = 0; j < rings.length; j++) {
+        for (final j in islands[island]) {
           if (j != i && _hasEdge(rings[j], a, b)) other = j;
         }
         if (other == null || other < i) continue;
       }
       edges.add({
-        'flatmates.groupId': kCubeCraftId,
+        'flatmates.groupId': craftId,
         'flatmates.pieceKey': pieceKey,
-        'flatmates.islandId': '0',
+        'flatmates.islandId': '$island',
         'flatmates.role': other == null ? 'cut' : 'fold',
         'flatmates.surfaceIdA': '$i',
         if (other != null) 'flatmates.surfaceIdB': '$other',
         'flatmates.craftingStep': '1',
-        'flatmates.layer': 'Cube::1',
+        'flatmates.layer': layer,
         'curve': [
           [a.dx, a.dy, 0.0],
           [b.dx, b.dy, 0.0],
         ],
-        'faceA': _faceId(i),
-        if (other != null) 'faceB': _faceId(other),
+        'faceA': _faceId(island, i),
+        if (other != null) 'faceB': _faceId(island, other),
         'pieceIndex': 0,
       });
     }
@@ -104,7 +206,7 @@ Map<String, dynamic> cubeCraftJson() {
 
   return {
     'version': 1,
-    'craft': kCubeCraftId,
+    'craft': craftId,
     'foldedModel': 'folded.obj',
     'steps': [
       {'craftingStep': 1, 'model': 'folded.obj'},
@@ -114,16 +216,15 @@ Map<String, dynamic> cubeCraftJson() {
   };
 }
 
-String cubeCraftJsonText() =>
-    '${const JsonEncoder.withIndent('  ').convert(cubeCraftJson())}\n';
+String _jsonText(Map<String, dynamic> json) =>
+    '${const JsonEncoder.withIndent('  ').convert(json)}\n';
 
-/// Folded faces of [cubeCraftJson] as OBJ, one object per face.
-String cubeCraftObj() {
-  final craft = CraftV1.fromJson(cubeCraftJson());
+String _craftObj(String craftId, Map<String, dynamic> json) {
+  final craft = CraftV1.fromJson(json);
   final poses = applyFoldPose(craft, 1, 1);
   final out = StringBuffer()
     ..writeln('# Generated by tool/generate_cube_craft.dart')
-    ..writeln('# @craft: $kCubeCraftId');
+    ..writeln('# @craft: $craftId');
   var next = 1;
   for (final face in craft.faces) {
     final pose = poses[face.id] ?? Matrix4.identity();
@@ -142,6 +243,18 @@ String cubeCraftObj() {
   return out.toString();
 }
 
+/// Rhino order: row by row.
+List<double> _rowMajor(Matrix4 matrix) => [
+  for (var r = 0; r < 4; r++)
+    for (var c = 0; c < 4; c++) _clean(matrix.entry(r, c)),
+];
+
+double _clean(double value) {
+  final whole = value.roundToDouble();
+  if ((value - whole).abs() < 1e-12) return whole == 0 ? 0.0 : whole;
+  return value;
+}
+
 Offset _center(List<Offset> ring) {
   var sum = Offset.zero;
   for (final point in ring) {
@@ -150,26 +263,26 @@ Offset _center(List<Offset> ring) {
   return sum / ring.length.toDouble();
 }
 
-String _faceId(int ring) => 's1_p0_i0_f$ring';
+String _faceId(int island, int ring) => 's1_p0_i${island}_f$ring';
 
-int _hubIndex(GridStep step) {
-  for (var i = 0; i < step.polygons.length; i++) {
+int _hubIndex(GridStep step, List<int> island) {
+  for (final i in island) {
     if (step.edgeStyleOf(i).every((style) => style == EdgeStyle.penciled)) {
       return i;
     }
   }
-  return 0;
+  return island.first;
 }
 
-/// Breadth-first parents over shared penciled edges, rooted at [hub].
-List<int?> _foldTree(GridStep step, int hub) {
+/// Breadth-first parents over shared edges within [island], rooted at [hub].
+Map<int, int> _foldTree(GridStep step, List<int> island, int hub) {
   final rings = step.polygons;
-  final parents = List<int?>.filled(rings.length, null);
+  final parents = <int, int>{};
   final seen = {hub};
   final queue = [hub];
   while (queue.isNotEmpty) {
     final current = queue.removeAt(0);
-    for (var j = 0; j < rings.length; j++) {
+    for (final j in island) {
       if (seen.contains(j)) continue;
       if (_sharedEdge(rings[j], rings[current]) == null) continue;
       parents[j] = current;

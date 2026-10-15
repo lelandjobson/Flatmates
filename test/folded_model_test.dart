@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flatmates/gridcraft/blueprint.dart';
 import 'package:flatmates/gridcraft/cube_craft.dart';
@@ -170,6 +171,93 @@ void main() {
     final up = pickFace(model, Vector3(7.5, 7.5, -50), Vector3(0, 0, 1))!;
     expect(model.faces[up.face].ring, 0);
     expect(pickFace(model, Vector3(40, 40, 50), Vector3(0, 0, -1)), isNull);
+  });
+
+  test('decals letter each island root and the face opposite it', () {
+    final cube = _level('levels/cube/cube.json');
+    final model = foldedModelFromCraft(_craft(kCubeCraftId), 1, cube)!;
+    final decals = faceDecals(model);
+    expect([for (final decal in decals) decal.label], ['A', 'D']);
+    expect(model.faces[decals[0].face].ring, 0);
+    expect(model.faces[decals[1].face].ring, 3);
+    expect(decals[1].center, model.faces[decals[1].face].centroid);
+  });
+
+  test('the box stack assets are what the generator writes', () {
+    expect(
+      File('$kBoxStackCraftDirectory/craft.json').readAsStringSync(),
+      boxStackCraftJsonText(),
+    );
+    expect(
+      File('$kBoxStackCraftDirectory/folded.obj').readAsStringSync(),
+      boxStackCraftObj(),
+    );
+    expect(
+      File(kBoxStackLevelPath).readAsStringSync(),
+      boxStackLevelJsonText(),
+    );
+  });
+
+  test('the box stack is two cubes from one sheet, the top one turned', () {
+    final level = _level(kBoxStackLevelPath);
+    expect(level.craft?.id, kBoxStackCraftId);
+    expect(stepIslands(level), [
+      {0, 1, 2, 3, 4, 5},
+      {6, 7, 8, 9, 10, 11},
+    ]);
+    final model = foldedModelFromCraft(_craft(kBoxStackCraftId), 1, level)!;
+    expect(model.faces, hasLength(12));
+    expect(model.hinges, hasLength(10));
+    expect(model.islands, hasLength(2));
+    for (var i = 0; i < model.faces.length; i++) {
+      expect(model.faces[i].outline, level.polygons[model.faces[i].ring]);
+    }
+
+    final middle = polygonBounds(level.polygons).center;
+    for (var k = 0; k < 2; k++) {
+      final island = model.islands[k];
+      expect(
+        {for (final face in island) model.faces[face].ring},
+        {for (var r = 6 * k; r < 6 * k + 6; r++) r},
+      );
+      final corners = [
+        for (final face in island) ...model.faces[face].worldRing(),
+      ];
+      final zs = corners.map((point) => point.z).toList()..sort();
+      expect(zs.first, closeTo(5.0 * k, 1e-9));
+      expect(zs.last, closeTo(5.0 * k + 5, 1e-9));
+      var center = Vector3.zero();
+      for (final point in corners) {
+        center += point;
+      }
+      center = center / corners.length.toDouble();
+      expect(center.x, closeTo(middle.dx, 1e-9));
+      expect(center.y, closeTo(middle.dy, 1e-9));
+
+      final hub = island.first;
+      expect(model.faces[hub].ring, 6 * k);
+      final twist = k * kBoxStackTwist;
+      final out = model.outwardNormal(hub);
+      expect(out.x, closeTo(math.sin(twist), 1e-9));
+      expect(out.y, closeTo(-math.cos(twist), 1e-9));
+      expect(out.z, closeTo(0, 1e-9));
+      final up = model.faces[hub].toWorld.getRotation().transformed(
+        Vector3(0, 1, 0),
+      );
+      expect(up.z, closeTo(1, 1e-9));
+      for (final face in island) {
+        _expectMatrix(
+          wrapPose(model, hub, 1)[face]!,
+          model.faces[face].toWorld,
+        );
+      }
+    }
+
+    final decals = faceDecals(model);
+    expect(
+      [for (final decal in decals) model.faces[decal.face].ring],
+      [0, 3, 6, 9],
+    );
   });
 
   test('stepIslands joins pieces across shared penciled edges', () {

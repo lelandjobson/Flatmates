@@ -97,6 +97,25 @@ class FoldedModel {
           : -1.0,
   ];
 
+  /// The same model slid by [offset] in world space.
+  FoldedModel moved(Vector3 offset) {
+    final by = Matrix4.translation(offset);
+    return FoldedModel(
+      faces: [
+        for (final face in faces)
+          ModelFace(
+            id: face.id,
+            ring: face.ring,
+            island: face.island,
+            outline: face.outline,
+            toWorld: by * face.toWorld,
+          ),
+      ],
+      islands: islands,
+      hinges: hinges,
+    );
+  }
+
   Vector3 get center => (bounds.min + bounds.max) * 0.5;
 
   double get radius => (bounds.max - bounds.min).length * 0.5;
@@ -146,32 +165,58 @@ class FoldedModel {
   }
 }
 
-/// Letter and up arrow that tie a blueprint face to its model face. [center]
-/// and [up] are in level coordinates. [size] is the face's shorter side.
-class FaceMark {
-  const FaceMark({
+/// A label printed on paper. [center] and [up] are in level coordinates, and
+/// [size] is the shorter side of the blueprint face it sits on.
+///
+/// A decal belongs to the paper whose outline holds its center. It slides,
+/// turns, stows, and wraps with that paper, and with no paper under it, it
+/// is not drawn. It lies flat in the paper's plane and reads along [up], so
+/// it turns with the paper and the model rather than the screen. Model
+/// [face] shows it faintly as the place it wraps to.
+class Decal {
+  const Decal({
     required this.label,
     required this.center,
     this.up = const Offset(0, 1),
     required this.size,
+    required this.face,
   });
 
   final String label;
   final Offset center;
   final Offset up;
   final double size;
+  final int face;
 }
 
-/// One mark per model face, lettered A, B, C, ... in face order.
-List<FaceMark> faceMarks(FoldedModel model) {
-  return [
-    for (var i = 0; i < model.faces.length; i++)
-      FaceMark(
-        label: markLabel(i),
-        center: model.faces[i].centroid,
-        size: _shorterSide(model.faces[i].outline),
-      ),
-  ];
+/// Letters that tie each blueprint piece to the model: one on its island's
+/// root face, and one on the face most nearly opposite that, if any faces
+/// away from it. Letters follow face order, A, B, C, ...
+List<Decal> faceDecals(FoldedModel model) {
+  Decal decal(int face) => Decal(
+    label: markLabel(face),
+    center: model.faces[face].centroid,
+    size: _shorterSide(model.faces[face].outline),
+    face: face,
+  );
+  final decals = <Decal>[];
+  for (final island in model.islands) {
+    if (island.isEmpty) continue;
+    final root = island.first;
+    decals.add(decal(root));
+    final normal = model.outwardNormal(root);
+    int? opposite;
+    var best = -0.5;
+    for (final face in island.skip(1)) {
+      final dot = model.outwardNormal(face).dot(normal);
+      if (dot < best - 1e-9) {
+        best = dot;
+        opposite = face;
+      }
+    }
+    if (opposite != null) decals.add(decal(opposite));
+  }
+  return decals;
 }
 
 /// A, B, ... Z, AA, AB, ...

@@ -1174,12 +1174,16 @@ bool ownsPoint(List<Offset> ring, Offset point) {
   return _distanceToRing(point, ring) <= 1e-3;
 }
 
-/// Display shift for a mark at [point].
+/// Display shift for a mark at [point]. See [markOwner].
+Offset markSeparation(Offset point, List<PapercutPiece> pieces) =>
+    markOwner(point, pieces)?.separation ?? Offset.zero;
+
+/// The piece a mark at [point] belongs to, or null when no paper holds it.
 ///
 /// A mark follows the piece that contains it. On a shared edge it follows the
 /// inner piece: the sheet's hole gives that edge to the cut-out, and a tie
 /// between solid pieces goes to the smaller one.
-Offset markSeparation(Offset point, List<PapercutPiece> pieces) {
+PapercutPiece? markOwner(Offset point, List<PapercutPiece> pieces) {
   PapercutPiece? best;
   var bestArea = double.infinity;
   for (final piece in pieces) {
@@ -1190,7 +1194,7 @@ Offset markSeparation(Offset point, List<PapercutPiece> pieces) {
       bestArea = area;
     }
   }
-  return best?.separation ?? Offset.zero;
+  return best;
 }
 
 bool _pieceOwnsMark(PapercutPiece piece, Offset point) {

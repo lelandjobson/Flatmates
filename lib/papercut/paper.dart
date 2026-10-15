@@ -31,10 +31,10 @@ class PapercutPiece {
   /// Cut geometry stays in grid space; only drawing uses this.
   final Offset separation;
 
-  PapercutPiece copyWith({Offset? separation, Color? backColor}) {
+  PapercutPiece copyWith({Offset? separation, Color? color, Color? backColor}) {
     return PapercutPiece(
       id: id,
-      color: color,
+      color: color ?? this.color,
       backColor: backColor ?? this.backColor,
       vertices: vertices,
       holes: holes,

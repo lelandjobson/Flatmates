@@ -1,9 +1,11 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:vector_math/vector_math_64.dart' hide Colors;
 
 import '../papercut/camera.dart';
+import 'craft_plane.dart';
 import 'folded_model.dart';
 import 'painter.dart' show kCriterionMetColor;
 
@@ -13,20 +15,28 @@ const Color kBlueprintInk = Color(0xFF1565C0);
 /// Fill on the face under the reticle, ready to take paper.
 const Color kPreselectColor = Color(0xFFFF9F43);
 
+/// Ghost faces show their decals this faintly, as where paper wraps to.
+const double _kGhostDecalOpacity = 0.35;
+
 /// A placed paper piece that has not wrapped, already in world space.
+/// [decals] are in coordinates of [plane], the face it lies on.
 class LoosePaper {
   const LoosePaper({
     required this.ring,
     required this.color,
     this.ink = const [],
+    this.plane,
+    this.decals = const [],
   });
 
   final List<Vector3> ring;
   final Color color;
   final List<(Vector3, Vector3)> ink;
+  final CraftPlane? plane;
+  final List<Decal> decals;
 }
 
-/// The folded model: ghost faces, paper on them, marks, focus, and glows.
+/// The folded model: ghost faces, paper on them, decals, focus, and glows.
 /// Faces are drawn back to front.
 class ModelPainter extends CustomPainter {
   ModelPainter({
@@ -34,11 +44,13 @@ class ModelPainter extends CustomPainter {
     required this.model,
     this.ghostPoses = const {},
     this.ghostOpacity = 1,
-    this.marks = const [],
+    this.decals = const [],
     this.paperPoses = const {},
     this.paperColors = const {},
     this.loose = const [],
     this.highlight = const {},
+    this.desk,
+    this.deskHighlight = 0,
     this.glow = const {},
     this.complete = 0,
   });
@@ -50,8 +62,9 @@ class ModelPainter extends CustomPainter {
   final Map<int, Matrix4> ghostPoses;
   final double ghostOpacity;
 
-  /// Parallel to [FoldedModel.faces]. Empty draws no marks.
-  final List<FaceMark> marks;
+  /// Drawn on their [Decal.face]: in full on wrapped paper, faintly on the
+  /// ghost.
+  final List<Decal> decals;
 
   /// Faces covered by wrapped paper, at their current wrap pose.
   final Map<int, Matrix4> paperPoses;
@@ -60,6 +73,12 @@ class ModelPainter extends CustomPainter {
 
   /// Face index to 0–1 preselect fill.
   final Map<int, double> highlight;
+
+  /// The desk on the world sheet, under the model. Null draws none.
+  final Rect? desk;
+
+  /// 0–1 preselect fill on [desk].
+  final double deskHighlight;
 
   /// Face index to 0–1 match glow.
   final Map<int, double> glow;
@@ -71,6 +90,7 @@ class ModelPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final view = camera.camera.viewMatrix;
     final eye = camera.camera.position;
+    _paintDesk(canvas, size);
     final items = <_Item>[];
     for (var i = 0; i < model.faces.length; i++) {
       final paper = paperPoses[i];
@@ -99,7 +119,8 @@ class ModelPainter extends CustomPainter {
     }
 
     for (final entry in highlight.entries) {
-      if (entry.value <= 0 || entry.key >= model.faces.length) continue;
+      if (entry.value <= 0 || entry.key < 0) continue;
+      if (entry.key >= model.faces.length) continue;
       final pose = paperPoses[entry.key] ?? ghostPoses[entry.key];
       final t = Curves.easeOut.transform(entry.value.clamp(0.0, 1.0));
       _fill(
@@ -138,6 +159,29 @@ class ModelPainter extends CustomPainter {
     }
   }
 
+  void _paintDesk(Canvas canvas, Size size) {
+    final rect = desk;
+    if (rect == null) return;
+    final ring = [
+      Vector3(rect.left, rect.top, 0),
+      Vector3(rect.right, rect.top, 0),
+      Vector3(rect.right, rect.bottom, 0),
+      Vector3(rect.left, rect.bottom, 0),
+    ];
+    _fill(canvas, size, ring, Colors.white.withValues(alpha: 0.035));
+    final t = Curves.easeOut.transform(deskHighlight.clamp(0.0, 1.0));
+    if (t > 0) {
+      _fill(canvas, size, ring, kPreselectColor.withValues(alpha: 0.22 * t));
+    }
+    _stroke(
+      canvas,
+      size,
+      ring,
+      Colors.white.withValues(alpha: 0.22 + 0.2 * t),
+      width: 1.5,
+    );
+  }
+
   void _paintGhost(
     Canvas canvas,
     Size size,
@@ -163,7 +207,9 @@ class ModelPainter extends CustomPainter {
       kBlueprintInk.withValues(alpha: 0.85 * ghostOpacity),
       width: 1.6,
     );
-    if (facing > 0) _mark(canvas, size, face, pose, ghostOpacity);
+    if (facing > 0) {
+      _decals(canvas, size, face, pose, _kGhostDecalOpacity * ghostOpacity);
+    }
   }
 
   void _paintPaper(
@@ -187,13 +233,23 @@ class ModelPainter extends CustomPainter {
       width: 1,
       close: true,
     );
-    if (facing > 0) _mark(canvas, size, face, pose, 1);
+    if (facing > 0) _decals(canvas, size, face, pose, 1);
   }
 
   void _paintLoose(Canvas canvas, Size size, LoosePaper piece) {
     _fill(canvas, size, piece.ring, piece.color);
     for (final (a, b) in piece.ink) {
       _stroke(canvas, size, [a, b], kBlueprintInk, width: 1.6);
+    }
+    final plane = piece.plane;
+    if (plane != null) {
+      for (final decal in piece.decals) {
+        paintDecal(
+          canvas,
+          decal,
+          (point) => camera.camera.projectToScreen(plane.world(point), size),
+        );
+      }
     }
     _stroke(
       canvas,
@@ -228,16 +284,24 @@ class ModelPainter extends CustomPainter {
     }
   }
 
-  void _mark(Canvas canvas, Size size, int face, Matrix4 pose, double opacity) {
-    if (face >= marks.length) return;
+  void _decals(
+    Canvas canvas,
+    Size size,
+    int face,
+    Matrix4 pose,
+    double opacity,
+  ) {
     final modelFace = model.faces[face];
-    paintFaceMark(
-      canvas,
-      marks[face],
-      (point) =>
-          camera.camera.projectToScreen(modelFace.world(point, pose), size),
-      opacity: opacity,
-    );
+    for (final decal in decals) {
+      if (decal.face != face) continue;
+      paintDecal(
+        canvas,
+        decal,
+        (point) =>
+            camera.camera.projectToScreen(modelFace.world(point, pose), size),
+        opacity: opacity,
+      );
+    }
   }
 
   /// Signed cosine between the outward normal and the view direction.
@@ -343,66 +407,69 @@ class _Item {
   final VoidCallback paint;
 }
 
-/// Letter at the face center with an up arrow above it. [project] takes level
-/// coordinates to the screen, so the glyph lies in whatever plane it maps to.
-void paintFaceMark(
+/// Letter height over the decal's [Decal.size].
+const double _kDecalHeight = 0.55;
+
+/// Layout size of the glyph before it is mapped into the plane.
+const double _kDecalFont = 64;
+
+/// [decal]'s letter lying flat in the plane [project] maps level coordinates
+/// into, upright along [Decal.up]. Seen from the back of that plane it is
+/// flipped to read forwards.
+void paintDecal(
   Canvas canvas,
-  FaceMark mark,
+  Decal decal,
   Offset? Function(Offset point) project, {
   Color color = kBlueprintInk,
   double opacity = 1,
 }) {
   if (opacity <= 0) return;
-  final unit = (mark.size * 0.28).clamp(0.3, 1.2);
-  final up = mark.up.distance < 1e-9
+  final height = decal.size * _kDecalHeight;
+  final up = decal.up.distance < 1e-9
       ? const Offset(0, 1)
-      : mark.up / mark.up.distance;
-  final center = project(mark.center);
-  final above = project(mark.center + up * unit);
-  final tail = project(mark.center + up * (unit * 0.85));
-  final tip = project(mark.center + up * (unit * 1.9));
-  if (center == null || above == null || tail == null || tip == null) return;
-  final pixels = (above - center).distance;
-  if (pixels < 3) return;
-  final ink = color.withValues(alpha: color.a * opacity);
+      : decal.up / decal.up.distance;
+  final right = Offset(up.dy, -up.dx);
+  final center = project(decal.center);
+  final across = project(decal.center + right * height);
+  final below = project(decal.center - up * height);
+  if (center == null || across == null || below == null) return;
+  var ex = across - center;
+  final ey = below - center;
+  if (ey.distance < 4) return;
+  if (ex.dx * ey.dy - ex.dy * ey.dx < 0) ex = -ex;
   final text = TextPainter(
     text: TextSpan(
-      text: mark.label,
+      text: decal.label,
       style: TextStyle(
-        color: ink,
-        fontSize: (pixels * 1.15).clamp(7.0, 26.0),
+        color: color.withValues(alpha: color.a * opacity),
+        fontSize: _kDecalFont,
         fontWeight: FontWeight.w800,
         height: 1,
       ),
     ),
     textDirection: TextDirection.ltr,
   )..layout();
-  text.paint(canvas, center - Offset(text.width / 2, text.height / 2));
-
-  final paint = Paint()
-    ..color = ink
-    ..strokeWidth = (pixels * 0.12).clamp(1.2, 2.6)
-    ..strokeCap = StrokeCap.round;
-  canvas.drawLine(tail, tip, paint);
-  final delta = tip - tail;
-  final length = delta.distance;
-  if (length < 2) return;
-  final dir = delta / length;
-  final normal = Offset(-dir.dy, dir.dx);
-  final head = math.min(length * 0.45, 9.0);
-  final base = tip - dir * head;
-  canvas.drawPath(
-    Path()
-      ..moveTo(tip.dx, tip.dy)
-      ..lineTo(
-        (base + normal * head * 0.55).dx,
-        (base + normal * head * 0.55).dy,
-      )
-      ..lineTo(
-        (base - normal * head * 0.55).dx,
-        (base - normal * head * 0.55).dy,
-      )
-      ..close(),
-    Paint()..color = ink,
+  canvas.save();
+  canvas.transform(
+    Float64List.fromList([
+      ex.dx / _kDecalFont,
+      ex.dy / _kDecalFont,
+      0,
+      0,
+      ey.dx / _kDecalFont,
+      ey.dy / _kDecalFont,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      center.dx,
+      center.dy,
+      0,
+      1,
+    ]),
   );
+  text.paint(canvas, Offset(-text.width / 2, -text.height / 2));
+  canvas.restore();
 }

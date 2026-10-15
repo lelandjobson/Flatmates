@@ -168,14 +168,16 @@ GridStep placedStep(GridStep step, PiecePlacement placement) {
   );
 }
 
-List<FaceMark> placedMarks(List<FaceMark> marks, PiecePlacement placement) {
+/// [decals] carried along with a placed piece.
+List<Decal> placedDecals(List<Decal> decals, PiecePlacement placement) {
   return [
-    for (final mark in marks)
-      FaceMark(
-        label: mark.label,
-        center: placement.apply(mark.center),
-        up: turn(mark.up, placement.quarterTurns),
-        size: mark.size,
+    for (final decal in decals)
+      Decal(
+        label: decal.label,
+        center: placement.apply(decal.center),
+        up: turn(decal.up, placement.quarterTurns),
+        size: decal.size,
+        face: decal.face,
       ),
   ];
 }

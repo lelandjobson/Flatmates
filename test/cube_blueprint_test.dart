@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flatmates/gridcraft/blueprint.dart';
 import 'package:flatmates/gridcraft/cube_blueprint.dart';
+import 'package:flatmates/gridcraft/level_io.dart';
 import 'package:flatmates/gridcraft/twin_ls.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math_64.dart';
@@ -98,6 +99,36 @@ void main() {
     );
 
     expect(foldedCube(twinLsBlueprint()), isNull);
+  });
+
+  test('the box stack is two cube crosses a cell apart on one sheet', () {
+    final step = boxStackBlueprint().steps.single;
+    final bottom = cubeBlueprint().steps.single;
+    expect(step.polygons, hasLength(12));
+    for (var i = 0; i < 6; i++) {
+      expect(step.polygons[i], bottom.polygons[i]);
+      expect(step.polygons[i + 6], [
+        for (final point in bottom.polygons[i]) point + kBoxStackSecondNet,
+      ]);
+      expect(step.edgeStyleOf(i + 6), bottom.edgeStyleOf(i));
+    }
+    for (var i = 0; i < 6; i++) {
+      final a = polygonBounds([step.polygons[i]]);
+      for (var j = 6; j < 12; j++) {
+        final b = polygonBounds([step.polygons[j]]);
+        expect(a.inflate(0.5).overlaps(b), isFalse, reason: '$i/$j');
+      }
+    }
+  });
+
+  test('play opens on the box stack', () async {
+    final store = LevelStore(directory: Directory('levels'));
+    final playable = [
+      for (final collection in await store.loadCollections())
+        ?collection.playable,
+    ];
+    expect(playable.first.id, 'boxes');
+    expect(playable.first.puzzles.first.id, kBoxStackId);
   });
 }
 
