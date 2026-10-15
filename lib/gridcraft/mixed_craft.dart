@@ -321,11 +321,7 @@ class FoldChord {
 ///
 /// Any piece whose outline contains [start] can take the fold. The ray enters
 /// one of them and does not run on into a neighbor.
-FoldChord? foldThroughPiece(
-  MixedCraftArea area,
-  Offset start,
-  Offset through,
-) {
+FoldChord? foldThroughPiece(MixedCraftArea area, Offset start, Offset through) {
   if ((through - start).distance < 1e-4) return null;
   FoldChord? best;
   var bestScore = 1 << 30;
@@ -367,11 +363,7 @@ bool _outlineContains(Offset local, PapercutPiece piece) {
   for (final ring in rings) {
     if (ring.length < 2) continue;
     for (var i = 0; i < ring.length; i++) {
-      final on = _projectSegment(
-        local,
-        ring[i],
-        ring[(i + 1) % ring.length],
-      );
+      final on = _projectSegment(local, ring[i], ring[(i + 1) % ring.length]);
       if ((on - local).distance <= 1e-2) return true;
     }
   }

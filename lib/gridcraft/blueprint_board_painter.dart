@@ -123,7 +123,11 @@ class BlueprintBoardPainter extends CustomPainter {
       );
     }
     final handle = ring.handle;
-    canvas.drawCircle(handle, RotationWidget.handleRadius, Paint()..color = _selection);
+    canvas.drawCircle(
+      handle,
+      RotationWidget.handleRadius,
+      Paint()..color = _selection,
+    );
     canvas.drawCircle(
       handle,
       RotationWidget.handleRadius,
@@ -145,10 +149,7 @@ class BlueprintBoardPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
     );
     label.layout();
-    label.paint(
-      canvas,
-      center - Offset(label.width / 2, ring.radius + 22),
-    );
+    label.paint(canvas, center - Offset(label.width / 2, ring.radius + 22));
   }
 
   void _paintDot(Canvas canvas, Size size, Offset world, bool locked) {

@@ -119,7 +119,8 @@ class BlueprintExaminationPainter extends CustomPainter {
   }
 
   void _paintDots(Canvas canvas, Set<Offset> dots, Color color) {
-    final paint = Paint()..color = color.withValues(alpha: kDimensionDotOpacity);
+    final paint = Paint()
+      ..color = color.withValues(alpha: kDimensionDotOpacity);
     for (final screen in dots) {
       canvas.drawCircle(screen, kDimensionMarkWidth / 2, paint);
     }

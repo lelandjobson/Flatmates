@@ -10,11 +10,16 @@ import 'package:vector_math/vector_math_64.dart' hide Colors;
 
 import '../gridcraft/blueprint.dart';
 import '../gridcraft/celebrate.dart';
+import '../gridcraft/craft_plane.dart';
 import '../gridcraft/edit.dart';
 import '../gridcraft/fold.dart';
+import '../gridcraft/folded_model.dart';
 import '../gridcraft/level_io.dart';
+import '../gridcraft/model_painter.dart';
 import '../gridcraft/painter.dart';
+import '../gridcraft/criteria.dart';
 import '../gridcraft/paper_stack.dart';
+import '../gridcraft/placement.dart';
 import '../gridcraft/puzzle_advance.dart';
 import '../gridcraft/rules.dart';
 import '../gridcraft/scrap.dart';
@@ -25,6 +30,7 @@ import '../gridcraft/tool_animation_io.dart';
 import '../gridcraft/tool_flight.dart';
 import '../gridcraft/twin_ls.dart';
 import '../papercut/camera.dart';
+import '../papercut/craft_v1.dart';
 import '../papercut/models.dart';
 import '../papercut/paper.dart';
 import '../papercut/split.dart';
@@ -34,12 +40,16 @@ import '../ui/craft_palette.dart';
 import '../ui/game/game_tool_carousel.dart';
 import '../ui/game/view_crosshair.dart';
 import '../ui/fm_dev_back_button.dart';
+import '../ui/grid/piece_inventory.dart';
 import '../ui/grid/play_library_dialog.dart';
 import '../ui/fm_haptics.dart';
 import '../ui/fm_safe_area.dart';
 import '../ui/fm_screen.dart';
 
 enum _GridTool { select, scissors, folder, holePunch }
+
+/// Flat crafting on the sheet, or the folded model in 3D.
+enum _ViewMode { flat, model }
 
 /// Screen side of a tap, measured from the crosshair. Up is toward the top.
 enum _CutSide { up, down, left, right }
@@ -63,6 +73,20 @@ const Duration _kFocusDuration = Duration(milliseconds: 320);
 const Duration _kCelebrateDuration = Celebration.duration;
 const Duration _kAdvanceDuration = Duration(milliseconds: 780);
 
+/// The camera dollies in the first half. The ghost folds up across all of it.
+const Duration _kModeDuration = Duration(milliseconds: 600);
+const Duration _kWrapDuration = Duration(milliseconds: 900);
+const Duration _kDoubleTap = Duration(milliseconds: 320);
+const double _kDoubleTapSlop = 32;
+
+/// Paper on a model face floats this far off it, in grid units.
+const double _kPaperLift = 0.04;
+
+/// Opening 3D view: in front of the model, a little to the left, looking down.
+const double _kModelTurn = -1.9;
+const double _kModelTilt = 0.55;
+const double _kMaxTilt = 85 * math.pi / 180;
+
 /// Plays one level of a blueprint. Authoring lives in the puzzle editor.
 class GridPuzzleView extends StatefulWidget {
   const GridPuzzleView({
@@ -70,9 +94,13 @@ class GridPuzzleView extends StatefulWidget {
     this.store,
     this.initial,
     this.returnToEditor = false,
+    this.crafts,
   });
 
   final LevelStore? store;
+
+  /// Folded-model sources. Null loads every bundled craft.
+  final List<CraftV1>? crafts;
 
   /// Blueprint opened from the puzzle editor. Unsaved edits win over a file.
   final GridBlueprint? initial;
@@ -103,6 +131,34 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   late AnimationController _rollNudge;
   late AnimationController _flightAnim;
   late AnimationController _focusAnim;
+  late AnimationController _modeAnim;
+  late AnimationController _flyAnim;
+  late AnimationController _wrapAnim;
+  _ViewMode _mode = _ViewMode.flat;
+  Map<String, CraftV1> _crafts = const {};
+  GridStep? _modelStep;
+  FoldedModel? _modelCache;
+  List<FaceMark> _marks = const [];
+  CameraPose? _flatPose;
+
+  /// Orbit pose to return to when face focus ends.
+  CameraPose? _orbitPose;
+  int? _focusFace;
+
+  /// Piece being slid and turned on the focused face.
+  PiecePlacement? _placing;
+
+  /// Placed pieces in order. Matching ones are wrapped; the rest lie loose.
+  final List<PiecePlacement> _placements = [];
+
+  /// Sheet the placements were made from. A different sheet clears them.
+  PapercutSheet? _placedSheet;
+  int? _wrapIsland;
+  bool _placeDragging = false;
+  Offset? _placeGrab;
+  Offset _placeGrabOffset = Offset.zero;
+  DateTime? _lastTapTime;
+  Offset? _lastTapAt;
   final ToolFlight _flight = ToolFlight();
   Offset _focusFrom = Offset.zero;
   Offset _focusTo = Offset.zero;
@@ -292,6 +348,14 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _focusAnim = AnimationController(vsync: this, duration: _kFocusDuration)
       ..addListener(_onFocusTick)
       ..addStatusListener(_onFocusStatus);
+    _modeAnim = AnimationController(vsync: this, duration: _kModeDuration)
+      ..addListener(_onModeTick);
+    _flyAnim = AnimationController(
+      vsync: this,
+      duration: PapercutCamera.flyDuration,
+    )..addListener(_onFlyTick);
+    _wrapAnim = AnimationController(vsync: this, duration: _kWrapDuration)
+      ..addStatusListener(_onWrapStatus);
     _loadStep(0, _blueprint);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -300,6 +364,16 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     });
     _refreshCollections();
     _loadToolAnimations();
+    _loadCrafts();
+  }
+
+  Future<void> _loadCrafts() async {
+    final crafts = widget.crafts ?? await CraftV1.loadAll();
+    if (!mounted) return;
+    setState(() {
+      _crafts = {for (final craft in crafts) craft.craft: craft};
+      _modelStep = null;
+    });
   }
 
   Future<void> _loadToolAnimations() async {
@@ -316,6 +390,9 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
 
   @override
   void dispose() {
+    _modeAnim.dispose();
+    _flyAnim.dispose();
+    _wrapAnim.dispose();
     _focusAnim.dispose();
     _flightAnim.dispose();
     _rollNudge.dispose();
@@ -477,6 +554,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _incomingStep = null;
     _incomingSheet = null;
     if (_advanceAnim.isAnimating) _advanceAnim.stop();
+    _leaveModelNow();
     _liberated = {};
     _blueprint = blueprint;
     _stepIndex = index.clamp(0, blueprint.steps.length - 1);
@@ -2347,6 +2425,17 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
     }
+    if (_inModel) {
+      if (event.logicalKey != LogicalKeyboardKey.escape) {
+        return KeyEventResult.ignored;
+      }
+      if (_focusFace != null) {
+        _leaveFocus();
+      } else {
+        _toggleMode();
+      }
+      return KeyEventResult.handled;
+    }
     if (_directing && _tool == _GridTool.scissors) {
       final side = switch (event.logicalKey) {
         LogicalKeyboardKey.arrowUp => _CutSide.up,
@@ -2370,6 +2459,550 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
+  }
+
+  bool get _inModel => _mode == _ViewMode.model;
+
+  /// 0 on the flat sheet, 1 with the model fully folded up.
+  double get _modelness => Curves.easeInOutCubic.transform(_modeAnim.value);
+
+  /// Folded model of the current level, when its craft link resolves.
+  FoldedModel? get _model {
+    final link = _step.craft;
+    if (link == null) return null;
+    if (identical(_modelStep, _step)) return _modelCache;
+    final craft = _crafts[link.id];
+    if (craft == null) return null;
+    _modelStep = _step;
+    _modelCache = foldedModelFromCraft(craft, link.step, _step);
+    _marks = _modelCache == null ? const [] : faceMarks(_modelCache!);
+    return _modelCache;
+  }
+
+  void _toggleMode() {
+    if (_modeAnim.isAnimating || _flyAnim.isAnimating) return;
+    if (_inModel) {
+      _leaveFocus(fly: false);
+      _camera.beginToggle();
+      final flat = _flatPose;
+      _camera.beginFly(
+        CameraPose(
+          lookAt: flat?.lookAt ?? _step.paper.center,
+          halfHeight: flat?.halfHeight ?? _camera.framedHalfHeightMm,
+          azimuth: PapercutCamera.advanceAngle(_camera.azimuth, 0),
+          elevation: 0,
+          roll: flat?.roll ?? 0,
+        ),
+      );
+      setState(() => _mode = _ViewMode.flat);
+      _modeAnim.reverse(from: 1);
+      return;
+    }
+    final model = _model;
+    if (model == null || _advancing || _collectionWon || _locked) return;
+    _cancelFoldHold();
+    if (_foldingMode) {
+      _foldSigned = 0;
+      _releaseFoldingMode();
+    }
+    if (!identical(_placedSheet, _sheet)) {
+      _placements.clear();
+      _placing = null;
+      _placedSheet = _sheet;
+    }
+    _flatPose = _camera.pose;
+    _camera.beginToggle();
+    _camera.beginFly(
+      _modelFraming(model).withAngles(
+        _camera.anglesAlong(
+          _turntableDirection(_kModelTurn, _kModelTilt),
+          up: _modelUp,
+        ),
+      ),
+    );
+    setState(() => _mode = _ViewMode.model);
+    _modeAnim.forward(from: 0);
+  }
+
+  static final Vector3 _modelUp = Vector3(0, 0, 1);
+
+  /// Eye direction around the model's vertical axis. [turn] spins about +z
+  /// from +x; [tilt] lifts above the sheet.
+  Vector3 _turntableDirection(double turn, double tilt) => Vector3(
+    math.cos(tilt) * math.cos(turn),
+    math.cos(tilt) * math.sin(turn),
+    math.sin(tilt),
+  );
+
+  CameraPose _modelFraming(FoldedModel model) =>
+      _camera.frameSphere(model.center, model.radius * 1.3, _viewport);
+
+  /// One-finger orbit: a turntable around the model's vertical axis.
+  void _turntable(double dTurn, double dTilt) {
+    final n = _camera.viewDirection;
+    final turn = math.atan2(n.y, n.x) + dTurn;
+    final tilt = (math.asin(n.z.clamp(-1.0, 1.0)) + dTilt).clamp(
+      -_kMaxTilt,
+      _kMaxTilt,
+    );
+    _camera.orbitTo(_turntableDirection(turn, tilt), up: _modelUp);
+  }
+
+  void _onModeTick() {
+    final value = _modeAnim.value;
+    final travel = _inModel ? value : 1 - value;
+    final t = (travel * 2).clamp(0.0, 1.0);
+    _camera.setBlend(t);
+    _camera.setFly(Curves.easeInOutCubic.transform(t));
+  }
+
+  void _onFlyTick() {
+    _camera.setFly(Curves.easeOutCubic.transform(_flyAnim.value));
+  }
+
+  /// Back on the flat sheet at once, with no placements. Used on level load.
+  void _leaveModelNow() {
+    if (_modeAnim.isAnimating) _modeAnim.stop();
+    if (_flyAnim.isAnimating) _flyAnim.stop();
+    if (_wrapAnim.isAnimating) _wrapAnim.stop();
+    if (_inModel || !_camera.targetFlat) {
+      _camera.beginToggle();
+      _camera.setBlend(1);
+      _camera.beginFly(
+        CameraPose(
+          lookAt: _camera.lookAt,
+          halfHeight: _camera.framedHalfHeightMm,
+          azimuth: 0,
+          elevation: 0,
+          roll: _flatPose?.roll ?? 0,
+        ),
+      );
+      _camera.setFly(1);
+    }
+    _modeAnim.value = 0;
+    _mode = _ViewMode.flat;
+    _focusFace = null;
+    _orbitPose = null;
+    _flatPose = null;
+    _placing = null;
+    _placements.clear();
+    _placedSheet = null;
+    _wrapIsland = null;
+    _placeDragging = false;
+    _lastTapTime = null;
+  }
+
+  void _frameModel() {
+    final model = _model;
+    if (model == null || _modeAnim.isAnimating) return;
+    _leaveFocus(fly: false);
+    _camera.beginFly(_modelFraming(model));
+    _flyAnim.forward(from: 0);
+  }
+
+  CraftPlane _facePlane(FoldedModel model, int face) =>
+      CraftPlane(model.faces[face].toWorld);
+
+  void _focusOn(int face) {
+    final model = _model;
+    if (model == null) return;
+    _commitPlacing();
+    _orbitPose ??= _camera.pose;
+    final modelFace = model.faces[face];
+    final middle = modelFace.centroid;
+    var reach = 0.0;
+    for (final point in modelFace.outline) {
+      reach = math.max(reach, (point - middle).distance);
+    }
+    final aspect = _viewport.height < 2
+        ? 1.0
+        : _viewport.width / _viewport.height;
+    final half = math.max(reach * 2.2, reach * 2.2 / math.max(aspect, 0.05));
+    _camera.flyTo(
+      model.worldCenter(face),
+      model.outwardNormal(face),
+      half / math.tan(_camera.halfFovRadians),
+      up: modelFace.toWorld.getRotation().transformed(Vector3(0, 1, 0)),
+    );
+    setState(() => _focusFace = face);
+    _flyAnim.forward(from: 0);
+    unawaited(fmHapticSmallClick());
+  }
+
+  void _leaveFocus({bool fly = true}) {
+    if (_focusFace == null) return;
+    _commitPlacing();
+    final back = _orbitPose;
+    _orbitPose = null;
+    setState(() => _focusFace = null);
+    if (!fly || back == null) return;
+    _camera.beginFly(back);
+    _flyAnim.forward(from: 0);
+  }
+
+  PapercutPiece? _pieceById(String id) {
+    for (final piece in _sheet.pieces) {
+      if (piece.id == id) return piece;
+    }
+    return null;
+  }
+
+  bool _matches(PiecePlacement placement) {
+    final model = _model;
+    final piece = _pieceById(placement.pieceId);
+    if (model == null || piece == null) return false;
+    return placementMatches(placement, piece, model, _step);
+  }
+
+  /// Islands with a matching piece, mapped to the face the piece was laid on.
+  Map<int, PiecePlacement> get _wrapped {
+    final model = _model;
+    if (model == null) return const {};
+    return {
+      for (final placement in _placements)
+        if (_matches(placement)) model.faces[placement.face].island: placement,
+    };
+  }
+
+  bool get _modelComplete {
+    final model = _model;
+    if (model == null || _wrapAnim.isAnimating) return false;
+    return _wrapped.length == model.islands.length;
+  }
+
+  /// Paper the inventory offers: every piece not already wrapped.
+  List<PapercutPiece> get _inventory {
+    final wrappedIds = {
+      for (final placement in _wrapped.values) placement.pieceId,
+    };
+    return [
+      for (final piece in _sheet.pieces)
+        if (!wrappedIds.contains(piece.id) && piece.vertices.length >= 3) piece,
+    ];
+  }
+
+  void _pickPiece(String id) {
+    final model = _model;
+    final face = _focusFace;
+    final piece = _pieceById(id);
+    if (model == null || face == null || piece == null) return;
+    if (_placing?.pieceId == id) return;
+    _commitPlacing();
+    _placements.removeWhere((placement) => placement.pieceId == id);
+    setState(() {
+      _placing = startPlacement(piece, face, model, _step.gridSpacing);
+    });
+    _settlePlacing();
+  }
+
+  /// Leaves the piece in hand lying loose where it is.
+  void _commitPlacing() {
+    final placing = _placing;
+    if (placing == null) return;
+    _placing = null;
+    _placements.add(placing);
+  }
+
+  /// A matching piece in hand glows, then wraps the model.
+  void _settlePlacing() {
+    final placing = _placing;
+    final model = _model;
+    if (placing == null || model == null || !_matches(placing)) return;
+    setState(() {
+      _placing = null;
+      _placements.add(placing);
+      _wrapIsland = model.faces[placing.face].island;
+    });
+    _wrapAnim.forward(from: 0);
+    unawaited(fmHapticSmallClick());
+  }
+
+  void _turnPlacing(int direction) {
+    final placing = _placing;
+    final model = _model;
+    if (placing == null || model == null) return;
+    final pivot =
+        snapToGrid(model.faces[placing.face].centroid * 2, _step.gridSpacing) /
+        2;
+    setState(() {
+      _placing = placing.turned(direction, pivot, _step.gridSpacing);
+    });
+    _settlePlacing();
+  }
+
+  void _onWrapStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    setState(() => _wrapIsland = null);
+    if (_modelComplete) unawaited(fmHapticSmallClick());
+  }
+
+  void _undoModel() {
+    if (_placing != null) {
+      setState(() => _placing = null);
+      return;
+    }
+    if (_placements.isEmpty) return;
+    if (_wrapAnim.isAnimating) _wrapAnim.stop();
+    setState(() {
+      _placements.removeLast();
+      _wrapIsland = null;
+    });
+  }
+
+  void _modelScaleStart(ScaleStartDetails details) {
+    _gestureDown = details.localFocalPoint;
+    _lastFocal = details.localFocalPoint;
+    _moved = 0;
+    _gestureScale = 1;
+    _placeDragging = false;
+    final model = _model;
+    final face = _focusFace;
+    final placing = _placing;
+    if (model == null || face == null || placing == null) return;
+    if (details.pointerCount != 1 || _modeAnim.isAnimating) return;
+    final grab = _camera.planePointOn(
+      _facePlane(model, face),
+      _pointerDownAt ?? details.localFocalPoint,
+      _viewport,
+    );
+    if (grab == null) return;
+    _placeGrab = grab;
+    _placeGrabOffset = placing.offset;
+    _placeDragging = true;
+  }
+
+  void _modelScaleUpdate(ScaleUpdateDetails details) {
+    final local = details.localFocalPoint;
+    final delta = local - (_lastFocal ?? local);
+    _lastFocal = local;
+    _moved += delta.distance;
+    final model = _model;
+    if (model == null || _modeAnim.isAnimating) return;
+    if (details.pointerCount >= 2) {
+      _placeDragging = false;
+      if (_gestureScale > 0) {
+        _camera.zoomByScale(details.scale / _gestureScale);
+      }
+      _gestureScale = details.scale;
+      if (_focusFace == null && !_flyAnim.isAnimating) {
+        _camera.panInView(
+          delta,
+          _viewport,
+          anchor: model.center,
+          limit: model.radius,
+        );
+      }
+      return;
+    }
+    if (_placeDragging) {
+      _dragPlacing(model, local);
+      return;
+    }
+    if (_focusFace != null || _flyAnim.isAnimating) return;
+    _turntable(-delta.dx * 0.008, delta.dy * 0.008);
+  }
+
+  void _dragPlacing(FoldedModel model, Offset screen) {
+    final placing = _placing;
+    final grab = _placeGrab;
+    if (placing == null || grab == null) return;
+    final at = _camera.planePointOn(
+      _facePlane(model, placing.face),
+      screen,
+      _viewport,
+    );
+    if (at == null) return;
+    final next = placing.movedTo(
+      _placeGrabOffset + (at - grab),
+      _step.gridSpacing,
+    );
+    if (next == placing) return;
+    setState(() => _placing = next);
+    unawaited(fmHapticSmallClick());
+  }
+
+  void _modelScaleEnd(ScaleEndDetails details) {
+    final dragged = _placeDragging && _moved > 4;
+    _placeDragging = false;
+    _placeGrab = null;
+    if (dragged) {
+      _settlePlacing();
+      return;
+    }
+    if (_moved > 12 || details.pointerCount >= 2) return;
+    final at = _lastFocal ?? _gestureDown;
+    if (at == null) return;
+    final now = DateTime.now();
+    final last = _lastTapTime;
+    final lastAt = _lastTapAt;
+    if (last != null &&
+        lastAt != null &&
+        now.difference(last) <= _kDoubleTap &&
+        (at - lastAt).distance <= _kDoubleTapSlop) {
+      _lastTapTime = null;
+      _onModelDoubleTap(at);
+      return;
+    }
+    _lastTapTime = now;
+    _lastTapAt = at;
+  }
+
+  void _onModelDoubleTap(Offset screen) {
+    final model = _model;
+    if (model == null || _modeAnim.isAnimating) return;
+    final ray = _camera.camera.unprojectRay(screen, _viewport);
+    final hit = ray == null ? null : pickFace(model, ray.origin, ray.direction);
+    if (hit == null) {
+      _leaveFocus();
+      return;
+    }
+    if (hit.face == _focusFace) return;
+    _focusOn(hit.face);
+  }
+
+  /// Sheet on the table in 3D: the paper not laid on the model.
+  PapercutSheet _tableSheet() {
+    if (_modeAnim.value <= 0) return _sheet;
+    final laid = {
+      for (final placement in _placements) placement.pieceId,
+      if (_placing != null) _placing!.pieceId,
+    };
+    if (laid.isEmpty) return _sheet;
+    return _sheet.copyWith(
+      pieces: [
+        for (final piece in _sheet.pieces)
+          if (!laid.contains(piece.id)) piece,
+      ],
+    );
+  }
+
+  ModelPainter _modelPainter(FoldedModel model) {
+    final ghostT = _modelness;
+    final ghostPoses = <int, Matrix4>{};
+    if (ghostT < 1) {
+      for (final island in model.islands) {
+        ghostPoses.addAll(
+          wrapPose(model, island.first, ghostT, from: Matrix4.identity()),
+        );
+      }
+    }
+    final paperPoses = <int, Matrix4>{};
+    final paperColors = <int, Color>{};
+    final glow = <int, double>{};
+    for (final entry in _wrapped.entries) {
+      final placement = entry.value;
+      final piece = _pieceById(placement.pieceId);
+      final wrapping = entry.key == _wrapIsland && _wrapAnim.isAnimating;
+      final t = wrapping
+          ? Curves.easeInOutCubic.transform(_wrapAnim.value)
+          : 1.0;
+      final poses = ghostT < 1
+          ? {
+              for (final face in model.islands[entry.key])
+                face: ghostPoses[face]!,
+            }
+          : wrapPose(model, placement.face, t);
+      paperPoses.addAll(poses);
+      for (final face in poses.keys) {
+        paperColors[face] = piece?.color ?? kPapercutYellow;
+      }
+      if (wrapping) glow[placement.face] = 1 - _wrapAnim.value * 0.6;
+    }
+    final placing = _placing;
+    if (placing != null && _matches(placing)) {
+      glow[placing.face] = 0.6 + 0.4 * _flash.value;
+    }
+    final loose = <LoosePaper>[];
+    for (final placement in _placements) {
+      if (_matches(placement)) continue;
+      final piece = _pieceById(placement.pieceId);
+      if (piece == null) continue;
+      loose.add(_loosePaper(model, piece, placement));
+    }
+    return ModelPainter(
+      camera: _camera,
+      model: model,
+      ghostPoses: ghostPoses,
+      ghostOpacity: math.min(1.0, ghostT * 1.6),
+      marks: _marks,
+      paperPoses: paperPoses,
+      paperColors: paperColors,
+      loose: loose,
+      focusFace: _focusFace,
+      glow: glow,
+      complete: _modelComplete ? 0.55 + 0.45 * _flash.value : 0,
+    );
+  }
+
+  LoosePaper _loosePaper(
+    FoldedModel model,
+    PapercutPiece piece,
+    PiecePlacement placement,
+  ) {
+    final plane = _facePlane(
+      model,
+      placement.face,
+    ).lifted(model.outwardSides[placement.face] * _kPaperLift);
+    Vector3 world(Offset point) => plane.world(placement.apply(point));
+    final ink = <(Vector3, Vector3)>[];
+    for (var i = 0; i < _step.polygons.length; i++) {
+      final ring = _step.polygons[i];
+      for (var e = 0; e < _step.edgeCountOf(i); e++) {
+        final a = ring[e];
+        final b = ring[(e + 1) % ring.length];
+        if (!ownsPoint(piece.vertices, Offset.lerp(a, b, 0.5)!)) continue;
+        ink.add((world(a), world(b)));
+      }
+    }
+    return LoosePaper(
+      ring: [for (final point in piece.vertices) world(point)],
+      color: piece.color,
+      ink: ink,
+    );
+  }
+
+  /// The focused face drawn like the crafting sheet: dots, and the piece in
+  /// hand with its ink and marks.
+  GridPuzzlePainter? _facePainter(FoldedModel model) {
+    final face = _focusFace;
+    if (face == null || _flyAnim.isAnimating) return null;
+    final plane = _facePlane(
+      model,
+      face,
+    ).lifted(model.outwardSides[face] * _kPaperLift);
+    final placing = _placing;
+    final piece = placing == null ? null : _pieceById(placing.pieceId);
+    if (placing == null || piece == null) {
+      return GridPuzzlePainter(
+        camera: _camera,
+        step: _step.copyWith(polygons: const [], edgeStyles: const []),
+        sheet: PapercutSheet.empty(),
+        march: null,
+        flash: 0,
+        rulerX: null,
+        showRuler: false,
+        selected: const {},
+        plane: plane,
+        gridOpacity: 0.45,
+      );
+    }
+    return GridPuzzlePainter(
+      camera: _camera,
+      step: placedStep(_step, placing),
+      sheet: PapercutSheet(pieces: [placedPiece(piece, placing)]),
+      march: null,
+      flash: 0,
+      rulerX: null,
+      showRuler: false,
+      selected: const {},
+      blueprintColor: kBlueprintInk,
+      plane: plane,
+      gridOpacity: 0.45,
+      marks: placedMarks([
+        for (final mark in _marks)
+          if (ownsPoint(piece.vertices, mark.center)) mark,
+      ], placing),
+    );
   }
 
   @override
@@ -2435,16 +3068,24 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                             _foldSettle,
                             _fadeAnim,
                             _tallyAnim,
+                            _modeAnim,
                           ]),
                           builder: (context, _) {
-                            final aim = _aimWorld();
+                            final aim = _inModel || _modeAnim.value > 0
+                                ? null
+                                : _aimWorld();
                             final ghosts = _ruledGhosts(_displayGhosts(aim));
                             final guide = _folderGuide(aim);
+                            final model = _model;
+                            final modelness = _modelness;
                             return CustomPaint(
                               painter: GridPuzzlePainter(
                                 camera: _camera,
                                 step: _step,
-                                sheet: _sheet,
+                                sheet: _tableSheet(),
+                                gridOpacity: 1 - modelness,
+                                sheetOpacity: 1 - 0.72 * modelness,
+                                marks: model == null ? const [] : _marks,
                                 march: null,
                                 flash: _flash.value,
                                 rulerX: aim == null
@@ -2491,6 +3132,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                                 fadingIds: _fading,
                                 fadeOpacity: 1 - _fadeAnim.value,
                                 hiddenPieceIds: _tallyIds,
+                                progress: blueprintProgress(_step, _sheet),
                               ),
                               child:
                                   _incomingStep == null ||
@@ -2517,23 +3159,44 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                     ),
                   ),
                 ),
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: AnimatedBuilder(
-                      animation: _flightAnim,
-                      builder: (context, _) {
-                        return CustomPaint(
-                          painter: ScissorGlyphPainter(
-                            camera: _camera,
-                            pose: _flight.pose(_flightAnim.value),
-                            tool: _scissors,
-                          ),
+                if (_model case final model?
+                    when _inModel || _modeAnim.value > 0)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: AnimatedBuilder(
+                        animation: Listenable.merge([
+                          _modeAnim,
+                          _flyAnim,
+                          _wrapAnim,
+                          _flash,
+                        ]),
+                        builder: (context, _) => CustomPaint(
+                          key: const Key('grid-model-layer'),
+                          painter: _modelPainter(model),
+                          foregroundPainter: _facePainter(model),
                           child: const SizedBox.expand(),
-                        );
-                      },
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                if (!_inModel)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: AnimatedBuilder(
+                        animation: _flightAnim,
+                        builder: (context, _) {
+                          return CustomPaint(
+                            painter: ScissorGlyphPainter(
+                              camera: _camera,
+                              pose: _flight.pose(_flightAnim.value),
+                              tool: _scissors,
+                            ),
+                            child: const SizedBox.expand(),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
                 if (_foldingMode && _foldScreenAxis != null)
                   Positioned.fill(
                     child: IgnorePointer(
@@ -2546,7 +3209,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                       ),
                     ),
                   ),
-                if (!_fixedToolCamera)
+                if (!_fixedToolCamera && !_inModel)
                   const Positioned.fill(
                     child: IgnorePointer(child: ViewCrosshair()),
                   ),
@@ -2643,11 +3306,26 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                       onCameraRotatesChanged: _setCameraRotates,
                     ),
                   ),
+                if (_inModel && _focusFace != null)
+                  FmSafePositioned(
+                    right: 8,
+                    top: 210,
+                    bottom: 72,
+                    child: Align(
+                      alignment: Alignment.topRight,
+                      child: PieceInventory(
+                        pieces: _inventory,
+                        step: _step,
+                        selectedId: _placing?.pieceId,
+                        onPick: _pickPiece,
+                      ),
+                    ),
+                  ),
                 FmSafePositioned(
                   left: 0,
                   right: 0,
                   bottom: 8,
-                  child: _toolbar(),
+                  child: _inModel ? _modelBar() : _toolbar(),
                 ),
                 FmSafePositioned(left: 8, bottom: 8, child: _undoButton()),
               ],
@@ -2659,9 +3337,11 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   }
 
   Offset? _lastFocal;
+  Offset? _pointerDownAt;
   double _rollAnchor = 0;
 
   void _onCanvasPointerDown(PointerDownEvent event) {
+    _pointerDownAt = event.localPosition;
     _canvasPointers++;
     if (_canvasPointers >= 2) _noteZoom();
   }
@@ -2687,6 +3367,10 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   }
 
   void _onScaleStart(ScaleStartDetails details) {
+    if (_inModel || _modeAnim.isAnimating) {
+      _modelScaleStart(details);
+      return;
+    }
     _gestureDown = details.localFocalPoint;
     _lastFocal = details.localFocalPoint;
     _rollAnchor = details.localFocalPoint.dx;
@@ -2722,6 +3406,10 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   }
 
   void _onScaleUpdate(ScaleUpdateDetails details) {
+    if (_inModel || _modeAnim.isAnimating) {
+      _modelScaleUpdate(details);
+      return;
+    }
     if (_advancing || _collectionWon) return;
     final local = details.localFocalPoint;
     final previous = _lastFocal ?? local;
@@ -2772,6 +3460,11 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   }
 
   void _onScaleEnd(ScaleEndDetails details) {
+    if (_inModel || _modeAnim.isAnimating) {
+      _pointerDown = false;
+      _modelScaleEnd(details);
+      return;
+    }
     if (_failing) return;
     final nudged = _dragNudged;
     _dragPiece = null;
@@ -3204,7 +3897,16 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                 const Spacer(),
                 Column(
                   mainAxisSize: MainAxisSize.min,
-                  children: [_activeRuleBadge(), _compassButton()],
+                  children: [
+                    _activeRuleBadge(),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _compassButton(),
+                        if (_model != null) _viewModeButton(),
+                      ],
+                    ),
+                  ],
                 ),
                 const Spacer(),
                 _turnButton(clockwise: false),
@@ -3426,8 +4128,109 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     );
   }
 
+  Widget _viewModeButton() {
+    return IconButton(
+      key: const Key('grid-view-mode'),
+      tooltip: _inModel ? 'Flat view' : '3D view',
+      onPressed: _toggleMode,
+      icon: Icon(
+        _inModel ? Icons.grid_on : Icons.view_in_ar,
+        color: _inModel ? const Color(0xFFFFD54F) : Colors.white,
+      ),
+    );
+  }
+
+  /// Bottom controls in 3D. Face focus adds the quarter turns and Back.
+  Widget _modelBar() {
+    Widget button({
+      required Key key,
+      required IconData icon,
+      required String label,
+      VoidCallback? onPressed,
+    }) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: const Color(0xF01A1A1A),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: TextButton.icon(
+            key: key,
+            onPressed: onPressed,
+            icon: Icon(
+              icon,
+              color: onPressed == null ? Colors.white24 : Colors.white,
+            ),
+            label: Text(
+              label,
+              style: TextStyle(
+                color: onPressed == null ? Colors.white24 : Colors.white,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final focused = _focusFace != null;
+    final holding = _placing != null;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Text(
+            _modelComplete
+                ? 'Every piece is wrapped.'
+                : focused
+                ? (holding
+                      ? 'Slide and turn the paper until the face glows.'
+                      : 'Pick a paper piece on the right.')
+                : 'Drag to orbit. Double-tap a face to focus it.',
+            key: const Key('grid-model-hint'),
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (focused) ...[
+              button(
+                key: const Key('grid-focus-back'),
+                icon: Icons.arrow_back,
+                label: 'Back',
+                onPressed: _leaveFocus,
+              ),
+              button(
+                key: const Key('grid-place-turn-left'),
+                icon: Icons.rotate_left,
+                label: 'Turn',
+                onPressed: holding ? () => _turnPlacing(1) : null,
+              ),
+              button(
+                key: const Key('grid-place-turn-right'),
+                icon: Icons.rotate_right,
+                label: 'Turn',
+                onPressed: holding ? () => _turnPlacing(-1) : null,
+              ),
+            ] else
+              button(
+                key: const Key('grid-frame-model'),
+                icon: Icons.center_focus_strong,
+                label: 'Frame model',
+                onPressed: _frameModel,
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
   Widget _undoButton() {
-    final enabled = !_locked && _undo.isNotEmpty;
+    final enabled = _inModel
+        ? _placing != null || _placements.isNotEmpty
+        : !_locked && _undo.isNotEmpty;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: const Color(0xF01A1A1A),
@@ -3435,7 +4238,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       ),
       child: IconButton(
         tooltip: 'Undo',
-        onPressed: enabled ? _undoLast : null,
+        onPressed: enabled ? (_inModel ? _undoModel : _undoLast) : null,
         icon: Icon(Icons.undo, color: enabled ? Colors.white : Colors.white24),
       ),
     );

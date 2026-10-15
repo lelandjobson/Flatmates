@@ -67,14 +67,15 @@ abstract class ToolAnimation {
   List<ToolFeatureSpec> get specs;
 
   List<ToolFeature> get features => [
-    for (final spec in specs)
-      ToolFeature(spec, feature(spec.id)),
+    for (final spec in specs) ToolFeature(spec, feature(spec.id)),
   ];
 
   double feature(String id) {
     for (final spec in specs) {
       if (spec.id != id) continue;
-      return (_values[id] ?? spec.fallback).clamp(spec.min, spec.max).toDouble();
+      return (_values[id] ?? spec.fallback)
+          .clamp(spec.min, spec.max)
+          .toDouble();
     }
     return 0;
   }
@@ -110,11 +111,12 @@ abstract class ToolAnimation {
         ToolGlyphStyle(
           fill: colorFromArgb(styleJson['fill'], style.fill),
           stroke: colorFromArgb(styleJson['stroke'], style.stroke),
-          strokeWidth: (styleJson['strokeWidth'] is num
-                  ? (styleJson['strokeWidth'] as num).toDouble()
-                  : style.strokeWidth)
-              .clamp(0.2, 12)
-              .toDouble(),
+          strokeWidth:
+              (styleJson['strokeWidth'] is num
+                      ? (styleJson['strokeWidth'] as num).toDouble()
+                      : style.strokeWidth)
+                  .clamp(0.2, 12)
+                  .toDouble(),
         ),
       );
     }
@@ -213,10 +215,8 @@ class ScissorToolAnimation extends ToolAnimation {
   double get edgeShift => feature('edgeShift');
 
   @override
-  (double, double) get edgeSpan => (
-    feature('loopCenterX') - feature('loopWidth') / 2 - 4,
-    2,
-  );
+  (double, double) get edgeSpan =>
+      (feature('loopCenterX') - feature('loopWidth') / 2 - 4, 2);
 
   /// Center of the upper finger loop. [side] is -1 for the lower loop.
   Offset loopCenter({double side = 1}) =>

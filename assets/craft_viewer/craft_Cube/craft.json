@@ -1,0 +1,800 @@
+{
+  "version": 1,
+  "craft": "craft_Cube",
+  "foldedModel": "folded.obj",
+  "steps": [
+    {
+      "craftingStep": 1,
+      "model": "folded.obj"
+    }
+  ],
+  "faces": [
+    {
+      "flatmates.surfaceId": "0",
+      "flatmates.groupId": "craft_Cube",
+      "flatmates.pieceKey": "craft_Cube#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Cube::1",
+      "flatmates.transformType": "movement",
+      "flatLoops": [
+        [
+          [
+            5.0,
+            5.0,
+            0.0
+          ],
+          [
+            10.0,
+            5.0,
+            0.0
+          ],
+          [
+            10.0,
+            10.0,
+            0.0
+          ],
+          [
+            5.0,
+            10.0,
+            0.0
+          ],
+          [
+            5.0,
+            5.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "movement",
+        "forward": [
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "inverse": [
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "id": "s1_p0_i0_f0"
+    },
+    {
+      "flatmates.surfaceId": "1",
+      "flatmates.groupId": "craft_Cube",
+      "flatmates.pieceKey": "craft_Cube#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Cube::1",
+      "flatmates.foldParentSurfaceId": "0",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            0.0,
+            5.0,
+            0.0
+          ],
+          [
+            5.0,
+            5.0,
+            0.0
+          ],
+          [
+            5.0,
+            10.0,
+            0.0
+          ],
+          [
+            0.0,
+            10.0,
+            0.0
+          ],
+          [
+            0.0,
+            5.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          5.0,
+          5.0,
+          0.0,
+          5.0,
+          10.0,
+          0.0
+        ],
+        "angleRadians": "-1.5707963267948966"
+      },
+      "id": "s1_p0_i0_f1"
+    },
+    {
+      "flatmates.surfaceId": "2",
+      "flatmates.groupId": "craft_Cube",
+      "flatmates.pieceKey": "craft_Cube#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Cube::1",
+      "flatmates.foldParentSurfaceId": "0",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            10.0,
+            5.0,
+            0.0
+          ],
+          [
+            15.0,
+            5.0,
+            0.0
+          ],
+          [
+            15.0,
+            10.0,
+            0.0
+          ],
+          [
+            10.0,
+            10.0,
+            0.0
+          ],
+          [
+            10.0,
+            5.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          10.0,
+          10.0,
+          0.0,
+          10.0,
+          5.0,
+          0.0
+        ],
+        "angleRadians": "-1.5707963267948966"
+      },
+      "id": "s1_p0_i0_f2"
+    },
+    {
+      "flatmates.surfaceId": "3",
+      "flatmates.groupId": "craft_Cube",
+      "flatmates.pieceKey": "craft_Cube#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Cube::1",
+      "flatmates.foldParentSurfaceId": "2",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            15.0,
+            5.0,
+            0.0
+          ],
+          [
+            20.0,
+            5.0,
+            0.0
+          ],
+          [
+            20.0,
+            10.0,
+            0.0
+          ],
+          [
+            15.0,
+            10.0,
+            0.0
+          ],
+          [
+            15.0,
+            5.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          15.0,
+          10.0,
+          0.0,
+          15.0,
+          5.0,
+          0.0
+        ],
+        "angleRadians": "-1.5707963267948966"
+      },
+      "id": "s1_p0_i0_f3"
+    },
+    {
+      "flatmates.surfaceId": "4",
+      "flatmates.groupId": "craft_Cube",
+      "flatmates.pieceKey": "craft_Cube#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Cube::1",
+      "flatmates.foldParentSurfaceId": "0",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            5.0,
+            10.0,
+            0.0
+          ],
+          [
+            10.0,
+            10.0,
+            0.0
+          ],
+          [
+            10.0,
+            15.0,
+            0.0
+          ],
+          [
+            5.0,
+            15.0,
+            0.0
+          ],
+          [
+            5.0,
+            10.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          5.0,
+          10.0,
+          0.0,
+          10.0,
+          10.0,
+          0.0
+        ],
+        "angleRadians": "-1.5707963267948966"
+      },
+      "id": "s1_p0_i0_f4"
+    },
+    {
+      "flatmates.surfaceId": "5",
+      "flatmates.groupId": "craft_Cube",
+      "flatmates.pieceKey": "craft_Cube#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Cube::1",
+      "flatmates.foldParentSurfaceId": "0",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            5.0,
+            0.0,
+            0.0
+          ],
+          [
+            10.0,
+            0.0,
+            0.0
+          ],
+          [
+            10.0,
+            5.0,
+            0.0
+          ],
+          [
+            5.0,
+            5.0,
+            0.0
+          ],
+          [
+            5.0,
+            0.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          10.0,
+          5.0,
+          0.0,
+          5.0,
+          5.0,
+          0.0
+        ],
+        "angleRadians": "-1.5707963267948966"
+      },
+      "id": "s1_p0_i0_f5"
+    }
+  ],
+  "edges": [
+    {
+      "flatmates.groupId": "craft_Cube",
+      "flatmates.pieceKey": "craft_Cube#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "5",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Cube::1",
+      "curve": [
+        [
+          5.0,
+          5.0,
+          0.0
+        ],
+        [
+          10.0,
+          5.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f0",
+      "faceB": "s1_p0_i0_f5",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Cube",
+      "flatmates.pieceKey": "craft_Cube#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Cube::1",
+      "curve": [
+        [
+          10.0,
+          5.0,
+          0.0
+        ],
+        [
+          10.0,
+          10.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f0",
+      "faceB": "s1_p0_i0_f2",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Cube",
+      "flatmates.pieceKey": "craft_Cube#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Cube::1",
+      "curve": [
+        [
+          10.0,
+          10.0,
+          0.0
+        ],
+        [
+          5.0,
+          10.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f0",
+      "faceB": "s1_p0_i0_f4",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Cube",
+      "flatmates.pieceKey": "craft_Cube#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Cube::1",
+      "curve": [
+        [
+          5.0,
+          10.0,
+          0.0
+        ],
+        [
+          5.0,
+          5.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f0",
+      "faceB": "s1_p0_i0_f1",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Cube",
+      "flatmates.pieceKey": "craft_Cube#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Cube::1",
+      "curve": [
+        [
+          0.0,
+          5.0,
+          0.0
+        ],
+        [
+          5.0,
+          5.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f1",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Cube",
+      "flatmates.pieceKey": "craft_Cube#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Cube::1",
+      "curve": [
+        [
+          5.0,
+          10.0,
+          0.0
+        ],
+        [
+          0.0,
+          10.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f1",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Cube",
+      "flatmates.pieceKey": "craft_Cube#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Cube::1",
+      "curve": [
+        [
+          0.0,
+          10.0,
+          0.0
+        ],
+        [
+          0.0,
+          5.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f1",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Cube",
+      "flatmates.pieceKey": "craft_Cube#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Cube::1",
+      "curve": [
+        [
+          10.0,
+          5.0,
+          0.0
+        ],
+        [
+          15.0,
+          5.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f2",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Cube",
+      "flatmates.pieceKey": "craft_Cube#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Cube::1",
+      "curve": [
+        [
+          15.0,
+          5.0,
+          0.0
+        ],
+        [
+          15.0,
+          10.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f2",
+      "faceB": "s1_p0_i0_f3",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Cube",
+      "flatmates.pieceKey": "craft_Cube#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Cube::1",
+      "curve": [
+        [
+          15.0,
+          10.0,
+          0.0
+        ],
+        [
+          10.0,
+          10.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f2",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Cube",
+      "flatmates.pieceKey": "craft_Cube#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Cube::1",
+      "curve": [
+        [
+          15.0,
+          5.0,
+          0.0
+        ],
+        [
+          20.0,
+          5.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f3",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Cube",
+      "flatmates.pieceKey": "craft_Cube#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Cube::1",
+      "curve": [
+        [
+          20.0,
+          5.0,
+          0.0
+        ],
+        [
+          20.0,
+          10.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f3",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Cube",
+      "flatmates.pieceKey": "craft_Cube#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Cube::1",
+      "curve": [
+        [
+          20.0,
+          10.0,
+          0.0
+        ],
+        [
+          15.0,
+          10.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f3",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Cube",
+      "flatmates.pieceKey": "craft_Cube#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Cube::1",
+      "curve": [
+        [
+          10.0,
+          10.0,
+          0.0
+        ],
+        [
+          10.0,
+          15.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f4",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Cube",
+      "flatmates.pieceKey": "craft_Cube#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Cube::1",
+      "curve": [
+        [
+          10.0,
+          15.0,
+          0.0
+        ],
+        [
+          5.0,
+          15.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f4",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Cube",
+      "flatmates.pieceKey": "craft_Cube#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Cube::1",
+      "curve": [
+        [
+          5.0,
+          15.0,
+          0.0
+        ],
+        [
+          5.0,
+          10.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f4",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Cube",
+      "flatmates.pieceKey": "craft_Cube#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "5",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Cube::1",
+      "curve": [
+        [
+          5.0,
+          0.0,
+          0.0
+        ],
+        [
+          10.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f5",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Cube",
+      "flatmates.pieceKey": "craft_Cube#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "5",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Cube::1",
+      "curve": [
+        [
+          10.0,
+          0.0,
+          0.0
+        ],
+        [
+          10.0,
+          5.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f5",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Cube",
+      "flatmates.pieceKey": "craft_Cube#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "5",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Cube::1",
+      "curve": [
+        [
+          5.0,
+          5.0,
+          0.0
+        ],
+        [
+          5.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f5",
+      "pieceIndex": 0
+    }
+  ]
+}

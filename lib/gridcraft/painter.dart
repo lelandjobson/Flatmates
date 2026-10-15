@@ -9,10 +9,17 @@ import '../papercut/camera.dart';
 import '../papercut/paper.dart';
 import 'blueprint.dart';
 import 'celebrate.dart';
+import 'craft_plane.dart';
+import 'criteria.dart';
 import 'fold.dart';
+import 'folded_model.dart' show FaceMark;
+import 'model_painter.dart' show kBlueprintInk, paintFaceMark;
 import 'paper_stack.dart';
 import 'rules.dart';
 import 'scissor.dart';
+
+/// Blueprint ink where an edge criterion is met.
+const Color kCriterionMetColor = Color(0xFF2E7D32);
 
 /// Step that keeps unit dots at least about 7px apart.
 double unitGridStride({
@@ -94,6 +101,11 @@ class GridPuzzlePainter extends CustomPainter {
     this.drawPaper = true,
     this.drawBlueprint = true,
     this.blueprintColor,
+    this.progress,
+    this.plane,
+    this.gridOpacity = 1,
+    this.sheetOpacity = 1,
+    this.marks = const [],
   });
 
   final PapercutCamera camera;
@@ -207,9 +219,37 @@ class GridPuzzlePainter extends CustomPainter {
   /// Outline color for blueprint pieces. The grid puzzle view uses blue.
   final Color? blueprintColor;
 
+  /// Edge criteria met so far. Null draws the blueprint without feedback.
+  final BlueprintProgress? progress;
+
+  /// Surface the level lies on. Null is the sheet at z = 0.
+  final CraftPlane? plane;
+
+  /// 0–1 strength of the dot grid.
+  final double gridOpacity;
+
+  /// 0–1 strength of everything above the grid: paper, ink, and marks.
+  final double sheetOpacity;
+
+  /// Letters and up arrows tying blueprint faces to the folded model.
+  final List<FaceMark> marks;
+
   @override
   void paint(Canvas canvas, Size size) {
-    if (drawGrid) _paintUnitGrid(canvas, size);
+    if (drawGrid && gridOpacity > 0) _paintUnitGrid(canvas, size);
+    if (sheetOpacity <= 0) return;
+    final layered = sheetOpacity < 1;
+    if (layered) {
+      canvas.saveLayer(
+        Offset.zero & size,
+        Paint()..color = Color.fromRGBO(0, 0, 0, sheetOpacity),
+      );
+    }
+    _paintSheet(canvas, size);
+    if (layered) canvas.restore();
+  }
+
+  void _paintSheet(Canvas canvas, Size size) {
     if (fillShapes) _paintPaperFrame(canvas, size);
     if (!fillShapes && drawPaper) {
       final order = [for (var i = 0; i < sheet.pieces.length; i++) i]
@@ -314,6 +354,7 @@ class GridPuzzlePainter extends CustomPainter {
     if (drawBlueprint) _paintBlueprint(canvas, size);
     _paintDraft(canvas, size);
     _paintRules(canvas, size);
+    _paintFaceMarks(canvas, size);
     for (final stroke in sheet.cutStrokes) {
       for (final piece in sheet.pieces) {
         if (_bursting(piece.id)) continue;
@@ -553,34 +594,39 @@ class GridPuzzlePainter extends CustomPainter {
       }
       final styles = step.edgeStyleOf(i);
       final edges = step.edgeCountOf(i);
+      final failing = failure?.kind == FailureKind.piece && failure?.index == i;
+      final complete =
+          !failing && !selectedPolygon && (progress?.complete(i) ?? false);
+      if (complete) _paintCompleteHalo(canvas, size, ring, edges);
       for (var edge = 0; edge < edges; edge++) {
         final a = ring[edge];
         final b = ring[(edge + 1) % ring.length];
         final penciled = styles[edge] == EdgeStyle.penciled;
-        final failing =
-            failure?.kind == FailureKind.piece && failure?.index == i;
         final pulse = failing ? _failurePulse : 0.0;
         final ink = blueprintColor ?? const Color(0xFF1565C0);
         final color = pulse > 0
             ? Color.lerp(ink, const Color(0xFFFF1744), pulse)!
             : selectedPolygon
             ? const Color(0xFFFFD54F)
+            : complete
+            ? kCriterionMetColor
             : ink;
         final width = pulse > 0
             ? 2.0 + 4 * pulse
             : (selectedPolygon ? 3.0 : 2.0);
-        if (penciled) {
-          _paintFoldMark(canvas, size, a, b, color, width, solid: pulse > 0);
-        } else {
-          for (final span in _inkSpans(a, b)) {
-            _stroke(
-              canvas,
-              size,
-              [span.$1, span.$2],
-              _throughPaper(color, pulse > 0 ? 0 : span.$3),
-              width: width,
-            );
-          }
+        _paintBlueprintEdge(canvas, size, a, b, penciled, color, width, pulse);
+        if (complete || pulse > 0 || selectedPolygon) continue;
+        for (final span in progress?.edge(i, edge)?.met ?? const []) {
+          _paintBlueprintEdge(
+            canvas,
+            size,
+            span.$1,
+            span.$2,
+            penciled,
+            kCriterionMetColor,
+            width + 0.5,
+            0,
+          );
         }
       }
       final budget = i < collisionLeft.length
@@ -594,6 +640,54 @@ class GridPuzzlePainter extends CustomPainter {
           at,
           budget,
           shift: fillShapes ? Offset.zero : markSeparation(at, sheet.pieces),
+        );
+      }
+    }
+  }
+
+  void _paintBlueprintEdge(
+    Canvas canvas,
+    Size size,
+    Offset a,
+    Offset b,
+    bool penciled,
+    Color color,
+    double width,
+    double pulse,
+  ) {
+    if (penciled) {
+      _paintFoldMark(canvas, size, a, b, color, width, solid: pulse > 0);
+      return;
+    }
+    for (final span in _inkSpans(a, b)) {
+      _stroke(
+        canvas,
+        size,
+        [span.$1, span.$2],
+        _throughPaper(color, pulse > 0 ? 0 : span.$3),
+        width: width,
+      );
+    }
+  }
+
+  /// Stand-in for a completed blueprint piece: a soft green glow around it.
+  void _paintCompleteHalo(
+    Canvas canvas,
+    Size size,
+    List<Offset> ring,
+    int edges,
+  ) {
+    for (var edge = 0; edge < edges; edge++) {
+      for (final span in _inkSpans(
+        ring[edge],
+        ring[(edge + 1) % ring.length],
+      )) {
+        _stroke(
+          canvas,
+          size,
+          [span.$1, span.$2],
+          kCriterionMetColor.withValues(alpha: 0.28),
+          width: 9,
         );
       }
     }
@@ -1049,6 +1143,20 @@ class GridPuzzlePainter extends CustomPainter {
 
   Offset _shifted(Offset point) => point + markSeparation(point, sheet.pieces);
 
+  void _paintFaceMarks(Canvas canvas, Size size) {
+    for (final mark in marks) {
+      final shift = fillShapes
+          ? Offset.zero
+          : markSeparation(mark.center, sheet.pieces);
+      paintFaceMark(
+        canvas,
+        mark,
+        (point) => _project(point + shift, size),
+        color: blueprintColor ?? kBlueprintInk,
+      );
+    }
+  }
+
   GridEdge _shiftedEdge(GridEdge edge) {
     final shift = markSeparation(
       Offset((edge.a.dx + edge.b.dx) / 2, (edge.a.dy + edge.b.dy) / 2),
@@ -1213,7 +1321,8 @@ class GridPuzzlePainter extends CustomPainter {
     }
 
     const dotRadius = 1.35;
-    final dot = Paint()..color = Colors.grey.shade400.withValues(alpha: 0.55);
+    final dot = Paint()
+      ..color = Colors.grey.shade400.withValues(alpha: 0.55 * gridOpacity);
     Offset? originScreen;
     for (final world in unitGridPoints(bounds, stride)) {
       final screen = _project(world, size);
@@ -1224,19 +1333,19 @@ class GridPuzzlePainter extends CustomPainter {
       }
       canvas.drawCircle(screen, dotRadius, dot);
     }
-    if (originScreen == null) return;
+    if (originScreen == null || plane != null) return;
     canvas.drawCircle(
       originScreen,
       4.8,
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.4
-        ..color = Colors.white.withValues(alpha: 0.95),
+        ..color = Colors.white.withValues(alpha: 0.95 * gridOpacity),
     );
     canvas.drawCircle(
       originScreen,
       3.6,
-      Paint()..color = Colors.white.withValues(alpha: 0.92),
+      Paint()..color = Colors.white.withValues(alpha: 0.92 * gridOpacity),
     );
   }
 
@@ -1248,7 +1357,10 @@ class GridPuzzlePainter extends CustomPainter {
       Offset(size.width, size.height),
       Offset(0, size.height),
     ]) {
-      final world = camera.planePoint(screen, size);
+      final surface = plane;
+      final world = surface == null
+          ? camera.planePoint(screen, size)
+          : camera.planePointOn(surface, screen, size);
       if (world == null) return null;
       corners.add(world);
     }
@@ -1504,7 +1616,11 @@ class GridPuzzlePainter extends CustomPainter {
   }
 
   Offset? _project(Offset point, Size size) {
-    return camera.camera.projectToScreen(Vector3(point.dx, point.dy, 0), size);
+    final surface = plane;
+    return camera.camera.projectToScreen(
+      surface == null ? Vector3(point.dx, point.dy, 0) : surface.world(point),
+      size,
+    );
   }
 
   @override

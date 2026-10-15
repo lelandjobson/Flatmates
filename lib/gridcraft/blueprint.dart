@@ -223,6 +223,24 @@ class LevelPermutation {
   }
 }
 
+/// The version-1 craft and crafting step whose folded model a level builds.
+class CraftLink {
+  const CraftLink({required this.id, required this.step});
+
+  final String id;
+  final int step;
+
+  Map<String, dynamic> toJson() => {'id': id, 'step': step};
+
+  static CraftLink? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final id = raw['id'];
+    final step = raw['step'];
+    if (id is! String || step is! num) return null;
+    return CraftLink(id: id, step: step.toInt());
+  }
+}
+
 /// A level: one blueprint step. Each ring in [polygons] is a blueprint piece.
 class GridStep {
   const GridStep({
@@ -239,6 +257,7 @@ class GridStep {
     this.attachment = const ScissorAttachment(),
     this.permutation = const LevelPermutation(),
     this.discardFailure = false,
+    this.craft,
   });
 
   final String id;
@@ -262,6 +281,9 @@ class GridStep {
   /// and scrap fades. Splitting that blueprint across two pieces fails the
   /// level.
   final bool discardFailure;
+
+  /// Folded model this level wraps in 3D. Null hides the 3D view.
+  final CraftLink? craft;
 
   /// Sheet around the outlines and rule marks, grown by [paperMargin] cells.
   Rect get paper {
@@ -348,6 +370,7 @@ class GridStep {
     ScissorAttachment? attachment,
     LevelPermutation? permutation,
     bool? discardFailure,
+    CraftLink? craft,
   }) {
     return GridStep(
       id: id,
@@ -363,6 +386,7 @@ class GridStep {
       attachment: attachment ?? this.attachment,
       permutation: permutation ?? this.permutation,
       discardFailure: discardFailure ?? this.discardFailure,
+      craft: craft ?? this.craft,
     );
   }
 
@@ -391,6 +415,7 @@ class GridStep {
     if (!permutation.isEmpty) 'permutations': permutation.toJson(),
     if (!rules.isEmpty) 'rules': rules.toJson(),
     if (discardFailure) 'discardFailure': true,
+    if (craft != null) 'craft': craft!.toJson(),
   };
 
   bool get _stylesStored {
@@ -419,6 +444,7 @@ class GridStep {
       attachment: ScissorAttachment.fromJson(json['attachments']),
       permutation: LevelPermutation.fromJson(json['permutations']),
       discardFailure: json['discardFailure'] == true,
+      craft: CraftLink.fromJson(json['craft']),
       edgeStyles: [
         for (final row in styles)
           [

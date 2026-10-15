@@ -170,8 +170,11 @@ ToolPose sampleRelocate({
   final raw = t.clamp(0.0, 1.0);
   final u = Curves.easeOutCubic.transform(raw);
   final seated = _lerp(from.roll, holdRoll(to, sign), u);
-  final roll = _lerp(seated, sign * kDipRoll, math.sin(math.pi * raw))
-      .clamp(-kMaxRoll, kMaxRoll);
+  final roll = _lerp(
+    seated,
+    sign * kDipRoll,
+    math.sin(math.pi * raw),
+  ).clamp(-kMaxRoll, kMaxRoll);
   return ToolPose(
     tip: Offset.lerp(from.tip, to.anchor, u)!,
     direction: _lerpDirection(from.direction, to.direction, u),
@@ -290,12 +293,7 @@ class ToolFlight {
     _cutDirection = direction;
     _cutPresent = present;
     phase = ToolFlightPhase.cut;
-    target = ToolCue(
-      anchor: from,
-      direction: direction,
-      aim: from,
-      reach: 1,
-    );
+    target = ToolCue(anchor: from, direction: direction, aim: from, reach: 1);
     _from = ToolPose(
       tip: from,
       direction: direction,
@@ -364,22 +362,12 @@ class ToolFlight {
         return sampleHold(cue: cue, sign: _sign);
       case ToolFlightPhase.arrive:
         if (cue == null) return ToolPose.hidden;
-        return sampleArrive(
-          t: t,
-          cue: cue,
-          distance: _distance,
-          sign: _sign,
-        );
+        return sampleArrive(t: t, cue: cue, distance: _distance, sign: _sign);
       case ToolFlightPhase.relocate:
         if (cue == null) return ToolPose.hidden;
         return sampleRelocate(t: t, from: _from, to: cue, sign: _sign);
       case ToolFlightPhase.leave:
-        return sampleLeave(
-          t: t,
-          from: _from,
-          distance: _distance,
-          sign: _sign,
-        );
+        return sampleLeave(t: t, from: _from, distance: _distance, sign: _sign);
       case ToolFlightPhase.cut:
         return sampleCut(
           t: t,

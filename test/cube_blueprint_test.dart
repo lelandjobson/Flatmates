@@ -32,12 +32,12 @@ void main() {
     }
   });
 
-  test('the net is a cross of six closed 6x6 squares', () {
+  test('the net is a cross of six closed 5x5 squares', () {
     final step = cubeBlueprint().steps.single;
     expect(step.polygons, hasLength(6));
     final front = step.polygons.first;
-    expect(front.first, const Offset(6, 6));
-    expect(front[2], const Offset(12, 12));
+    expect(front.first, const Offset(5, 5));
+    expect(front[2], const Offset(10, 10));
     expect(step.edgeStyleOf(0), everyElement(EdgeStyle.penciled));
 
     var penciled = 0;
@@ -56,7 +56,7 @@ void main() {
     expect(penciled, 10);
   });
 
-  test('the net folds into a 6x6x6 cube and other blueprints do not', () {
+  test('the net folds into a 5x5x5 cube and other blueprints do not', () {
     final faces = foldedCube(cubeBlueprint());
     expect(faces, isNotNull);
     final cube = faces!;
@@ -71,28 +71,29 @@ void main() {
 
     CubeFace face(CubeFaceRole role) =>
         cube.singleWhere((item) => item.role == role);
+    final half = kCubeFace / 2;
     expect(
-      face(CubeFaceRole.front).corners.every((point) => point.z == 3),
+      face(CubeFaceRole.front).corners.every((point) => point.z == half),
       isTrue,
     );
     expect(
-      face(CubeFaceRole.back).corners.every((point) => point.z == -3),
+      face(CubeFaceRole.back).corners.every((point) => point.z == -half),
       isTrue,
     );
     expect(
-      face(CubeFaceRole.left).corners.every((point) => point.x == -3),
+      face(CubeFaceRole.left).corners.every((point) => point.x == -half),
       isTrue,
     );
     expect(
-      face(CubeFaceRole.right).corners.every((point) => point.x == 3),
+      face(CubeFaceRole.right).corners.every((point) => point.x == half),
       isTrue,
     );
     expect(
-      face(CubeFaceRole.top).corners.every((point) => point.y == 3),
+      face(CubeFaceRole.top).corners.every((point) => point.y == half),
       isTrue,
     );
     expect(
-      face(CubeFaceRole.bottom).corners.every((point) => point.y == -3),
+      face(CubeFaceRole.bottom).corners.every((point) => point.y == -half),
       isTrue,
     );
 

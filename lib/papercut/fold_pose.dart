@@ -79,7 +79,7 @@ Map<String, Matrix4> applyFoldPose(CraftV1 craft, int currentStep, double t) {
 Matrix4 partialInverse(CraftV1Face face, double t) {
   final transform = face.transform;
   if (transform is CraftV1Movement) {
-    return _lerpRigid(Matrix4.identity(), transform.inverse, t);
+    return lerpRigid(Matrix4.identity(), transform.inverse, t);
   }
   if (transform is CraftV1Rotation) {
     final from = transform.axisStart;
@@ -98,7 +98,8 @@ Matrix4 partialInverse(CraftV1Face face, double t) {
 /// Rhino Z-up point to the engine frame used by [ObjParser] (Y up).
 Vector3 rhinoToEngine(Vector3 rhino) => Vector3(rhino.x, rhino.z, rhino.y);
 
-Matrix4 _lerpRigid(Matrix4 from, Matrix4 to, double t) {
+/// Rigid blend: translation lerps, rotation slerps.
+Matrix4 lerpRigid(Matrix4 from, Matrix4 to, double t) {
   final position =
       from.getTranslation() + (to.getTranslation() - from.getTranslation()) * t;
   final rotation = _slerp(

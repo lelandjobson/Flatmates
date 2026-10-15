@@ -4,7 +4,37 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math_64.dart';
 
+import '../gridcraft/craft_plane.dart';
 import '../rendering/scene/camera.dart';
+
+/// Where the camera looks from. Null angles keep the current ones.
+class CameraPose {
+  const CameraPose({
+    required this.lookAt,
+    this.lookAtZ = 0,
+    required this.halfHeight,
+    this.azimuth,
+    this.elevation,
+    this.roll,
+  });
+
+  final Offset lookAt;
+  final double lookAtZ;
+  final double halfHeight;
+  final double? azimuth;
+  final double? elevation;
+  final double? roll;
+
+  CameraPose withAngles(({double azimuth, double elevation, double roll}) a) =>
+      CameraPose(
+        lookAt: lookAt,
+        lookAtZ: lookAtZ,
+        halfHeight: halfHeight,
+        azimuth: a.azimuth,
+        elevation: a.elevation,
+        roll: a.roll,
+      );
+}
 
 /// Perspective camera in millimeters. Focal length is a real lens on a 24 mm
 /// vertical film, so flat and orbit views can dolly into each other.
@@ -28,6 +58,12 @@ class PapercutCamera extends ChangeNotifier {
   /// Contacts closer than this have no stable angle.
   static const double rotationMinSpan = 12;
 
+  /// Orbit stops short of the poles so the up vector stays defined.
+  static const double maxElevation = 85 * math.pi / 180;
+
+  /// Face focus flight, as in the room editor.
+  static const Duration flyDuration = Duration(milliseconds: 650);
+
   final Camera camera = Camera(
     name: 'papercut',
     position: Vector3(0, 0, 1),
@@ -39,6 +75,9 @@ class PapercutCamera extends ChangeNotifier {
   double focalLengthMm = flatFocalMm;
   double framedHalfHeightMm = 150;
   Offset lookAt = Offset.zero;
+
+  /// Height of the look-at point above the sheet. The orbit centers on it.
+  double lookAtZ = 0;
   double azimuth = 0;
   double elevation = 0;
 
@@ -55,6 +94,9 @@ class PapercutCamera extends ChangeNotifier {
   double _toAzimuth = 0;
   double _fromElevation = 0;
   double _toElevation = 0;
+
+  CameraPose? _flyFrom;
+  CameraPose? _flyTo;
 
   double get halfFovRadians => math.atan(filmHeightMm / (2 * focalLengthMm));
 
@@ -257,6 +299,173 @@ class PapercutCamera extends ChangeNotifier {
     return null;
   }
 
+  CameraPose get pose => CameraPose(
+    lookAt: lookAt,
+    lookAtZ: lookAtZ,
+    halfHeight: framedHalfHeightMm,
+    azimuth: azimuth,
+    elevation: elevation,
+    roll: roll,
+  );
+
+  Vector3 get target => Vector3(lookAt.dx, lookAt.dy, lookAtZ);
+
+  /// Unit vector from the look-at point toward the eye.
+  Vector3 get viewDirection {
+    final away = camera.position - target;
+    return away.length2 < 1e-12 ? Vector3(0, 0, 1) : away.normalized();
+  }
+
+  /// Angles that put the eye along [direction] from the look-at point, with
+  /// [up] toward the top of the view. Kept continuous with the current ones.
+  ({double azimuth, double elevation, double roll}) anglesAlong(
+    Vector3 direction, {
+    Vector3? up,
+  }) {
+    final n = direction.normalized();
+    final elevation = math.asin(n.y.clamp(-1.0, 1.0));
+    final azimuth = n.x.abs() < 1e-9 && n.z.abs() < 1e-9
+        ? this.azimuth
+        : advanceAngle(this.azimuth, math.atan2(n.x, n.z));
+    final wanted = up;
+    if (wanted == null) {
+      return (azimuth: azimuth, elevation: elevation, roll: roll);
+    }
+    final forward = -n;
+    var hint = Vector3(0, 1, 0);
+    if (forward.dot(hint).abs() > 0.98) hint = Vector3(1, 0, 0);
+    final right = forward.cross(hint).normalized();
+    final base = right.cross(forward).normalized();
+    final flat = wanted - forward * wanted.dot(forward);
+    if (flat.length2 < 1e-12) {
+      return (azimuth: azimuth, elevation: elevation, roll: roll);
+    }
+    flat.normalize();
+    final turn = advanceAngle(
+      roll,
+      math.atan2(flat.dot(right), flat.dot(base)),
+    );
+    return (azimuth: azimuth, elevation: elevation, roll: turn);
+  }
+
+  /// Puts the eye along [direction] at once. See [anglesAlong].
+  void orbitTo(Vector3 direction, {Vector3? up}) {
+    final angles = anglesAlong(direction, up: up);
+    azimuth = angles.azimuth;
+    elevation = angles.elevation;
+    roll = angles.roll;
+    _apply();
+    notifyListeners();
+  }
+
+  /// Turns the orbit around the look-at point.
+  void orbitBy(double dAzimuth, double dElevation) {
+    if (dAzimuth.abs() < 1e-9 && dElevation.abs() < 1e-9) return;
+    azimuth = wrapAngle(azimuth + dAzimuth);
+    elevation = (elevation + dElevation).clamp(-maxElevation, maxElevation);
+    _apply();
+    notifyListeners();
+  }
+
+  /// Slides the look-at point across the view, within [limit] of [anchor].
+  void panInView(
+    Offset delta,
+    Size viewport, {
+    Vector3? anchor,
+    double? limit,
+  }) {
+    if (delta == Offset.zero || viewport.height < 2) return;
+    final perPixel = 2 * framedHalfHeightMm / viewport.height;
+    final right = camera.right;
+    final up = camera.up.normalized();
+    final next = target
+      ..addScaled(right, -delta.dx * perPixel)
+      ..addScaled(up, delta.dy * perPixel);
+    if (anchor != null && limit != null) {
+      final away = next - anchor;
+      if (away.length > limit) {
+        next.setFrom(anchor + away.normalized() * limit);
+      }
+    }
+    lookAt = Offset(next.x, next.y);
+    lookAtZ = next.z;
+    _apply();
+    notifyListeners();
+  }
+
+  /// Pose looking at [target] from [distance] along [normal], with [up]
+  /// toward the top of the view when given.
+  CameraPose poseFacing(
+    Vector3 target,
+    Vector3 normal,
+    double distance, {
+    Vector3? up,
+  }) {
+    return CameraPose(
+      lookAt: Offset(target.x, target.y),
+      lookAtZ: target.z,
+      halfHeight: distance * math.tan(halfFovRadians),
+    ).withAngles(anglesAlong(normal, up: up));
+  }
+
+  /// Pose that fits a sphere, keeping the current angles.
+  CameraPose frameSphere(Vector3 center, double radius, Size viewport) {
+    final aspect = viewport.width < 2 || viewport.height < 2
+        ? 1.0
+        : viewport.width / viewport.height;
+    final margin = radius * 1.35;
+    return CameraPose(
+      lookAt: Offset(center.x, center.y),
+      lookAtZ: center.z,
+      halfHeight: math.max(margin, margin / math.max(aspect, 0.05)),
+    );
+  }
+
+  /// Starts a flight to [target] seen along [normal]. Drive it with [setFly].
+  void flyTo(Vector3 target, Vector3 normal, double distance, {Vector3? up}) =>
+      beginFly(poseFacing(target, normal, distance, up: up));
+
+  void beginFly(CameraPose to) {
+    _flyFrom = pose;
+    _flyTo = to;
+  }
+
+  /// [t] is already eased: 0 is where the flight began, 1 is [beginFly]'s pose.
+  void setFly(double t) {
+    final from = _flyFrom;
+    final to = _flyTo;
+    if (from == null || to == null) return;
+    final u = t.clamp(0.0, 1.0);
+    double mix(double a, double b) => a + (b - a) * u;
+    lookAt = Offset.lerp(from.lookAt, to.lookAt, u)!;
+    lookAtZ = mix(from.lookAtZ, to.lookAtZ);
+    framedHalfHeightMm = mix(from.halfHeight, to.halfHeight);
+    final toAzimuth = to.azimuth;
+    if (toAzimuth != null) azimuth = mix(from.azimuth ?? azimuth, toAzimuth);
+    final toElevation = to.elevation;
+    if (toElevation != null) {
+      elevation = mix(from.elevation ?? elevation, toElevation);
+    }
+    final toRoll = to.roll;
+    if (toRoll != null) {
+      final start = from.roll ?? roll;
+      roll = start + signedAngleDelta(start, toRoll) * u;
+    }
+    _apply();
+    notifyListeners();
+  }
+
+  /// Screen point to plane coordinates of [plane].
+  Offset? planePointOn(CraftPlane plane, Offset screen, Size viewport) {
+    final ray = camera.unprojectRay(screen, viewport);
+    if (ray == null) return null;
+    final normal = plane.normal;
+    final denom = ray.direction.dot(normal);
+    if (denom.abs() < 1e-8) return null;
+    final t = (plane.origin - ray.origin).dot(normal) / denom;
+    return plane.local(ray.pointAt(t));
+  }
+
   Offset? planePoint(Offset screen, Size viewport) {
     final ray = camera.unprojectRay(screen, viewport);
     if (ray == null) return null;
@@ -275,15 +484,15 @@ class PapercutCamera extends ChangeNotifier {
     final eye = Vector3(
       lookAt.dx + d * math.sin(azimuth) * cp,
       lookAt.dy + d * math.sin(elevation),
-      d * math.cos(azimuth) * cp,
+      lookAtZ + d * math.cos(azimuth) * cp,
     );
     camera.projection = ProjectionType.perspective;
     camera.fovDegrees = fovDegrees;
     camera.near = math.max(0.5, d / 1000);
     camera.far = d * 40 + 1000;
     camera.setPosition(eye);
-    camera.setTarget(Vector3(lookAt.dx, lookAt.dy, 0));
-    camera.setUp(_rolledUp(Vector3(lookAt.dx, lookAt.dy, 0) - eye));
+    camera.setTarget(target);
+    camera.setUp(_rolledUp(target - eye));
   }
 
   /// Rotates the no-twist up vector around the view axis.

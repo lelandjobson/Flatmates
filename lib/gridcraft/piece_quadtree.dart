@@ -169,9 +169,13 @@ int? closestPieceIndex({
   var best = double.infinity;
   var bestIndex = -1;
   for (final index in tree.query(region)) {
-    final distance = _paperDistance(point - pieces[index].separation, pieces[index]);
+    final distance = _paperDistance(
+      point - pieces[index].separation,
+      pieces[index],
+    );
     if (distance > reach) continue;
-    if (distance < best - 1e-9 || (distance <= best + 1e-9 && index > bestIndex)) {
+    if (distance < best - 1e-9 ||
+        (distance <= best + 1e-9 && index > bestIndex)) {
       best = distance;
       bestIndex = index;
     }
@@ -193,9 +197,9 @@ double _paperDistance(Offset local, PapercutPiece piece) {
   if (onPaper) return 0;
   return distanceToPolygon(
     local,
-    Polygon2D(
-      Ring2D(piece.vertices),
-      [for (final hole in piece.holes) if (hole.length >= 3) Ring2D(hole)],
-    ),
+    Polygon2D(Ring2D(piece.vertices), [
+      for (final hole in piece.holes)
+        if (hole.length >= 3) Ring2D(hole),
+    ]),
   );
 }

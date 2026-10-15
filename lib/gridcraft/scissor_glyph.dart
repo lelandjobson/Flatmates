@@ -81,12 +81,7 @@ class ScissorGlyphPainter extends CustomPainter {
   /// the line.
   void _paintPoints(Canvas canvas, Size size, Offset tip) {
     final alpha = pose.visible.clamp(0.0, 1.0);
-    paintCraftPoint(
-      canvas,
-      tip,
-      scale: glyphScale * pointScale,
-      alpha: alpha,
-    );
+    paintCraftPoint(canvas, tip, scale: glyphScale * pointScale, alpha: alpha);
     final end = destination;
     if (end == null) return;
     final screen = _project(end, size);

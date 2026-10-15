@@ -755,9 +755,42 @@ PapercutSheet spreadPieces(
   return after.copyWith(
     pieces: [
       for (var i = 0; i < after.pieces.length; i++)
-        after.pieces[i].copyWith(separation: settled[i]),
+        after.pieces[i].copyWith(
+          separation: stays(i)
+              ? settled[i]
+              : snapSeparationOntoGrid(
+                  vertices: after.pieces[i].vertices,
+                  separation: settled[i],
+                  spacing: spacing,
+                ),
+        ),
     ],
   );
+}
+
+/// Shifts [separation] so the bottom-left vertex sits on the grid.
+///
+/// Bottom is the smaller world Y, and the leftmost of those. The move is at
+/// most half a cell, so a piece that stepped apart stays next to its cut.
+Offset snapSeparationOntoGrid({
+  required List<Offset> vertices,
+  required Offset separation,
+  required double spacing,
+}) {
+  if (spacing <= 1e-9 || vertices.isEmpty) return separation;
+  var anchor = vertices.first;
+  for (final point in vertices) {
+    final lower = point.dy < anchor.dy - 1e-9;
+    final sameRow =
+        (point.dy - anchor.dy).abs() <= 1e-9 && point.dx < anchor.dx - 1e-9;
+    if (lower || sameRow) anchor = point;
+  }
+  final drawn = anchor + separation;
+  final snapped = Offset(
+    (drawn.dx / spacing).roundToDouble() * spacing,
+    (drawn.dy / spacing).roundToDouble() * spacing,
+  );
+  return separation + (snapped - drawn);
 }
 
 Rect _pieceBounds(List<Offset> ring) {

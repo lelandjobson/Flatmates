@@ -6,7 +6,7 @@ import 'package:vector_math/vector_math_64.dart';
 import 'blueprint.dart';
 
 /// Edge length of the folded cube, and of every square in the net.
-const double kCubeFace = 6;
+const double kCubeFace = 5;
 
 /// One closed face of the folded solid.
 class CubeFace {
@@ -27,7 +27,7 @@ class CubeFace {
 
 enum CubeFaceRole { front, back, left, right, top, bottom }
 
-/// Latin cross of a 6×6×6 cube. The hub at (6, 6)–(12, 12) is the front.
+/// Latin cross of a 5×5×5 cube. The hub at (5, 5)–(10, 10) is the front.
 ///
 /// Each shared side is penciled on both squares. Every outer edge stays penned.
 GridBlueprint cubeBlueprint() {
@@ -60,12 +60,12 @@ GridBlueprint cubeBlueprint() {
         gridSpacing: 1,
         paperMargin: 2,
         polygons: [
-          square(6, 6),
-          square(0, 6),
-          square(12, 6),
-          square(18, 6),
-          square(6, 12),
-          square(6, 0),
+          square(5, 5),
+          square(0, 5),
+          square(10, 5),
+          square(15, 5),
+          square(5, 10),
+          square(5, 0),
         ],
         edgeStyles: [
           edges(bottom: true, right: true, top: true, left: true),

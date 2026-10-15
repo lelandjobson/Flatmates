@@ -888,6 +888,71 @@ void main() {
     },
   );
 
+  test('a separated piece puts its bottom-left vertex on a grid point', () {
+    const yellow = Color(0xFFFFF3B0);
+    final before = PapercutSheet(
+      pieces: [
+        PapercutPiece(
+          id: 'paper',
+          color: yellow,
+          vertices: const [
+            Offset(0, 0),
+            Offset(6, 0),
+            Offset(6, 6),
+            Offset(0, 6),
+          ],
+        ),
+      ],
+    );
+    final after = PapercutSheet(
+      pieces: [
+        PapercutPiece(
+          id: 'paper-0',
+          color: yellow,
+          vertices: const [
+            Offset(0, 0),
+            Offset(6, 0),
+            Offset(6, 2),
+            Offset(2, 2),
+            Offset(2, 6),
+            Offset(0, 6),
+          ],
+        ),
+        PapercutPiece(
+          id: 'paper-1',
+          color: yellow,
+          vertices: const [
+            Offset(2, 2),
+            Offset(6, 2),
+            Offset(6, 6),
+            Offset(2, 6),
+          ],
+        ),
+      ],
+    );
+    final spread = spreadPieces(before, after, 1);
+    for (final piece in spread.pieces) {
+      var anchor = piece.vertices.first;
+      for (final point in piece.vertices) {
+        final lower = point.dy < anchor.dy - 1e-9;
+        final sameRow =
+            (point.dy - anchor.dy).abs() <= 1e-9 && point.dx < anchor.dx;
+        if (lower || sameRow) anchor = point;
+      }
+      final drawn = anchor + piece.separation;
+      expect(drawn.dx, closeTo(drawn.dx.roundToDouble(), 1e-6));
+      expect(drawn.dy, closeTo(drawn.dy.roundToDouble(), 1e-6));
+    }
+    expect(
+      snapSeparationOntoGrid(
+        vertices: const [Offset(0, 0), Offset(2, 0), Offset(2, 1)],
+        separation: const Offset(0.4, -1.6),
+        spacing: 1,
+      ),
+      const Offset(0, -2),
+    );
+  });
+
   test('a smaller piece slides out of space a larger one occupies', () {
     final settled = relaxSeparations(
       bounds: const [Rect.fromLTWH(0, 0, 10, 10), Rect.fromLTWH(0, 0, 2, 2)],

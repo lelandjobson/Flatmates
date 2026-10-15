@@ -60,12 +60,7 @@ class FoldGlyphPainter extends CustomPainter {
     );
     canvas.restore();
 
-    paintCraftPoint(
-      canvas,
-      tip,
-      scale: glyphScale * pointScale,
-      alpha: alpha,
-    );
+    paintCraftPoint(canvas, tip, scale: glyphScale * pointScale, alpha: alpha);
     final end = destination;
     if (end == null) return;
     final screen = _project(end, size);

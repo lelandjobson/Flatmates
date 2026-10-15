@@ -324,11 +324,10 @@ List<PapercutPiece> _piecesFromFaces(
   final areas = [for (final face in faces) polygonSignedArea(face).abs()];
   final container = List<int?>.filled(faces.length, null);
   for (var i = 0; i < faces.length; i++) {
-    final centroid = polygonCentroid(faces[i]);
     var bestArea = double.infinity;
     for (var j = 0; j < faces.length; j++) {
       if (i == j || areas[j] <= areas[i] * 1.02) continue;
-      if (!isInsidePolygon(centroid, faces[j])) continue;
+      if (!_faceInside(faces[i], faces[j])) continue;
       if (areas[j] < bestArea) {
         bestArea = areas[j];
         container[i] = j;
@@ -353,6 +352,33 @@ List<PapercutPiece> _piecesFromFaces(
         separation: source.separation,
       ),
   ];
+}
+
+/// True when all of [inner] lies within [outer], touching its outline at most.
+///
+/// A centroid test is not enough: a neighbor that wraps a notch of [outer]
+/// can have its centroid inside [outer] while most of it lies outside.
+bool _faceInside(List<Offset> inner, List<Offset> outer) {
+  for (final point in inner) {
+    if (_onRing(point, outer)) continue;
+    if (!isInsidePolygon(point, outer)) return false;
+  }
+  return isInsidePolygon(_faceInteriorPoint(inner), outer);
+}
+
+bool _onRing(Offset point, List<Offset> ring) {
+  for (var i = 0; i < ring.length; i++) {
+    final a = ring[i];
+    final b = ring[(i + 1) % ring.length];
+    final ab = b - a;
+    final len2 = ab.dx * ab.dx + ab.dy * ab.dy;
+    final t = len2 < 1e-12
+        ? 0.0
+        : (((point.dx - a.dx) * ab.dx + (point.dy - a.dy) * ab.dy) / len2)
+              .clamp(0.0, 1.0);
+    if ((point - (a + ab * t)).distance <= 1e-4) return true;
+  }
+  return false;
 }
 
 (Offset, Offset) _extremeSpan(Offset a, Offset b, List<Offset> points) {

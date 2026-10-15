@@ -137,7 +137,8 @@
         false,
         false,
         false
-      ]
+      ],
+      "craft": {"id": "craft_Nightstand", "step": 3}
     }
   ]
 }

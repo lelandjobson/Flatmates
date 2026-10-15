@@ -239,9 +239,7 @@ class MixedCraftPainter extends CustomPainter {
       ..sort((a, b) => b.key.compareTo(a.key));
     for (final layer in layers) {
       if (layer.value <= 0.001 || layer.key <= 0) continue;
-      final ink = const Color(
-        0xFF000000,
-      ).withValues(alpha: 0.12 * layer.value);
+      final ink = const Color(0xFF000000).withValues(alpha: 0.12 * layer.value);
       final segments = paperGridSegments(
         ring: piece.vertices,
         holes: piece.holes,
@@ -287,12 +285,12 @@ class MixedCraftPainter extends CustomPainter {
           [
             for (final point in mark)
               displayPoint(
-                point,
-                pose.folds,
-                pieceId: piece.id,
-                bend: pose.bend,
-                bendT: pose.bendT,
-              ) +
+                    point,
+                    pose.folds,
+                    pieceId: piece.id,
+                    bend: pose.bend,
+                    bendT: pose.bendT,
+                  ) +
                   piece.separation,
           ],
           background,
