@@ -10,6 +10,9 @@ import 'painter.dart' show kCriterionMetColor;
 /// Blueprint ink, shared by the sheet and the model.
 const Color kBlueprintInk = Color(0xFF1565C0);
 
+/// Fill on the face under the reticle, ready to take paper.
+const Color kPreselectColor = Color(0xFFFF9F43);
+
 /// A placed paper piece that has not wrapped, already in world space.
 class LoosePaper {
   const LoosePaper({
@@ -35,7 +38,7 @@ class ModelPainter extends CustomPainter {
     this.paperPoses = const {},
     this.paperColors = const {},
     this.loose = const [],
-    this.focusFace,
+    this.highlight = const {},
     this.glow = const {},
     this.complete = 0,
   });
@@ -54,7 +57,9 @@ class ModelPainter extends CustomPainter {
   final Map<int, Matrix4> paperPoses;
   final Map<int, Color> paperColors;
   final List<LoosePaper> loose;
-  final int? focusFace;
+
+  /// Face index to 0–1 preselect fill.
+  final Map<int, double> highlight;
 
   /// Face index to 0–1 match glow.
   final Map<int, double> glow;
@@ -93,6 +98,17 @@ class ModelPainter extends CustomPainter {
       item.paint();
     }
 
+    for (final entry in highlight.entries) {
+      if (entry.value <= 0 || entry.key >= model.faces.length) continue;
+      final pose = paperPoses[entry.key] ?? ghostPoses[entry.key];
+      final t = Curves.easeOut.transform(entry.value.clamp(0.0, 1.0));
+      _fill(
+        canvas,
+        size,
+        model.faces[entry.key].worldRing(pose),
+        kPreselectColor.withValues(alpha: 0.34 * t),
+      );
+    }
     for (final entry in glow.entries) {
       if (entry.value <= 0) continue;
       final pose = paperPoses[entry.key] ?? ghostPoses[entry.key];
@@ -119,14 +135,6 @@ class ModelPainter extends CustomPainter {
           width: 8,
         );
       }
-    }
-    final focus = focusFace;
-    if (focus != null && focus >= 0 && focus < model.faces.length) {
-      final ring = model.faces[focus].worldRing(
-        paperPoses[focus] ?? ghostPoses[focus],
-      );
-      _stroke(canvas, size, ring, const Color(0x66FFFFFF), width: 6);
-      _stroke(canvas, size, ring, const Color(0xFFFFD54F), width: 2);
     }
   }
 

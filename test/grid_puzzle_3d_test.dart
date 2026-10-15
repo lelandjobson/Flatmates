@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flatmates/gridcraft/blueprint.dart';
 import 'package:flatmates/gridcraft/level_io.dart';
 import 'package:flatmates/gridcraft/model_painter.dart';
+import 'package:flatmates/gridcraft/painter.dart';
 import 'package:flatmates/papercut/craft_v1.dart';
 import 'package:flatmates/screens/grid_puzzle_view.dart';
 import 'package:flatmates/ui/fm_theme.dart';
@@ -124,7 +125,7 @@ String _hint(WidgetTester tester) =>
     tester.widget<Text>(find.byKey(const Key('grid-model-hint'))).data ?? '';
 
 void main() {
-  testWidgets('3D mode: focus a face, lay the paper, and it wraps', (
+  testWidgets('3D mode: the reticle preselects, a drop focuses and wraps', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(900, 1200);
@@ -154,59 +155,110 @@ void main() {
     await tester.pump(const Duration(milliseconds: 700));
     expect(find.byKey(const Key('grid-model-layer')), findsOneWidget);
     expect(find.byKey(const Key('grid-frame-model')), findsOneWidget);
-    expect(find.byKey(const Key('grid-piece-inventory')), findsNothing);
 
-    final canvas = tester.getTopLeft(
-      find.byKey(const Key('grid-puzzle-canvas')),
-    );
-    final viewport = tester.getSize(
-      find.byKey(const Key('grid-puzzle-canvas')),
-    );
+    final canvasFinder = find.byKey(const Key('grid-puzzle-canvas'));
+    final canvas = tester.getTopLeft(canvasFinder);
+    final viewport = tester.getSize(canvasFinder);
     Offset screen(Vector3 world) {
       final painter = _modelPainter(tester);
       return canvas + painter.camera.camera.projectToScreen(world, viewport)!;
     }
 
-    final painter = _modelPainter(tester);
-    final wall = painter.model.faceOfRing(1)!;
-    final wallCenter = screen(painter.model.worldCenter(wall));
-    await tester.tapAt(wallCenter);
-    await tester.pump(const Duration(milliseconds: 80));
-    await tester.tapAt(wallCenter);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 700));
-    expect(_modelPainter(tester).focusFace, wall);
-    expect(find.byKey(const Key('grid-piece-inventory')), findsOneWidget);
-    expect(_hint(tester), 'Pick a paper piece on the right.');
+    double frame() => tester
+        .widget<AnimatedOpacity>(find.byKey(const Key('grid-focus-frame')))
+        .opacity;
 
-    await tester.tap(find.byKey(const Key('grid-inventory-paper')));
+    // Orbit to look straight down, so the reticle lands on the floor.
+    await tester.timedDragFrom(
+      tester.getCenter(canvasFinder),
+      const Offset(0, 260),
+      const Duration(milliseconds: 300),
+    );
+    await tester.pump();
+    final floor = _modelPainter(tester).model.faceOfRing(0)!;
+    expect(find.byKey(const Key('grid-piece-inventory')), findsNothing);
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(_modelPainter(tester).highlight[floor], 1);
+    expect(find.byKey(const Key('grid-piece-inventory')), findsOneWidget);
+    expect(_hint(tester), 'Drag a paper piece onto the highlighted face.');
+    expect(frame(), 0);
+
+    // Drop the paper with its middle on its own blueprint middle.
+    final face = _modelPainter(tester).model.faces[floor];
+    final item = find.byKey(const Key('grid-inventory-paper'));
+    final drag = await tester.startGesture(tester.getCenter(item));
+    await drag.moveBy(const Offset(-40, 0));
+    await tester.pump();
+    await drag.moveTo(screen(face.world(const Offset(5, 2.5))));
+    await tester.pump();
+    final preview = tester
+        .widget<CustomPaint>(find.byKey(const Key('grid-model-layer')))
+        .foregroundPainter;
+    expect(preview, isA<GridPuzzlePainter>());
+    expect((preview! as GridPuzzlePainter).sheet.pieces, hasLength(1));
+    await drag.up();
+    await tester.pump();
+    expect(find.byKey(const Key('grid-focus-back')), findsOneWidget);
+    expect(_modelPainter(tester).glow[floor], greaterThan(0));
+    await tester.pump(const Duration(milliseconds: 1000));
+    await tester.pump();
+    expect(_hint(tester), 'Every piece is wrapped.');
+    expect(_modelPainter(tester).paperPoses.keys.toSet(), {0, 1});
+    expect(frame(), 1);
+
+    await tester.tap(find.byTooltip('Undo'));
+    await tester.pump();
+    expect(_modelPainter(tester).paperPoses, isEmpty);
+    expect(_hint(tester), 'Drag a paper piece onto the face.');
+
+    // A tap lays the paper over the face, three cells left of home.
+    await tester.tap(item);
     await tester.pump();
     expect(_hint(tester), 'Slide and turn the paper until the face glows.');
 
-    final face = _modelPainter(tester).model.faces[wall];
-    final from = screen(face.world(face.centroid));
-    final to = screen(face.world(face.centroid + const Offset(-3, 0)));
+    // A double-tap away from the face and its paper leaves focus, and the
+    // paper stays loose on the face.
+    final empty = canvas + Offset(24, viewport.height * 0.45);
+    await tester.tapAt(empty);
+    await tester.pump(const Duration(milliseconds: 80));
+    await tester.tapAt(empty);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const Key('grid-focus-back')), findsNothing);
+    expect(frame(), 0);
+    expect(_modelPainter(tester).loose, hasLength(1));
+
+    // Tapping the loose paper focuses the face with it in hand.
+    await tester.tapAt(screen(face.world(const Offset(2, 2.5))));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const Key('grid-focus-back')), findsOneWidget);
+    expect(_hint(tester), 'Slide and turn the paper until the face glows.');
+
+    // One finger off the paper pans along the face.
+    final camera = _modelPainter(tester).camera;
+    final before = camera.target;
+    await tester.timedDragFrom(
+      canvas + Offset(60, viewport.height * 0.3),
+      const Offset(-80, 0),
+      const Duration(milliseconds: 200),
+    );
+    await tester.pump();
+    expect((camera.target - before).length, greaterThan(0.5));
+    expect((camera.target.z - before.z).abs(), lessThan(1e-6));
+
+    // Sliding the paper home matches and wraps.
+    final from = screen(face.world(const Offset(2, 2.5)));
+    final to = screen(face.world(const Offset(5, 2.5)));
     await tester.timedDragFrom(
       from,
       to - from,
       const Duration(milliseconds: 300),
     );
     await tester.pump();
-    expect(_modelPainter(tester).glow[wall], greaterThan(0));
+    expect(_modelPainter(tester).glow[floor], greaterThan(0));
     await tester.pump(const Duration(milliseconds: 1000));
-    await tester.pump();
     expect(_hint(tester), 'Every piece is wrapped.');
-    expect(_modelPainter(tester).paperPoses.keys.toSet(), {0, 1});
-
-    await tester.tap(find.byTooltip('Undo'));
-    await tester.pump();
-    expect(_modelPainter(tester).paperPoses, isEmpty);
-    expect(_hint(tester), 'Pick a paper piece on the right.');
-
-    await tester.tap(find.byKey(const Key('grid-focus-back')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 700));
-    expect(_modelPainter(tester).focusFace, isNull);
 
     await tester.tap(toggle);
     await tester.pump();

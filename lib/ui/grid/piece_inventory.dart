@@ -1,12 +1,15 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../gridcraft/blueprint.dart';
 import '../../gridcraft/model_painter.dart' show kBlueprintInk;
 import '../../papercut/paper.dart';
 
-/// Right-hand column of paper pieces to lay on a focused model face.
+/// Right-hand column of paper pieces to lay on a model face. Tap a piece to
+/// pick it, or drag it sideways out of the column; the drag carries the
+/// piece id.
 class PieceInventory extends StatelessWidget {
   const PieceInventory({
     super.key,
@@ -14,6 +17,7 @@ class PieceInventory extends StatelessWidget {
     required this.step,
     required this.onPick,
     this.selectedId,
+    this.previewing,
   });
 
   final List<PapercutPiece> pieces;
@@ -22,6 +26,10 @@ class PieceInventory extends StatelessWidget {
   final GridStep step;
   final ValueChanged<String> onPick;
   final String? selectedId;
+
+  /// True while the dragged piece is drawn on the model instead, so the
+  /// thumbnail under the finger hides.
+  final ValueListenable<bool>? previewing;
 
   @override
   Widget build(BuildContext context) {
@@ -50,30 +58,67 @@ class PieceInventory extends StatelessWidget {
                 itemBuilder: (context, index) {
                   final piece = pieces[index];
                   final selected = piece.id == selectedId;
-                  return GestureDetector(
-                    key: Key('grid-inventory-${piece.id}'),
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => onPick(piece.id),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 160),
-                      height: 76,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF262626),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: selected
-                              ? const Color(0xFFFFD54F)
-                              : Colors.white12,
-                          width: selected ? 2 : 1,
+                  final thumbnail = CustomPaint(
+                    painter: _ThumbnailPainter(piece: piece, step: step),
+                  );
+                  return Draggable<String>(
+                    data: piece.id,
+                    affinity: Axis.horizontal,
+                    dragAnchorStrategy: pointerDragAnchorStrategy,
+                    feedback: _DragFeedback(
+                      previewing: previewing,
+                      child: thumbnail,
+                    ),
+                    childWhenDragging: const SizedBox(height: 76),
+                    child: GestureDetector(
+                      key: Key('grid-inventory-${piece.id}'),
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => onPick(piece.id),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 160),
+                        height: 76,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF262626),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: selected
+                                ? const Color(0xFFFFD54F)
+                                : Colors.white12,
+                            width: selected ? 2 : 1,
+                          ),
                         ),
-                      ),
-                      child: CustomPaint(
-                        painter: _ThumbnailPainter(piece: piece, step: step),
+                        child: thumbnail,
                       ),
                     ),
                   );
                 },
               ),
+      ),
+    );
+  }
+}
+
+/// The thumbnail centered under the finger while dragging.
+class _DragFeedback extends StatelessWidget {
+  const _DragFeedback({required this.previewing, required this.child});
+
+  final ValueListenable<bool>? previewing;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final shown = Transform.translate(
+      offset: const Offset(-38, -38),
+      child: SizedBox(width: 76, height: 76, child: child),
+    );
+    final listenable = previewing;
+    if (listenable == null) return Opacity(opacity: 0.85, child: shown);
+    return ValueListenableBuilder<bool>(
+      valueListenable: listenable,
+      builder: (context, hidden, _) => AnimatedOpacity(
+        opacity: hidden ? 0 : 0.85,
+        duration: const Duration(milliseconds: 120),
+        child: shown,
       ),
     );
   }

@@ -376,11 +376,17 @@ class PapercutCamera extends ChangeNotifier {
   }) {
     if (delta == Offset.zero || viewport.height < 2) return;
     final perPixel = 2 * framedHalfHeightMm / viewport.height;
-    final right = camera.right;
-    final up = camera.up.normalized();
-    final next = target
-      ..addScaled(right, -delta.dx * perPixel)
-      ..addScaled(up, delta.dy * perPixel);
+    final shift = Vector3.zero()
+      ..addScaled(camera.right, -delta.dx * perPixel)
+      ..addScaled(camera.up.normalized(), delta.dy * perPixel);
+    shiftTarget(shift, anchor: anchor, limit: limit);
+  }
+
+  /// Moves the look-at point and the eye together by [shift], keeping the
+  /// look-at point within [limit] of [anchor].
+  void shiftTarget(Vector3 shift, {Vector3? anchor, double? limit}) {
+    if (shift.length2 < 1e-18) return;
+    final next = target + shift;
     if (anchor != null && limit != null) {
       final away = next - anchor;
       if (away.length > limit) {

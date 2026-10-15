@@ -106,6 +106,7 @@ class GridPuzzlePainter extends CustomPainter {
     this.gridOpacity = 1,
     this.sheetOpacity = 1,
     this.marks = const [],
+    this.gridBounds,
   });
 
   final PapercutCamera camera;
@@ -233,6 +234,9 @@ class GridPuzzlePainter extends CustomPainter {
 
   /// Letters and up arrows tying blueprint faces to the folded model.
   final List<FaceMark> marks;
+
+  /// Dot grid limit in plane coordinates. Null fills the view.
+  final Rect? gridBounds;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1304,8 +1308,14 @@ class GridPuzzlePainter extends CustomPainter {
   void _paintUnitGrid(Canvas canvas, Size size) {
     final spacing = step.gridSpacing;
     if (spacing <= 0 || size.width < 2 || size.height < 2) return;
-    final bounds = _visiblePlane(size);
-    if (bounds == null) return;
+    final visible = _visiblePlane(size);
+    final limit = gridBounds;
+    final bounds = limit == null
+        ? visible
+        : visible == null
+        ? limit
+        : visible.intersect(limit);
+    if (bounds == null || bounds.width <= 0 || bounds.height <= 0) return;
     final origin = _project(Offset.zero, size);
     final neighbor = _project(Offset(spacing, 0), size);
     final pixels = origin == null || neighbor == null
