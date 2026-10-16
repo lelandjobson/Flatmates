@@ -8,6 +8,8 @@ import '../papercut/camera.dart';
 import 'craft_plane.dart';
 import 'folded_model.dart';
 import 'painter.dart' show kCriterionMetColor;
+import 'pattern_paper_painter.dart';
+import 'wrap_cut.dart' show PaperPatch;
 
 /// Blueprint ink, shared by the sheet and the model.
 const Color kBlueprintInk = Color(0xFF1565C0);
@@ -27,6 +29,10 @@ class LoosePaper {
     this.ink = const [],
     this.plane,
     this.decals = const [],
+    this.pattern,
+    this.opacity = 1,
+    this.selected = false,
+    this.fill = 1,
   });
 
   final List<Vector3> ring;
@@ -34,6 +40,14 @@ class LoosePaper {
   final List<(Vector3, Vector3)> ink;
   final CraftPlane? plane;
   final List<Decal> decals;
+
+  /// Pattern lines, for pattern paper. Null is plain paper.
+  final List<(Vector3, Vector3)>? pattern;
+  final double opacity;
+
+  /// Drawn with the white selection outline, its fill scaled by [fill].
+  final bool selected;
+  final double fill;
 }
 
 /// The folded model: ghost faces, paper on them, decals, focus, and glows.
@@ -53,6 +67,8 @@ class ModelPainter extends CustomPainter {
     this.deskHighlight = 0,
     this.glow = const {},
     this.complete = 0,
+    this.patches = const [],
+    this.edgeGlow = const {},
   });
 
   final PapercutCamera camera;
@@ -86,6 +102,12 @@ class ModelPainter extends CustomPainter {
   /// 0–1 stand-in glow once every island is wrapped.
   final double complete;
 
+  /// Pattern paper wrapped onto faces.
+  final List<PaperPatch> patches;
+
+  /// Face index to 0–1 glow along the outline of the face being worked on.
+  final Map<int, double> edgeGlow;
+
   @override
   void paint(Canvas canvas, Size size) {
     final view = camera.camera.viewMatrix;
@@ -96,12 +118,23 @@ class ModelPainter extends CustomPainter {
       final paper = paperPoses[i];
       final pose = paper ?? ghostPoses[i] ?? model.faces[i].toWorld;
       final ring = model.faces[i].worldRing(pose);
+      final onFace = [
+        for (final patch in patches)
+          if (patch.face == i) patch,
+      ];
       items.add(
         _Item(
           depth: _depth(view, ring),
-          paint: () => paper == null
-              ? _paintGhost(canvas, size, i, pose, ring, eye)
-              : _paintPaper(canvas, size, i, pose, ring, eye),
+          paint: () {
+            if (paper == null) {
+              _paintGhost(canvas, size, i, pose, ring, eye);
+            } else {
+              _paintPaper(canvas, size, i, pose, ring, eye);
+            }
+            for (final patch in onFace) {
+              _paintPatch(canvas, size, patch);
+            }
+          },
         ),
       );
     }
@@ -142,6 +175,27 @@ class ModelPainter extends CustomPainter {
         ring,
         kCriterionMetColor.withValues(alpha: 0.75 * t),
         width: 3 + 5 * t,
+      );
+    }
+    for (final entry in edgeGlow.entries) {
+      if (entry.value <= 0 || entry.key < 0) continue;
+      if (entry.key >= model.faces.length) continue;
+      final t = Curves.easeOut.transform(entry.value.clamp(0.0, 1.0));
+      final ring = model.faces[entry.key].worldRing(paperPoses[entry.key]);
+      _stroke(
+        canvas,
+        size,
+        ring,
+        kPreselectColor.withValues(alpha: 0.35 * t),
+        width: 9,
+        blur: 4,
+      );
+      _stroke(
+        canvas,
+        size,
+        ring,
+        kPreselectColor.withValues(alpha: 0.9 * t),
+        width: 2.5,
       );
     }
     if (complete > 0) {
@@ -236,8 +290,62 @@ class ModelPainter extends CustomPainter {
     if (facing > 0) _decals(canvas, size, face, pose, 1);
   }
 
+  void _paintPatch(Canvas canvas, Size size, PaperPatch patch) {
+    final face = model.faces[patch.face];
+    final lift = model.outwardNormal(patch.face)..scale(kPatternLift);
+    Vector3 world(Offset point) => face.world(point)..add(lift);
+    final paper = projectedRings(camera, size, [
+      patch.ring,
+      ...patch.holes,
+    ], world);
+    if (paper == null) return;
+    final lines = <(Offset, Offset)>[];
+    for (final (a, b) in patch.lines) {
+      final p = camera.camera.projectToScreen(world(a), size);
+      final q = camera.camera.projectToScreen(world(b), size);
+      if (p != null && q != null) lines.add((p, q));
+    }
+    paintPatternPaper(
+      canvas,
+      paper: paper,
+      color: shadePaper(patch.color, model.outwardNormal(patch.face)),
+      lines: lines,
+      opaque: true,
+    );
+  }
+
   void _paintLoose(Canvas canvas, Size size, LoosePaper piece) {
-    _fill(canvas, size, piece.ring, piece.color);
+    final pattern = piece.pattern;
+    if (pattern != null) {
+      final paper = _path(size, piece.ring);
+      if (paper == null) return;
+      final lines = <(Offset, Offset)>[];
+      for (final (a, b) in pattern) {
+        final p = camera.camera.projectToScreen(a, size);
+        final q = camera.camera.projectToScreen(b, size);
+        if (p != null && q != null) lines.add((p, q));
+      }
+      paintPatternPaper(
+        canvas,
+        paper: paper,
+        color: piece.color,
+        lines: lines,
+        opacity: piece.opacity,
+        fill: piece.selected ? piece.fill : 1,
+      );
+      if (piece.selected) {
+        paintSelectedOutline(canvas, paper, opacity: piece.opacity);
+      }
+      return;
+    }
+    _fill(
+      canvas,
+      size,
+      piece.ring,
+      piece.color.withValues(
+        alpha: piece.color.a * (piece.selected ? piece.fill : 1),
+      ),
+    );
     for (final (a, b) in piece.ink) {
       _stroke(canvas, size, [a, b], kBlueprintInk, width: 1.6);
     }
@@ -255,8 +363,8 @@ class ModelPainter extends CustomPainter {
       canvas,
       size,
       piece.ring,
-      const Color(0xFF1A1A2E),
-      width: 1.5,
+      piece.selected ? const Color(0xF2FFFFFF) : const Color(0xFF1A1A2E),
+      width: piece.selected ? 2.5 : 1.5,
       close: true,
     );
   }
@@ -340,6 +448,7 @@ class ModelPainter extends CustomPainter {
     required double width,
     bool close = true,
     bool dashed = false,
+    double blur = 0,
   }) {
     final projected = [
       for (final point in points) camera.camera.projectToScreen(point, size),
@@ -353,6 +462,7 @@ class ModelPainter extends CustomPainter {
       ..strokeWidth = width
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
+    if (blur > 0) paint.maskFilter = MaskFilter.blur(BlurStyle.normal, blur);
     final screen = projected.cast<Offset>();
     if (!dashed) {
       final path = Path()..moveTo(screen.first.dx, screen.first.dy);

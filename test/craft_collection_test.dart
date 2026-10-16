@@ -42,11 +42,15 @@ CollectionSurface _wallFacing(List<CollectionSurface> surfaces, Vector3 n) =>
     surfaces.singleWhere((surface) => (surface.normal - n).length < 1e-9);
 
 void main() {
-  test('the test room parses into a floor, four walls, and two crafts', () {
+  test('the test room parses into a floor, four walls, and three crafts', () {
     final room = _testRoom();
     expect(room.id, 'test-room');
     expect(room.name, 'Test Room');
-    expect(room.crafts.map((spot) => spot.puzzleId), ['cube', 'box-stack']);
+    expect(room.crafts.map((spot) => spot.puzzleId), [
+      'cube',
+      'box-stack',
+      'grid-cube',
+    ]);
     expect(room.crafts.first.at, const Offset(-7, 3));
     expect(room.crafts.first.turnDegrees, 20);
     expect(room.surfaces, hasLength(5));

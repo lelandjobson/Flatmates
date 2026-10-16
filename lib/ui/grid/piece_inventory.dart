@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../gridcraft/blueprint.dart';
 import '../../gridcraft/folded_model.dart' show Decal;
 import '../../gridcraft/model_painter.dart' show kBlueprintInk, paintDecal;
+import '../../gridcraft/pattern_paper_painter.dart' show paintPatternPaper;
 import '../../gridcraft/scissor.dart' show markOwner;
 import '../../papercut/paper.dart';
 
@@ -22,6 +23,7 @@ class PieceInventory extends StatelessWidget {
     this.previewing,
     this.accepting = false,
     this.decals = const [],
+    this.pattern,
   });
 
   final List<PapercutPiece> pieces;
@@ -40,6 +42,9 @@ class PieceInventory extends StatelessWidget {
 
   /// Paper is held over the bar and would be stowed on release.
   final bool accepting;
+
+  /// Pieces are pattern paper: drawn with this pattern and no blueprint ink.
+  final CutPattern? pattern;
 
   @override
   Widget build(BuildContext context) {
@@ -104,6 +109,7 @@ class PieceInventory extends StatelessWidget {
                         painter: _ThumbnailPainter(
                           piece: piece,
                           step: step,
+                          pattern: pattern,
                           decals: [
                             for (final decal in decals)
                               if (markOwner(decal.center, [piece]) != null)
@@ -181,11 +187,13 @@ class _ThumbnailPainter extends CustomPainter {
     required this.piece,
     required this.step,
     required this.decals,
+    this.pattern,
   });
 
   final PapercutPiece piece;
   final GridStep step;
   final List<Decal> decals;
+  final CutPattern? pattern;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -216,6 +224,19 @@ class _ThumbnailPainter extends CustomPainter {
       if (hole.length >= 3) paper.addPath(ring(hole), Offset.zero);
     }
     paper.fillType = PathFillType.evenOdd;
+    final pattern = this.pattern;
+    if (pattern != null) {
+      paintPatternPaper(
+        canvas,
+        paper: paper,
+        color: piece.color,
+        lines: [
+          for (final (a, b) in pattern.patternLines(box)) (place(a), place(b)),
+        ],
+        lineWidth: 0.8,
+      );
+      return;
+    }
     canvas.drawPath(paper, Paint()..color = piece.color);
     canvas.save();
     canvas.clipPath(paper);
@@ -255,5 +276,6 @@ class _ThumbnailPainter extends CustomPainter {
   bool shouldRepaint(covariant _ThumbnailPainter oldDelegate) =>
       !identical(oldDelegate.piece, piece) ||
       !identical(oldDelegate.step, step) ||
+      !identical(oldDelegate.pattern, pattern) ||
       !listEquals(oldDelegate.decals, decals);
 }

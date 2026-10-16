@@ -4,7 +4,11 @@ import 'package:flutter/material.dart';
 
 import '../../gridcraft/scrap.dart';
 
-enum _GridDevSection { tapDebug, paperScore, camera }
+enum _GridDevSection { tapDebug, paperScore, camera, input }
+
+/// What a tap picks in 3D: by the pointer's own kind, or forced to the PC
+/// cursor or the mobile reticle for any pointer.
+enum GridAimMode { auto, cursor, reticle }
 
 /// Right-hand puzzle DevTools. The dropdown picks which settings to edit.
 class GridDevPanel extends StatefulWidget {
@@ -18,6 +22,8 @@ class GridDevPanel extends StatefulWidget {
     required this.onCameraFollowsToolChanged,
     required this.cameraRotates,
     required this.onCameraRotatesChanged,
+    required this.aimMode,
+    required this.onAimModeChanged,
   });
 
   final bool showTapDebug;
@@ -28,6 +34,8 @@ class GridDevPanel extends StatefulWidget {
   final ValueChanged<bool> onCameraFollowsToolChanged;
   final bool cameraRotates;
   final ValueChanged<bool> onCameraRotatesChanged;
+  final GridAimMode aimMode;
+  final ValueChanged<GridAimMode> onAimModeChanged;
 
   @override
   State<GridDevPanel> createState() => _GridDevPanelState();
@@ -50,72 +58,84 @@ class _GridDevPanelState extends State<GridDevPanel> {
             borderRadius: BorderRadius.circular(10),
             border: Border.all(color: Colors.white24),
           ),
-          child: ListView(
-            key: const Key('grid-dev-panel'),
-            shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-            children: [
-              const Text(
-                'DevTools',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
+          child: Material(
+            type: MaterialType.transparency,
+            child: ListView(
+              key: const Key('grid-dev-panel'),
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              children: [
+                const Text(
+                  'DevTools',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Settings',
-                style: TextStyle(color: Colors.white70, fontSize: 11),
-              ),
-              DropdownButtonHideUnderline(
-                child: DropdownButton<_GridDevSection>(
-                  key: const Key('grid-dev-section'),
-                  isExpanded: true,
-                  isDense: true,
-                  dropdownColor: const Color(0xFF1A1A1A),
-                  value: _section,
-                  iconEnabledColor: Colors.white70,
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                  items: const [
-                    DropdownMenuItem(
-                      value: _GridDevSection.tapDebug,
-                      child: Text('Tap debug'),
-                    ),
-                    DropdownMenuItem(
-                      value: _GridDevSection.paperScore,
-                      child: Text('Paper score'),
-                    ),
-                    DropdownMenuItem(
-                      value: _GridDevSection.camera,
-                      child: Text('Camera'),
-                    ),
-                  ],
-                  onChanged: (section) {
-                    if (section == null) return;
-                    setState(() => _section = section);
-                  },
+                const SizedBox(height: 8),
+                const Text(
+                  'Settings',
+                  style: TextStyle(color: Colors.white70, fontSize: 11),
                 ),
-              ),
-              const SizedBox(height: 8),
-              if (_section == _GridDevSection.paperScore)
-                _PaperScoreSettings(
-                  style: widget.tallyStyle,
-                  onChanged: widget.onTallyStyleChanged,
-                )
-              else if (_section == _GridDevSection.camera)
-                _CameraSettings(
-                  followsTool: widget.cameraFollowsTool,
-                  onFollowChanged: widget.onCameraFollowsToolChanged,
-                  rotates: widget.cameraRotates,
-                  onRotateChanged: widget.onCameraRotatesChanged,
-                )
-              else
-                _TapDebugSettings(
-                  show: widget.showTapDebug,
-                  onChanged: widget.onShowTapDebugChanged,
+                DropdownButtonHideUnderline(
+                  child: DropdownButton<_GridDevSection>(
+                    key: const Key('grid-dev-section'),
+                    isExpanded: true,
+                    isDense: true,
+                    dropdownColor: const Color(0xFF1A1A1A),
+                    value: _section,
+                    iconEnabledColor: Colors.white70,
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    items: const [
+                      DropdownMenuItem(
+                        value: _GridDevSection.tapDebug,
+                        child: Text('Tap debug'),
+                      ),
+                      DropdownMenuItem(
+                        value: _GridDevSection.paperScore,
+                        child: Text('Paper score'),
+                      ),
+                      DropdownMenuItem(
+                        value: _GridDevSection.camera,
+                        child: Text('Camera'),
+                      ),
+                      DropdownMenuItem(
+                        value: _GridDevSection.input,
+                        child: Text('Input'),
+                      ),
+                    ],
+                    onChanged: (section) {
+                      if (section == null) return;
+                      setState(() => _section = section);
+                    },
+                  ),
                 ),
-            ],
+                const SizedBox(height: 8),
+                if (_section == _GridDevSection.paperScore)
+                  _PaperScoreSettings(
+                    style: widget.tallyStyle,
+                    onChanged: widget.onTallyStyleChanged,
+                  )
+                else if (_section == _GridDevSection.camera)
+                  _CameraSettings(
+                    followsTool: widget.cameraFollowsTool,
+                    onFollowChanged: widget.onCameraFollowsToolChanged,
+                    rotates: widget.cameraRotates,
+                    onRotateChanged: widget.onCameraRotatesChanged,
+                  )
+                else if (_section == _GridDevSection.input)
+                  _InputSettings(
+                    mode: widget.aimMode,
+                    onChanged: widget.onAimModeChanged,
+                  )
+                else
+                  _TapDebugSettings(
+                    show: widget.showTapDebug,
+                    onChanged: widget.onShowTapDebugChanged,
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -276,6 +296,50 @@ class _TapDebugSettings extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _InputSettings extends StatelessWidget {
+  const _InputSettings({required this.mode, required this.onChanged});
+
+  final GridAimMode mode;
+  final ValueChanged<GridAimMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return RadioGroup<GridAimMode>(
+      groupValue: mode,
+      onChanged: (next) {
+        if (next != null) onChanged(next);
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'What a tap picks in 3D. PC picks under the cursor, mobile under the reticle, whatever the pointer. The reticle always preselects the face.',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.45),
+              fontSize: 10,
+              height: 1.3,
+            ),
+          ),
+          const SizedBox(height: 8),
+          for (final option in GridAimMode.values)
+            RadioListTile<GridAimMode>(
+              key: Key('grid-aim-${option.name}'),
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              activeColor: Colors.white,
+              title: Text(switch (option) {
+                GridAimMode.auto => 'Auto, by pointer',
+                GridAimMode.cursor => 'PC: cursor',
+                GridAimMode.reticle => 'Mobile: reticle',
+              }, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+              value: option,
+            ),
+        ],
+      ),
     );
   }
 }

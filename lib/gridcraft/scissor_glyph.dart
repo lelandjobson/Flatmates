@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:vector_math/vector_math_64.dart' hide Colors;
 
 import '../papercut/camera.dart';
+import 'craft_plane.dart';
 import 'tool_animation.dart';
 import 'tool_flight.dart';
 
@@ -39,6 +40,7 @@ class ScissorGlyphPainter extends CustomPainter {
     this.glyphScale = 1,
     this.pointScale = 1,
     this.destination,
+    this.plane,
   });
 
   final PapercutCamera camera;
@@ -53,6 +55,9 @@ class ScissorGlyphPainter extends CustomPainter {
 
   /// Snapped grid or crease point under the reticle, once the cut has a start.
   final Offset? destination;
+
+  /// Plane the pose lies in. Null is the sheet.
+  final CraftPlane? plane;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -90,7 +95,11 @@ class ScissorGlyphPainter extends CustomPainter {
   }
 
   Offset? _project(Offset point, Size size) {
-    return camera.camera.projectToScreen(Vector3(point.dx, point.dy, 0), size);
+    final on = plane;
+    return camera.camera.projectToScreen(
+      on == null ? Vector3(point.dx, point.dy, 0) : on.world(point),
+      size,
+    );
   }
 
   @override

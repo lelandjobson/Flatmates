@@ -9,15 +9,28 @@ PapercutSheet? applyPapercutCut(
   PapercutSheet sheet,
   List<Offset> stroke, {
   bool recordStroke = true,
+}) => applyPapercutCuts(sheet, [stroke], recordStroke: recordStroke);
+
+/// As [applyPapercutCut], for [strokes] cut together.
+PapercutSheet? applyPapercutCuts(
+  PapercutSheet sheet,
+  List<List<Offset>> strokes, {
+  bool recordStroke = true,
 }) {
-  final cleaned = _cleanStroke(stroke);
-  if (cleaned.length < 2) return null;
+  final cleaned = [
+    for (final stroke in strokes)
+      if (_cleanStroke(stroke) case final points when points.length >= 2)
+        points,
+  ];
+  if (cleaned.isEmpty) return null;
 
   final nextPieces = <PapercutPiece>[];
   var hit = false;
   var nextId = sheet.nextPieceId;
   for (final piece in sheet.pieces) {
-    final clipped = _clipStroke(cleaned, piece);
+    final clipped = [
+      for (final stroke in cleaned) ..._clipStroke(stroke, piece),
+    ];
     if (clipped.isEmpty) {
       nextPieces.add(piece);
       continue;
@@ -36,7 +49,7 @@ PapercutSheet? applyPapercutCut(
   return sheet.copyWith(
     pieces: nextPieces,
     cutStrokes: recordStroke
-        ? [...sheet.cutStrokes, cleaned]
+        ? [...sheet.cutStrokes, ...cleaned]
         : sheet.cutStrokes,
     nextPieceId: nextId,
   );

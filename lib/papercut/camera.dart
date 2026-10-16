@@ -174,6 +174,15 @@ class PapercutCamera extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Changes the lens and keeps the framed half-height, so the eye backs
+  /// off as the lens gets longer.
+  void setFocal(double mm) {
+    if ((focalLengthMm - mm).abs() < 1e-6) return;
+    focalLengthMm = mm;
+    _apply();
+    notifyListeners();
+  }
+
   void panByScreen(Offset delta, Size viewport) {
     if (delta == Offset.zero) return;
     if (viewport.width < 2 || viewport.height < 2) return;
@@ -348,6 +357,21 @@ class PapercutCamera extends ChangeNotifier {
     return (azimuth: azimuth, elevation: elevation, roll: turn);
   }
 
+  /// The current up vector, carried by the shortest turn that takes the view
+  /// onto [direction], so a turn toward [direction] adds no roll of its own.
+  Vector3 upAlong(Vector3 direction) {
+    final from = viewDirection;
+    final to = direction.normalized();
+    final up = camera.up.normalized();
+    final axis = from.cross(to);
+    final sine = axis.length;
+    if (sine < 1e-9) return up;
+    final k = axis / sine;
+    final cosine = from.dot(to);
+    return (up * cosine + k.cross(up) * sine + k * (k.dot(up) * (1 - cosine)))
+        .normalized();
+  }
+
   /// Puts the eye along [direction] at once. See [anglesAlong].
   void orbitTo(Vector3 direction, {Vector3? up}) {
     final angles = anglesAlong(direction, up: up);
@@ -428,12 +452,72 @@ class PapercutCamera extends ChangeNotifier {
   }
 
   /// Starts a flight to [target] seen along [normal]. Drive it with [setFly].
+  /// With no [up], the view keeps its current up through the shortest turn.
   void flyTo(Vector3 target, Vector3 normal, double distance, {Vector3? up}) =>
-      beginFly(poseFacing(target, normal, distance, up: up));
+      beginFly(
+        poseFacing(target, normal, distance, up: up ?? upAlong(normal)),
+        turn: true,
+      );
 
-  void beginFly(CameraPose to) {
+  /// With [turn], the view rotates along the shortest arc between the two
+  /// orientations instead of easing each angle, so it cannot flip or spin
+  /// near the orbit's poles.
+  void beginFly(CameraPose to, {bool turn = false}) {
     _flyFrom = pose;
     _flyTo = to;
+    _turnFrom = turn ? _orientation(azimuth, elevation, roll) : null;
+    _turnTo = turn
+        ? _orientation(
+            to.azimuth ?? azimuth,
+            to.elevation ?? elevation,
+            to.roll ?? roll,
+          )
+        : null;
+  }
+
+  Quaternion? _turnFrom;
+  Quaternion? _turnTo;
+
+  /// Rotation whose z axis points toward the eye and whose y axis is up.
+  /// [Quaternion.rotated] applies the inverse of this rotation.
+  Quaternion _orientation(double azimuth, double elevation, double roll) {
+    final cp = math.cos(elevation);
+    final back = Vector3(
+      math.sin(azimuth) * cp,
+      math.sin(elevation),
+      math.cos(azimuth) * cp,
+    );
+    final up = _rolledUp(-back, roll);
+    final right = up.cross(back).normalized();
+    return Quaternion.fromRotation(Matrix3.columns(right, up, back))
+      ..normalize();
+  }
+
+  static Quaternion _slerp(Quaternion a, Quaternion b, double t) {
+    var dot = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+    var end = b;
+    if (dot < 0) {
+      dot = -dot;
+      end = -b;
+    }
+    if (dot > 0.9995) {
+      return Quaternion(
+        a.x + (end.x - a.x) * t,
+        a.y + (end.y - a.y) * t,
+        a.z + (end.z - a.z) * t,
+        a.w + (end.w - a.w) * t,
+      )..normalize();
+    }
+    final theta = math.acos(dot);
+    final sine = math.sin(theta);
+    final wa = math.sin((1 - t) * theta) / sine;
+    final wb = math.sin(t * theta) / sine;
+    return Quaternion(
+      a.x * wa + end.x * wb,
+      a.y * wa + end.y * wb,
+      a.z * wa + end.z * wb,
+      a.w * wa + end.w * wb,
+    );
   }
 
   /// [t] is already eased: 0 is where the flight began, 1 is [beginFly]'s pose.
@@ -446,6 +530,21 @@ class PapercutCamera extends ChangeNotifier {
     lookAt = Offset.lerp(from.lookAt, to.lookAt, u)!;
     lookAtZ = mix(from.lookAtZ, to.lookAtZ);
     framedHalfHeightMm = mix(from.halfHeight, to.halfHeight);
+    final turnFrom = _turnFrom;
+    final turnTo = _turnTo;
+    if (turnFrom != null && turnTo != null && u < 1) {
+      final turn = _slerp(turnFrom, turnTo, u).conjugated();
+      final angles = anglesAlong(
+        turn.rotated(Vector3(0, 0, 1)),
+        up: turn.rotated(Vector3(0, 1, 0)),
+      );
+      azimuth = angles.azimuth;
+      elevation = angles.elevation;
+      roll = angles.roll;
+      _apply();
+      notifyListeners();
+      return;
+    }
     final toAzimuth = to.azimuth;
     if (toAzimuth != null) azimuth = mix(from.azimuth ?? azimuth, toAzimuth);
     final toElevation = to.elevation;
@@ -498,11 +597,11 @@ class PapercutCamera extends ChangeNotifier {
     camera.far = d * 40 + 1000;
     camera.setPosition(eye);
     camera.setTarget(target);
-    camera.setUp(_rolledUp(target - eye));
+    camera.setUp(_rolledUp(target - eye, roll));
   }
 
   /// Rotates the no-twist up vector around the view axis.
-  Vector3 _rolledUp(Vector3 forward) {
+  static Vector3 _rolledUp(Vector3 forward, double roll) {
     final axis = forward.length2 == 0
         ? Vector3(0, 0, -1)
         : forward.normalized();

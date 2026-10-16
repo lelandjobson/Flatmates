@@ -8,9 +8,12 @@ import 'package:flatmates/gridcraft/folded_model.dart';
 import 'package:flatmates/gridcraft/level_io.dart';
 import 'package:flatmates/gridcraft/model_painter.dart';
 import 'package:flatmates/gridcraft/painter.dart';
+import 'package:flatmates/gridcraft/pattern_paper_painter.dart';
+import 'package:flatmates/gridcraft/wrap_cut.dart';
 import 'package:flatmates/papercut/craft_v1.dart';
 import 'package:flatmates/screens/grid_puzzle_view.dart';
 import 'package:flatmates/ui/fm_theme.dart';
+import 'package:flatmates/ui/game/view_crosshair.dart';
 import 'package:flatmates/ui/rotation_gizmo.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -129,29 +132,74 @@ ModelPainter _modelPainter(WidgetTester tester) {
 String _hint(WidgetTester tester) =>
     tester.widget<Text>(find.byKey(const Key('grid-model-hint'))).data ?? '';
 
-void main() {
-  testWidgets('3D mode: the reticle preselects, a drop focuses and wraps', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(900, 1200);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    final directory = Directory.systemTemp.createTempSync('puzzle-3d');
-    addTearDown(() => directory.delete(recursive: true));
-    await tester.pumpWidget(
-      ChangeNotifierProvider(
-        create: (_) => FmThemeData(),
-        child: MaterialApp(
-          home: GridPuzzleView(
-            initial: _domino(),
-            store: LevelStore(directory: directory),
-            crafts: [_dominoCraft()],
-          ),
+/// The dot grid drawn on a face while paper moves on it.
+GridPuzzlePainter? _faceDots(WidgetTester tester) =>
+    tester.widget<CustomPaint>(find.byKey(const Key('grid-model-dots'))).painter
+        as GridPuzzlePainter?;
+
+/// The desk under the model.
+GridPuzzlePainter _desk(WidgetTester tester) => tester
+    .widgetList<CustomPaint>(find.byType(CustomPaint))
+    .map((paint) => paint.painter)
+    .whereType<GridPuzzlePainter>()
+    .firstWhere((painter) => painter.plane == null);
+
+WrapCutPainter _wrapPainter(WidgetTester tester) =>
+    tester
+            .widget<CustomPaint>(find.byKey(const Key('grid-model-layer')))
+            .foregroundPainter!
+        as WrapCutPainter;
+
+WrapPaperLayer _wrapLayer(WidgetTester tester) =>
+    _wrapPainter(tester).layers.single;
+
+Future<void> _click(WidgetTester tester, Offset at) async {
+  await tester.tapAt(at, kind: PointerDeviceKind.mouse);
+  await tester.pump();
+}
+
+Future<void> _mouseDrag(WidgetTester tester, Offset from, Offset by) async {
+  final mouse = await tester.startGesture(from, kind: PointerDeviceKind.mouse);
+  for (var i = 1; i <= 8; i++) {
+    await mouse.moveTo(from + by * (i / 8));
+    await tester.pump();
+  }
+  await mouse.up();
+  await tester.pump();
+}
+
+double _angle(Vector3 a, Vector3 b) =>
+    math.acos(a.normalized().dot(b.normalized()).clamp(-1.0, 1.0));
+
+Future<void> _open(
+  WidgetTester tester,
+  String name,
+  GridBlueprint level,
+) async {
+  tester.view.physicalSize = const Size(900, 1200);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+  final directory = Directory.systemTemp.createTempSync(name);
+  addTearDown(() => directory.delete(recursive: true));
+  await tester.pumpWidget(
+    ChangeNotifierProvider(
+      create: (_) => FmThemeData(),
+      child: MaterialApp(
+        home: GridPuzzleView(
+          initial: level,
+          store: LevelStore(directory: directory),
+          crafts: [_dominoCraft()],
         ),
       ),
-    );
-    await tester.pump();
-    await tester.pump();
+    ),
+  );
+  await tester.pump();
+  await tester.pump();
+}
+
+void main() {
+  testWidgets('3D mode: the aim selects paper, a drop wraps', (tester) async {
+    await _open(tester, 'puzzle-3d', _domino());
 
     final canvasFinder = find.byKey(const Key('grid-puzzle-canvas'));
     final canvas = tester.getTopLeft(canvasFinder);
@@ -197,6 +245,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 700));
     expect(find.byKey(const Key('grid-model-layer')), findsOneWidget);
     expect(find.byKey(const Key('grid-frame-model')), findsOneWidget);
+    expect(find.byKey(const Key('grid-focus-frame')), findsNothing);
 
     Offset screen(Vector3 world) {
       final painter = _modelPainter(tester);
@@ -214,41 +263,27 @@ void main() {
           .data!,
     );
 
-    double frame() => tester
-        .widget<AnimatedOpacity>(find.byKey(const Key('grid-focus-frame')))
-        .opacity;
-
     // The model floats over the desk.
     final model = _modelPainter(tester).model;
     expect(model.bounds.min.z, greaterThan(1));
     expect(_modelPainter(tester).desk, isNotNull);
 
-    // A double-tap on the grey desk paper focuses the desk; from there the
-    // paper drags into the inventory.
+    // A click selects the desk paper under the cursor; dragging it then
+    // slides it onto the inventory.
     final deskPaper = screen(Vector3(0.8, 0.8, 0));
-    await tester.tapAt(deskPaper);
-    await tester.pump(const Duration(milliseconds: 80));
-    await tester.tapAt(deskPaper);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await _click(tester, deskPaper);
     expect(
       _hint(tester),
-      'Slide paper on the desk, or drag it right to stow it.',
+      'Drag to slide the paper, or onto the inventory to stow it.',
     );
-    expect(frame(), 1);
-    await tester.timedDragFrom(
-      deskPaper,
-      tester.getCenter(column) - deskPaper,
-      const Duration(milliseconds: 400),
-    );
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await _mouseDrag(tester, deskPaper, tester.getCenter(column) - deskPaper);
     await tester.pump(const Duration(milliseconds: 300));
-    expect(item, findsOneWidget);
-    await tester.tap(find.byKey(const Key('grid-focus-back')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    expect(_desk(tester).sheet.pieces, isEmpty);
+    expect(_desk(tester).pickedPiece, isNull);
 
-    // Orbit to look straight down, so the reticle lands on the floor.
+    // With nothing selected a drag orbits; look straight down, so the
+    // reticle lands on the floor.
     await tester.timedDragFrom(
       tester.getCenter(canvasFinder),
       const Offset(0, 260),
@@ -261,38 +296,32 @@ void main() {
     expect(_modelPainter(tester).highlight[floor], 1);
     expect(find.byKey(const Key('grid-piece-inventory')), findsOneWidget);
     expect(_hint(tester), 'Drag a paper piece onto the highlighted face.');
-    expect(frame(), 0);
 
-    // Drop the paper with its middle on its own blueprint middle.
+    // Drop the paper with its middle on its own blueprint middle. The
+    // floor's dot grid shows while it moves.
     final face = _modelPainter(tester).model.faces[floor];
+    expect(_faceDots(tester), isNull);
     final drag = await tester.startGesture(tester.getCenter(item));
     await drag.moveBy(const Offset(-40, 0));
     await tester.pump();
     await drag.moveTo(screen(face.world(const Offset(5, 2.5))));
     await tester.pump();
-    final preview = tester
-        .widget<CustomPaint>(find.byKey(const Key('grid-model-layer')))
-        .foregroundPainter;
-    expect(preview, isA<GridPuzzlePainter>());
-    expect((preview! as GridPuzzlePainter).sheet.pieces, hasLength(1));
+    expect(_modelPainter(tester).loose, hasLength(1));
+    expect(_faceDots(tester)!.gridOpacity, closeTo(0.45, 1e-9));
     final scoreBefore = score();
     await drag.up();
     await tester.pump();
-    expect(find.byKey(const Key('grid-focus-back')), findsOneWidget);
     expect(_modelPainter(tester).glow[floor], greaterThan(0));
-    final focusedHalf = _modelPainter(tester).camera.framedHalfHeightMm;
     await tester.pump(const Duration(milliseconds: 1000));
     await tester.pump();
     expect(_hint(tester), 'Every piece is wrapped.');
     expect(_modelPainter(tester).paperPoses.keys.toSet(), {0, 1});
+    expect(_faceDots(tester), isNull);
 
-    // The wrap backs the camera out and turns it once around the model,
-    // then scores.
-    expect(find.byKey(const Key('grid-focus-back')), findsNothing);
+    // The wrap turns the camera once around the model, then scores.
     await tester.pump(const Duration(milliseconds: 500));
     final camera = _modelPainter(tester).camera;
     final backedOut = camera.camera.position.clone();
-    expect(camera.framedHalfHeightMm, greaterThan(focusedHalf));
     await tester.pump(const Duration(milliseconds: 800));
     expect((camera.camera.position - backedOut).length, greaterThan(20));
     expect(score(), scoreBefore);
@@ -309,8 +338,8 @@ void main() {
     expect(_modelPainter(tester).paperPoses, isEmpty);
     expect(item, findsOneWidget);
 
-    // Back over the floor, a tap lays the paper on it, three cells left of
-    // home.
+    // Back over the floor, a tap on the inventory lays the paper on it,
+    // selected, three cells left of home.
     await tester.timedDragFrom(
       tester.getCenter(canvasFinder),
       const Offset(0, 260),
@@ -322,12 +351,13 @@ void main() {
     expect(_modelPainter(tester).highlight[floor], 1);
     await tester.tap(item);
     await tester.pump();
-    expect(_hint(tester), 'Slide and turn the paper until the face glows.');
+    expect(_hint(tester), 'Drag to slide the paper until the face glows.');
+    expect(_modelPainter(tester).loose.single.selected, isTrue);
     expect(find.byKey(const Key('grid-place-turn-left')), findsNothing);
 
-    // Paper in hand goes back to the inventory, by Stow or by dragging it
-    // onto the inventory. Focus stays on the face either way.
-    final stow = find.byKey(const Key('grid-focus-stow'));
+    // Selected paper goes back to the inventory, by Stow or by dragging it
+    // onto the inventory.
+    final stow = find.byKey(const Key('grid-stow'));
     expect(stow, findsOneWidget);
     expect(column, findsOneWidget);
     expect(item, findsNothing);
@@ -336,20 +366,19 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expect(item, findsOneWidget);
     expect(stow, findsNothing);
-    expect(find.byKey(const Key('grid-focus-back')), findsOneWidget);
-    expect(_hint(tester), 'Drag a paper piece onto the face.');
+    expect(_hint(tester), 'Drag a paper piece onto the highlighted face.');
     await tester.tap(item);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(item, findsNothing);
-    final handPainter =
-        tester
-                .widget<CustomPaint>(find.byKey(const Key('grid-model-layer')))
-                .foregroundPainter!
-            as GridPuzzlePainter;
-    final handRect = pointBounds(handPainter.sheet.pieces.single.vertices);
+
+    Rect inHand() {
+      final ring = _modelPainter(tester).loose.single.ring;
+      return pointBounds([for (final point in ring) Offset(point.x, point.y)]);
+    }
+
     final held = screen(
-      face.world(Offset(handRect.left + 1, handRect.center.dy)),
+      Vector3(inHand().left + 1, inHand().center.dy, face.worldRing()[0].z),
     );
     await tester.timedDragFrom(
       held,
@@ -359,7 +388,6 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(item, findsOneWidget);
-    expect(find.byKey(const Key('grid-focus-back')), findsOneWidget);
     expect(_modelPainter(tester).paperPoses, isEmpty);
     expect(_modelPainter(tester).loose, isEmpty);
     await tester.tap(item);
@@ -369,15 +397,11 @@ void main() {
     // The rotate icon on the paper opens a ring around it. Dragging the ring
     // a quarter of the way round turns the paper a quarter turn, and dragging
     // it back puts the paper exactly where it was.
-    Rect inHand() {
-      final painter =
-          tester
-                  .widget<CustomPaint>(
-                    find.byKey(const Key('grid-model-layer')),
-                  )
-                  .foregroundPainter!
-              as GridPuzzlePainter;
-      return pointBounds(painter.sheet.pieces.single.vertices);
+    void expectRect(Rect actual, Rect expected) {
+      expect(actual.left, closeTo(expected.left, 1e-9));
+      expect(actual.top, closeTo(expected.top, 1e-9));
+      expect(actual.right, closeTo(expected.right, 1e-9));
+      expect(actual.bottom, closeTo(expected.bottom, 1e-9));
     }
 
     final flat = inHand();
@@ -412,7 +436,7 @@ void main() {
     expect(turned.height, closeTo(flat.width, 1e-9));
     expect(turned.center.dx, closeTo(flat.center.dx, 0.5 + 1e-9));
     await sweep(90, 0);
-    expect(inHand(), flat);
+    expectRect(inHand(), flat);
     await tester.tap(
       find.descendant(of: gimbal, matching: find.byIcon(Icons.close)),
     );
@@ -420,59 +444,62 @@ void main() {
     expect(gimbal, findsNothing);
     expect(find.byKey(const Key('grid-place-rotate')), findsOneWidget);
 
-    // A double-tap away from the face and its paper leaves focus, and the
-    // paper stays loose on the face.
-    final empty = canvas + Offset(24, viewport.height * 0.45);
-    await tester.tapAt(empty);
-    await tester.pump(const Duration(milliseconds: 80));
-    await tester.tapAt(empty);
+    // A click away from the paper lets go of it; it stays on the face.
+    await _click(tester, canvas + Offset(24, viewport.height * 0.45));
+    expect(_modelPainter(tester).loose.single.selected, isFalse);
+    expect(find.byKey(const Key('grid-place-rotate')), findsNothing);
+    expect(stow, findsNothing);
+
+    // A touch picks with the reticle, wherever the finger lands.
+    await tester.tapAt(canvas + Offset(40, viewport.height * 0.6));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-    expect(find.byKey(const Key('grid-focus-back')), findsNothing);
-    expect(frame(), 0);
-    expect(_modelPainter(tester).loose, hasLength(1));
+    expect(_modelPainter(tester).loose.single.selected, isTrue);
+    expect(_hint(tester), 'Drag to slide the paper until the face glows.');
 
-    // Tapping the loose paper focuses the face with it in hand.
-    await tester.tapAt(screen(face.world(const Offset(2, 2.5))));
-    await tester.pump(const Duration(milliseconds: 400));
-    expect(find.byKey(const Key('grid-focus-back')), findsOneWidget);
-    expect(_hint(tester), 'Slide and turn the paper until the face glows.');
+    // Double-clicking selected paper lets go of it.
+    final onPaper = screen(face.world(const Offset(2, 2.5)));
+    await _click(tester, onPaper);
+    await tester.pump(const Duration(milliseconds: 60));
+    await _click(tester, onPaper);
+    expect(_modelPainter(tester).loose.single.selected, isFalse);
 
-    // Tapping the paper again completes a double-tap on the focused face's
-    // paper, which flies the camera square onto the face.
-    expect(camera.viewDirection.dot(model.outwardNormal(floor)), lessThan(0.9));
-    await tester.tapAt(screen(face.world(const Offset(2, 2.5))));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 800));
-    expect(
-      camera.viewDirection.dot(model.outwardNormal(floor)),
-      closeTo(1, 1e-6),
-    );
-    expect(find.byKey(const Key('grid-focus-back')), findsOneWidget);
-
-    // One finger off the paper pans along the face.
-    final before = camera.target;
+    // Unselected, a drag on the paper orbits and leaves it be.
+    final ring = [..._modelPainter(tester).loose.single.ring];
+    final eye = camera.camera.position.clone();
     await tester.timedDragFrom(
-      canvas + Offset(60, viewport.height * 0.3),
+      onPaper,
       const Offset(-80, 0),
       const Duration(milliseconds: 200),
     );
     await tester.pump();
-    expect((camera.target - before).length, greaterThan(0.5));
-    expect((camera.target.z - before.z).abs(), lessThan(1e-6));
+    expect((camera.camera.position - eye).length, greaterThan(1));
+    expect(_modelPainter(tester).loose.single.ring, ring);
 
-    // Sliding the paper home matches and wraps.
+    // A click selects it again, flashing its fill back in.
     final from = screen(face.world(const Offset(2, 2.5)));
+    await _click(tester, from);
+    expect(_modelPainter(tester).loose.single.selected, isTrue);
+    expect(_modelPainter(tester).loose.single.fill, lessThan(0.2));
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(_modelPainter(tester).loose.single.fill, closeTo(1, 1e-9));
+
+    // Selected, a drag slides it; home, it matches and wraps. The floor's
+    // dots show at once and fade out after.
     final to = screen(face.world(const Offset(5, 2.5)));
-    await tester.timedDragFrom(
-      from,
-      to - from,
-      const Duration(milliseconds: 300),
-    );
+    final slide = await tester.startGesture(from);
+    for (var i = 1; i <= 6; i++) {
+      await slide.moveTo(from + (to - from) * (i / 6));
+      await tester.pump();
+      if (i > 1) expect(_faceDots(tester)!.gridOpacity, closeTo(0.45, 1e-9));
+    }
+    await slide.up();
     await tester.pump();
     expect(_modelPainter(tester).glow[floor], greaterThan(0));
-    await tester.pump(const Duration(milliseconds: 1000));
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(_faceDots(tester)!.gridOpacity, inExclusiveRange(0, 0.45));
+    await tester.pump(const Duration(milliseconds: 850));
     expect(_hint(tester), 'Every piece is wrapped.');
+    expect(_faceDots(tester), isNull);
 
     // Wrapping the same island again turns the camera but scores nothing.
     await tester.pump(const Duration(milliseconds: 2300));
@@ -485,28 +512,72 @@ void main() {
     expect(find.byKey(const Key('grid-model-layer')), findsNothing);
   });
 
-  testWidgets('double-tapping desk paper focuses the desk, then crafts', (
+  testWidgets('desk paper selects with a flash, slides on its dots', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(900, 1200);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    final directory = Directory.systemTemp.createTempSync('puzzle-3d-craft');
-    addTearDown(() => directory.delete(recursive: true));
-    await tester.pumpWidget(
-      ChangeNotifierProvider(
-        create: (_) => FmThemeData(),
-        child: MaterialApp(
-          home: GridPuzzleView(
-            initial: _domino(),
-            store: LevelStore(directory: directory),
-            crafts: [_dominoCraft()],
-          ),
-        ),
-      ),
+    await _open(tester, 'puzzle-3d-desk', _domino());
+    await tester.tap(find.byKey(const Key('grid-view-mode')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 700));
+
+    final canvasFinder = find.byKey(const Key('grid-puzzle-canvas'));
+    final canvas = tester.getTopLeft(canvasFinder);
+    final viewport = tester.getSize(canvasFinder);
+    final camera = _modelPainter(tester).camera;
+    Offset screen(Offset desk) =>
+        canvas +
+        camera.camera.projectToScreen(Vector3(desk.dx, desk.dy, 0), viewport)!;
+
+    // A click selects the paper under the cursor, flashing it in from 5%.
+    final paper = screen(const Offset(0.8, 0.8));
+    expect(_desk(tester).pickedPiece, isNull);
+    expect(_desk(tester).gridOpacity, 0);
+    await _click(tester, paper);
+    expect(_desk(tester).pickedPiece, 0);
+    expect(
+      _desk(tester).sheet.pieces.single.color.a,
+      closeTo(kSelectFlashFrom, 0.02),
     );
+    await tester.pump(const Duration(milliseconds: 250));
+    final midway = _desk(tester).sheet.pieces.single.color.a;
+    expect(midway, inExclusiveRange(kSelectFlashFrom, 1));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(_desk(tester).sheet.pieces.single.color.a, 1);
+
+    // Dragging slides it, the desk dots showing at once and fading after.
+    final mouse = await tester.startGesture(
+      paper,
+      kind: PointerDeviceKind.mouse,
+    );
+    await mouse.moveTo(paper + const Offset(0, 4));
     await tester.pump();
+    expect(_desk(tester).gridOpacity, closeTo(0.45, 1e-9));
+    for (var i = 1; i <= 6; i++) {
+      await mouse.moveTo(paper + Offset(0, 4 + 20.0 * i));
+      await tester.pump();
+    }
+    await mouse.up();
     await tester.pump();
+    final moved = _desk(tester).sheet.pieces.single.separation;
+    expect(moved, isNot(Offset.zero));
+    expect(_desk(tester).gridOpacity, greaterThan(0));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(_desk(tester).gridOpacity, 0);
+    expect(_desk(tester).pickedPiece, 0);
+
+    // Double-clicking it lets go.
+    final there = screen(const Offset(0.8, 0.8) + moved);
+    await _click(tester, there);
+    await tester.pump(const Duration(milliseconds: 60));
+    await _click(tester, there);
+    expect(_desk(tester).pickedPiece, isNull);
+    expect(find.byKey(const Key('grid-model-layer')), findsOneWidget);
+  });
+
+  testWidgets('DevTools forces the cursor or the reticle for any pointer', (
+    tester,
+  ) async {
+    await _open(tester, 'puzzle-3d-aim', _domino());
     await tester.tap(find.byKey(const Key('grid-view-mode')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 700));
@@ -517,50 +588,60 @@ void main() {
     final camera = _modelPainter(tester).camera;
     final paper =
         canvas + camera.camera.projectToScreen(Vector3(0.8, 0.8, 0), viewport)!;
+    final reticle = find.byType(ViewCrosshair);
 
-    Future<void> doubleTap() async {
-      await tester.tapAt(paper);
-      await tester.pump(const Duration(milliseconds: 80));
-      await tester.tapAt(paper);
+    // By default a hovering mouse aims taps. The reticle stays up and alone
+    // preselects, so paper dragged in from the inventory lands where it
+    // points.
+    await tester.pump(const Duration(milliseconds: 400));
+    final highlight = {..._modelPainter(tester).highlight};
+    final deskHighlight = _modelPainter(tester).deskHighlight;
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: canvas + const Offset(30, 600));
+    await mouse.moveTo(paper);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(reticle, findsOneWidget);
+    expect(_hint(tester), 'Click paper to select it. Drag to orbit.');
+    expect(_modelPainter(tester).highlight, highlight);
+    expect(_modelPainter(tester).deskHighlight, deskHighlight);
+
+    Future<void> aim(String mode) async {
+      await tester.tap(find.text('devtools'));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.byKey(const Key('grid-dev-section')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.tap(find.text('Input').last);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.tap(find.byKey(Key('grid-aim-$mode')));
+      await tester.pump();
+      await tester.tap(find.text('devtools'));
+      await tester.pump();
     }
 
-    await doubleTap();
-    expect(
-      _hint(tester),
-      'Slide paper on the desk, or drag it right to stow it.',
-    );
-    expect(find.byKey(const Key('grid-model-layer')), findsOneWidget);
+    // Mobile: the mouse no longer aims taps.
+    await aim('reticle');
+    await mouse.moveTo(paper + const Offset(4, 0));
+    await tester.pump();
+    expect(reticle, findsOneWidget);
+    expect(_hint(tester), 'Aim at and tap paper to select it. Drag to orbit.');
+    await mouse.removePointer();
 
-    await doubleTap();
-    await tester.pump(const Duration(milliseconds: 700));
-    expect(find.byKey(const Key('grid-model-layer')), findsNothing);
-    expect(find.byKey(const Key('grid-focus-back')), findsNothing);
+    // PC: a touch aims where it lands, so it picks the paper under it.
+    await aim('cursor');
+    expect(_desk(tester).pickedPiece, isNull);
+    await tester.tapAt(paper);
+    await tester.pump();
+    expect(reticle, findsOneWidget);
+    expect(_desk(tester).pickedPiece, 0);
   });
 
-  testWidgets('3D pans keep the grabbed point under the pointer', (
+  testWidgets('3D pans move by the drag and keep the grabbed point', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(900, 1200);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    final directory = Directory.systemTemp.createTempSync('puzzle-3d-pan');
-    addTearDown(() => directory.delete(recursive: true));
-    await tester.pumpWidget(
-      ChangeNotifierProvider(
-        create: (_) => FmThemeData(),
-        child: MaterialApp(
-          home: GridPuzzleView(
-            initial: _domino(),
-            store: LevelStore(directory: directory),
-            crafts: [_dominoCraft()],
-          ),
-        ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump();
+    await _open(tester, 'puzzle-3d-pan', _domino());
     await tester.tap(find.byKey(const Key('grid-view-mode')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 700));
@@ -573,16 +654,48 @@ void main() {
     final look = camera.viewDirection;
 
     Vector3 under(Offset at) {
-      final ray = camera.camera.unprojectRay(at - canvas, viewport)!;
+      final ray = camera.camera.unprojectRay(
+        at - tester.getTopLeft(canvasFinder),
+        tester.getSize(canvasFinder),
+      )!;
       final hit = pickFace(model, ray.origin, ray.direction)!;
       return ray.pointAt(hit.distance);
     }
 
     void expectUnder(Vector3 point, Offset at) {
-      final seen = camera.camera.projectToScreen(point, viewport)!;
-      expect((canvas + seen - at).distance, lessThan(0.5));
+      final seen = camera.camera.projectToScreen(
+        point,
+        tester.getSize(canvasFinder),
+      )!;
+      expect(
+        (tester.getTopLeft(canvasFinder) + seen - at).distance,
+        lessThan(0.5),
+      );
       expect((camera.viewDirection - look).length, lessThan(1e-9));
     }
+
+    // Over nothing, the view slides only as far as the pointer moves: no
+    // jump on the first move.
+    final open = canvas + Offset(viewport.width * 0.15, viewport.height * 0.25);
+    final start = camera.target.clone();
+    final empty = await tester.startGesture(
+      open,
+      kind: PointerDeviceKind.mouse,
+      buttons: kSecondaryMouseButton,
+    );
+    await empty.moveTo(open + const Offset(-5, 0));
+    await tester.pump();
+    await empty.moveTo(open + const Offset(-10, 0));
+    await tester.pump();
+    final first = (camera.target - start).length;
+    await empty.moveTo(open + const Offset(-15, 0));
+    await tester.pump();
+    await empty.moveTo(open + const Offset(-20, 0));
+    await tester.pump();
+    expect(first, greaterThan(0));
+    expect((camera.target - start).length / first, closeTo(2, 0.05));
+    await empty.up();
+    await tester.pump(const Duration(milliseconds: 400));
 
     // A right drag slides the view; what was under the press stays under the
     // cursor, and the camera does not turn.
@@ -605,7 +718,6 @@ void main() {
     expectUnder(grabbed, at);
     await mouse.up();
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.byKey(const Key('grid-focus-back')), findsNothing);
 
     // A middle drag pans the same way.
     final middleFrom = camera.target;
@@ -625,8 +737,18 @@ void main() {
     await middle.up();
     await tester.pump(const Duration(milliseconds: 400));
 
-    // Two fingers pan too, holding what is under their middle once the pan
-    // begins.
+    // Two fingers pan too, even with paper selected, holding what is under
+    // their middle.
+    await _click(
+      tester,
+      canvas + camera.camera.projectToScreen(Vector3(0.8, 0.8, 0), viewport)!,
+    );
+    expect(_desk(tester).pickedPiece, 0);
+    final separation = _desk(tester).sheet.pieces.single.separation;
+    at =
+        canvas +
+        camera.camera.projectToScreen(model.worldCenter(wall), viewport)! -
+        const Offset(25, 0);
     final spread = const Offset(30, 0);
     final a = await tester.startGesture(at - spread, pointer: 7);
     final b = await tester.startGesture(at + spread, pointer: 8);
@@ -645,36 +767,27 @@ void main() {
     await a.up();
     await b.up();
     await tester.pump(const Duration(milliseconds: 400));
+    expect(_desk(tester).sheet.pieces.single.separation, separation);
+    expect(_desk(tester).pickedPiece, 0);
   });
 
   testWidgets('a level without a craft has no 3D toggle', (tester) async {
-    final directory = Directory.systemTemp.createTempSync('puzzle-3d-none');
-    addTearDown(() => directory.delete(recursive: true));
     final plain = _domino();
-    await tester.pumpWidget(
-      ChangeNotifierProvider(
-        create: (_) => FmThemeData(),
-        child: MaterialApp(
-          home: GridPuzzleView(
-            initial: GridBlueprint(
-              id: plain.id,
-              name: plain.name,
-              steps: [
-                GridStep(
-                  id: 'plain',
-                  label: 'Plain',
-                  polygons: plain.steps.single.polygons,
-                ),
-              ],
-            ),
-            store: LevelStore(directory: directory),
-            crafts: [_dominoCraft()],
+    await _open(
+      tester,
+      'puzzle-3d-none',
+      GridBlueprint(
+        id: plain.id,
+        name: plain.name,
+        steps: [
+          GridStep(
+            id: 'plain',
+            label: 'Plain',
+            polygons: plain.steps.single.polygons,
           ),
-        ),
+        ],
       ),
     );
-    await tester.pump();
-    await tester.pump();
     expect(find.byKey(const Key('grid-view-mode')), findsNothing);
   });
 
@@ -858,22 +971,11 @@ void main() {
     final column = find.byKey(const Key('grid-inventory'));
     final item = find.byKey(const Key('grid-inventory-paper'));
     final deskPaper = screen(Vector3(0.8, 0.8, 0));
-    await tester.tapAt(deskPaper);
-    await tester.pump(const Duration(milliseconds: 80));
-    await tester.tapAt(deskPaper);
-    await tester.pump();
+    await _click(tester, deskPaper);
+    await tester.pump(const Duration(milliseconds: 400));
+    await _mouseDrag(tester, deskPaper, tester.getCenter(column) - deskPaper);
     await tester.pump(const Duration(milliseconds: 300));
-    await tester.timedDragFrom(
-      deskPaper,
-      tester.getCenter(column) - deskPaper,
-      const Duration(milliseconds: 400),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-    expect(item, findsOneWidget);
-    await tester.tap(find.byKey(const Key('grid-focus-back')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    expect(_desk(tester).sheet.pieces, isEmpty);
     await tester.timedDragFrom(
       tester.getCenter(canvasFinder),
       const Offset(0, 260),
@@ -904,5 +1006,228 @@ void main() {
       (painter().camera.camera.position - roomPose).length,
       lessThan(1e-6),
     );
+  });
+
+  testWidgets('a pattern level cuts the net out of pattern paper in 3D', (
+    tester,
+  ) async {
+    final domino = _domino();
+    final level = domino.copyWith(
+      steps: [
+        domino.steps.single.copyWith(
+          pattern: const CutPattern(
+            period: Offset(5, 5),
+            segments: [
+              (Offset(0, 0), Offset(5, 0)),
+              (Offset(0, 0), Offset(0, 5)),
+            ],
+            sheet: Rect.fromLTWH(-10, -2, 25, 9),
+          ),
+        ),
+      ],
+    );
+    await _open(tester, 'puzzle-pattern', level);
+    await tester.pump();
+
+    // The level opens on the model, with no flat view and no desk.
+    expect(find.byKey(const Key('grid-model-layer')), findsOneWidget);
+    expect(find.byKey(const Key('grid-view-mode')), findsNothing);
+    expect(_modelPainter(tester).desk, isNull);
+
+    final canvasFinder = find.byKey(const Key('grid-puzzle-canvas'));
+    final canvas = tester.getTopLeft(canvasFinder);
+    final viewport = tester.getSize(canvasFinder);
+    Offset screen(Vector3 world) {
+      final painter = _modelPainter(tester);
+      return canvas + painter.camera.camera.projectToScreen(world, viewport)!;
+    }
+
+    int score() => int.parse(
+      tester
+          .widget<Text>(
+            find.descendant(
+              of: find.byKey(const Key('grid-score')),
+              matching: find.byType(Text),
+            ),
+          )
+          .data!,
+    );
+
+    // The sheet waits in the inventory. Over the floor, a tap lays it there,
+    // selected and flashing in, with the floor's cell on the pattern lit.
+    await tester.timedDragFrom(
+      tester.getCenter(canvasFinder),
+      const Offset(0, 260),
+      const Duration(milliseconds: 300),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 250));
+    final item = find.byKey(const Key('grid-inventory-sheet'));
+    expect(item, findsOneWidget);
+    await tester.tap(item);
+    await tester.pump();
+    expect(
+      _hint(tester),
+      'Drag to slide the paper, then cut it with the scissors.',
+    );
+    final model = _modelPainter(tester).model;
+    final floor = model.faceOfRing(0)!;
+    final face = model.faces[floor];
+    expect(_wrapLayer(tester).cut.flaps, hasLength(1));
+    expect(_wrapLayer(tester).selected, isTrue);
+    expect(_wrapLayer(tester).fill, lessThan(0.2));
+    expect(_wrapLayer(tester).aligned, isTrue);
+    expect(alignedCell(_wrapLayer(tester).cut, 0), isNotNull);
+    await tester.pump(const Duration(milliseconds: 300));
+    final greening = _wrapPainter(tester).alignedFade[floor]!;
+    expect(greening, inExclusiveRange(0, 1));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(_wrapLayer(tester).fill, closeTo(1, 1e-9));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(_wrapPainter(tester).alignedFade[floor], 1);
+
+    // The edge glow waits for the blade.
+    expect(_modelPainter(tester).edgeGlow[floor], isNull);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const Key('grid-model-tools')),
+        matching: find.byIcon(Icons.content_cut),
+      ),
+    );
+    await tester.pump();
+    expect(
+      _hint(tester),
+      'Aim at and tap a red ring or the pattern paper to set the blade.',
+    );
+
+    // Rings suggest starts mid-way along the floor's edges, and the start a
+    // tap would take shows under the aim.
+    final floorEdges = face.outline;
+    expect(_wrapLayer(tester).starts, hasLength(floorEdges.length));
+    final corner = screen(face.world(const Offset(0.2, 0.3)));
+    await tester.sendEventToBinding(
+      PointerHoverEvent(kind: PointerDeviceKind.mouse, position: corner),
+    );
+    await tester.pump();
+    expect(_wrapLayer(tester).aimedStart, Offset.zero);
+
+    // A click on a ring sets the blade there.
+    final ring = _wrapLayer(tester).starts.first;
+    final paperToWorld = _wrapLayer(tester).cut.flapToWorld(0);
+    await _click(
+      tester,
+      screen(paperToWorld.transformed3(Vector3(ring.dx, ring.dy, 0))) +
+          const Offset(6, 4),
+    );
+    expect(_wrapLayer(tester).cut.blade, ring);
+    await tester.tap(find.byTooltip('Undo'));
+    await tester.pump();
+    expect(_wrapLayer(tester).cut.blade, isNull);
+
+    // A click near the floor's corner sets the blade on the pattern there,
+    // and the camera follows it on a slightly longer lens.
+    final camera = _modelPainter(tester).camera;
+    await _click(tester, screen(face.world(const Offset(0.2, 0.3))));
+    expect(
+      _hint(tester),
+      'Tap toward a line to cut along it. Drag to look around.',
+    );
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(camera.focalLengthMm, closeTo(90, 1));
+    expect(_modelPainter(tester).edgeGlow[floor], 1);
+
+    WrapCut cut() => _wrapLayer(tester).cut;
+
+    // Each tap cuts toward its side of the blade. The cut starts where the
+    // blade was set down.
+    Future<void> cutTo(Offset to) async {
+      final at = cut();
+      final from = at.blade!;
+      final step = (to - from) / (to - from).distance;
+      final toWorld = at.flapToWorld(at.bladeFlap(from, step));
+      Offset paper(Offset point) =>
+          screen(toWorld.transformed3(Vector3(point.dx, point.dy, 0)));
+      final a = paper(from);
+      final b = paper(from + step);
+      await tester.tapAt(a + (b - a) / (b - a).distance * 80);
+      await tester.pump();
+      for (var i = 0; i < 24; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(cut().blade, to);
+      expect(_wrapLayer(tester).path.first, Offset.zero);
+    }
+
+    expect(cut().blade, Offset.zero);
+    await cutTo(const Offset(5, 0));
+    expect(cut().folds, isEmpty);
+
+    // Past the wall's edge the paper folds up onto the wall.
+    await cutTo(const Offset(10, 0));
+    expect(cut().folds, hasLength(1));
+    expect(cut().flaps[1].face, model.faceOfRing(1));
+    await cutTo(const Offset(10, 5));
+    await cutTo(const Offset(5, 5));
+    await cutTo(const Offset(0, 5));
+
+    // Mid-cut, a drag peeks around the face on a spring, held to a limit,
+    // and springs back to the follow view on release. It cuts nothing.
+    final follow = camera.viewDirection.clone();
+    final blade = cut().blade;
+    final peekFrom =
+        canvas + Offset(viewport.width * 0.3, viewport.height * 0.4);
+    final peek = await tester.startGesture(peekFrom);
+    var furthest = 0.0;
+    for (var i = 1; i <= 8; i++) {
+      await peek.moveTo(peekFrom + Offset(30.0 * i, 0));
+      await tester.pump();
+      furthest = math.max(furthest, _angle(camera.viewDirection, follow));
+    }
+    expect(furthest, greaterThan(0.2));
+    expect(furthest, lessThan(0.8));
+    await peek.up();
+    await tester.pump();
+    for (var i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(_angle(camera.viewDirection, follow), lessThan(0.03));
+    expect(cut().blade, blade);
+    final before = score();
+
+    // Closing the loop finishes the cut: the net wraps both faces.
+    final last = cut();
+    final step = const Offset(0, -1);
+    final toWorld = last.flapToWorld(last.bladeFlap(last.blade!, step));
+    Offset paper(Offset point) =>
+        screen(toWorld.transformed3(Vector3(point.dx, point.dy, 0)));
+    final a = paper(last.blade!);
+    final b = paper(last.blade! + step);
+    await tester.tapAt(a + (b - a) / (b - a).distance * 80);
+    await tester.pump();
+    for (var i = 0; i < 26; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(
+      {for (final patch in _modelPainter(tester).patches) patch.face},
+      {floor, model.faceOfRing(1)},
+    );
+    expect(score(), before + 200);
+    expect(find.text('+200'), findsOneWidget);
+    expect(_hint(tester), 'Every face is wrapped.');
+    for (var i = 0; i < 30; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(camera.focalLengthMm, closeTo(50, 0.1));
+    expect(_modelPainter(tester).edgeGlow, isEmpty);
+
+    // Undo puts the whole sheet back in hand and takes the score back.
+    await tester.tap(find.byTooltip('Undo'));
+    await tester.pump();
+    expect(_modelPainter(tester).patches, isEmpty);
+    expect(score(), before);
   });
 }

@@ -18,6 +18,7 @@
   ],
   "crafts": [
     {"puzzle": "cube", "at": [-7, 3], "turn": 20},
-    {"puzzle": "box-stack", "at": [6, -2], "turn": -10}
+    {"puzzle": "box-stack", "at": [6, -2], "turn": -10},
+    {"puzzle": "grid-cube", "at": [1, 7], "turn": 15}
   ]
 }

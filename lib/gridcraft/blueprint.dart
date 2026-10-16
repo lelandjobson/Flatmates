@@ -241,6 +241,111 @@ class CraftLink {
   }
 }
 
+/// Pattern paper: [segments] tiled every [period]. A pattern level starts with
+/// one [sheet] of it in the inventory and cuts it on the model in 3D.
+class CutPattern {
+  const CutPattern({
+    required this.period,
+    required this.segments,
+    required this.sheet,
+  });
+
+  final Offset period;
+
+  /// One tile, in sheet coordinates.
+  final List<(Offset, Offset)> segments;
+  final Rect sheet;
+
+  /// Every tiled segment that reaches into [bounds], clipped to it.
+  List<(Offset, Offset)> patternLines(Rect bounds) {
+    if (segments.isEmpty || period.dx <= 0 || period.dy <= 0) return const [];
+    final tile = pointBounds([
+      for (final (a, b) in segments) ...[a, b],
+    ]);
+    final i0 = ((bounds.left - tile.right) / period.dx).floor();
+    final i1 = ((bounds.right - tile.left) / period.dx).ceil();
+    final j0 = ((bounds.top - tile.bottom) / period.dy).floor();
+    final j1 = ((bounds.bottom - tile.top) / period.dy).ceil();
+    final lines = <(Offset, Offset)>[];
+    for (var i = i0; i <= i1; i++) {
+      for (var j = j0; j <= j1; j++) {
+        final shift = Offset(i * period.dx, j * period.dy);
+        for (final (a, b) in segments) {
+          final clipped = _clipToRect(a + shift, b + shift, bounds);
+          if (clipped != null) lines.add(clipped);
+        }
+      }
+    }
+    return lines;
+  }
+
+  Map<String, dynamic> toJson() => {
+    'period': [period.dx, period.dy],
+    'segments': [
+      for (final (a, b) in segments)
+        [
+          [a.dx, a.dy],
+          [b.dx, b.dy],
+        ],
+    ],
+    'sheet': [sheet.left, sheet.top, sheet.width, sheet.height],
+  };
+
+  static CutPattern? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final period = raw['period'];
+    final sheet = raw['sheet'];
+    if (period is! List || period.length < 2) return null;
+    if (sheet is! List || sheet.length < 4) return null;
+    Offset point(Object? value) {
+      final list = value as List;
+      return Offset((list[0] as num).toDouble(), (list[1] as num).toDouble());
+    }
+
+    return CutPattern(
+      period: point(period),
+      segments: [
+        for (final segment in raw['segments'] as List? ?? const [])
+          (point((segment as List)[0]), point(segment[1])),
+      ],
+      sheet: Rect.fromLTWH(
+        (sheet[0] as num).toDouble(),
+        (sheet[1] as num).toDouble(),
+        (sheet[2] as num).toDouble(),
+        (sheet[3] as num).toDouble(),
+      ),
+    );
+  }
+}
+
+/// Liang–Barsky: the part of [a]–[b] inside [rect], or null when none is.
+(Offset, Offset)? _clipToRect(Offset a, Offset b, Rect rect) {
+  final d = b - a;
+  var t0 = 0.0;
+  var t1 = 1.0;
+  bool edge(double p, double q) {
+    if (p.abs() < 1e-12) return q >= -1e-9;
+    final t = q / p;
+    if (p < 0) {
+      if (t > t1) return false;
+      if (t > t0) t0 = t;
+    } else {
+      if (t < t0) return false;
+      if (t < t1) t1 = t;
+    }
+    return true;
+  }
+
+  if (!edge(-d.dx, a.dx - rect.left) ||
+      !edge(d.dx, rect.right - a.dx) ||
+      !edge(-d.dy, a.dy - rect.top) ||
+      !edge(d.dy, rect.bottom - a.dy)) {
+    return null;
+  }
+  if ((t1 - t0) * d.distance < 1e-9) return null;
+  return (a + d * t0, a + d * t1);
+}
+
 /// A level: one blueprint step. Each ring in [polygons] is a blueprint piece.
 class GridStep {
   const GridStep({
@@ -258,6 +363,7 @@ class GridStep {
     this.permutation = const LevelPermutation(),
     this.discardFailure = false,
     this.craft,
+    this.pattern,
   });
 
   final String id;
@@ -284,6 +390,9 @@ class GridStep {
 
   /// Folded model this level wraps in 3D. Null hides the 3D view.
   final CraftLink? craft;
+
+  /// Pattern paper to cut on [craft] in 3D. Null is a blueprint level.
+  final CutPattern? pattern;
 
   /// Sheet around the outlines and rule marks, grown by [paperMargin] cells.
   Rect get paper {
@@ -371,6 +480,7 @@ class GridStep {
     LevelPermutation? permutation,
     bool? discardFailure,
     CraftLink? craft,
+    CutPattern? pattern,
   }) {
     return GridStep(
       id: id,
@@ -387,6 +497,7 @@ class GridStep {
       permutation: permutation ?? this.permutation,
       discardFailure: discardFailure ?? this.discardFailure,
       craft: craft ?? this.craft,
+      pattern: pattern ?? this.pattern,
     );
   }
 
@@ -416,6 +527,7 @@ class GridStep {
     if (!rules.isEmpty) 'rules': rules.toJson(),
     if (discardFailure) 'discardFailure': true,
     if (craft != null) 'craft': craft!.toJson(),
+    if (pattern != null) 'pattern': pattern!.toJson(),
   };
 
   bool get _stylesStored {
@@ -445,6 +557,7 @@ class GridStep {
       permutation: LevelPermutation.fromJson(json['permutations']),
       discardFailure: json['discardFailure'] == true,
       craft: CraftLink.fromJson(json['craft']),
+      pattern: CutPattern.fromJson(json['pattern']),
       edgeStyles: [
         for (final row in styles)
           [
