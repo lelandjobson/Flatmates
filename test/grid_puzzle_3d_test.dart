@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flatmates/gridcraft/blueprint.dart';
+import 'package:flatmates/gridcraft/craft_collection.dart';
+import 'package:flatmates/gridcraft/craft_collection_painter.dart';
 import 'package:flatmates/gridcraft/folded_model.dart';
 import 'package:flatmates/gridcraft/level_io.dart';
 import 'package:flatmates/gridcraft/model_painter.dart';
@@ -323,6 +325,47 @@ void main() {
     expect(_hint(tester), 'Slide and turn the paper until the face glows.');
     expect(find.byKey(const Key('grid-place-turn-left')), findsNothing);
 
+    // Paper in hand goes back to the inventory, by Stow or by dragging it
+    // onto the inventory. Focus stays on the face either way.
+    final stow = find.byKey(const Key('grid-focus-stow'));
+    expect(stow, findsOneWidget);
+    expect(column, findsOneWidget);
+    expect(item, findsNothing);
+    await tester.tap(stow);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(item, findsOneWidget);
+    expect(stow, findsNothing);
+    expect(find.byKey(const Key('grid-focus-back')), findsOneWidget);
+    expect(_hint(tester), 'Drag a paper piece onto the face.');
+    await tester.tap(item);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(item, findsNothing);
+    final handPainter =
+        tester
+                .widget<CustomPaint>(find.byKey(const Key('grid-model-layer')))
+                .foregroundPainter!
+            as GridPuzzlePainter;
+    final handRect = pointBounds(handPainter.sheet.pieces.single.vertices);
+    final held = screen(
+      face.world(Offset(handRect.left + 1, handRect.center.dy)),
+    );
+    await tester.timedDragFrom(
+      held,
+      tester.getCenter(column) - held,
+      const Duration(milliseconds: 400),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(item, findsOneWidget);
+    expect(find.byKey(const Key('grid-focus-back')), findsOneWidget);
+    expect(_modelPainter(tester).paperPoses, isEmpty);
+    expect(_modelPainter(tester).loose, isEmpty);
+    await tester.tap(item);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
     // The rotate icon on the paper opens a ring around it. Dragging the ring
     // a quarter of the way round turns the paper a quarter turn, and dragging
     // it back puts the paper exactly where it was.
@@ -633,5 +676,233 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(find.byKey(const Key('grid-view-mode')), findsNothing);
+  });
+
+  testWidgets('a craft collection names, pans, enters, and takes back crafts', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(900, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final directory = Directory.systemTemp.createTempSync('puzzle-3d-room');
+    addTearDown(() => directory.delete(recursive: true));
+    final store = LevelStore(directory: directory);
+    await tester.runAsync(() => store.save(_domino()));
+    final collection = CraftCollection.fromJson({
+      'id': 'yard',
+      'name': 'Yard',
+      'camera': {
+        'at': [0, 0, 0],
+        'turn': -90,
+        'tilt': 35,
+        'halfHeight': 12,
+      },
+      'geometry': [
+        {
+          'type': 'polygon',
+          'rings': [
+            [
+              [-20, -20, -0.05],
+              [20, -20, -0.05],
+              [20, 20, -0.05],
+              [-20, 20, -0.05],
+            ],
+          ],
+        },
+      ],
+      'crafts': [
+        {
+          'puzzle': 'domino',
+          'at': [0, 0],
+          'turn': 30,
+        },
+      ],
+    });
+    await tester.pumpWidget(
+      ChangeNotifierProvider(
+        create: (_) => FmThemeData(),
+        child: MaterialApp(
+          home: GridPuzzleView(
+            store: store,
+            crafts: [_dominoCraft()],
+            craftCollection: collection,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    final canvasFinder = find.byKey(const Key('grid-puzzle-canvas'));
+    final canvas = tester.getTopLeft(canvasFinder);
+    final viewport = tester.getSize(canvasFinder);
+    final room = find.byKey(const Key('grid-craft-collection'));
+    CraftCollectionPainter painter() =>
+        tester.widget<CustomPaint>(room).painter! as CraftCollectionPainter;
+    double nameShown() => tester
+        .widget<AnimatedOpacity>(find.byKey(const Key('grid-craft-name-fade')))
+        .opacity;
+    String name() =>
+        tester.widget<Text>(find.byKey(const Key('grid-craft-name'))).data!;
+    Offset onDomino() {
+      final craft = painter().crafts.single.model;
+      final floor = craft.faceOfRing(0)!;
+      return canvas +
+          painter().camera.camera.projectToScreen(
+            craft.worldCenter(floor),
+            viewport,
+          )!;
+    }
+
+    Offset? ground(Offset screen) =>
+        painter().camera.planePoint(screen - canvas, viewport);
+
+    // The collection opens with the 2D chrome hidden, and the reticle on
+    // the domino names it.
+    expect(room, findsOneWidget);
+    expect(find.byKey(const Key('grid-view-mode')), findsNothing);
+    expect(find.byKey(const Key('grid-collection-button')), findsNothing);
+    expect(find.byKey(const Key('grid-puzzle-button')), findsNothing);
+    expect(find.byKey(const Key('grid-model-layer')), findsNothing);
+    expect(find.text('Yard'), findsOneWidget);
+    expect(name(), 'Domino');
+    expect(nameShown(), 1);
+    expect(painter().crafts.single.hover, 1);
+    expect(painter().crafts.single.finished, isFalse);
+
+    // A drag pans the ground point under the press along with the pointer,
+    // and enters nothing.
+    final press = canvas + Offset(viewport.width / 2, viewport.height * 0.75);
+    final grabbed = ground(press)!;
+    final target = painter().camera.target;
+    await tester.timedDragFrom(
+      press,
+      const Offset(-400, -60),
+      const Duration(milliseconds: 300),
+    );
+    await tester.pump();
+    expect(find.byKey(const Key('grid-model-layer')), findsNothing);
+    expect(room, findsOneWidget);
+    expect((painter().camera.target - target).length, greaterThan(1));
+    expect(painter().camera.target.z, closeTo(target.z, 1e-9));
+    expect(
+      (ground(press + const Offset(-400, -60))! - grabbed).distance,
+      lessThan(1e-6),
+    );
+    expect(painter().crafts.single.hover, 0);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(nameShown(), 0);
+
+    // Only the reticle picks: a hovering mouse, or a tap, on the domino off
+    // the reticle neither names it nor enters it.
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: onDomino());
+    await tester.pump();
+    expect(painter().crafts.single.hover, 0);
+    await mouse.removePointer();
+    await tester.tapAt(onDomino());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 900));
+    expect(find.byKey(const Key('grid-model-layer')), findsNothing);
+    expect(nameShown(), 0);
+
+    // Panning back puts the domino under the reticle again.
+    await tester.timedDragFrom(
+      press + const Offset(-400, -60),
+      const Offset(400, 60),
+      const Duration(milliseconds: 300),
+    );
+    await tester.pump();
+    expect((painter().camera.target - target).length, lessThan(1e-6));
+    expect(painter().crafts.single.hover, 1);
+
+    // A short tap anywhere flies into the reticle's craft, in its own 3D
+    // view.
+    final away = canvas + Offset(40, viewport.height * 0.8);
+    final roomPose = painter().camera.camera.position.clone();
+    await tester.tapAt(away);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(room, findsOneWidget);
+    expect(painter().crafts.single.opacity, 1);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+    expect(room, findsNothing);
+    expect(find.byKey(const Key('grid-model-layer')), findsOneWidget);
+    expect(find.text('Domino'), findsOneWidget);
+    final back = find.byKey(const Key('grid-craft-collection-back'));
+    expect(back, findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // Its back button flies out to where the collection was left.
+    await tester.tap(back);
+    await tester.pump();
+    expect(room, findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 900));
+    await tester.pump();
+    expect(find.byKey(const Key('grid-model-layer')), findsNothing);
+    expect(
+      (painter().camera.camera.position - roomPose).length,
+      lessThan(1e-6),
+    );
+
+    // Back in, wrapping the domino returns to the collection with it drawn
+    // as paper.
+    await tester.tapAt(away);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 900));
+    await tester.pump(const Duration(milliseconds: 500));
+    Offset screen(Vector3 world) =>
+        canvas +
+        _modelPainter(tester).camera.camera.projectToScreen(world, viewport)!;
+    final column = find.byKey(const Key('grid-inventory'));
+    final item = find.byKey(const Key('grid-inventory-paper'));
+    final deskPaper = screen(Vector3(0.8, 0.8, 0));
+    await tester.tapAt(deskPaper);
+    await tester.pump(const Duration(milliseconds: 80));
+    await tester.tapAt(deskPaper);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.timedDragFrom(
+      deskPaper,
+      tester.getCenter(column) - deskPaper,
+      const Duration(milliseconds: 400),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(item, findsOneWidget);
+    await tester.tap(find.byKey(const Key('grid-focus-back')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.timedDragFrom(
+      tester.getCenter(canvasFinder),
+      const Offset(0, 260),
+      const Duration(milliseconds: 300),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 250));
+    final model = _modelPainter(tester).model;
+    final face = model.faces[model.faceOfRing(0)!];
+    final drag = await tester.startGesture(tester.getCenter(item));
+    await drag.moveBy(const Offset(-40, 0));
+    await tester.pump();
+    await drag.moveTo(screen(face.world(const Offset(5, 2.5))));
+    await tester.pump();
+    await drag.up();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1000));
+    await tester.pump();
+    expect(_hint(tester), 'Every piece is wrapped.');
+    for (var i = 0; i < 40; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(room, findsOneWidget);
+    expect(find.byKey(const Key('grid-model-layer')), findsNothing);
+    expect(painter().crafts.single.finished, isTrue);
+    expect(
+      (painter().camera.camera.position - roomPose).length,
+      lessThan(1e-6),
+    );
   });
 }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
@@ -10,6 +11,8 @@ import 'package:vector_math/vector_math_64.dart' hide Colors;
 
 import '../gridcraft/blueprint.dart';
 import '../gridcraft/celebrate.dart';
+import '../gridcraft/craft_collection.dart';
+import '../gridcraft/craft_collection_painter.dart';
 import '../gridcraft/craft_plane.dart';
 import '../gridcraft/edit.dart';
 import '../gridcraft/fold.dart';
@@ -62,8 +65,27 @@ class _OffDesk {
   final List<PiecePlacement> placements;
 }
 
-/// Flat crafting on the sheet, or the folded model in 3D.
-enum _ViewMode { flat, model }
+/// Flat crafting on the sheet, the folded model in 3D, or the craft
+/// collection the crafts stand in.
+enum _ViewMode { flat, model, collection }
+
+/// A craft standing in the craft collection. [raw] is the folded model as
+/// the craft file gives it; [placed] stands at [spot].
+class _PlacedCraft {
+  const _PlacedCraft({
+    required this.spot,
+    required this.blueprint,
+    required this.raw,
+    required this.placed,
+    required this.decals,
+  });
+
+  final CraftSpot spot;
+  final GridBlueprint blueprint;
+  final FoldedModel raw;
+  final FoldedModel placed;
+  final List<Decal> decals;
+}
 
 /// Screen side of a tap, measured from the crosshair. Up is toward the top.
 enum _CutSide { up, down, left, right }
@@ -127,6 +149,11 @@ const int _kWrapPoints = 100;
 const EdgeInsets _kGimbalInset = EdgeInsets.fromLTRB(16, 170, 16, 120);
 const Duration _kScorePopDuration = Duration(milliseconds: 700);
 
+/// In the craft collection, a press that travels less than this is a tap;
+/// past it, the ground pans.
+const double _kCollectionSlop = 10;
+const Duration _kCraftFlyDuration = Duration(milliseconds: 800);
+
 /// Plays one level of a blueprint. Authoring lives in the puzzle editor.
 class GridPuzzleView extends StatefulWidget {
   const GridPuzzleView({
@@ -135,6 +162,7 @@ class GridPuzzleView extends StatefulWidget {
     this.initial,
     this.returnToEditor = false,
     this.crafts,
+    this.craftCollection,
   });
 
   final LevelStore? store;
@@ -143,7 +171,12 @@ class GridPuzzleView extends StatefulWidget {
   final List<CraftV1>? crafts;
 
   /// Blueprint opened from the puzzle editor. Unsaved edits win over a file.
+  /// Null opens the craft collection instead.
   final GridBlueprint? initial;
+
+  /// Craft collection to open when [initial] is null. Null loads the test
+  /// room.
+  final CraftCollection? craftCollection;
 
   /// Back returns to the editor instead of the dev menu.
   final bool returnToEditor;
@@ -187,6 +220,33 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   late AnimationController _scorePop;
   _ViewMode _mode = _ViewMode.flat;
   Map<String, CraftV1> _crafts = const {};
+
+  CraftCollection? _craftCollection;
+  List<_PlacedCraft> _collectionCrafts = const [];
+
+  /// Craft under the reticle, and the last name shown, kept while the label
+  /// fades out.
+  int? _hoverCraft;
+  String? _hoverName;
+
+  /// Blueprint ids with every island wrapped. In memory only.
+  final Set<String> _finishedCrafts = {};
+
+  /// The craft being flown into, played, or flown out of, with the move from
+  /// its level space into collection space.
+  int? _enteredCraft;
+  Matrix4? _craftTransform;
+  CameraPose? _collectionPose;
+  late AnimationController _craftFly;
+  bool _flyingIn = true;
+
+  /// Runs once after arriving in a craft, fading the desk in.
+  late AnimationController _arriveAnim;
+  bool _leavingFromFlat = false;
+  Timer? _returnTimer;
+  Offset? _groundGrab;
+  int _groundGrabPointers = 0;
+  bool _collectionPanning = false;
   GridStep? _modelStep;
   FoldedModel? _modelCache;
   List<Decal> _decals = const [];
@@ -454,7 +514,16 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       ..addListener(_onFocusTick)
       ..addStatusListener(_onFocusStatus);
     _modeAnim = AnimationController(vsync: this, duration: _kModeDuration)
-      ..addListener(_onModeTick);
+      ..addListener(_onModeTick)
+      ..addStatusListener(_onModeStatus);
+    _craftFly = AnimationController(vsync: this, duration: _kCraftFlyDuration)
+      ..addListener(_onCraftFlyTick)
+      ..addStatusListener(_onCraftFlyStatus);
+    _arriveAnim = AnimationController(
+      vsync: this,
+      duration: _kFadeDuration,
+      value: 1,
+    );
     _flyAnim = AnimationController(
       vsync: this,
       duration: PapercutCamera.flyDuration,
@@ -475,6 +544,11 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       duration: const Duration(milliseconds: 260),
     );
     _loadStep(0, _blueprint);
+    if (widget.initial == null) {
+      _mode = _ViewMode.collection;
+      _camera.beginToggle();
+      _camera.setBlend(1);
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _keys.requestFocus();
@@ -482,8 +556,85 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     });
     _refreshCollections();
     _loadToolAnimations();
-    _loadCrafts();
+    final crafts = _loadCrafts();
+    if (_inCollection) _loadCraftCollection(crafts);
   }
+
+  bool get _inCollection => _mode == _ViewMode.collection;
+
+  /// Loads the craft collection and stands each craft in it. A spot whose
+  /// blueprint or craft is missing is left out.
+  Future<void> _loadCraftCollection(Future<void> crafts) async {
+    final collection =
+        widget.craftCollection ??
+        CraftCollection.fromJson(
+          jsonDecode(await rootBundle.loadString(kTestRoomAsset))
+              as Map<String, dynamic>,
+        );
+    final blueprints = await _levelsStore.loadAll();
+    await crafts;
+    if (!mounted) return;
+    final byId = {for (final blueprint in blueprints) blueprint.id: blueprint};
+    final placed = <_PlacedCraft>[];
+    for (final spot in collection.crafts) {
+      final blueprint = byId[spot.puzzleId];
+      if (blueprint == null || blueprint.steps.isEmpty) continue;
+      final step = blueprint.steps.first;
+      final link = step.craft;
+      final craft = link == null ? null : _crafts[link.id];
+      if (link == null || craft == null) continue;
+      final raw = foldedModelFromCraft(craft, link.step, step);
+      if (raw == null) continue;
+      final model = placedCraft(raw, spot);
+      placed.add(
+        _PlacedCraft(
+          spot: spot,
+          blueprint: blueprint,
+          raw: raw,
+          placed: model,
+          decals: faceDecals(model),
+        ),
+      );
+    }
+    setState(() {
+      _craftCollection = collection;
+      _collectionCrafts = placed;
+    });
+    _poseCollection();
+  }
+
+  /// Puts the camera where the craft collection opens.
+  void _poseCollection() {
+    final collection = _craftCollection;
+    if (collection == null || !_inCollection || _enteredCraft != null) return;
+    if (_viewport.width < 2 || _viewport.height < 2) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _poseCollection();
+      });
+      return;
+    }
+    final camera = collection.camera;
+    final half =
+        camera.halfHeight ??
+        _camera
+            .frameSphere(
+              camera.at,
+              collection.groundBounds.size.longestSide / 2,
+              _viewport,
+            )
+            .halfHeight;
+    _camera.beginFly(_poseAlong(camera.at, camera.direction, half));
+    _camera.setFly(1);
+    _updateHoverCraft();
+  }
+
+  /// Pose looking at [target] from along [direction], with +z up.
+  CameraPose _poseAlong(Vector3 target, Vector3 direction, double halfHeight) =>
+      CameraPose(
+        lookAt: Offset(target.x, target.y),
+        lookAtZ: target.z,
+        halfHeight: halfHeight,
+      ).withAngles(_camera.anglesAlong(direction, up: _modelUp));
 
   Future<void> _loadCrafts() async {
     final crafts = widget.crafts ?? await CraftV1.loadAll();
@@ -508,6 +659,9 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
 
   @override
   void dispose() {
+    _returnTimer?.cancel();
+    _craftFly.dispose();
+    _arriveAnim.dispose();
     _settleTimer?.cancel();
     _preselectTicker.dispose();
     _preselectFill.dispose();
@@ -542,6 +696,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   void _onCamera() {
     _syncFlight();
     if (_inModel) _cameraMoved();
+    if (_inCollection) _updateHoverCraft();
     if (mounted) setState(() {});
   }
 
@@ -585,7 +740,9 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
         _collectionIndex = 0;
         _puzzleIndex = 0;
       } else if (collections.isNotEmpty &&
-          collections.first.puzzles.isNotEmpty) {
+          collections.first.puzzles.isNotEmpty &&
+          !_inCollection &&
+          _enteredCraft == null) {
         _collectionIndex = 0;
         _puzzleIndex = 0;
         if (_blueprint.id != collections.first.puzzles.first.id) {
@@ -1668,9 +1825,10 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
 
   /// The finished puzzle stays on screen. The next one is parked off to the
   /// right, then the camera travels to it. The last puzzle in the collection
-  /// ends on the victory screen instead.
+  /// ends on the victory screen instead. A craft entered from the craft
+  /// collection stays on its desk.
   void _presentNext() {
-    if (_advancing || _collectionWon) return;
+    if (_advancing || _collectionWon || _enteredCraft != null) return;
     final next = _nextPuzzle;
     final step = next == null || next.steps.isEmpty ? null : next.steps.first;
     if (next == null || step == null) {
@@ -2588,12 +2746,15 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
     }
+    if (_inCollection) return KeyEventResult.ignored;
     if (_inModel) {
       if (event.logicalKey != LogicalKeyboardKey.escape) {
         return KeyEventResult.ignored;
       }
       if (_focusFace != null) {
         _leaveFocus();
+      } else if (_enteredCraft != null) {
+        _leaveCraft();
       } else {
         _toggleMode();
       }
@@ -2643,19 +2804,20 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     return _modelCache;
   }
 
-  /// The model hovers above the middle of the blueprint's paper, clear of
-  /// the desk by about half its size.
-  FoldedModel _floatOverDesk(FoldedModel model) {
-    final middle = _step.paper.center;
+  FoldedModel _floatOverDesk(FoldedModel model) =>
+      model.moved(_deskLift(model, _step));
+
+  /// The move that floats [model] above the middle of [step]'s paper, clear
+  /// of the desk by about half its size.
+  Vector3 _deskLift(FoldedModel model, GridStep step) {
+    final middle = step.paper.center;
     final bounds = model.bounds;
     final size = bounds.max - bounds.min;
-    final gap = math.max(_step.gridSpacing * 2, size.z * 0.5);
-    return model.moved(
-      Vector3(
-        middle.dx - model.center.x,
-        middle.dy - model.center.y,
-        gap - bounds.min.z,
-      ),
+    final gap = math.max(step.gridSpacing * 2, size.z * 0.5);
+    return Vector3(
+      middle.dx - model.center.x,
+      middle.dy - model.center.y,
+      gap - bounds.min.z,
     );
   }
 
@@ -2703,19 +2865,26 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     }
     _flatPose = _camera.pose;
     _camera.beginToggle();
-    _camera.beginFly(
-      _modelFraming(model).withAngles(
-        _camera.anglesAlong(
-          _turntableDirection(_kModelTurn, _kModelTilt),
-          up: _modelUp,
-        ),
-      ),
-    );
+    _camera.beginFly(_modelOpening(model));
     setState(() => _mode = _ViewMode.model);
     _modeAnim.forward(from: 0);
   }
 
+  void _onModeStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed || !_leavingFromFlat) return;
+    _leavingFromFlat = false;
+    if (_inModel) _leaveCraft();
+  }
+
   static final Vector3 _modelUp = Vector3(0, 0, 1);
+
+  /// The opening 3D view of [model]: in front, a little to the left, looking
+  /// down.
+  CameraPose _modelOpening(FoldedModel model) => _poseAlong(
+    model.center,
+    _turntableDirection(_kModelTurn, _kModelTilt),
+    _modelFraming(model).halfHeight,
+  );
 
   /// Eye direction around the model's vertical axis. [turn] spins about +z
   /// from +x; [tilt] lifts above the sheet.
@@ -2737,6 +2906,241 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       _kMaxTilt,
     );
     _camera.orbitTo(_turntableDirection(turn, tilt), up: _modelUp);
+  }
+
+  /// Picks the craft under the reticle.
+  void _updateHoverCraft() {
+    final hover = _inCollection && !_craftFly.isAnimating
+        ? _craftAt(_crosshair)
+        : null;
+    if (hover == _hoverCraft) return;
+    _hoverCraft = hover;
+    if (hover != null) _hoverName = _collectionCrafts[hover].blueprint.name;
+    if (mounted) setState(() {});
+  }
+
+  int? _craftAt(Offset screen) {
+    final collection = _craftCollection;
+    if (collection == null || _viewport.width < 2) return null;
+    final ray = _camera.camera.unprojectRay(screen, _viewport);
+    if (ray == null) return null;
+    return pickCraft(
+      [for (final craft in _collectionCrafts) craft.placed],
+      collection.surfaces,
+      ray.origin,
+      ray.direction,
+    )?.craft;
+  }
+
+  /// 1 with the craft collection shown, toward 0 while flying into a craft.
+  double get _collectionShown {
+    if (!_craftFly.isAnimating) return _enteredCraft == null ? 1 : 0;
+    final t = Curves.easeInOutCubic.transform(_craftFly.value);
+    return _flyingIn ? 1 - t : t;
+  }
+
+  /// Flies to the craft's opening 3D view, carried into collection space,
+  /// while the rest of the collection fades.
+  void _enterCraft(int index) {
+    if (!_inCollection || _craftFly.isAnimating || _enteredCraft != null) {
+      return;
+    }
+    final craft = _collectionCrafts[index];
+    final lift = _deskLift(craft.raw, craft.blueprint.steps.first);
+    final by = craftPlacement(craft.raw, craft.spot)..translateByVector3(-lift);
+    final level = craft.raw.moved(lift);
+    final view = carryView(
+      by,
+      level.center,
+      _turntableDirection(_kModelTurn, _kModelTilt),
+    );
+    _collectionPose = _camera.pose;
+    _craftTransform = by;
+    _camera.beginFly(
+      _poseAlong(view.target, view.direction, _modelFraming(level).halfHeight),
+    );
+    setState(() {
+      _enteredCraft = index;
+      _flyingIn = true;
+      _hoverCraft = null;
+    });
+    unawaited(fmHapticSmallClick());
+    _craftFly.forward(from: 0);
+  }
+
+  void _onCraftFlyTick() {
+    _camera.setFly(Curves.easeInOutCubic.transform(_craftFly.value));
+  }
+
+  void _onCraftFlyStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed || !mounted) return;
+    if (_flyingIn) {
+      _arriveInCraft();
+      return;
+    }
+    setState(() {
+      _enteredCraft = null;
+      _craftTransform = null;
+    });
+    _updateHoverCraft();
+  }
+
+  /// Swaps collection space for the level's own, at the same image: the
+  /// level loads, the camera takes the unmapped pose, and the desk fades in.
+  void _arriveInCraft() {
+    final index = _enteredCraft;
+    if (index == null) return;
+    final craft = _collectionCrafts[index];
+    final blueprint = craft.blueprint;
+    _loadStep(0, blueprint, frame: false);
+    final found = _findPuzzle(_collections, blueprint.id);
+    if (found != null) {
+      _collectionIndex = found.$1;
+      _puzzleIndex = found.$2;
+      _keepLivePuzzle(found.$1, found.$2);
+    }
+    _frame();
+    _rememberStart();
+    _flatPose = _camera.pose;
+    final model = _model;
+    _camera.beginToggle();
+    _camera.setBlend(1);
+    if (model != null) {
+      _camera.beginFly(_modelOpening(model));
+      _camera.setFly(1);
+    }
+    setState(() => _mode = _ViewMode.model);
+    _modeAnim.value = 1;
+    _arriveAnim.forward(from: 0);
+    _cameraMoved();
+  }
+
+  /// Back to the craft collection: from 2D, by way of 3D. The view swaps to
+  /// collection space at the same image, then flies to where it entered.
+  void _leaveCraft() {
+    final by = _craftTransform;
+    final back = _collectionPose;
+    if (_enteredCraft == null || by == null || back == null) return;
+    if (_craftFly.isAnimating || _modeAnim.isAnimating) return;
+    _returnTimer?.cancel();
+    if (!_inModel) {
+      _toggleMode();
+      _leavingFromFlat = _inModel;
+      return;
+    }
+    _leaveFocus(fly: false);
+    _commitPlacing();
+    _stopLap();
+    if (_flyAnim.isAnimating) _flyAnim.stop();
+    if (_wrapAnim.isAnimating) _wrapAnim.stop();
+    _settleTimer?.cancel();
+    _settled = false;
+    _setPreselect(null);
+    final view = carryView(by, _camera.target, _camera.viewDirection);
+    _camera.beginFly(
+      _poseAlong(view.target, view.direction, _camera.framedHalfHeightMm),
+    );
+    _camera.setFly(1);
+    _camera.beginFly(back);
+    setState(() {
+      _mode = _ViewMode.collection;
+      _flyingIn = false;
+    });
+    _craftFly.forward(from: 0);
+  }
+
+  /// After the lap and the score, a craft entered from the collection with
+  /// every island wrapped is finished, and the view flies back out.
+  void _finishCraft({required bool scored}) {
+    if (_enteredCraft == null || !_modelComplete) return;
+    _finishedCrafts.add(_blueprint.id);
+    _returnTimer?.cancel();
+    _returnTimer = Timer(scored ? _kScorePopDuration : Duration.zero, () {
+      if (mounted) _leaveCraft();
+    });
+  }
+
+  void _collectionScaleStart(ScaleStartDetails details) {
+    final down = details.pointerCount == 1 ? _pointerDownAt : null;
+    _gestureDown = down ?? details.localFocalPoint;
+    _lastFocal = details.localFocalPoint;
+    _moved = 0;
+    _groundGrab = null;
+    _groundGrabPointers = 0;
+    _collectionPanning = details.pointerCount >= 2;
+  }
+
+  /// One finger, a mouse button, or two fingers pan once past the slop,
+  /// holding the ground point under the press beneath the pointer.
+  void _collectionScaleUpdate(ScaleUpdateDetails details) {
+    final local = details.localFocalPoint;
+    final delta = local - (_lastFocal ?? local);
+    _lastFocal = local;
+    final down = _gestureDown ?? local;
+    _moved = math.max(_moved, (local - down).distance);
+    if (_craftFly.isAnimating || _enteredCraft != null) return;
+    if (!_collectionPanning) {
+      if (details.pointerCount < 2 && _moved < _kCollectionSlop) return;
+      _collectionPanning = true;
+    }
+    if (_groundGrabPointers != details.pointerCount) {
+      final from = _groundGrabPointers == 0 && details.pointerCount == 1
+          ? down
+          : local;
+      _groundGrabPointers = details.pointerCount;
+      _groundGrab = _camera.planePoint(from, _viewport);
+      if (from != local) {
+        _panGround(local, local - from);
+        return;
+      }
+    }
+    _panGround(local, delta);
+  }
+
+  /// Slides the look-at point along the ground, within the collection.
+  /// Above the horizon, where no ground is under the pointer, the drag
+  /// moves it by screen distance at the look-at point instead.
+  void _panGround(Offset screen, Offset delta) {
+    final collection = _craftCollection;
+    if (collection == null) return;
+    final grab = _groundGrab;
+    final at = grab == null ? null : _camera.planePoint(screen, _viewport);
+    Offset shift;
+    if (grab != null && at != null) {
+      shift = grab - at;
+    } else {
+      if (_viewport.height < 2) return;
+      final perPixel = 2 * _camera.framedHalfHeightMm / _viewport.height;
+      final right = _camera.camera.right;
+      final away = -_camera.viewDirection;
+      Offset flat(Vector3 v) {
+        final length = math.sqrt(v.x * v.x + v.y * v.y);
+        return length < 1e-9 ? Offset.zero : Offset(v.x, v.y) / length;
+      }
+
+      shift = (flat(away) * delta.dy - flat(right) * delta.dx) * perPixel;
+    }
+    final bounds = collection.groundBounds;
+    final from = _camera.lookAt;
+    final next = from + shift;
+    final clamped = Offset(
+      next.dx.clamp(bounds.left, bounds.right),
+      next.dy.clamp(bounds.top, bounds.bottom),
+    );
+    _camera.shiftTarget(Vector3(clamped.dx - from.dx, clamped.dy - from.dy, 0));
+  }
+
+  /// A press that stayed inside the slop, anywhere on screen, enters the
+  /// craft under the reticle.
+  void _collectionScaleEnd(ScaleEndDetails details) {
+    final panned = _collectionPanning;
+    _collectionPanning = false;
+    _groundGrab = null;
+    _groundGrabPointers = 0;
+    if (_canvasPointers == 0) _zoomed = false;
+    if (panned || _moved >= _kCollectionSlop || _panButton) return;
+    final index = _hoverCraft;
+    if (index != null) _enterCraft(index);
   }
 
   void _onModeTick() {
@@ -3053,12 +3457,15 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
 
   /// The inventory is out while paper can be moved into or out of it: with
   /// the select tool on the flat desk and in desk focus. Over a model face it
-  /// offers stowed paper in focus, or once the camera rests on the face, and
-  /// stays out through a drop.
+  /// offers stowed paper in focus, or once the camera rests on the face,
+  /// stays out through a drop, and takes back the paper in hand.
   bool get _inventoryShown {
-    if (_model == null || _modeAnim.isAnimating || _lapping) return false;
+    if (_inCollection || _model == null || _modeAnim.isAnimating || _lapping) {
+      return false;
+    }
     if (!_inModel) return _tool == _GridTool.select;
     if (_focusFace == _kDesk || _dropping != null) return true;
+    if (_focusFace != null && _placing != null) return true;
     if (_inventory.isEmpty) return false;
     return _focusFace != null || (_settled && _preselect != null);
   }
@@ -3472,10 +3879,13 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _lapIsland = null;
     if (!mounted) return;
     _updatePreselect();
-    if (island == null || !_scoredIslands.add(island)) return;
-    setState(() => _collectionScore += _kWrapPoints);
-    _scorePop.forward(from: 0);
-    unawaited(fmHapticSmallClick());
+    final scored = island != null && _scoredIslands.add(island);
+    if (scored) {
+      setState(() => _collectionScore += _kWrapPoints);
+      _scorePop.forward(from: 0);
+      unawaited(fmHapticSmallClick());
+    }
+    _finishCraft(scored: scored);
   }
 
   void _stopLap() {
@@ -3507,6 +3917,19 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
 
   void _restow(String id) {
     if (_offDesk.containsKey(id) && !_stowed.contains(id)) _stowed.add(id);
+  }
+
+  /// Takes the paper in hand off the focused face, back into the inventory.
+  /// Focus stays, so another piece can be picked.
+  void _stowPlacing() {
+    final placing = _placing;
+    if (placing == null) return;
+    setState(() {
+      _placing = null;
+      if (_gimbalPiece == placing.pieceId) _gimbalPiece = null;
+      _restow(placing.pieceId);
+    });
+    unawaited(fmHapticSmallClick());
   }
 
   void _modelScaleStart(ScaleStartDetails details) {
@@ -3707,6 +4130,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       _viewport,
     );
     if (at == null) return;
+    _setOverInventory(_moved > 4 && _overInventoryAt(screen));
     final next = placing.movedTo(
       _placeGrabOffset + (at - grab),
       _step.gridSpacing,
@@ -3723,8 +4147,13 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _planeGrab = null;
     final deskId = _deskDragId;
     final stow = _overInventory && _dragNudged;
+    final stowHand = _overInventory && dragged;
     _deskDragId = null;
     _setOverInventory(false);
+    if (stowHand) {
+      _stowPlacing();
+      return;
+    }
     if (dragged) {
       _settlePlacing();
       return;
@@ -3812,6 +4241,27 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       pieces: [
         for (final piece in _sheet.pieces) tint(piece),
         if (dropped != null) tint(dropped),
+      ],
+    );
+  }
+
+  CraftCollectionPainter _collectionPainter() {
+    final shown = _collectionShown;
+    return CraftCollectionPainter(
+      camera: _camera,
+      surfaces: _craftCollection?.surfaces ?? const [],
+      opacity: shown,
+      crafts: [
+        for (var i = 0; i < _collectionCrafts.length; i++)
+          CollectionCraft(
+            model: _collectionCrafts[i].placed,
+            decals: _collectionCrafts[i].decals,
+            finished: _finishedCrafts.contains(
+              _collectionCrafts[i].blueprint.id,
+            ),
+            hover: i == _hoverCraft ? 1 : 0,
+            opacity: i == _enteredCraft ? 1 : shown,
+          ),
       ],
     );
   }
@@ -3970,15 +4420,21 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       child: FmScreen(
         backgroundColor: kPapercutBackground,
         overlays: [
-          FmDevBackButton(
-            label: widget.returnToEditor ? '← Editor' : '← Dev',
-            onPressed: widget.returnToEditor ? () => context.pop() : null,
-          ),
+          if (_enteredCraft != null && !_inCollection)
+            FmDevBackButton(
+              label: '← ${_craftCollection?.name ?? 'Collection'}',
+              onPressed: _leaveCraft,
+            )
+          else
+            FmDevBackButton(
+              label: widget.returnToEditor ? '← Editor' : '← Dev',
+              onPressed: widget.returnToEditor ? () => context.pop() : null,
+            ),
         ],
         background: LayoutBuilder(
           builder: (context, constraints) {
             _viewport = Size(constraints.maxWidth, constraints.maxHeight);
-            if (_needsFrame && _viewport.width > 2) {
+            if (_needsFrame && _viewport.width > 2 && !_inCollection) {
               _needsFrame = false;
               _frame();
               _rememberStart();
@@ -3999,7 +4455,8 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                     onAcceptWithDetails: _onDrop,
                     builder: (context, _, _) => Listener(
                       onPointerSignal: (event) {
-                        if (_fixedToolCamera ||
+                        if (_inCollection ||
+                            _fixedToolCamera ||
                             _advancing ||
                             _collectionWon ||
                             event is! PointerScrollEvent ||
@@ -4036,8 +4493,18 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                               _tallyAnim,
                               _modeAnim,
                               _deskAnim,
+                              _craftFly,
+                              _arriveAnim,
                             ]),
                             builder: (context, _) {
+                              if (_inCollection) {
+                                return CustomPaint(
+                                  key: const Key('grid-craft-collection'),
+                                  painter: _collectionPainter(),
+                                  child: const SizedBox.expand(),
+                                );
+                              }
+                              final arrive = _arriveAnim.value;
                               final aim = _inModel || _modeAnim.value > 0
                                   ? null
                                   : _aimWorld();
@@ -4050,14 +4517,17 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                                   camera: _camera,
                                   step: _step,
                                   sheet: _tableSheet(),
-                                  gridOpacity: math.max(
-                                    1 - modelness,
-                                    0.45 * _deskAnim.value,
-                                  ),
+                                  gridOpacity:
+                                      arrive *
+                                      math.max(
+                                        1 - modelness,
+                                        0.45 * _deskAnim.value,
+                                      ),
                                   gridBounds: modelness > 0 ? _deskRect : null,
                                   sheetOpacity:
-                                      _kDeskOpacity +
-                                      (1 - _kDeskOpacity) * _deskShown,
+                                      arrive *
+                                      (_kDeskOpacity +
+                                          (1 - _kDeskOpacity) * _deskShown),
                                   decals: model == null ? const [] : _decals,
                                   march: null,
                                   flash: _flash.value,
@@ -4134,7 +4604,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                   ),
                 ),
                 if (_model case final model?
-                    when _inModel || _modeAnim.value > 0)
+                    when !_inCollection && (_inModel || _modeAnim.value > 0))
                   Positioned.fill(
                     child: IgnorePointer(
                       child: AnimatedBuilder(
@@ -4157,7 +4627,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                       ),
                     ),
                   ),
-                if (!_inModel)
+                if (_mode == _ViewMode.flat)
                   Positioned.fill(
                     child: IgnorePointer(
                       child: AnimatedBuilder(
@@ -4296,7 +4766,12 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                       ),
                     ),
                   ),
-                FmSafePositioned(top: 8, left: 8, right: 8, child: _topBar()),
+                FmSafePositioned(
+                  top: 8,
+                  left: 8,
+                  right: 8,
+                  child: _inCollection ? _collectionHeader() : _topBar(),
+                ),
                 if (_devToolsOpen)
                   FmSafePositioned(
                     top: 196,
@@ -4353,9 +4828,14 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                   left: 0,
                   right: 0,
                   bottom: 8,
-                  child: _inModel ? _modelBar() : _toolbar(),
+                  child: switch (_mode) {
+                    _ViewMode.collection => _collectionBar(),
+                    _ViewMode.model => _modelBar(),
+                    _ViewMode.flat => _toolbar(),
+                  },
                 ),
-                FmSafePositioned(left: 8, bottom: 8, child: _undoButton()),
+                if (!_inCollection)
+                  FmSafePositioned(left: 8, bottom: 8, child: _undoButton()),
               ],
             );
           },
@@ -4402,6 +4882,10 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   }
 
   void _onScaleStart(ScaleStartDetails details) {
+    if (_inCollection) {
+      _collectionScaleStart(details);
+      return;
+    }
     if (_inModel || _modeAnim.isAnimating) {
       _modelScaleStart(details);
       return;
@@ -4441,6 +4925,10 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   }
 
   void _onScaleUpdate(ScaleUpdateDetails details) {
+    if (_inCollection) {
+      _collectionScaleUpdate(details);
+      return;
+    }
     if (_inModel || _modeAnim.isAnimating) {
       _modelScaleUpdate(details);
       return;
@@ -4495,6 +4983,10 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   }
 
   void _onScaleEnd(ScaleEndDetails details) {
+    if (_inCollection) {
+      _collectionScaleEnd(details);
+      return;
+    }
     if (_inModel || _modeAnim.isAnimating) {
       _pointerDown = false;
       _modelScaleEnd(details);
@@ -5303,16 +5795,79 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
                 label: desk ? 'Craft' : 'Focus camera',
                 onPressed: _focusCamera,
               ),
-            ] else
+              if (holding && !desk)
+                button(
+                  key: const Key('grid-focus-stow'),
+                  icon: Icons.move_to_inbox,
+                  label: 'Stow',
+                  onPressed: _stowPlacing,
+                ),
+            ] else ...[
+              if (_enteredCraft != null)
+                button(
+                  key: const Key('grid-craft-collection-back'),
+                  icon: Icons.arrow_back,
+                  label: _craftCollection?.name ?? 'Collection',
+                  onPressed: _leaveCraft,
+                ),
               button(
                 key: const Key('grid-frame-model'),
                 icon: Icons.center_focus_strong,
                 label: 'Frame model',
                 onPressed: _frameModel,
               ),
+            ],
           ],
         ),
       ],
+    );
+  }
+
+  /// The craft collection's name, and the hovered craft's fading in below.
+  Widget _collectionHeader() {
+    final hovered = _hoverCraft != null;
+    return IgnorePointer(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            _craftCollection?.name ?? '',
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 13,
+              letterSpacing: 1,
+            ),
+          ),
+          const SizedBox(height: 4),
+          AnimatedOpacity(
+            key: const Key('grid-craft-name-fade'),
+            opacity: hovered ? 1 : 0,
+            duration: _kPreselectFade,
+            child: Text(
+              _hoverName ?? '',
+              key: const Key('grid-craft-name'),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 26,
+                fontWeight: FontWeight.w600,
+                shadows: [Shadow(color: Color(0x99000000), blurRadius: 12)],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _collectionBar() {
+    return const Padding(
+      padding: EdgeInsets.only(bottom: 6),
+      child: Text(
+        'Drag to look around. Tap a craft to open it.',
+        key: Key('grid-collection-hint'),
+        textAlign: TextAlign.center,
+        style: TextStyle(color: Colors.white70, fontSize: 12),
+      ),
     );
   }
 

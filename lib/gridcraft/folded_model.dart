@@ -98,8 +98,10 @@ class FoldedModel {
   ];
 
   /// The same model slid by [offset] in world space.
-  FoldedModel moved(Vector3 offset) {
-    final by = Matrix4.translation(offset);
+  FoldedModel moved(Vector3 offset) => transformed(Matrix4.translation(offset));
+
+  /// The same model carried by [by] in world space.
+  FoldedModel transformed(Matrix4 by) {
     return FoldedModel(
       faces: [
         for (final face in faces)

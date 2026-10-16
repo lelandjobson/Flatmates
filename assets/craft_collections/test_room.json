@@ -1,0 +1,23 @@
+{
+  "id": "test-room",
+  "name": "Test Room",
+  "camera": {"at": [0, 0, 3], "turn": -90, "tilt": 32},
+  "geometry": [
+    {
+      "type": "room",
+      "center": [0, 0],
+      "width": 30,
+      "depth": 24,
+      "height": 14,
+      "openings": [
+        {"wall": "north", "kind": "door", "center": 0, "width": 6, "height": 10},
+        {"wall": "east", "kind": "window", "center": 0, "width": 8, "sill": 5, "height": 5},
+        {"wall": "west", "kind": "window", "center": 0, "width": 8, "sill": 5, "height": 5}
+      ]
+    }
+  ],
+  "crafts": [
+    {"puzzle": "cube", "at": [-7, 3], "turn": 20},
+    {"puzzle": "box-stack", "at": [6, -2], "turn": -10}
+  ]
+}
