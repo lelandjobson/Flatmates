@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../gridcraft/scrap.dart';
 
-enum _GridDevSection { tapDebug, paperScore, camera, input }
+enum _GridDevSection { tapDebug, paperScore, camera, folding, input }
 
 /// What a tap picks in 3D: by the pointer's own kind, or forced to the PC
 /// cursor or the mobile reticle for any pointer.
@@ -22,6 +22,10 @@ class GridDevPanel extends StatefulWidget {
     required this.onCameraFollowsToolChanged,
     required this.cameraRotates,
     required this.onCameraRotatesChanged,
+    required this.cutFollow,
+    required this.onCutFollowChanged,
+    required this.foldOverlap,
+    required this.onFoldOverlapChanged,
     required this.aimMode,
     required this.onAimModeChanged,
   });
@@ -34,6 +38,16 @@ class GridDevPanel extends StatefulWidget {
   final ValueChanged<bool> onCameraFollowsToolChanged;
   final bool cameraRotates;
   final ValueChanged<bool> onCameraRotatesChanged;
+
+  /// 0–1: how far a 3D pattern cut's camera turns from square to the
+  /// blade's face toward the blade as seen from the model's middle.
+  final double cutFollow;
+  final ValueChanged<double> onCutFollowChanged;
+
+  /// 0–1: how much of each fold the next one overlaps as a finished cut
+  /// folds round the model.
+  final double foldOverlap;
+  final ValueChanged<double> onFoldOverlapChanged;
   final GridAimMode aimMode;
   final ValueChanged<GridAimMode> onAimModeChanged;
 
@@ -101,6 +115,10 @@ class _GridDevPanelState extends State<GridDevPanel> {
                         child: Text('Camera'),
                       ),
                       DropdownMenuItem(
+                        value: _GridDevSection.folding,
+                        child: Text('Folding'),
+                      ),
+                      DropdownMenuItem(
                         value: _GridDevSection.input,
                         child: Text('Input'),
                       ),
@@ -123,6 +141,13 @@ class _GridDevPanelState extends State<GridDevPanel> {
                     onFollowChanged: widget.onCameraFollowsToolChanged,
                     rotates: widget.cameraRotates,
                     onRotateChanged: widget.onCameraRotatesChanged,
+                    cutFollow: widget.cutFollow,
+                    onCutFollowChanged: widget.onCutFollowChanged,
+                  )
+                else if (_section == _GridDevSection.folding)
+                  _FoldingSettings(
+                    overlap: widget.foldOverlap,
+                    onChanged: widget.onFoldOverlapChanged,
                   )
                 else if (_section == _GridDevSection.input)
                   _InputSettings(
@@ -149,12 +174,16 @@ class _CameraSettings extends StatelessWidget {
     required this.onFollowChanged,
     required this.rotates,
     required this.onRotateChanged,
+    required this.cutFollow,
+    required this.onCutFollowChanged,
   });
 
   final bool followsTool;
   final ValueChanged<bool> onFollowChanged;
   final bool rotates;
   final ValueChanged<bool> onRotateChanged;
+  final double cutFollow;
+  final ValueChanged<double> onCutFollowChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -181,6 +210,91 @@ class _CameraSettings extends StatelessWidget {
           boxKey: const Key('grid-camera-rotate'),
           value: rotates,
           onChanged: onRotateChanged,
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'In 3D, a pattern cut turns the camera square to the blade’s face. Blade pull turns it from there toward the blade, as seen from the model’s middle, to peek round the edge.',
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.45),
+            fontSize: 10,
+            height: 1.3,
+          ),
+        ),
+        Row(
+          children: [
+            const Text(
+              'Blade pull',
+              style: TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+            Expanded(
+              child: Slider(
+                key: const Key('grid-cut-follow'),
+                value: cutFollow.clamp(0.0, 1.0),
+                divisions: 20,
+                activeColor: Colors.white70,
+                inactiveColor: Colors.white24,
+                onChanged: onCutFollowChanged,
+              ),
+            ),
+            SizedBox(
+              width: 34,
+              child: Text(
+                '${(cutFollow * 100).round()}%',
+                textAlign: TextAlign.right,
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _FoldingSettings extends StatelessWidget {
+  const _FoldingSettings({required this.overlap, required this.onChanged});
+
+  final double overlap;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'A finished cut folds round the model one fold after another, each over 250 ms. Overlap starts the next fold that much of a fold before the last one ends: 0% (the default) is one at a time, 100% all at once.',
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.45),
+            fontSize: 10,
+            height: 1.3,
+          ),
+        ),
+        Row(
+          children: [
+            const Text(
+              'Fold overlap',
+              style: TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+            Expanded(
+              child: Slider(
+                key: const Key('grid-fold-overlap'),
+                value: overlap.clamp(0.0, 1.0),
+                divisions: 20,
+                activeColor: Colors.white70,
+                inactiveColor: Colors.white24,
+                onChanged: onChanged,
+              ),
+            ),
+            SizedBox(
+              width: 34,
+              child: Text(
+                '${(overlap * 100).round()}%',
+                textAlign: TextAlign.right,
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+            ),
+          ],
         ),
       ],
     );

@@ -32,7 +32,7 @@ class LoosePaper {
     this.pattern,
     this.opacity = 1,
     this.selected = false,
-    this.fill = 1,
+    this.outline = 0,
   });
 
   final List<Vector3> ring;
@@ -45,9 +45,10 @@ class LoosePaper {
   final List<(Vector3, Vector3)>? pattern;
   final double opacity;
 
-  /// Drawn with the white selection outline, its fill scaled by [fill].
+  /// The paper in hand. [outline] is how far its white selection outline
+  /// has faded in, or not yet out once let go.
   final bool selected;
-  final double fill;
+  final double outline;
 }
 
 /// The folded model: ghost faces, paper on them, decals, focus, and glows.
@@ -66,9 +67,12 @@ class ModelPainter extends CustomPainter {
     this.desk,
     this.deskHighlight = 0,
     this.glow = const {},
-    this.complete = 0,
     this.patches = const [],
+    this.fadingPatches = const [],
+    this.fadingPatchOpacity = 0,
+    this.covered = const {},
     this.edgeGlow = const {},
+    this.sheets,
   });
 
   final PapercutCamera camera;
@@ -99,14 +103,28 @@ class ModelPainter extends CustomPainter {
   /// Face index to 0–1 match glow.
   final Map<int, double> glow;
 
-  /// 0–1 stand-in glow once every island is wrapped.
-  final double complete;
-
   /// Pattern paper wrapped onto faces.
   final List<PaperPatch> patches;
 
+  /// Patches fading in at [fadingPatchOpacity], over [patches].
+  final List<PaperPatch> fadingPatches;
+  final double fadingPatchOpacity;
+
+  /// Face index to 0–1: how far wrapped paper covers the whole face, which
+  /// hides the face under it.
+  final Map<int, double> covered;
+
   /// Face index to 0–1 glow along the outline of the face being worked on.
   final Map<int, double> edgeGlow;
+
+  /// Pattern paper, folded flaps included, drawn in the same back-to-front
+  /// order as the faces. [add] takes a view-space depth and a paint.
+  final void Function(
+    Canvas canvas,
+    Size size,
+    void Function(double depth, VoidCallback paint) add,
+  )?
+  sheets;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -122,17 +140,25 @@ class ModelPainter extends CustomPainter {
         for (final patch in patches)
           if (patch.face == i) patch,
       ];
+      final fading = [
+        for (final patch in fadingPatches)
+          if (patch.face == i) patch,
+      ];
+      final hidden = (covered[i] ?? 0).clamp(0.0, 1.0);
       items.add(
         _Item(
           depth: _depth(view, ring),
           paint: () {
             if (paper == null) {
-              _paintGhost(canvas, size, i, pose, ring, eye);
+              _paintGhost(canvas, size, i, pose, ring, eye, 1 - hidden);
             } else {
               _paintPaper(canvas, size, i, pose, ring, eye);
             }
             for (final patch in onFace) {
               _paintPatch(canvas, size, patch);
+            }
+            for (final patch in fading) {
+              _paintPatch(canvas, size, patch, opacity: fadingPatchOpacity);
             }
           },
         ),
@@ -146,6 +172,11 @@ class ModelPainter extends CustomPainter {
         ),
       );
     }
+    sheets?.call(
+      canvas,
+      size,
+      (depth, paint) => items.add(_Item(depth: depth, paint: paint)),
+    );
     items.sort((a, b) => a.depth.compareTo(b.depth));
     for (final item in items) {
       item.paint();
@@ -198,19 +229,6 @@ class ModelPainter extends CustomPainter {
         width: 2.5,
       );
     }
-    if (complete > 0) {
-      final t = complete.clamp(0.0, 1.0);
-      for (var i = 0; i < model.faces.length; i++) {
-        final pose = paperPoses[i] ?? ghostPoses[i];
-        _stroke(
-          canvas,
-          size,
-          model.faces[i].worldRing(pose),
-          kCriterionMetColor.withValues(alpha: 0.45 * t),
-          width: 8,
-        );
-      }
-    }
   }
 
   void _paintDesk(Canvas canvas, Size size) {
@@ -242,27 +260,29 @@ class ModelPainter extends CustomPainter {
     int face,
     Matrix4 pose,
     List<Vector3> ring,
-    Vector3 eye,
-  ) {
-    if (ghostOpacity <= 0) return;
+    Vector3 eye, [
+    double shown = 1,
+  ]) {
+    final opacity = ghostOpacity * shown;
+    if (opacity <= 0) return;
     final facing = _facing(face, pose, ring, eye);
     final shade = 0.55 + 0.45 * facing.abs();
     _fill(
       canvas,
       size,
       ring,
-      kBlueprintInk.withValues(alpha: (0.06 + 0.10 * shade) * ghostOpacity),
+      kBlueprintInk.withValues(alpha: (0.06 + 0.10 * shade) * opacity),
     );
     _edges(
       canvas,
       size,
       face,
       ring,
-      kBlueprintInk.withValues(alpha: 0.85 * ghostOpacity),
+      kBlueprintInk.withValues(alpha: 0.85 * opacity),
       width: 1.6,
     );
     if (facing > 0) {
-      _decals(canvas, size, face, pose, _kGhostDecalOpacity * ghostOpacity);
+      _decals(canvas, size, face, pose, _kGhostDecalOpacity * opacity);
     }
   }
 
@@ -290,7 +310,13 @@ class ModelPainter extends CustomPainter {
     if (facing > 0) _decals(canvas, size, face, pose, 1);
   }
 
-  void _paintPatch(Canvas canvas, Size size, PaperPatch patch) {
+  void _paintPatch(
+    Canvas canvas,
+    Size size,
+    PaperPatch patch, {
+    double opacity = 1,
+  }) {
+    if (opacity <= 0) return;
     final face = model.faces[patch.face];
     final lift = model.outwardNormal(patch.face)..scale(kPatternLift);
     Vector3 world(Offset point) => face.world(point)..add(lift);
@@ -310,6 +336,7 @@ class ModelPainter extends CustomPainter {
       paper: paper,
       color: shadePaper(patch.color, model.outwardNormal(patch.face)),
       lines: lines,
+      opacity: opacity,
       opaque: true,
     );
   }
@@ -331,21 +358,17 @@ class ModelPainter extends CustomPainter {
         color: piece.color,
         lines: lines,
         opacity: piece.opacity,
-        fill: piece.selected ? piece.fill : 1,
       );
-      if (piece.selected) {
-        paintSelectedOutline(canvas, paper, opacity: piece.opacity);
+      if (piece.outline > 0) {
+        paintSelectedOutline(
+          canvas,
+          paper,
+          opacity: piece.opacity * piece.outline,
+        );
       }
       return;
     }
-    _fill(
-      canvas,
-      size,
-      piece.ring,
-      piece.color.withValues(
-        alpha: piece.color.a * (piece.selected ? piece.fill : 1),
-      ),
-    );
+    _fill(canvas, size, piece.ring, piece.color);
     for (final (a, b) in piece.ink) {
       _stroke(canvas, size, [a, b], kBlueprintInk, width: 1.6);
     }
@@ -363,8 +386,12 @@ class ModelPainter extends CustomPainter {
       canvas,
       size,
       piece.ring,
-      piece.selected ? const Color(0xF2FFFFFF) : const Color(0xFF1A1A2E),
-      width: piece.selected ? 2.5 : 1.5,
+      Color.lerp(
+        const Color(0xFF1A1A2E),
+        const Color(0xF2FFFFFF),
+        piece.outline,
+      )!,
+      width: 1.5 + piece.outline,
       close: true,
     );
   }

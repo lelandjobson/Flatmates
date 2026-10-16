@@ -35,13 +35,20 @@ PapercutPiece _sheet(Rect rect) => PapercutPiece(
   vertices: [rect.topLeft, rect.topRight, rect.bottomRight, rect.bottomLeft],
 );
 
-WrapCut _start(GridStep level, FoldedModel model, Rect rect, int ring) {
+WrapCut _start(
+  GridStep level,
+  FoldedModel model,
+  Rect rect,
+  int ring, {
+  bool autoFold = true,
+}) {
   final piece = _sheet(rect);
   return WrapCut.start(
     model: model,
     piece: piece,
     placement: PiecePlacement(pieceId: piece.id, face: model.faceOfRing(ring)!),
     lines: level.pattern!.patternLines(rect),
+    autoFold: autoFold,
   );
 }
 
@@ -158,19 +165,18 @@ void main() {
     expect(alignedCell(short, 0), isNull);
   });
 
-  test('cuts can start mid-way along each pattern line on a face edge', () {
+  test('cuts can start at each vertex of the face the paper lies on', () {
     final level = _level();
     final model = _model(level);
     final cut = _start(level, model, level.pattern!.sheet, 0);
     final ring = cut.flaps.single.facePaper;
     final starts = faceEdgeStarts(cut);
-    expect(starts, hasLength(4));
-    for (var i = 0; i < ring.length; i++) {
-      final middle = Offset.lerp(ring[i], ring[(i + 1) % ring.length], 0.5)!;
-      expect(starts.any((s) => (s - middle).distance < 1e-6), isTrue);
+    expect(starts, hasLength(ring.length));
+    for (final corner in ring) {
+      expect(starts.any((s) => (s - corner).distance < 1e-6), isTrue);
     }
 
-    // Paper short of the face has no starts along the edge it misses.
+    // Paper short of the face has no starts at the vertices it misses.
     final face = pointBounds(ring);
     final short = _start(
       level,
@@ -394,5 +400,125 @@ void main() {
     cut = _cutThrough(cut, const [Offset(5, 0), Offset(10, 0)]);
     expect(cut.previous!.previous, same(placed));
     expect(cut.previous!.path, hasLength(2));
+  });
+
+  test('a cross net cut out flat folds round the cube as it finishes', () {
+    final level = _level();
+    final model = _model(level);
+    var cut = _start(
+      level,
+      model,
+      level.pattern!.sheet,
+      0,
+      autoFold: false,
+    ).placedAt(const Offset(5, 5));
+    cut = _cutThrough(cut, const [
+      Offset(5, 0),
+      Offset(10, 0),
+      Offset(10, 5),
+      Offset(20, 5),
+      Offset(20, 10),
+      Offset(10, 10),
+      Offset(10, 15),
+      Offset(5, 15),
+      Offset(5, 10),
+      Offset(0, 10),
+      Offset(0, 5),
+      Offset(5, 5),
+    ]);
+    expect(cut.finished, isTrue);
+    expect(cut.folds, isEmpty);
+
+    final finish = cut.finish(const WrapProgress());
+    expect(finish.cut.folds, hasLength(5));
+    expect(finish.foldedOut, {0, 1, 2, 3, 4});
+    expect(finish.keptFolds, {0, 1, 2, 3, 4});
+    expect({for (final flap in finish.cut.flaps) flap.face}, hasLength(6));
+    for (var flap = 0; flap < finish.cut.flaps.length; flap++) {
+      final face = finish.cut.flaps[flap].face;
+      _expectNear(finish.cut.flapNormal(flap), model.outwardNormal(face));
+    }
+    expect(finish.patches, hasLength(6));
+    expect(finish.points, 600);
+    expect(finish.progress.complete(model), isTrue);
+    expect(finish.scraps, isEmpty);
+    expect(finish.leftover!.holes, hasLength(1));
+  });
+
+  test('finishing folds swing one after another, overlapping by a share', () {
+    const each = Duration(milliseconds: 250);
+    expect(staggeredLength(0, each, 0.25), Duration.zero);
+    expect(staggeredLength(1, each, 0.25), each);
+    expect(staggeredLength(5, each, 0.25), const Duration(milliseconds: 1000));
+    expect(staggeredLength(5, each, 0), const Duration(milliseconds: 1250));
+    expect(staggeredLength(5, each, 1), each);
+
+    // A quarter overlap: the second fold starts 187.5 ms in, three
+    // quarters through the first.
+    const t = Duration(milliseconds: 200);
+    expect(staggeredSwing(0, t, each, 0.25), closeTo(0.8, 1e-9));
+    expect(staggeredSwing(1, t, each, 0.25), closeTo(0.05, 1e-9));
+    expect(staggeredSwing(2, t, each, 0.25), 0);
+    final end = staggeredLength(5, each, 0.25);
+    for (var i = 0; i < 5; i++) {
+      expect(staggeredSwing(i, end, each, 0.25), 1);
+    }
+
+    // No overlap swings each alone; full overlap swings them all at once.
+    expect(staggeredSwing(1, each, each, 0), 0);
+    expect(staggeredSwing(4, t, each, 1), closeTo(0.8, 1e-9));
+  });
+
+  test('without auto-fold the paper folds over an edge only when asked, '
+      'as a stroke would fold it', () {
+    final level = _level();
+    final model = _model(level);
+    const corners = [Offset(5, 0), Offset(10, 0)];
+    final auto = _cutThrough(
+      _start(
+        level,
+        model,
+        level.pattern!.sheet,
+        0,
+      ).placedAt(const Offset(5, 5)),
+      corners,
+    );
+    var cut = _cutThrough(
+      _start(
+        level,
+        model,
+        level.pattern!.sheet,
+        0,
+        autoFold: false,
+      ).placedAt(const Offset(5, 5)),
+      corners,
+    );
+    expect(auto.folds, hasLength(1));
+    expect(cut.folds, isEmpty);
+    expect(cut.flaps, hasLength(1));
+    expect(cut.foldEdges(), hasLength(4));
+
+    final want = auto.folds.single;
+    final edge = cut.foldEdges().singleWhere(
+      (edge) => edge.a == want.a && edge.b == want.b,
+    );
+    final before = cut;
+    cut = cut.foldedAlong(edge)!;
+    expect(cut.previous, same(before));
+    expect(cut.folds, hasLength(1));
+    expect(cut.folds.single.angle, closeTo(want.angle, 1e-9));
+    expect(cut.folds.single.crossings, unorderedEquals(want.crossings));
+    expect(cut.flaps[1].face, auto.flaps[1].face);
+    Vector3 bladeAt(WrapCut cut) => cut
+        .flapToWorld(cut.bladeOn!)
+        .transformed3(Vector3(cut.blade!.dx, cut.blade!.dy, 0));
+    _expectNear(bladeAt(cut), bladeAt(auto));
+
+    // The edge folds once.
+    expect(cut.foldedAlong(edge), isNull);
+    expect(
+      cut.foldEdges().where((e) => e.a == want.a && e.b == want.b),
+      isEmpty,
+    );
   });
 }

@@ -424,6 +424,40 @@ class WrapFoldEvent {
   final double at;
 }
 
+/// Where along a model edge [WrapCut.foldEdges] looks for paper to fold.
+const List<double> _kEdgeProbes = [
+  0.5,
+  0.25,
+  0.75,
+  0.125,
+  0.375,
+  0.625,
+  0.875,
+  0.02,
+  0.98,
+];
+
+/// Edge [edge] of flap [flap]'s face, [a]→[b] in paper coordinates, that
+/// the paper can fold over. [at] is on the paper there, and [outward] points
+/// off the face.
+class WrapEdge {
+  const WrapEdge({
+    required this.flap,
+    required this.edge,
+    required this.a,
+    required this.b,
+    required this.at,
+    required this.outward,
+  });
+
+  final int flap;
+  final int edge;
+  final Offset a;
+  final Offset b;
+  final Offset at;
+  final Offset outward;
+}
+
 /// The level coordinates a placement lays the piece's coordinates into.
 Matrix4 placementMatrix(PiecePlacement placement) {
   const cosines = [1.0, 0.0, -1.0, 0.0];
@@ -500,6 +534,7 @@ class WrapCut {
     required this.folds,
     required this.path,
     required this.idSeed,
+    required this.autoFold,
     this.direction,
     this.bladeOn,
     this.previous,
@@ -514,6 +549,7 @@ class WrapCut {
     required List<(Offset, Offset)> lines,
     List<List<FaceNeighbor?>>? adjacency,
     int idSeed = 1,
+    bool autoFold = false,
   }) {
     final anchor = model.faces[placement.face].toWorld.multiplied(
       placementMatrix(placement),
@@ -534,6 +570,7 @@ class WrapCut {
       folds: const [],
       path: const [],
       idSeed: idSeed,
+      autoFold: autoFold,
     );
   }
 
@@ -546,6 +583,10 @@ class WrapCut {
   final List<WrapFold> folds;
   final List<Offset> path;
   final int idSeed;
+
+  /// A stroke folds the paper wherever the blade leaves its face. Otherwise
+  /// the paper folds only by [foldedAlong].
+  final bool autoFold;
 
   /// The last stroke's direction.
   final Offset? direction;
@@ -660,6 +701,11 @@ class WrapCut {
     return cuts;
   }
 
+  /// The flap the blade ends on after [cut], one of [options], with the
+  /// paper as it lies now.
+  int flapAfter(ForwardCut cut) =>
+      _walk(blade!, cut.end, flaps, folds).legs.last.$2;
+
   /// True when the path's [segment] only carries the blade along the paper
   /// edge or the path before it.
   bool travels(int segment) => _travels(path, segment);
@@ -697,14 +743,15 @@ class WrapCut {
     return runs;
   }
 
-  /// Cuts along [cut], folding the paper wherever the blade leaves its face.
+  /// Cuts along [cut]. With [autoFold], folds the paper wherever the blade
+  /// leaves its face.
   WrapStroke stroke(ForwardCut cut) {
     final from = blade!;
     final to = cut.end;
     final nextFlaps = [...flaps];
     final nextFolds = [...folds];
     final events = <WrapFoldEvent>[];
-    _foldAlong(from, to, nextFlaps, nextFolds, events);
+    if (autoFold) _foldAlong(from, to, nextFlaps, nextFolds, events);
     final legs = _walk(from, to, nextFlaps, nextFolds).legs;
     final nextPath = [...path, to];
     final cuts = [
@@ -748,15 +795,15 @@ class WrapCut {
   }
 
   /// The fraction of [from]→[to] where the blade, folding the paper as it
-  /// goes, would first cross a tear onto paper lying elsewhere on the model.
-  /// Null when it never does.
+  /// goes with [autoFold], would first cross a tear onto paper lying
+  /// elsewhere on the model. Null when it never does.
   double? _tearAlong(Offset from, Offset to) {
     var reach = 1.0;
     for (var guard = 0; guard < 4; guard++) {
       final end = Offset.lerp(from, to, reach)!;
       final trialFlaps = [...flaps];
       final trialFolds = [...folds];
-      _foldAlong(from, end, trialFlaps, trialFolds, []);
+      if (autoFold) _foldAlong(from, end, trialFlaps, trialFolds, []);
       final tear = _walk(from, end, trialFlaps, trialFolds).tear;
       if (tear == null) return reach < 1 ? reach : null;
       reach *= tear;
@@ -835,35 +882,195 @@ class WrapCut {
     return (legs: legs, tear: null);
   }
 
+  /// The model edges the paper can fold over as it lies now: each edge of a
+  /// flap's face with a neighbor across it, paper on the flap at the edge,
+  /// and paper past it that is not folded there yet.
+  List<WrapEdge> foldEdges() {
+    if (finished) return const [];
+    final edges = <WrapEdge>[];
+    for (var f = 0; f < flaps.length; f++) {
+      final flap = flaps[f];
+      final ring = flap.facePaper;
+      if (ring.length < 3) continue;
+      final middle = polygonCentroid(ring);
+      for (var e = 0; e < ring.length; e++) {
+        if (adjacency[flap.face][e] == null) continue;
+        final a = ring[e];
+        final b = ring[(e + 1) % ring.length];
+        final length = (b - a).distance;
+        if (length < 1e-9) continue;
+        var outward = Offset(b.dy - a.dy, a.dx - b.dx) / length;
+        if (_dot(middle - a, outward) > 0) outward = -outward;
+        for (final t in _kEdgeProbes) {
+          final at = Offset.lerp(a, b, t)!;
+          if (!flap.holds(at) || !_onPaper(at)) continue;
+          if (!_fold(f, e, at, outward, [...flaps], [...folds])) continue;
+          edges.add(
+            WrapEdge(flap: f, edge: e, a: a, b: b, at: at, outward: outward),
+          );
+          break;
+        }
+      }
+    }
+    return edges;
+  }
+
+  /// The paper folded over [edge], one of [foldEdges], as a stroke crossing
+  /// it would fold it with [autoFold]. Null when it no longer folds there.
+  WrapCut? foldedAlong(WrapEdge edge) =>
+      finished ? null : _foldedAlong(edge, piece);
+
+  /// As [foldedAlong], folding only where [paper] lies past [edge].
+  WrapCut? _foldedAlong(WrapEdge edge, PapercutPiece paper) {
+    final nextFlaps = [...flaps];
+    final nextFolds = [...folds];
+    if (!_fold(
+      edge.flap,
+      edge.edge,
+      edge.at,
+      edge.outward,
+      nextFlaps,
+      nextFolds,
+      paper: paper,
+    )) {
+      return null;
+    }
+    final k = nextFolds.length - 1;
+    final hits = [
+      for (var i = 0; i < path.length - 1; i++)
+        if (!travels(i)) ..._lineCrossings(nextFolds[k], path[i], path[i + 1]),
+    ];
+    if (hits.isNotEmpty) nextFolds[k] = nextFolds[k].withCrossings(hits);
+    final at = blade;
+    var on = bladeOn;
+    if (at != null && on != null && !nextFlaps[on].holds(at)) {
+      final holders = [
+        for (var i = 0; i < nextFlaps.length; i++)
+          if (nextFlaps[i].holds(at)) i,
+      ];
+      if (holders.isNotEmpty) {
+        on = holders.firstWhere(
+          (i) => ownsPoint(nextFlaps[i].facePaper, at),
+          orElse: () => holders.first,
+        );
+      }
+    }
+    return _copy(
+      flaps: nextFlaps,
+      folds: nextFolds,
+      bladeOn: on,
+      result: result,
+    );
+  }
+
+  /// This cut with [kept] folded round the model: from the anchor's flap,
+  /// breadth first, each flap folds over every edge of its face that [kept]
+  /// crosses, as a stroke crossing it would fold it with [autoFold].
+  WrapCut _foldedOut(PapercutPiece kept) {
+    var cut = this;
+    final order = [0];
+    final seen = {0};
+    for (var head = 0; head < order.length && head < 64; head++) {
+      final f = order[head];
+      for (var e = 0; e < cut.flaps[f].facePaper.length; e++) {
+        final edge = cut._crossing(f, e, kept);
+        if (edge == null) continue;
+        cut = cut._foldedAlong(edge, kept) ?? cut;
+      }
+      for (var i = 0; i < cut.flaps.length; i++) {
+        if (cut.flaps[i].parent == f && seen.add(i)) order.add(i);
+      }
+    }
+    return cut;
+  }
+
+  /// Edge [edge] of [flap]'s face where [kept] runs across it on that
+  /// flap, with a neighbor across it. Null when [kept] does not cross it.
+  WrapEdge? _crossing(int flap, int edge, PapercutPiece kept) {
+    final holder = flaps[flap];
+    final ring = holder.facePaper;
+    if (ring.length < 3 || adjacency[holder.face][edge] == null) return null;
+    final a = ring[edge];
+    final b = ring[(edge + 1) % ring.length];
+    final line = b - a;
+    final len2 = _dot(line, line);
+    if (len2 < 1e-12) return null;
+    var outward = Offset(line.dy, -line.dx) / math.sqrt(len2);
+    if (_dot(polygonCentroid(ring) - a, outward) > 0) outward = -outward;
+    final breaks = <double>[0, 1];
+    for (final loop in [kept.vertices, ...kept.holes]) {
+      for (var i = 0; i < loop.length; i++) {
+        final hit = _segmentCrossing(
+          (a, b),
+          (loop[i], loop[(i + 1) % loop.length]),
+        );
+        if (hit != null) breaks.add(_dot(hit - a, line) / len2);
+      }
+    }
+    breaks.sort();
+    for (var i = 0; i < breaks.length - 1; i++) {
+      if (breaks[i + 1] - breaks[i] < 1e-9) continue;
+      final at = Offset.lerp(a, b, (breaks[i] + breaks[i + 1]) / 2)!;
+      if (!holder.holds(at) || !_strictlyIn(at, kept)) continue;
+      return WrapEdge(
+        flap: flap,
+        edge: edge,
+        a: a,
+        b: b,
+        at: at,
+        outward: outward,
+      );
+    }
+    return null;
+  }
+
   /// Splits the finished cut into what stays wrapped, what springs back, and
-  /// scrap. See [WrapFinish].
+  /// scrap. See [WrapFinish]. Without [autoFold], each piece is first folded
+  /// round the model by [_foldedOut], and the one covering the most face
+  /// area is kept.
   WrapFinish finish(WrapProgress progress) {
     final pieces = result?.pieces ?? [piece];
     var kept = -1;
     var keptCover = 1e-6;
-    final reliefs = <List<List<(double, double)>>>[];
+    var keptCut = this;
+    var relief = [for (final _ in folds) const <(double, double)>[]];
     for (var i = 0; i < pieces.length; i++) {
-      final relief = relieveFolds(folds, piece, pieces[i]);
-      reliefs.add(relief);
-      final keep = [for (final stretch in relief) stretch.isNotEmpty];
+      final out = autoFold ? this : _foldedOut(pieces[i]);
+      final stretches = relieveFolds(out.folds, piece, pieces[i]);
+      final keep = [for (final stretch in stretches) stretch.isNotEmpty];
       var cover = 0.0;
-      for (var f = 0; f < flaps.length; f++) {
-        final window = _coverWindow(f, keep);
+      for (var f = 0; f < out.flaps.length; f++) {
+        final window = out._coverWindow(f, keep);
         if (window == null) continue;
         cover += _areaWithin(pieces[i], window.sides);
       }
       if (cover > keptCover) {
         keptCover = cover;
         kept = i;
+        keptCut = out;
+        relief = stretches;
       }
     }
+    return keptCut._finishKeeping(
+      progress,
+      pieces,
+      kept,
+      relief,
+      foldsBefore: folds.length,
+    );
+  }
 
+  WrapFinish _finishKeeping(
+    WrapProgress progress,
+    List<PapercutPiece> pieces,
+    int kept,
+    List<List<(double, double)>> relief, {
+    required int foldsBefore,
+  }) {
     final patches = <PaperPatch>[];
     final overhang = <List<Offset>>[];
-    var relief = [for (final _ in folds) const <(double, double)>[]];
     if (kept >= 0) {
       final keptPiece = pieces[kept];
-      relief = reliefs[kept];
       final keep = [for (final stretch in relief) stretch.isNotEmpty];
       for (var f = 0; f < flaps.length; f++) {
         final window = _coverWindow(f, keep);
@@ -914,6 +1121,7 @@ class WrapCut {
       progress: next,
       points: next.pointsOver(model, progress),
       nextId: nextId,
+      foldedOut: {for (var k = foldsBefore; k < folds.length; k++) k},
     );
   }
 
@@ -1043,7 +1251,8 @@ class WrapCut {
 
   /// Splits [flaps][flap] along its face's [edge] when the paper past it can
   /// fold onto the neighboring face. False when the edge has no neighbor,
-  /// is already folded at [at], or has no paper past it.
+  /// is already folded at [at], or has no [paper], the whole piece unless
+  /// given, past it.
   ///
   /// A fold line runs on past its own model edge, splitting the paper there
   /// as a tear. Where the blade reaches this edge along such a tear, past a
@@ -1056,8 +1265,9 @@ class WrapCut {
     Offset at,
     Offset unit,
     List<WrapFlap> flaps,
-    List<WrapFold> folds,
-  ) {
+    List<WrapFold> folds, {
+    PapercutPiece? paper,
+  }) {
     final current = flaps[flap];
     final neighbor = adjacency[current.face][edge];
     if (neighbor == null) return false;
@@ -1080,7 +1290,8 @@ class WrapCut {
         if (!torn.contains(side)) side,
     ];
     final beyond = at + unit * _probe;
-    if (!kept.every((side) => side.holds(beyond)) || !_onPaper(beyond)) {
+    if (!kept.every((side) => side.holds(beyond)) ||
+        !_onPiece(paper ?? piece, beyond)) {
       return false;
     }
     if (torn.isNotEmpty) {
@@ -1202,6 +1413,7 @@ class WrapCut {
       folds: folds ?? this.folds,
       path: path ?? this.path,
       idSeed: idSeed,
+      autoFold: autoFold,
       direction: clearDirection ? null : (direction ?? this.direction),
       bladeOn: clearDirection ? null : (bladeOn ?? this.bladeOn),
       previous: this,
@@ -1487,32 +1699,15 @@ List<Offset>? alignedCell(WrapCut cut, int flap) {
   return ring;
 }
 
-/// Where a cut can start along the outline of [flap]'s face: the middle of
-/// each pattern line's stretch lying along an edge of the face, on the
-/// paper, in paper coordinates.
+/// Where a cut can start on [flap]'s face: each vertex of the face that
+/// lies on the paper, in paper coordinates.
 List<Offset> faceEdgeStarts(WrapCut cut, [int flap = 0]) {
   final holder = cut.flaps[flap];
-  final ring = holder.facePaper;
   final starts = <Offset>[];
-  for (var i = 0; i < ring.length; i++) {
-    final p = ring[i];
-    final q = ring[(i + 1) % ring.length];
-    final length = (q - p).distance;
-    if (length < 1e-9) continue;
-    final unit = (q - p) / length;
-    for (final (a, b) in cut.lines) {
-      if (_cross(a - p, unit).abs() > 1e-4) continue;
-      if (_cross(b - p, unit).abs() > 1e-4) continue;
-      final s = _dot(a - p, unit) / length;
-      final t = _dot(b - p, unit) / length;
-      final lo = math.max(0.0, math.min(s, t));
-      final hi = math.min(1.0, math.max(s, t));
-      if (hi - lo < 1e-6) continue;
-      final middle = Offset.lerp(p, q, (lo + hi) / 2)!;
-      if (!holder.holds(middle) || !_onPiece(cut.piece, middle)) continue;
-      if (starts.any((known) => (known - middle).distance < 1e-6)) continue;
-      starts.add(middle);
-    }
+  for (final point in holder.facePaper) {
+    if (!holder.holds(point) || !_onPiece(cut.piece, point)) continue;
+    if (starts.any((known) => (known - point).distance < 1e-6)) continue;
+    starts.add(point);
   }
   return starts;
 }
@@ -1621,6 +1816,27 @@ class WrapProgress {
   }
 }
 
+/// 0–1: how far the [index]th of folds swinging one after another has
+/// swung, [elapsed] into the run. Each takes [each] and starts [overlap]
+/// (0–1) of [each] before the one before it ends.
+double staggeredSwing(
+  int index,
+  Duration elapsed,
+  Duration each,
+  double overlap,
+) {
+  final step = each.inMicroseconds * (1 - overlap.clamp(0.0, 1.0));
+  final t = (elapsed.inMicroseconds - index * step) / each.inMicroseconds;
+  return t.clamp(0.0, 1.0);
+}
+
+/// How long [count] folds take to swing by [staggeredSwing].
+Duration staggeredLength(int count, Duration each, double overlap) {
+  if (count <= 0) return Duration.zero;
+  final step = each.inMicroseconds * (1 - overlap.clamp(0.0, 1.0));
+  return each + Duration(microseconds: ((count - 1) * step).round());
+}
+
 /// A finished [cut]: the [kept] piece wrapped as [patches], the [leftover]
 /// sheet that springs back flat into the hand, and [scraps] for the
 /// inventory, overhang included. [relief] holds the fold stretches that
@@ -1636,8 +1852,10 @@ class WrapFinish {
     required this.progress,
     required this.points,
     required this.nextId,
+    this.foldedOut = const {},
   });
 
+  /// The cut as finished, with [foldedOut] folds made as it finished.
   final WrapCut cut;
   final PapercutPiece? kept;
   final PapercutPiece? leftover;
@@ -1649,6 +1867,9 @@ class WrapFinish {
 
   /// First piece id the caller can still hand out.
   final int nextId;
+
+  /// Folds of [cut] made as it finished, folding [kept] round the model.
+  final Set<int> foldedOut;
 
   /// Folds that stay folded in [kept].
   Set<int> get keptFolds => {

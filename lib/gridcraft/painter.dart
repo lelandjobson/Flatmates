@@ -63,6 +63,7 @@ class GridPuzzlePainter extends CustomPainter {
     required this.showRuler,
     required this.selected,
     this.pickedPiece,
+    this.pickedOutline = 1,
     this.ghostCuts = const [],
     this.blockedCuts = const [],
     this.activeCut = const [],
@@ -118,8 +119,10 @@ class GridPuzzlePainter extends CustomPainter {
   final bool showRuler;
   final Set<int> selected;
 
-  /// Paper piece the select tool is holding. Drawn on top of the sheet outline.
+  /// Paper piece the select tool is holding. Drawn on top of the sheet
+  /// outline, faded in [pickedOutline] of the way.
   final int? pickedPiece;
+  final double pickedOutline;
   final List<(Offset, Offset)> ghostCuts;
   final List<(Offset, Offset)> blockedCuts;
 
@@ -351,7 +354,7 @@ class GridPuzzlePainter extends CustomPainter {
           canvas,
           size,
           _moved(piece.vertices, piece.separation),
-          const Color(0xE6FFFFFF),
+          Colors.white.withValues(alpha: 0.9 * pickedOutline.clamp(0.0, 1.0)),
           width: 2.5,
           close: true,
         );

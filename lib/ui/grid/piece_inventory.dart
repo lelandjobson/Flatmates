@@ -24,6 +24,8 @@ class PieceInventory extends StatelessWidget {
     this.accepting = false,
     this.decals = const [],
     this.pattern,
+    this.flashId,
+    this.flash = 0,
   });
 
   final List<PapercutPiece> pieces;
@@ -45,6 +47,10 @@ class PieceInventory extends StatelessWidget {
 
   /// Pieces are pattern paper: drawn with this pattern and no blueprint ink.
   final CutPattern? pattern;
+
+  /// The piece that just arrived, and 0–1 how far its ring has flashed.
+  final String? flashId;
+  final double flash;
 
   @override
   Widget build(BuildContext context) {
@@ -105,6 +111,7 @@ class PieceInventory extends StatelessWidget {
                     itemBuilder: (context, index) {
                       final piece = pieces[index];
                       final selected = piece.id == selectedId;
+                      final flashing = piece.id == flashId && flash > 0;
                       final thumbnail = CustomPaint(
                         painter: _ThumbnailPainter(
                           piece: piece,
@@ -143,7 +150,19 @@ class PieceInventory extends StatelessWidget {
                                 width: selected ? 2 : 1,
                               ),
                             ),
-                            child: thumbnail,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              clipBehavior: Clip.none,
+                              children: [
+                                thumbnail,
+                                if (flashing)
+                                  IgnorePointer(
+                                    child: CustomPaint(
+                                      painter: _FlashRingPainter(flash),
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
                         ),
                       );
@@ -278,4 +297,40 @@ class _ThumbnailPainter extends CustomPainter {
       !identical(oldDelegate.step, step) ||
       !identical(oldDelegate.pattern, pattern) ||
       !listEquals(oldDelegate.decals, decals);
+}
+
+/// A white ring that grows and fades around a just-stowed thumbnail.
+class _FlashRingPainter extends CustomPainter {
+  const _FlashRingPainter(this.t);
+
+  final double t;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (t <= 0 || t >= 1) return;
+    final glow = math.sin(math.pi * t);
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.shortestSide * (0.52 + 0.28 * t);
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.45 * glow)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 6
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+    );
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.95 * glow)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _FlashRingPainter oldDelegate) =>
+      oldDelegate.t != t;
 }

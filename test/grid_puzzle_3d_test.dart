@@ -12,6 +12,7 @@ import 'package:flatmates/gridcraft/pattern_paper_painter.dart';
 import 'package:flatmates/gridcraft/wrap_cut.dart';
 import 'package:flatmates/papercut/craft_v1.dart';
 import 'package:flatmates/screens/grid_puzzle_view.dart';
+import 'package:flatmates/ui/grid/piece_inventory.dart';
 import 'package:flatmates/ui/fm_theme.dart';
 import 'package:flatmates/ui/game/view_crosshair.dart';
 import 'package:flatmates/ui/rotation_gizmo.dart';
@@ -198,6 +199,17 @@ Future<void> _open(
 }
 
 void main() {
+  test('next-cut dots pulse in order through each cycle', () {
+    const window = 0.28;
+    expect(nextDotPulse(0, 3, window / 2), closeTo(1, 1e-9));
+    expect(nextDotPulse(1, 3, window / 2), 0);
+    expect(nextDotPulse(2, 3, window / 2), 0);
+    final second = 1 / 3 + window / 2;
+    expect(nextDotPulse(1, 3, second), closeTo(1, 1e-9));
+    expect(nextDotPulse(0, 3, second), 0);
+    expect(nextDotPulse(0, 3, 1 + window / 2), closeTo(1, 1e-9));
+  });
+
   testWidgets('3D mode: the aim selects paper, a drop wraps', (tester) async {
     await _open(tester, 'puzzle-3d', _domino());
 
@@ -462,6 +474,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 60));
     await _click(tester, onPaper);
     expect(_modelPainter(tester).loose.single.selected, isFalse);
+    expect(_modelPainter(tester).loose.single.outline, greaterThan(0.9));
 
     // Unselected, a drag on the paper orbits and leaves it be.
     final ring = [..._modelPainter(tester).loose.single.ring];
@@ -475,13 +488,16 @@ void main() {
     expect((camera.camera.position - eye).length, greaterThan(1));
     expect(_modelPainter(tester).loose.single.ring, ring);
 
-    // A click selects it again, flashing its fill back in.
+    // Its outline is fading out meanwhile. A click selects it again, the
+    // outline fading back in from there.
+    final fading = _modelPainter(tester).loose.single.outline;
+    expect(fading, inExclusiveRange(0, 0.9));
     final from = screen(face.world(const Offset(2, 2.5)));
     await _click(tester, from);
     expect(_modelPainter(tester).loose.single.selected, isTrue);
-    expect(_modelPainter(tester).loose.single.fill, lessThan(0.2));
-    await tester.pump(const Duration(milliseconds: 600));
-    expect(_modelPainter(tester).loose.single.fill, closeTo(1, 1e-9));
+    expect(_modelPainter(tester).loose.single.outline, closeTo(fading, 0.1));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(_modelPainter(tester).loose.single.outline, closeTo(1, 1e-9));
 
     // Selected, a drag slides it; home, it matches and wraps. The floor's
     // dots show at once and fade out after.
@@ -512,7 +528,7 @@ void main() {
     expect(find.byKey(const Key('grid-model-layer')), findsNothing);
   });
 
-  testWidgets('desk paper selects with a flash, slides on its dots', (
+  testWidgets('desk paper selects with a fading outline, slides on its dots', (
     tester,
   ) async {
     await _open(tester, 'puzzle-3d-desk', _domino());
@@ -528,21 +544,20 @@ void main() {
         canvas +
         camera.camera.projectToScreen(Vector3(desk.dx, desk.dy, 0), viewport)!;
 
-    // A click selects the paper under the cursor, flashing it in from 5%.
+    // A click selects the paper under the cursor. Its fill stays put while
+    // the outline fades in.
     final paper = screen(const Offset(0.8, 0.8));
     expect(_desk(tester).pickedPiece, isNull);
     expect(_desk(tester).gridOpacity, 0);
     await _click(tester, paper);
     expect(_desk(tester).pickedPiece, 0);
-    expect(
-      _desk(tester).sheet.pieces.single.color.a,
-      closeTo(kSelectFlashFrom, 0.02),
-    );
-    await tester.pump(const Duration(milliseconds: 250));
-    final midway = _desk(tester).sheet.pieces.single.color.a;
-    expect(midway, inExclusiveRange(kSelectFlashFrom, 1));
-    await tester.pump(const Duration(milliseconds: 300));
+    expect(_desk(tester).pickedOutline, lessThan(0.2));
     expect(_desk(tester).sheet.pieces.single.color.a, 1);
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(_desk(tester).pickedOutline, inExclusiveRange(0, 1));
+    expect(_desk(tester).sheet.pieces.single.color.a, 1);
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(_desk(tester).pickedOutline, closeTo(1, 1e-9));
 
     // Dragging slides it, the desk dots showing at once and fading after.
     final mouse = await tester.startGesture(
@@ -1075,16 +1090,15 @@ void main() {
     final floor = model.faceOfRing(0)!;
     final face = model.faces[floor];
     expect(_wrapLayer(tester).cut.flaps, hasLength(1));
-    expect(_wrapLayer(tester).selected, isTrue);
-    expect(_wrapLayer(tester).fill, lessThan(0.2));
+    expect(_wrapLayer(tester).outline, lessThan(0.2));
+    expect(_wrapLayer(tester).opacity, 1);
     expect(_wrapLayer(tester).aligned, isTrue);
     expect(alignedCell(_wrapLayer(tester).cut, 0), isNotNull);
     await tester.pump(const Duration(milliseconds: 300));
     final greening = _wrapPainter(tester).alignedFade[floor]!;
     expect(greening, inExclusiveRange(0, 1));
-    await tester.pump(const Duration(milliseconds: 300));
-    expect(_wrapLayer(tester).fill, closeTo(1, 1e-9));
-    await tester.pump(const Duration(milliseconds: 300));
+    expect(_wrapLayer(tester).outline, closeTo(1, 1e-9));
+    await tester.pump(const Duration(milliseconds: 600));
     expect(_wrapPainter(tester).alignedFade[floor], 1);
 
     // The edge glow waits for the blade.
@@ -1102,8 +1116,8 @@ void main() {
       'Aim at and tap a red ring or the pattern paper to set the blade.',
     );
 
-    // Rings suggest starts mid-way along the floor's edges, and the start a
-    // tap would take shows under the aim.
+    // Rings suggest starts at the floor's vertices, and the start a tap
+    // would take shows under the aim.
     final floorEdges = face.outline;
     expect(_wrapLayer(tester).starts, hasLength(floorEdges.length));
     final corner = screen(face.world(const Offset(0.2, 0.3)));
@@ -1127,20 +1141,74 @@ void main() {
     expect(_wrapLayer(tester).cut.blade, isNull);
 
     // A click near the floor's corner sets the blade on the pattern there,
-    // and the camera follows it on a slightly longer lens.
+    // and the camera orbits round to it, on the same lens.
     final camera = _modelPainter(tester).camera;
     await _click(tester, screen(face.world(const Offset(0.2, 0.3))));
     expect(
       _hint(tester),
-      'Tap toward a line to cut along it. Drag to look around.',
+      'Tap a red dot, or toward a line, to cut. Drag to look around.',
     );
-    for (var i = 0; i < 10; i++) {
+    for (var i = 0; i < 20; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
-    expect(camera.focalLengthMm, closeTo(90, 1));
+    expect(camera.focalLengthMm, closeTo(50, 0.1));
     expect(_modelPainter(tester).edgeGlow[floor], 1);
 
     WrapCut cut() => _wrapLayer(tester).cut;
+
+    // The follow view looks square at the blade's face from the paper's
+    // side, turned 80% of the way to the blade as seen from the model's
+    // middle.
+    Vector3 followView(double pull) {
+      final at = cut().flapToWorld(0).transformed3(Vector3.zero());
+      final square = cut().flapNormal(0);
+      if (square.dot(camera.camera.position - at) < 0) square.negate();
+      final toward = (at - model.center).normalized();
+      return (square + (toward - square) * pull).normalized();
+    }
+
+    expect(_angle(camera.viewDirection, followView(0.8)), lessThan(0.05));
+    expect(_angle(followView(0.8), followView(0)), greaterThan(0.1));
+
+    // The zoom closes in until every next cut fits, inside the frame.
+    final opening = camera
+        .frameSphere(model.center, model.radius * 1.3, viewport)
+        .halfHeight;
+    expect(cut().options(), isNotEmpty);
+    expect(camera.framedHalfHeightMm, lessThan(opening * 0.9));
+    for (final option in cut().options()) {
+      final at = cut()
+          .flapToWorld(cut().flapAfter(option))
+          .transformed3(Vector3(option.end.dx, option.end.dy, 0));
+      final projected = camera.camera.projectToScreen(at, viewport);
+      expect(projected, isNotNull);
+      expect(projected!.dx, greaterThan(viewport.width * 0.04));
+      expect(projected.dx, lessThan(viewport.width * 0.96));
+      expect(projected.dy, greaterThan(viewport.height * 0.04));
+      expect(projected.dy, lessThan(viewport.height * 0.96));
+    }
+
+    // DevTools' Blade pull sets how far: none looks square at the face.
+    await tester.tap(find.text('devtools'));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('grid-dev-section')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('Camera').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.drag(
+      find.byKey(const Key('grid-cut-follow')),
+      const Offset(-400, 0),
+    );
+    await tester.pump();
+    expect(find.text('0%'), findsOneWidget);
+    await tester.tap(find.text('devtools'));
+    await tester.pump();
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(_angle(camera.viewDirection, followView(0)), lessThan(0.05));
 
     // Each tap cuts toward its side of the blade. The cut starts where the
     // blade was set down.
@@ -1162,14 +1230,95 @@ void main() {
       expect(_wrapLayer(tester).path.first, Offset.zero);
     }
 
+    // Red dots mark where the blade can go next: cuts along the pattern
+    // and, fainter, travel along the paper's edge. A tap well clear of
+    // the dot, as when the tool bar covers it, still takes it.
     expect(cut().blade, Offset.zero);
-    await cutTo(const Offset(5, 0));
+    final next = _wrapLayer(tester).next;
+    expect({
+      for (final step in next) step.at,
+    }, containsAll(const [Offset(5, 0), Offset(0, 5), Offset(-5, 0)]));
+    expect(next.every((step) => !step.travel), isTrue);
+    final east = next.singleWhere((step) => step.at == const Offset(5, 0));
+    await tester.tapAt(
+      screen(cut().flapToWorld(east.flap).transformed3(Vector3(5, 0, 0))) +
+          const Offset(0, -64),
+    );
+    await tester.pump();
+    expect(_wrapLayer(tester).next, isEmpty);
+    for (var i = 0; i < 24; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(cut().blade, const Offset(5, 0));
+    expect(_wrapLayer(tester).next, isNotEmpty);
     expect(cut().folds, isEmpty);
 
-    // Past the wall's edge the paper folds up onto the wall.
+    // Past the wall's edge the paper stays flat.
     await cutTo(const Offset(10, 0));
+    expect(cut().folds, isEmpty);
+
+    // The fold tool keeps the cut at its blade. A tap there cuts nothing.
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const Key('grid-model-tools')),
+        matching: find.byIcon(Icons.flip),
+      ),
+    );
+    await tester.pump();
+    expect(
+      _hint(tester),
+      'Drag along an edge of the model to fold the paper over it.',
+    );
+    expect(cut().blade, const Offset(10, 0));
+    await tester.tapAt(screen(face.world(const Offset(2, 2))));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(cut().blade, const Offset(10, 0));
+    expect(_modelPainter(tester).edgeGlow[floor] ?? 0, lessThan(0.01));
+
+    // A line dragged near the wall's edge, a little askew, takes that edge.
+    final edgeFrom = screen(face.world(const Offset(4.8, 0.6)));
+    final edgeTo = screen(face.world(const Offset(4.9, 4.4)));
+    final drag = await tester.startGesture(edgeFrom);
+    for (var i = 1; i <= 8; i++) {
+      await drag.moveTo(Offset.lerp(edgeFrom, edgeTo, i / 8)!);
+      await tester.pump();
+    }
+    expect(_wrapPainter(tester).foldLine, isNotNull);
+    final aim = _wrapPainter(tester).foldAim!;
+    for (final end in [aim.$1, aim.$2]) {
+      expect(
+        [
+          face.world(const Offset(5, 0)),
+          face.world(const Offset(5, 5)),
+        ].any((corner) => (corner - end).length < 1e-6),
+        isTrue,
+      );
+    }
+    await drag.up();
+    await tester.pump();
+
+    // The paper folds up onto the wall, and the edge glows in and out.
     expect(cut().folds, hasLength(1));
     expect(cut().flaps[1].face, model.faceOfRing(1));
+    expect(cut().flaps[cut().bladeOn!].face, model.faceOfRing(1));
+    expect(_wrapPainter(tester).foldLine, isNull);
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(_wrapPainter(tester).foldEdge, isNotNull);
+    expect(_wrapPainter(tester).foldEdgeGlow, greaterThan(0.8));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(_wrapPainter(tester).foldEdge, isNull);
+
+    // Back to the scissors, the cut carries on from the blade.
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const Key('grid-model-tools')),
+        matching: find.byIcon(Icons.content_cut),
+      ),
+    );
+    await tester.pump();
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
     await cutTo(const Offset(10, 5));
     await cutTo(const Offset(5, 5));
     await cutTo(const Offset(0, 5));
@@ -1208,15 +1357,65 @@ void main() {
     final b = paper(last.blade! + step);
     await tester.tapAt(a + (b - a) / (b - a).distance * 80);
     await tester.pump();
-    for (var i = 0; i < 26; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
+
+    // Extra paper fades out. Faces the kept paper covers hide under it.
+    // Then leftover is in the inventory, a ring flashes around it, and
+    // the drawer closes.
+    var faded = false;
+    var hid = false;
+    String? leftoverId;
+    for (var i = 0; i < 80 && find.text('+200').evaluate().isEmpty; i++) {
+      await tester.pump(const Duration(milliseconds: 25));
+      final painter = _modelPainter(tester);
+      expect(painter.fadingPatches, isEmpty);
+      final layers = _wrapPainter(tester).layers;
+      if (layers.any((l) => l.opaque)) {
+        expect(painter.covered[floor] ?? 0, greaterThan(0.9));
+        hid = true;
+      }
+      final leftover = layers.where((l) => !l.opaque);
+      if (leftover.isEmpty) continue;
+      leftoverId = leftover.single.piece.id;
+      if (leftover.single.opacity < 0.85) faded = true;
     }
+    expect(hid, isTrue);
+    expect(faded, isTrue);
+    expect(find.text('+200'), findsOneWidget);
     expect(
       {for (final patch in _modelPainter(tester).patches) patch.face},
       {floor, model.faceOfRing(1)},
     );
+    expect(_modelPainter(tester).fadingPatches, isEmpty);
+    expect(_modelPainter(tester).covered, {
+      floor: 1.0,
+      model.faceOfRing(1)!: 1.0,
+    });
     expect(score(), before + 200);
-    expect(find.text('+200'), findsOneWidget);
+    expect(leftoverId, isNotNull);
+    var opened = false;
+    var flashed = false;
+    for (var i = 0; i < 40; i++) {
+      await tester.pump(const Duration(milliseconds: 25));
+      if (find.byKey(const Key('grid-inventory')).evaluate().isEmpty) {
+        continue;
+      }
+      opened = true;
+      expect(find.byKey(Key('grid-inventory-$leftoverId')), findsOneWidget);
+      final inventory = tester.widget<PieceInventory>(
+        find.byType(PieceInventory),
+      );
+      if (inventory.flashId == leftoverId &&
+          inventory.flash > 0.1 &&
+          inventory.flash < 1) {
+        flashed = true;
+      }
+    }
+    expect(opened, isTrue);
+    expect(flashed, isTrue);
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 25));
+    }
+    expect(find.byKey(const Key('grid-inventory')), findsNothing);
     expect(_hint(tester), 'Every face is wrapped.');
     for (var i = 0; i < 30; i++) {
       await tester.pump(const Duration(milliseconds: 100));
