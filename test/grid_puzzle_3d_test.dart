@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flatmates/gridcraft/blueprint.dart';
+import 'package:flatmates/gridcraft/folded_model.dart';
 import 'package:flatmates/gridcraft/level_io.dart';
 import 'package:flatmates/gridcraft/model_painter.dart';
 import 'package:flatmates/gridcraft/painter.dart';
@@ -9,6 +10,7 @@ import 'package:flatmates/papercut/craft_v1.dart';
 import 'package:flatmates/screens/grid_puzzle_view.dart';
 import 'package:flatmates/ui/fm_theme.dart';
 import 'package:flatmates/ui/rotation_gizmo.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -393,6 +395,18 @@ void main() {
     expect(find.byKey(const Key('grid-focus-back')), findsOneWidget);
     expect(_hint(tester), 'Slide and turn the paper until the face glows.');
 
+    // Tapping the paper again completes a double-tap on the focused face's
+    // paper, which flies the camera square onto the face.
+    expect(camera.viewDirection.dot(model.outwardNormal(floor)), lessThan(0.9));
+    await tester.tapAt(screen(face.world(const Offset(2, 2.5))));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 800));
+    expect(
+      camera.viewDirection.dot(model.outwardNormal(floor)),
+      closeTo(1, 1e-6),
+    );
+    expect(find.byKey(const Key('grid-focus-back')), findsOneWidget);
+
     // One finger off the paper pans along the face.
     final before = camera.target;
     await tester.timedDragFrom(
@@ -426,6 +440,168 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 700));
     expect(find.byKey(const Key('grid-model-layer')), findsNothing);
+  });
+
+  testWidgets('double-tapping desk paper focuses the desk, then crafts', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(900, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final directory = Directory.systemTemp.createTempSync('puzzle-3d-craft');
+    addTearDown(() => directory.delete(recursive: true));
+    await tester.pumpWidget(
+      ChangeNotifierProvider(
+        create: (_) => FmThemeData(),
+        child: MaterialApp(
+          home: GridPuzzleView(
+            initial: _domino(),
+            store: LevelStore(directory: directory),
+            crafts: [_dominoCraft()],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('grid-view-mode')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 700));
+
+    final canvasFinder = find.byKey(const Key('grid-puzzle-canvas'));
+    final canvas = tester.getTopLeft(canvasFinder);
+    final viewport = tester.getSize(canvasFinder);
+    final camera = _modelPainter(tester).camera;
+    final paper =
+        canvas + camera.camera.projectToScreen(Vector3(0.8, 0.8, 0), viewport)!;
+
+    Future<void> doubleTap() async {
+      await tester.tapAt(paper);
+      await tester.pump(const Duration(milliseconds: 80));
+      await tester.tapAt(paper);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+
+    await doubleTap();
+    expect(
+      _hint(tester),
+      'Slide paper on the desk, or drag it right to stow it.',
+    );
+    expect(find.byKey(const Key('grid-model-layer')), findsOneWidget);
+
+    await doubleTap();
+    await tester.pump(const Duration(milliseconds: 700));
+    expect(find.byKey(const Key('grid-model-layer')), findsNothing);
+    expect(find.byKey(const Key('grid-focus-back')), findsNothing);
+  });
+
+  testWidgets('3D pans keep the grabbed point under the pointer', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(900, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final directory = Directory.systemTemp.createTempSync('puzzle-3d-pan');
+    addTearDown(() => directory.delete(recursive: true));
+    await tester.pumpWidget(
+      ChangeNotifierProvider(
+        create: (_) => FmThemeData(),
+        child: MaterialApp(
+          home: GridPuzzleView(
+            initial: _domino(),
+            store: LevelStore(directory: directory),
+            crafts: [_dominoCraft()],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('grid-view-mode')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 700));
+
+    final canvasFinder = find.byKey(const Key('grid-puzzle-canvas'));
+    final canvas = tester.getTopLeft(canvasFinder);
+    final viewport = tester.getSize(canvasFinder);
+    final model = _modelPainter(tester).model;
+    final camera = _modelPainter(tester).camera;
+    final look = camera.viewDirection;
+
+    Vector3 under(Offset at) {
+      final ray = camera.camera.unprojectRay(at - canvas, viewport)!;
+      final hit = pickFace(model, ray.origin, ray.direction)!;
+      return ray.pointAt(hit.distance);
+    }
+
+    void expectUnder(Vector3 point, Offset at) {
+      final seen = camera.camera.projectToScreen(point, viewport)!;
+      expect((canvas + seen - at).distance, lessThan(0.5));
+      expect((camera.viewDirection - look).length, lessThan(1e-9));
+    }
+
+    // A right drag slides the view; what was under the press stays under the
+    // cursor, and the camera does not turn.
+    final wall = model.faceOfRing(1)!;
+    final press =
+        canvas +
+        camera.camera.projectToScreen(model.worldCenter(wall), viewport)!;
+    final grabbed = under(press);
+    final mouse = await tester.startGesture(
+      press,
+      kind: PointerDeviceKind.mouse,
+      buttons: kSecondaryMouseButton,
+    );
+    var at = press;
+    for (var i = 0; i < 6; i++) {
+      at += const Offset(-14, 9);
+      await mouse.moveTo(at);
+      await tester.pump();
+    }
+    expectUnder(grabbed, at);
+    await mouse.up();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const Key('grid-focus-back')), findsNothing);
+
+    // A middle drag pans the same way.
+    final middleFrom = camera.target;
+    final middle = await tester.startGesture(
+      at,
+      kind: PointerDeviceKind.mouse,
+      buttons: kMiddleMouseButton,
+    );
+    final regrabbed = under(at);
+    for (var i = 0; i < 4; i++) {
+      at += const Offset(10, -6);
+      await middle.moveTo(at);
+      await tester.pump();
+    }
+    expectUnder(regrabbed, at);
+    expect((camera.target - middleFrom).length, greaterThan(0.1));
+    await middle.up();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // Two fingers pan too, holding what is under their middle once the pan
+    // begins.
+    final spread = const Offset(30, 0);
+    final a = await tester.startGesture(at - spread, pointer: 7);
+    final b = await tester.startGesture(at + spread, pointer: 8);
+    await a.moveBy(const Offset(50, 0));
+    await b.moveBy(const Offset(50, 0));
+    await tester.pump();
+    at += const Offset(50, 0);
+    final held = under(at);
+    for (var i = 0; i < 5; i++) {
+      await a.moveBy(const Offset(-12, 10));
+      await b.moveBy(const Offset(-12, 10));
+      await tester.pump();
+      at += const Offset(-12, 10);
+    }
+    expectUnder(held, at);
+    await a.up();
+    await b.up();
+    await tester.pump(const Duration(milliseconds: 400));
   });
 
   testWidgets('a level without a craft has no 3D toggle', (tester) async {

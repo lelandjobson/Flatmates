@@ -224,6 +224,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   /// One finger in focus that missed the paper slides the camera along the
   /// face from this plane point.
   Offset? _planeGrab;
+  Vector3? _viewGrab;
 
   /// Piece being slid and turned on the focused face.
   PiecePlacement? _placing;
@@ -3221,6 +3222,24 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     return _looseAt(model, face, screen) != null;
   }
 
+  /// The tap lands on paper lying on the focused plane: desk paper, the piece
+  /// in hand, or loose paper on the face.
+  bool _onFocusedPaper(FoldedModel model, Offset screen) {
+    final face = _focusFace;
+    if (face == null) return false;
+    if (face == _kDesk) return _deskPieceAt(model, screen) != null;
+    final hit = _planeHit(_planeOf(model, face), screen);
+    if (hit == null) return false;
+    final placing = _placing;
+    final piece = placing == null ? null : _pieceById(placing.pieceId);
+    if (placing != null &&
+        piece != null &&
+        ownsPoint(placedPiece(piece, placing).vertices, hit.at)) {
+      return true;
+    }
+    return _looseAt(model, face, screen) != null;
+  }
+
   /// Leaves the piece in hand lying loose where it is.
   void _commitPlacing() {
     final placing = _placing;
@@ -3497,6 +3516,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     _gestureScale = 1;
     _placeDragging = false;
     _planeGrab = null;
+    _viewGrab = null;
     _deskDragId = null;
     _dragNudged = false;
     final model = _model;
@@ -3506,6 +3526,10 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     final down = _pointerDownAt ?? details.localFocalPoint;
     final grab = _planeHit(_planeOf(model, face), down)?.at;
     if (grab == null) return;
+    if (_panButton) {
+      _planeGrab = grab;
+      return;
+    }
     if (face == _kDesk) {
       final index = _deskPieceAt(model, down);
       if (index == null) {
@@ -3555,14 +3579,11 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
         _camera.zoomByScale(details.scale / _gestureScale);
       }
       _gestureScale = details.scale;
-      if (!_flyAnim.isAnimating) {
-        _camera.panInView(
-          delta,
-          _viewport,
-          anchor: model.center,
-          limit: _panLimit(model),
-        );
-      }
+      if (!_flyAnim.isAnimating) _panView(model, local, delta);
+      return;
+    }
+    if (_panButton && _focusFace == null) {
+      if (!_flyAnim.isAnimating) _panView(model, local, delta);
       return;
     }
     if (_placeDragging) {
@@ -3587,6 +3608,59 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
   /// across the desk.
   double _panLimit(FoldedModel model) =>
       math.max(model.radius * 2, _deskRect.longestSide);
+
+  /// Slides the camera in the plane facing it, through [_viewGrab], so that
+  /// point stays exactly under [screen]. The grab is picked where the pan
+  /// began: the press for a mouse button, else the fingers' middle.
+  void _panView(FoldedModel model, Offset screen, Offset delta) {
+    final from = _panButton ? _pointerDownAt : null;
+    final grab = _viewGrab ??= _viewGrabAt(model, from ?? screen - delta);
+    final ray = _camera.camera.unprojectRay(screen, _viewport);
+    if (ray == null) return;
+    final eye = _camera.camera.position;
+    final forward = (_camera.target - eye).normalized();
+    final depth = (grab - eye).dot(forward);
+    final along = ray.direction.dot(forward);
+    if (depth <= _camera.camera.near || along < 1e-6) return;
+    final under = eye + ray.direction * (depth / along);
+    _camera.shiftTarget(
+      grab - under,
+      anchor: model.center,
+      limit: _panLimit(model),
+    );
+  }
+
+  /// The point a view pan from [screen] holds: the nearest model face or desk
+  /// point under it, else the middle of the nearest face in view, else the
+  /// look-at point.
+  Vector3 _viewGrabAt(FoldedModel model, Offset screen) {
+    final ray = _camera.camera.unprojectRay(screen, _viewport);
+    if (ray != null) {
+      var best = pickFace(model, ray.origin, ray.direction)?.distance;
+      final desk = _planeHit(CraftPlane.sheet, screen);
+      if (desk != null &&
+          _deskRect.contains(desk.at) &&
+          (best == null || desk.distance < best)) {
+        best = desk.distance;
+      }
+      if (best != null) return ray.pointAt(best);
+    }
+    final eye = _camera.camera.position;
+    final forward = (_camera.target - eye).normalized();
+    final view = Offset.zero & _viewport;
+    Vector3? nearest;
+    var nearestDepth = double.infinity;
+    for (var i = 0; i < model.faces.length; i++) {
+      final center = model.worldCenter(i);
+      final depth = (center - eye).dot(forward);
+      if (depth <= _camera.camera.near || depth >= nearestDepth) continue;
+      final at = _camera.camera.projectToScreen(center, _viewport);
+      if (at == null || !view.contains(at)) continue;
+      nearest = center;
+      nearestDepth = depth;
+    }
+    return nearest ?? _camera.target;
+  }
 
   /// Slides the camera along [face] so [grab] stays under the finger.
   void _panOnPlane(FoldedModel model, int face, Offset grab, Offset screen) {
@@ -3660,7 +3734,7 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
       if (stow) _stow(deskId, undo: false);
       return;
     }
-    if (_moved > 12 || details.pointerCount >= 2) return;
+    if (_moved > 12 || details.pointerCount >= 2 || _panButton) return;
     final at = _lastFocal ?? _gestureDown;
     if (at == null) return;
     final now = DateTime.now();
@@ -3697,11 +3771,17 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
     if (loose != null) _hold(face, loose);
   }
 
-  /// A double-tap on grey desk paper focuses the desk. Anywhere off the
-  /// focused face and its paper ends focus.
+  /// A double-tap on grey desk paper focuses the desk. Once a plane is
+  /// focused, a double-tap on its paper goes on to crafting it, as
+  /// [_focusCamera] does. Anywhere off the focused face and its paper ends
+  /// focus.
   void _onModelDoubleTap(Offset screen) {
     final model = _model;
     if (model == null || _modeAnim.isAnimating || _lapping) return;
+    if (_onFocusedPaper(model, screen)) {
+      _focusCamera();
+      return;
+    }
     if (_onFocusedWork(model, screen)) return;
     if (_deskPieceAt(model, screen) != null) {
       _enterFocus(_kDesk);
@@ -4286,10 +4366,17 @@ class _GridPuzzleViewState extends State<GridPuzzleView>
 
   Offset? _lastFocal;
   Offset? _pointerDownAt;
+  int _downButtons = 0;
   double _rollAnchor = 0;
+
+  /// A right or middle mouse drag, which pans the 3D view instead of
+  /// orbiting or moving paper.
+  bool get _panButton =>
+      _downButtons & (kSecondaryMouseButton | kMiddleMouseButton) != 0;
 
   void _onCanvasPointerDown(PointerDownEvent event) {
     _pointerDownAt = event.localPosition;
+    _downButtons = event.buttons;
     _canvasPointers++;
     if (_canvasPointers >= 2) _noteZoom();
   }
