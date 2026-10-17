@@ -1230,8 +1230,7 @@ void main() {
       expect(_wrapLayer(tester).path.first, Offset.zero);
     }
 
-    // Red dots mark where the blade can go next: cuts along the pattern
-    // and, fainter, travel along the paper's edge. A tap well clear of
+    // Red dots mark the next vertex of a pattern line. A tap well clear of
     // the dot, as when the tool bar covers it, still takes it.
     expect(cut().blade, Offset.zero);
     final next = _wrapLayer(tester).next;

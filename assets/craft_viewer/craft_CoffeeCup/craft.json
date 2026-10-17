@@ -1,0 +1,4385 @@
+{
+  "version": 1,
+  "craft": "craft_CoffeeCup",
+  "foldedModel": "folded.obj",
+  "steps": [
+    {
+      "craftingStep": 1,
+      "model": "folded.obj"
+    }
+  ],
+  "faces": [
+    {
+      "flatmates.surfaceId": "0",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.transformType": "movement",
+      "flatLoops": [
+        [
+          [
+            9.0,
+            9.0,
+            0.0
+          ],
+          [
+            13.0,
+            9.0,
+            0.0
+          ],
+          [
+            13.0,
+            13.0,
+            0.0
+          ],
+          [
+            9.0,
+            13.0,
+            0.0
+          ],
+          [
+            9.0,
+            9.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "movement",
+        "forward": [
+          1.0,
+          0.0,
+          0.0,
+          11.0,
+          0.0,
+          1.0,
+          0.0,
+          11.0,
+          0.0,
+          0.0,
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "inverse": [
+          1.0,
+          0.0,
+          0.0,
+          -11.0,
+          0.0,
+          1.0,
+          0.0,
+          -11.0,
+          0.0,
+          0.0,
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "id": "s1_p0_i0_f0"
+    },
+    {
+      "flatmates.surfaceId": "1",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "0",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            8.0,
+            6.0,
+            0.0
+          ],
+          [
+            14.0,
+            6.0,
+            0.0
+          ],
+          [
+            13.0,
+            9.0,
+            0.0
+          ],
+          [
+            9.0,
+            9.0,
+            0.0
+          ],
+          [
+            8.0,
+            6.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          9.0,
+          9.0,
+          0.0,
+          13.0,
+          9.0,
+          0.0
+        ],
+        "angleRadians": "1.2309594173407739"
+      },
+      "id": "s1_p0_i0_f1"
+    },
+    {
+      "flatmates.surfaceId": "2",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "0",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            16.0,
+            8.0,
+            0.0
+          ],
+          [
+            16.0,
+            14.0,
+            0.0
+          ],
+          [
+            13.0,
+            13.0,
+            0.0
+          ],
+          [
+            13.0,
+            9.0,
+            0.0
+          ],
+          [
+            16.0,
+            8.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          13.0,
+          9.0,
+          0.0,
+          13.0,
+          13.0,
+          0.0
+        ],
+        "angleRadians": "1.2309594173407756"
+      },
+      "id": "s1_p0_i0_f2"
+    },
+    {
+      "flatmates.surfaceId": "3",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "0",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            14.0,
+            16.0,
+            0.0
+          ],
+          [
+            8.0,
+            16.0,
+            0.0
+          ],
+          [
+            9.0,
+            13.0,
+            0.0
+          ],
+          [
+            13.0,
+            13.0,
+            0.0
+          ],
+          [
+            14.0,
+            16.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          13.0,
+          13.0,
+          0.0,
+          9.0,
+          13.0,
+          0.0
+        ],
+        "angleRadians": "1.2309594173407756"
+      },
+      "id": "s1_p0_i0_f3"
+    },
+    {
+      "flatmates.surfaceId": "4",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "0",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            6.0,
+            14.0,
+            0.0
+          ],
+          [
+            6.0,
+            8.0,
+            0.0
+          ],
+          [
+            9.0,
+            9.0,
+            0.0
+          ],
+          [
+            9.0,
+            13.0,
+            0.0
+          ],
+          [
+            6.0,
+            14.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          9.0,
+          13.0,
+          0.0,
+          9.0,
+          9.0,
+          0.0
+        ],
+        "angleRadians": "1.2309594173407739"
+      },
+      "id": "s1_p0_i0_f4"
+    },
+    {
+      "flatmates.surfaceId": "5",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "1",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            8.0,
+            3.0,
+            0.0
+          ],
+          [
+            14.0,
+            3.0,
+            0.0
+          ],
+          [
+            14.0,
+            6.0,
+            0.0
+          ],
+          [
+            8.0,
+            6.0,
+            0.0
+          ],
+          [
+            8.0,
+            3.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          8.0,
+          6.0,
+          0.0,
+          14.0,
+          6.0,
+          0.0
+        ],
+        "angleRadians": "0.339836909454122"
+      },
+      "id": "s1_p0_i0_f5"
+    },
+    {
+      "flatmates.surfaceId": "6",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "2",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            19.0,
+            8.0,
+            0.0
+          ],
+          [
+            19.0,
+            14.0,
+            0.0
+          ],
+          [
+            16.0,
+            14.0,
+            0.0
+          ],
+          [
+            16.0,
+            8.0,
+            0.0
+          ],
+          [
+            19.0,
+            8.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          16.0,
+          8.0,
+          0.0,
+          16.0,
+          14.0,
+          0.0
+        ],
+        "angleRadians": "0.33983690945412187"
+      },
+      "id": "s1_p0_i0_f6"
+    },
+    {
+      "flatmates.surfaceId": "7",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "3",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            14.0,
+            19.0,
+            0.0
+          ],
+          [
+            8.0,
+            19.0,
+            0.0
+          ],
+          [
+            8.0,
+            16.0,
+            0.0
+          ],
+          [
+            14.0,
+            16.0,
+            0.0
+          ],
+          [
+            14.0,
+            19.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          14.0,
+          16.0,
+          0.0,
+          8.0,
+          16.0,
+          0.0
+        ],
+        "angleRadians": "0.33983690945412187"
+      },
+      "id": "s1_p0_i0_f7"
+    },
+    {
+      "flatmates.surfaceId": "8",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "4",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            3.0,
+            14.0,
+            0.0
+          ],
+          [
+            3.0,
+            8.0,
+            0.0
+          ],
+          [
+            6.0,
+            8.0,
+            0.0
+          ],
+          [
+            6.0,
+            14.0,
+            0.0
+          ],
+          [
+            3.0,
+            14.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          6.0,
+          14.0,
+          0.0,
+          6.0,
+          8.0,
+          0.0
+        ],
+        "angleRadians": "0.339836909454122"
+      },
+      "id": "s1_p0_i0_f8"
+    },
+    {
+      "flatmates.surfaceId": "9",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "5",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            7.0,
+            0.0,
+            0.0
+          ],
+          [
+            15.0,
+            0.0,
+            0.0
+          ],
+          [
+            14.0,
+            3.0,
+            0.0
+          ],
+          [
+            8.0,
+            3.0,
+            0.0
+          ],
+          [
+            7.0,
+            0.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          8.0,
+          3.0,
+          0.0,
+          14.0,
+          3.0,
+          0.0
+        ],
+        "angleRadians": "-0.339836909454122"
+      },
+      "id": "s1_p0_i0_f9"
+    },
+    {
+      "flatmates.surfaceId": "10",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "6",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            22.0,
+            7.0,
+            0.0
+          ],
+          [
+            22.0,
+            15.0,
+            0.0
+          ],
+          [
+            19.0,
+            14.0,
+            0.0
+          ],
+          [
+            19.0,
+            8.0,
+            0.0
+          ],
+          [
+            22.0,
+            7.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          19.0,
+          8.0,
+          0.0,
+          19.0,
+          14.0,
+          0.0
+        ],
+        "angleRadians": "-0.3398369094541207"
+      },
+      "id": "s1_p0_i0_f10"
+    },
+    {
+      "flatmates.surfaceId": "11",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "7",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            15.0,
+            22.0,
+            0.0
+          ],
+          [
+            7.0,
+            22.0,
+            0.0
+          ],
+          [
+            8.0,
+            19.0,
+            0.0
+          ],
+          [
+            14.0,
+            19.0,
+            0.0
+          ],
+          [
+            15.0,
+            22.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          14.0,
+          19.0,
+          0.0,
+          8.0,
+          19.0,
+          0.0
+        ],
+        "angleRadians": "-0.3398369094541207"
+      },
+      "id": "s1_p0_i0_f11"
+    },
+    {
+      "flatmates.surfaceId": "12",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "8",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            0.0,
+            15.0,
+            0.0
+          ],
+          [
+            0.0,
+            7.0,
+            0.0
+          ],
+          [
+            3.0,
+            8.0,
+            0.0
+          ],
+          [
+            3.0,
+            14.0,
+            0.0
+          ],
+          [
+            0.0,
+            15.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          3.0,
+          14.0,
+          0.0,
+          3.0,
+          8.0,
+          0.0
+        ],
+        "angleRadians": "-0.339836909454122"
+      },
+      "id": "s1_p0_i0_f12"
+    },
+    {
+      "flatmates.surfaceId": "13",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.transformType": "movement",
+      "flatLoops": [
+        [
+          [
+            0.0,
+            24.0,
+            0.0
+          ],
+          [
+            7.0,
+            24.0,
+            0.0
+          ],
+          [
+            7.0,
+            27.0,
+            0.0
+          ],
+          [
+            0.0,
+            27.0,
+            0.0
+          ],
+          [
+            0.0,
+            24.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "movement",
+        "forward": [
+          1.0,
+          0.0,
+          0.0,
+          3.5,
+          0.0,
+          0.0,
+          -1.0,
+          29.82842712474619,
+          0.0,
+          1.0,
+          0.0,
+          3.5,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "inverse": [
+          1.0,
+          0.0,
+          0.0,
+          -3.5,
+          0.0,
+          0.0,
+          1.0,
+          -3.5,
+          0.0,
+          -1.0,
+          0.0,
+          29.82842712474619,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "id": "s1_p0_i1_f13"
+    },
+    {
+      "flatmates.surfaceId": "14",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "13",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            7.0,
+            24.0,
+            0.0
+          ],
+          [
+            14.0,
+            24.0,
+            0.0
+          ],
+          [
+            14.0,
+            27.0,
+            0.0
+          ],
+          [
+            7.0,
+            27.0,
+            0.0
+          ],
+          [
+            7.0,
+            24.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          7.0,
+          24.0,
+          0.0,
+          7.0,
+          27.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i1_f14"
+    },
+    {
+      "flatmates.surfaceId": "15",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "14",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            14.0,
+            24.0,
+            0.0
+          ],
+          [
+            21.0,
+            24.0,
+            0.0
+          ],
+          [
+            21.0,
+            27.0,
+            0.0
+          ],
+          [
+            14.0,
+            27.0,
+            0.0
+          ],
+          [
+            14.0,
+            24.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          14.0,
+          24.0,
+          0.0,
+          14.0,
+          27.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i1_f15"
+    },
+    {
+      "flatmates.surfaceId": "16",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "15",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            21.0,
+            24.0,
+            0.0
+          ],
+          [
+            28.0,
+            24.0,
+            0.0
+          ],
+          [
+            28.0,
+            27.0,
+            0.0
+          ],
+          [
+            21.0,
+            27.0,
+            0.0
+          ],
+          [
+            21.0,
+            24.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          21.0,
+          24.0,
+          0.0,
+          21.0,
+          27.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i1_f16"
+    },
+    {
+      "flatmates.surfaceId": "17",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.transformType": "movement",
+      "flatLoops": [
+        [
+          [
+            29.0,
+            12.0,
+            0.0
+          ],
+          [
+            32.0,
+            12.0,
+            0.0
+          ],
+          [
+            34.0,
+            17.0,
+            0.0
+          ],
+          [
+            27.0,
+            17.0,
+            0.0
+          ],
+          [
+            29.0,
+            12.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "movement",
+        "forward": [
+          1.0,
+          0.0,
+          0.0,
+          30.5,
+          0.0,
+          -1.0,
+          0.0,
+          13.5,
+          0.0,
+          0.0,
+          -1.0,
+          10.888905057061256,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "inverse": [
+          1.0,
+          0.0,
+          0.0,
+          -30.5,
+          0.0,
+          -1.0,
+          0.0,
+          13.5,
+          0.0,
+          0.0,
+          -1.0,
+          10.888905057061256,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "id": "s1_p0_i2_f17"
+    },
+    {
+      "flatmates.surfaceId": "18",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "17",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            32.0,
+            12.0,
+            0.0
+          ],
+          [
+            32.0,
+            11.0,
+            0.0
+          ],
+          [
+            34.0,
+            10.0,
+            0.0
+          ],
+          [
+            34.0,
+            17.0,
+            0.0
+          ],
+          [
+            32.0,
+            12.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          32.0,
+          12.0,
+          0.0,
+          34.0,
+          17.0,
+          0.0
+        ],
+        "angleRadians": "-0.0"
+      },
+      "id": "s1_p0_i2_f18"
+    },
+    {
+      "flatmates.surfaceId": "19",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "17",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            29.0,
+            11.0,
+            0.0
+          ],
+          [
+            29.0,
+            12.0,
+            0.0
+          ],
+          [
+            27.0,
+            17.0,
+            0.0
+          ],
+          [
+            27.0,
+            10.0,
+            0.0
+          ],
+          [
+            29.0,
+            11.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          27.0,
+          17.0,
+          0.0,
+          29.0,
+          12.0,
+          0.0
+        ],
+        "angleRadians": "-0.0"
+      },
+      "id": "s1_p0_i2_f19"
+    },
+    {
+      "flatmates.surfaceId": "20",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "17",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            27.0,
+            17.0,
+            0.0
+          ],
+          [
+            34.0,
+            17.0,
+            0.0
+          ],
+          [
+            35.0,
+            19.0,
+            0.0
+          ],
+          [
+            26.0,
+            19.0,
+            0.0
+          ],
+          [
+            27.0,
+            17.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          34.0,
+          17.0,
+          0.0,
+          27.0,
+          17.0,
+          0.0
+        ],
+        "angleRadians": "1.047197551196598"
+      },
+      "id": "s1_p0_i2_f20"
+    },
+    {
+      "flatmates.surfaceId": "21",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "18",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            34.0,
+            17.0,
+            0.0
+          ],
+          [
+            34.0,
+            10.0,
+            0.0
+          ],
+          [
+            36.0,
+            9.0,
+            0.0
+          ],
+          [
+            36.0,
+            18.0,
+            0.0
+          ],
+          [
+            34.0,
+            17.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          34.0,
+          10.0,
+          0.0,
+          34.0,
+          17.0,
+          0.0
+        ],
+        "angleRadians": "1.047197551196599"
+      },
+      "id": "s1_p0_i2_f21"
+    },
+    {
+      "flatmates.surfaceId": "22",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "19",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            27.0,
+            10.0,
+            0.0
+          ],
+          [
+            27.0,
+            17.0,
+            0.0
+          ],
+          [
+            25.0,
+            18.0,
+            0.0
+          ],
+          [
+            25.0,
+            9.0,
+            0.0
+          ],
+          [
+            27.0,
+            10.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          27.0,
+          17.0,
+          0.0,
+          27.0,
+          10.0,
+          0.0
+        ],
+        "angleRadians": "1.0471975511965972"
+      },
+      "id": "s1_p0_i2_f22"
+    },
+    {
+      "flatmates.surfaceId": "23",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "20",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            26.0,
+            19.0,
+            0.0
+          ],
+          [
+            35.0,
+            19.0,
+            0.0
+          ],
+          [
+            35.0,
+            20.0,
+            0.0
+          ],
+          [
+            26.0,
+            20.0,
+            0.0
+          ],
+          [
+            26.0,
+            19.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          35.0,
+          19.0,
+          0.0,
+          26.0,
+          19.0,
+          0.0
+        ],
+        "angleRadians": "0.523598775598301"
+      },
+      "id": "s1_p0_i2_f23"
+    },
+    {
+      "flatmates.surfaceId": "24",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "21",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            36.0,
+            18.0,
+            0.0
+          ],
+          [
+            36.0,
+            9.0,
+            0.0
+          ],
+          [
+            37.0,
+            9.0,
+            0.0
+          ],
+          [
+            37.0,
+            18.0,
+            0.0
+          ],
+          [
+            36.0,
+            18.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          36.0,
+          9.0,
+          0.0,
+          36.0,
+          18.0,
+          0.0
+        ],
+        "angleRadians": "0.5235987755982977"
+      },
+      "id": "s1_p0_i2_f24"
+    },
+    {
+      "flatmates.surfaceId": "25",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "22",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            25.0,
+            9.0,
+            0.0
+          ],
+          [
+            25.0,
+            18.0,
+            0.0
+          ],
+          [
+            24.0,
+            18.0,
+            0.0
+          ],
+          [
+            24.0,
+            9.0,
+            0.0
+          ],
+          [
+            25.0,
+            9.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          25.0,
+          18.0,
+          0.0,
+          25.0,
+          9.0,
+          0.0
+        ],
+        "angleRadians": "0.5235987755982977"
+      },
+      "id": "s1_p0_i2_f25"
+    },
+    {
+      "flatmates.surfaceId": "26",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "24",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            36.0,
+            9.0,
+            0.0
+          ],
+          [
+            36.0,
+            0.0,
+            0.0
+          ],
+          [
+            37.0,
+            0.0,
+            0.0
+          ],
+          [
+            37.0,
+            9.0,
+            0.0
+          ],
+          [
+            36.0,
+            9.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          36.0,
+          9.0,
+          0.0,
+          37.0,
+          9.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i2_f26"
+    },
+    {
+      "flatmates.surfaceId": "27",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "26",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            34.0,
+            8.0,
+            0.0
+          ],
+          [
+            34.0,
+            1.0,
+            0.0
+          ],
+          [
+            36.0,
+            0.0,
+            0.0
+          ],
+          [
+            36.0,
+            9.0,
+            0.0
+          ],
+          [
+            34.0,
+            8.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          36.0,
+          9.0,
+          0.0,
+          36.0,
+          0.0,
+          0.0
+        ],
+        "angleRadians": "0.5235987755982977"
+      },
+      "id": "s1_p0_i2_f27"
+    },
+    {
+      "flatmates.surfaceId": "28",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "27",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            33.0,
+            6.0,
+            0.0
+          ],
+          [
+            33.0,
+            3.0,
+            0.0
+          ],
+          [
+            34.0,
+            1.0,
+            0.0
+          ],
+          [
+            34.0,
+            8.0,
+            0.0
+          ],
+          [
+            33.0,
+            6.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          34.0,
+          8.0,
+          0.0,
+          34.0,
+          1.0,
+          0.0
+        ],
+        "angleRadians": "1.0471975511965972"
+      },
+      "id": "s1_p0_i2_f28"
+    },
+    {
+      "flatmates.surfaceId": "29",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.transformType": "movement",
+      "flatLoops": [
+        [
+          [
+            31.0,
+            25.0,
+            0.0
+          ],
+          [
+            34.0,
+            25.0,
+            0.0
+          ],
+          [
+            34.0,
+            26.0,
+            0.0
+          ],
+          [
+            31.0,
+            26.0,
+            0.0
+          ],
+          [
+            31.0,
+            25.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "movement",
+        "forward": [
+          1.0,
+          0.0,
+          0.0,
+          32.5,
+          0.0,
+          -1.0,
+          0.0,
+          27.5,
+          0.0,
+          0.0,
+          -1.0,
+          11.888905057061256,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "inverse": [
+          1.0,
+          0.0,
+          0.0,
+          -32.5,
+          0.0,
+          -1.0,
+          0.0,
+          27.5,
+          0.0,
+          0.0,
+          -1.0,
+          11.888905057061256,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "id": "s1_p0_i3_f29"
+    },
+    {
+      "flatmates.surfaceId": "30",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "29",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            31.0,
+            26.0,
+            0.0
+          ],
+          [
+            34.0,
+            26.0,
+            0.0
+          ],
+          [
+            34.0,
+            27.0,
+            0.0
+          ],
+          [
+            31.0,
+            27.0,
+            0.0
+          ],
+          [
+            31.0,
+            26.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          34.0,
+          26.0,
+          0.0,
+          31.0,
+          26.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i3_f30"
+    },
+    {
+      "flatmates.surfaceId": "31",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "29",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            34.0,
+            26.0,
+            0.0
+          ],
+          [
+            34.0,
+            25.0,
+            0.0
+          ],
+          [
+            35.0,
+            25.0,
+            0.0
+          ],
+          [
+            35.0,
+            26.0,
+            0.0
+          ],
+          [
+            34.0,
+            26.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          34.0,
+          25.0,
+          0.0,
+          34.0,
+          26.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i3_f31"
+    },
+    {
+      "flatmates.surfaceId": "32",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "29",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            34.0,
+            25.0,
+            0.0
+          ],
+          [
+            31.0,
+            25.0,
+            0.0
+          ],
+          [
+            31.0,
+            24.0,
+            0.0
+          ],
+          [
+            34.0,
+            24.0,
+            0.0
+          ],
+          [
+            34.0,
+            25.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          31.0,
+          25.0,
+          0.0,
+          34.0,
+          25.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i3_f32"
+    },
+    {
+      "flatmates.surfaceId": "33",
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "flatmates.foldParentSurfaceId": "29",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            31.0,
+            25.0,
+            0.0
+          ],
+          [
+            31.0,
+            26.0,
+            0.0
+          ],
+          [
+            30.0,
+            26.0,
+            0.0
+          ],
+          [
+            30.0,
+            25.0,
+            0.0
+          ],
+          [
+            31.0,
+            25.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          31.0,
+          26.0,
+          0.0,
+          31.0,
+          25.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i3_f33"
+    }
+  ],
+  "edges": [
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          14.0,
+          6.0,
+          0.0
+        ],
+        [
+          13.0,
+          9.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f1",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          13.0,
+          9.0,
+          0.0
+        ],
+        [
+          9.0,
+          9.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f0",
+      "faceB": "s1_p0_i0_f1",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          9.0,
+          9.0,
+          0.0
+        ],
+        [
+          8.0,
+          6.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f1",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          16.0,
+          14.0,
+          0.0
+        ],
+        [
+          13.0,
+          13.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f2",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          13.0,
+          13.0,
+          0.0
+        ],
+        [
+          13.0,
+          9.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f0",
+      "faceB": "s1_p0_i0_f2",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          13.0,
+          9.0,
+          0.0
+        ],
+        [
+          16.0,
+          8.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f2",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          8.0,
+          16.0,
+          0.0
+        ],
+        [
+          9.0,
+          13.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f3",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          9.0,
+          13.0,
+          0.0
+        ],
+        [
+          13.0,
+          13.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f0",
+      "faceB": "s1_p0_i0_f3",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          13.0,
+          13.0,
+          0.0
+        ],
+        [
+          14.0,
+          16.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f3",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          6.0,
+          8.0,
+          0.0
+        ],
+        [
+          9.0,
+          9.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f4",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          9.0,
+          9.0,
+          0.0
+        ],
+        [
+          9.0,
+          13.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f0",
+      "faceB": "s1_p0_i0_f4",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          9.0,
+          13.0,
+          0.0
+        ],
+        [
+          6.0,
+          14.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f4",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "5",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          14.0,
+          3.0,
+          0.0
+        ],
+        [
+          14.0,
+          6.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f5",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "5",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          14.0,
+          6.0,
+          0.0
+        ],
+        [
+          8.0,
+          6.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f1",
+      "faceB": "s1_p0_i0_f5",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "5",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          8.0,
+          6.0,
+          0.0
+        ],
+        [
+          8.0,
+          3.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f5",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "6",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          19.0,
+          14.0,
+          0.0
+        ],
+        [
+          16.0,
+          14.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f6",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "6",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          16.0,
+          14.0,
+          0.0
+        ],
+        [
+          16.0,
+          8.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f2",
+      "faceB": "s1_p0_i0_f6",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "6",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          16.0,
+          8.0,
+          0.0
+        ],
+        [
+          19.0,
+          8.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f6",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "7",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          8.0,
+          19.0,
+          0.0
+        ],
+        [
+          8.0,
+          16.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f7",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "3",
+      "flatmates.surfaceIdB": "7",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          8.0,
+          16.0,
+          0.0
+        ],
+        [
+          14.0,
+          16.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f3",
+      "faceB": "s1_p0_i0_f7",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "7",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          14.0,
+          16.0,
+          0.0
+        ],
+        [
+          14.0,
+          19.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f7",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "8",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          3.0,
+          8.0,
+          0.0
+        ],
+        [
+          6.0,
+          8.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f8",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "4",
+      "flatmates.surfaceIdB": "8",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          6.0,
+          8.0,
+          0.0
+        ],
+        [
+          6.0,
+          14.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f4",
+      "faceB": "s1_p0_i0_f8",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "8",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          6.0,
+          14.0,
+          0.0
+        ],
+        [
+          3.0,
+          14.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f8",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "9",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          7.0,
+          0.0,
+          0.0
+        ],
+        [
+          15.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f9",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "9",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          15.0,
+          0.0,
+          0.0
+        ],
+        [
+          14.0,
+          3.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f9",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "5",
+      "flatmates.surfaceIdB": "9",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          14.0,
+          3.0,
+          0.0
+        ],
+        [
+          8.0,
+          3.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f5",
+      "faceB": "s1_p0_i0_f9",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "9",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          8.0,
+          3.0,
+          0.0
+        ],
+        [
+          7.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f9",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "10",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          22.0,
+          7.0,
+          0.0
+        ],
+        [
+          22.0,
+          15.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f10",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "10",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          22.0,
+          15.0,
+          0.0
+        ],
+        [
+          19.0,
+          14.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f10",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "6",
+      "flatmates.surfaceIdB": "10",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          19.0,
+          14.0,
+          0.0
+        ],
+        [
+          19.0,
+          8.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f6",
+      "faceB": "s1_p0_i0_f10",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "10",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          19.0,
+          8.0,
+          0.0
+        ],
+        [
+          22.0,
+          7.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f10",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "11",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          15.0,
+          22.0,
+          0.0
+        ],
+        [
+          7.0,
+          22.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f11",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "11",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          7.0,
+          22.0,
+          0.0
+        ],
+        [
+          8.0,
+          19.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f11",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "7",
+      "flatmates.surfaceIdB": "11",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          8.0,
+          19.0,
+          0.0
+        ],
+        [
+          14.0,
+          19.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f7",
+      "faceB": "s1_p0_i0_f11",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "11",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          14.0,
+          19.0,
+          0.0
+        ],
+        [
+          15.0,
+          22.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f11",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "12",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          0.0,
+          15.0,
+          0.0
+        ],
+        [
+          0.0,
+          7.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f12",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "12",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          0.0,
+          7.0,
+          0.0
+        ],
+        [
+          3.0,
+          8.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f12",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "8",
+      "flatmates.surfaceIdB": "12",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          3.0,
+          8.0,
+          0.0
+        ],
+        [
+          3.0,
+          14.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f8",
+      "faceB": "s1_p0_i0_f12",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "12",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          3.0,
+          14.0,
+          0.0
+        ],
+        [
+          0.0,
+          15.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f12",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "13",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          0.0,
+          24.0,
+          0.0
+        ],
+        [
+          7.0,
+          24.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f13",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "13",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          7.0,
+          27.0,
+          0.0
+        ],
+        [
+          0.0,
+          27.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f13",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "13",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          0.0,
+          27.0,
+          0.0
+        ],
+        [
+          0.0,
+          24.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f13",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "14",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          7.0,
+          24.0,
+          0.0
+        ],
+        [
+          14.0,
+          24.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f14",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "14",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          14.0,
+          27.0,
+          0.0
+        ],
+        [
+          7.0,
+          27.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f14",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "13",
+      "flatmates.surfaceIdB": "14",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          7.0,
+          27.0,
+          0.0
+        ],
+        [
+          7.0,
+          24.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f13",
+      "faceB": "s1_p0_i1_f14",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "15",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          14.0,
+          24.0,
+          0.0
+        ],
+        [
+          21.0,
+          24.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f15",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "15",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          21.0,
+          27.0,
+          0.0
+        ],
+        [
+          14.0,
+          27.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f15",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "14",
+      "flatmates.surfaceIdB": "15",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          14.0,
+          27.0,
+          0.0
+        ],
+        [
+          14.0,
+          24.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f14",
+      "faceB": "s1_p0_i1_f15",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "16",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          21.0,
+          24.0,
+          0.0
+        ],
+        [
+          28.0,
+          24.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f16",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "16",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          28.0,
+          24.0,
+          0.0
+        ],
+        [
+          28.0,
+          27.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f16",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "16",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          28.0,
+          27.0,
+          0.0
+        ],
+        [
+          21.0,
+          27.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f16",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "15",
+      "flatmates.surfaceIdB": "16",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          21.0,
+          27.0,
+          0.0
+        ],
+        [
+          21.0,
+          24.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f15",
+      "faceB": "s1_p0_i1_f16",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "17",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          29.0,
+          12.0,
+          0.0
+        ],
+        [
+          32.0,
+          12.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f17",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "18",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          32.0,
+          12.0,
+          0.0
+        ],
+        [
+          32.0,
+          11.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f18",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "18",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          32.0,
+          11.0,
+          0.0
+        ],
+        [
+          34.0,
+          10.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f18",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "17",
+      "flatmates.surfaceIdB": "18",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          34.0,
+          17.0,
+          0.0
+        ],
+        [
+          32.0,
+          12.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f17",
+      "faceB": "s1_p0_i2_f18",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "19",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          29.0,
+          11.0,
+          0.0
+        ],
+        [
+          29.0,
+          12.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f19",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "17",
+      "flatmates.surfaceIdB": "19",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          29.0,
+          12.0,
+          0.0
+        ],
+        [
+          27.0,
+          17.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f17",
+      "faceB": "s1_p0_i2_f19",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "19",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          27.0,
+          10.0,
+          0.0
+        ],
+        [
+          29.0,
+          11.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f19",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "17",
+      "flatmates.surfaceIdB": "20",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          27.0,
+          17.0,
+          0.0
+        ],
+        [
+          34.0,
+          17.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f17",
+      "faceB": "s1_p0_i2_f20",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "20",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          34.0,
+          17.0,
+          0.0
+        ],
+        [
+          35.0,
+          19.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f20",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "20",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          26.0,
+          19.0,
+          0.0
+        ],
+        [
+          27.0,
+          17.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f20",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "18",
+      "flatmates.surfaceIdB": "21",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          34.0,
+          17.0,
+          0.0
+        ],
+        [
+          34.0,
+          10.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f18",
+      "faceB": "s1_p0_i2_f21",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "21",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          34.0,
+          10.0,
+          0.0
+        ],
+        [
+          36.0,
+          9.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f21",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "21",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          36.0,
+          18.0,
+          0.0
+        ],
+        [
+          34.0,
+          17.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f21",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "19",
+      "flatmates.surfaceIdB": "22",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          27.0,
+          10.0,
+          0.0
+        ],
+        [
+          27.0,
+          17.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f19",
+      "faceB": "s1_p0_i2_f22",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "22",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          27.0,
+          17.0,
+          0.0
+        ],
+        [
+          25.0,
+          18.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f22",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "22",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          25.0,
+          9.0,
+          0.0
+        ],
+        [
+          27.0,
+          10.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f22",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "20",
+      "flatmates.surfaceIdB": "23",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          26.0,
+          19.0,
+          0.0
+        ],
+        [
+          35.0,
+          19.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f20",
+      "faceB": "s1_p0_i2_f23",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "23",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          35.0,
+          19.0,
+          0.0
+        ],
+        [
+          35.0,
+          20.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f23",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "23",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          35.0,
+          20.0,
+          0.0
+        ],
+        [
+          26.0,
+          20.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f23",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "23",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          26.0,
+          20.0,
+          0.0
+        ],
+        [
+          26.0,
+          19.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f23",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "21",
+      "flatmates.surfaceIdB": "24",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          36.0,
+          18.0,
+          0.0
+        ],
+        [
+          36.0,
+          9.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f21",
+      "faceB": "s1_p0_i2_f24",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "24",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          37.0,
+          9.0,
+          0.0
+        ],
+        [
+          37.0,
+          18.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f24",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "24",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          37.0,
+          18.0,
+          0.0
+        ],
+        [
+          36.0,
+          18.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f24",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "22",
+      "flatmates.surfaceIdB": "25",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          25.0,
+          9.0,
+          0.0
+        ],
+        [
+          25.0,
+          18.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f22",
+      "faceB": "s1_p0_i2_f25",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "25",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          25.0,
+          18.0,
+          0.0
+        ],
+        [
+          24.0,
+          18.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f25",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "25",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          24.0,
+          18.0,
+          0.0
+        ],
+        [
+          24.0,
+          9.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f25",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "25",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          24.0,
+          9.0,
+          0.0
+        ],
+        [
+          25.0,
+          9.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f25",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "26",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          36.0,
+          0.0,
+          0.0
+        ],
+        [
+          37.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f26",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "26",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          37.0,
+          0.0,
+          0.0
+        ],
+        [
+          37.0,
+          9.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f26",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "24",
+      "flatmates.surfaceIdB": "26",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          37.0,
+          9.0,
+          0.0
+        ],
+        [
+          36.0,
+          9.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f24",
+      "faceB": "s1_p0_i2_f26",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "27",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          34.0,
+          1.0,
+          0.0
+        ],
+        [
+          36.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f27",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "26",
+      "flatmates.surfaceIdB": "27",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          36.0,
+          0.0,
+          0.0
+        ],
+        [
+          36.0,
+          9.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f26",
+      "faceB": "s1_p0_i2_f27",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "27",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          36.0,
+          9.0,
+          0.0
+        ],
+        [
+          34.0,
+          8.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f27",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "28",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          33.0,
+          6.0,
+          0.0
+        ],
+        [
+          33.0,
+          3.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f28",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "28",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          33.0,
+          3.0,
+          0.0
+        ],
+        [
+          34.0,
+          1.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f28",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "27",
+      "flatmates.surfaceIdB": "28",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          34.0,
+          1.0,
+          0.0
+        ],
+        [
+          34.0,
+          8.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f27",
+      "faceB": "s1_p0_i2_f28",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "28",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          34.0,
+          8.0,
+          0.0
+        ],
+        [
+          33.0,
+          6.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f28",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "29",
+      "flatmates.surfaceIdB": "30",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          31.0,
+          26.0,
+          0.0
+        ],
+        [
+          34.0,
+          26.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f29",
+      "faceB": "s1_p0_i3_f30",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "30",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          34.0,
+          26.0,
+          0.0
+        ],
+        [
+          34.0,
+          27.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f30",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "30",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          34.0,
+          27.0,
+          0.0
+        ],
+        [
+          31.0,
+          27.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f30",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "30",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          31.0,
+          27.0,
+          0.0
+        ],
+        [
+          31.0,
+          26.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f30",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "29",
+      "flatmates.surfaceIdB": "31",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          34.0,
+          26.0,
+          0.0
+        ],
+        [
+          34.0,
+          25.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f29",
+      "faceB": "s1_p0_i3_f31",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "31",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          34.0,
+          25.0,
+          0.0
+        ],
+        [
+          35.0,
+          25.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f31",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "31",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          35.0,
+          25.0,
+          0.0
+        ],
+        [
+          35.0,
+          26.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f31",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "31",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          35.0,
+          26.0,
+          0.0
+        ],
+        [
+          34.0,
+          26.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f31",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "29",
+      "flatmates.surfaceIdB": "32",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          34.0,
+          25.0,
+          0.0
+        ],
+        [
+          31.0,
+          25.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f29",
+      "faceB": "s1_p0_i3_f32",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "32",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          31.0,
+          25.0,
+          0.0
+        ],
+        [
+          31.0,
+          24.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f32",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "32",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          31.0,
+          24.0,
+          0.0
+        ],
+        [
+          34.0,
+          24.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f32",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "32",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          34.0,
+          24.0,
+          0.0
+        ],
+        [
+          34.0,
+          25.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f32",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "29",
+      "flatmates.surfaceIdB": "33",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          31.0,
+          25.0,
+          0.0
+        ],
+        [
+          31.0,
+          26.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f29",
+      "faceB": "s1_p0_i3_f33",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "33",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          31.0,
+          26.0,
+          0.0
+        ],
+        [
+          30.0,
+          26.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f33",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "33",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          30.0,
+          26.0,
+          0.0
+        ],
+        [
+          30.0,
+          25.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f33",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_CoffeeCup",
+      "flatmates.pieceKey": "craft_CoffeeCup#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "33",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "CoffeeCup::1",
+      "curve": [
+        [
+          30.0,
+          25.0,
+          0.0
+        ],
+        [
+          31.0,
+          25.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f33",
+      "pieceIndex": 0
+    }
+  ]
+}

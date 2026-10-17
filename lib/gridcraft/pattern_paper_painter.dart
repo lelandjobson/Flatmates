@@ -12,7 +12,13 @@ import 'wrap_cut.dart';
 /// Pattern paper is see-through: the fill at this opacity, and its pattern
 /// in the paper's own color at [kPatternLineOpacity], just showing over it.
 const double kPatternFillOpacity = 0.4;
-const double kPatternLineOpacity = 0.22;
+const double kPatternLineOpacity = 0.44;
+
+/// White laid over pattern lines that belong to a face the paper lines up
+/// with. A line on that face is fully white; at the far end of the same
+/// connected linework the overlay is [kLineGlowFar].
+const double kLineGlowNear = 1;
+const double kLineGlowFar = 0.2;
 
 /// Paper off the face being worked on, so fills read across fold lines.
 const double kOffFaceOpacity = 0.8;
@@ -81,6 +87,119 @@ void paintPatternPaper(
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.2,
   );
+}
+
+/// White overlay, one entry per [lines], for pattern lines once [faces] line
+/// up under the paper. A line on or touching a face is at [kLineGlowNear];
+/// along the lines joined to it, by shared ends, the overlay falls to
+/// [kLineGlowFar] at the farthest line of that piece. A separate piece of
+/// the pattern, not joined to the face, stays at 0. [fade] scales a face.
+List<double> patternLineGlow(
+  List<(Offset, Offset)> lines,
+  Iterable<({List<Offset> ring, double fade})> faces,
+) {
+  final glow = List<double>.filled(lines.length, 0);
+  if (lines.isEmpty) return glow;
+  final neighbors = _lineNeighbors(lines);
+  for (final face in faces) {
+    if (face.fade <= 0 || face.ring.length < 2) continue;
+    final sources = <int>[
+      for (var i = 0; i < lines.length; i++)
+        if (_touchesRing(lines[i], face.ring)) i,
+    ];
+    if (sources.isEmpty) continue;
+    final dist = List<int>.filled(lines.length, -1);
+    final queue = <int>[];
+    for (final source in sources) {
+      dist[source] = 0;
+      queue.add(source);
+    }
+    var maxDistance = 0;
+    for (var head = 0; head < queue.length; head++) {
+      final current = queue[head];
+      for (final next in neighbors[current]) {
+        if (dist[next] >= 0) continue;
+        dist[next] = dist[current] + 1;
+        if (dist[next] > maxDistance) maxDistance = dist[next];
+        queue.add(next);
+      }
+    }
+    for (var i = 0; i < lines.length; i++) {
+      final distance = dist[i];
+      if (distance < 0) continue;
+      final taper = maxDistance == 0
+          ? kLineGlowNear
+          : kLineGlowNear -
+                (kLineGlowNear - kLineGlowFar) * distance / maxDistance;
+      final white = face.fade * taper;
+      if (white > glow[i]) glow[i] = white;
+    }
+  }
+  return glow;
+}
+
+/// Lines joined where an end of one lies on the other.
+List<List<int>> _lineNeighbors(List<(Offset, Offset)> lines) {
+  final neighbors = [for (final _ in lines) <int>[]];
+  void link(int i, int j) {
+    if (i == j || neighbors[i].contains(j)) return;
+    neighbors[i].add(j);
+    neighbors[j].add(i);
+  }
+
+  final at = <(int, int), List<int>>{};
+  for (var i = 0; i < lines.length; i++) {
+    final (a, b) = lines[i];
+    (at[_pointKey(a)] ??= []).add(i);
+    (at[_pointKey(b)] ??= []).add(i);
+  }
+  for (final bucket in at.values) {
+    for (var i = 0; i < bucket.length; i++) {
+      for (var j = i + 1; j < bucket.length; j++) {
+        link(bucket[i], bucket[j]);
+      }
+    }
+  }
+  for (var i = 0; i < lines.length; i++) {
+    final (a, b) = lines[i];
+    for (var j = 0; j < lines.length; j++) {
+      if (i == j) continue;
+      final (c, d) = lines[j];
+      if (_pointOnSegment(a, c, d) || _pointOnSegment(b, c, d)) link(i, j);
+    }
+  }
+  return neighbors;
+}
+
+(int, int) _pointKey(Offset point) =>
+    ((point.dx * 1e4).round(), (point.dy * 1e4).round());
+
+/// True when [line] meets [ring]: an end of either lies on the other.
+bool _touchesRing((Offset, Offset) line, List<Offset> ring) {
+  final (a, b) = line;
+  for (var i = 0; i < ring.length; i++) {
+    final c = ring[i];
+    final d = ring[(i + 1) % ring.length];
+    if (_pointOnSegment(a, c, d) ||
+        _pointOnSegment(b, c, d) ||
+        _pointOnSegment(c, a, b) ||
+        _pointOnSegment(d, a, b)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool _pointOnSegment(Offset point, Offset a, Offset b) {
+  final along = b - a;
+  final length2 = along.dx * along.dx + along.dy * along.dy;
+  if (length2 < 1e-12) return (point - a).distance < 1e-4;
+  final t =
+      ((point.dx - a.dx) * along.dx + (point.dy - a.dy) * along.dy) / length2;
+  if (t < -1e-6 || t > 1 + 1e-6) return false;
+  final clamped = t.clamp(0.0, 1.0);
+  final closest = Offset(a.dx + along.dx * clamped, a.dy + along.dy * clamped);
+  return (point - closest).distance < 1e-4;
 }
 
 /// Pattern [lines] on paper of [color]. On [opaque] paper they are inked a
@@ -297,6 +416,19 @@ class WrapCutPainter extends CustomPainter {
       for (final step in layer.next) {
         (next[step.flap] ??= []).add((step.at, step.travel, step.pulse));
       }
+      final glow = layer.aligned
+          ? patternLineGlow(cut.lines, [
+              for (var f = 0; f < cut.flaps.length; f++)
+                if (!coveredFaces.contains(cut.flaps[f].face))
+                  if (alignedCell(cut, f) case final List<Offset> ring)
+                    (
+                      ring: ring,
+                      fade: Curves.easeOut.transform(
+                        alignedFade[cut.flaps[f].face] ?? 0,
+                      ),
+                    ),
+            ])
+          : const <double>[];
       final drawn = <int, _FlapSheet>{};
       for (var f = 0; f < cut.flaps.length; f++) {
         final window = cut.flapWindow(f);
@@ -355,6 +487,7 @@ class WrapCutPainter extends CustomPainter {
             dots: dots[f] ?? const [],
             rings: rings[f] ?? const [],
             next: next[f] ?? const [],
+            glow: glow,
           ),
         );
       }
@@ -421,6 +554,7 @@ class WrapCutPainter extends CustomPainter {
     List<Offset> dots = const [],
     List<Offset> rings = const [],
     List<(Offset, bool, double)> next = const [],
+    List<double> glow = const [],
   }) {
     final clip = projectedRings(camera, size, [window], world);
     final paper = projectedRings(camera, size, [
@@ -431,10 +565,14 @@ class WrapCutPainter extends CustomPainter {
     Offset? screen(Offset point) =>
         camera.camera.projectToScreen(world(point), size);
     final lines = <(Offset, Offset)>[];
-    for (final (a, b) in layer.cut.lines) {
+    final lit = <double>[];
+    for (var i = 0; i < layer.cut.lines.length; i++) {
+      final (a, b) = layer.cut.lines[i];
       final p = screen(a);
       final q = screen(b);
-      if (p != null && q != null) lines.add((p, q));
+      if (p == null || q == null) continue;
+      lines.add((p, q));
+      lit.add(i < glow.length ? glow[i] : 0);
     }
     canvas.save();
     canvas.clipPath(clip);
@@ -458,6 +596,10 @@ class WrapCutPainter extends CustomPainter {
         canvas.restore();
       }
     }
+    canvas.save();
+    canvas.clipPath(paper);
+    _paintLineGlow(canvas, lines, lit, opacity);
+    canvas.restore();
     _paintCut(canvas, layer, screen, opacity);
     canvas.restore();
     if (outline > 0) {
@@ -471,6 +613,30 @@ class WrapCutPainter extends CustomPainter {
     }
     for (final point in dots) {
       _paintStart(canvas, screen(point), opacity);
+    }
+  }
+
+  /// White over the pattern lines that belong to a lined-up face, each at
+  /// its own share of [opacity].
+  void _paintLineGlow(
+    Canvas canvas,
+    List<(Offset, Offset)> lines,
+    List<double> glow,
+    double opacity,
+  ) {
+    if (opacity <= 0) return;
+    for (var i = 0; i < lines.length; i++) {
+      final white = i < glow.length ? glow[i] : 0.0;
+      if (white <= 0) continue;
+      final (a, b) = lines[i];
+      canvas.drawLine(
+        a,
+        b,
+        Paint()
+          ..color = Colors.white.withValues(alpha: white * opacity)
+          ..strokeWidth = 1.3
+          ..strokeCap = StrokeCap.round,
+      );
     }
   }
 

@@ -669,10 +669,11 @@ class WrapCut {
   /// The blade set down at [point], before any stroke.
   WrapCut placedAt(Offset point) => _copy(path: [point], clearDirection: true);
 
-  /// Straight strokes from the blade along the pattern, the paper edge, and
-  /// the path so far. Along the paper edge or the path the blade travels,
-  /// cutting nothing; see [travels]. A stroke stops at a tear it would cross
-  /// onto paper lying elsewhere on the model.
+  /// Straight strokes from the blade along the pattern and the path so far,
+  /// each ending at a vertex of those edges. The paper's own edge is not a
+  /// way to go: a slide along it reaches the far side of the sheet. Along
+  /// the path the blade travels, cutting nothing; see [travels]. A stroke
+  /// stops at a tear it would cross onto paper lying elsewhere on the model.
   List<ForwardCut> options() {
     final at = blade;
     if (at == null || finished) return const [];
@@ -681,7 +682,7 @@ class WrapCut {
       for (final (a, b) in lines) [a, b],
       if (path.length > 1) path,
     ];
-    final directions = lineworkDirections(at: at, closed: closed, open: open);
+    final directions = lineworkDirections(at: at, open: open);
     final cuts = <ForwardCut>[];
     for (final ray in directions) {
       var end = nextOutlineHit(
@@ -696,6 +697,7 @@ class WrapCut {
       }
       if ((end - at).distance < 1e-6) continue;
       if (!_onPaper(Offset.lerp(at, end, 0.5)!)) continue;
+      if (!_lineVertex(end, open)) continue;
       cuts.add(ForwardCut(direction: ray, end: end));
     }
     return cuts;
@@ -705,6 +707,16 @@ class WrapCut {
   /// paper as it lies now.
   int flapAfter(ForwardCut cut) =>
       _walk(blade!, cut.end, flaps, folds).legs.last.$2;
+
+  /// True when [point] is a vertex of one of [strokes].
+  bool _lineVertex(Offset point, List<List<Offset>> strokes) {
+    for (final stroke in strokes) {
+      for (final vertex in stroke) {
+        if ((vertex - point).distance < 1e-4) return true;
+      }
+    }
+    return false;
+  }
 
   /// True when the path's [segment] only carries the blade along the paper
   /// edge or the path before it.
@@ -1324,7 +1336,11 @@ class WrapCut {
       extent: kept,
     );
     final farMatrix = near.multiplied(fold.turn(1));
-    final farSides = [...kept, line.flipped];
+    final farPaper = _facePaper(model, neighbor.face, farMatrix);
+    final farSides = [
+      for (final side in kept) ?_ownSide(side, a, b, farPaper),
+      line.flipped,
+    ];
     if (torn.isNotEmpty) _tear(flaps, folds, flap, farSides, kept, along, at);
     folds.add(fold);
     if (torn.isEmpty) flaps[flap] = current.withSide(line);
@@ -1332,12 +1348,33 @@ class WrapCut {
       WrapFlap(
         face: neighbor.face,
         sides: farSides,
-        facePaper: _facePaper(model, neighbor.face, farMatrix),
+        facePaper: farPaper,
         parent: flap,
         fold: index,
       ),
     );
     return true;
+  }
+
+  /// [side], when it leaves all of [facePaper] to the far flap. A side that
+  /// would clip the face gives way to the face's own edge from hinge end [a]
+  /// or [b] when it runs through that end, and is let go otherwise. Fold
+  /// lines of other edges only follow the face's edges where corners are
+  /// square.
+  static HalfPlane? _ownSide(
+    HalfPlane side,
+    Offset a,
+    Offset b,
+    List<Offset> facePaper,
+  ) {
+    if (facePaper.every((point) => side.holds(point, 1e-6))) return side;
+    for (final end in [a, b]) {
+      if (side.side(end).abs() > 1e-6) continue;
+      for (final own in convexSides(facePaper)) {
+        if (own.side(end).abs() < 1e-6 && !own.onLine(a, b)) return own;
+      }
+    }
+    return null;
   }
 
   /// Moves a tear so the paper in [region], folding off [flap] across the

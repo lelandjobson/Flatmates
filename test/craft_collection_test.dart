@@ -28,6 +28,31 @@ FoldedModel _cube() {
   return foldedModelFromCraft(craft, 1, level)!;
 }
 
+FoldedModel _puzzleModel(String puzzleId) {
+  final file = Directory('levels')
+      .listSync(recursive: true)
+      .whereType<File>()
+      .firstWhere((file) => file.uri.pathSegments.last == '$puzzleId.json');
+  final step = GridBlueprint.fromJson(
+    jsonDecode(file.readAsStringSync()) as Map<String, dynamic>,
+  ).steps.first;
+  final link = step.craft!;
+  final craft = CraftV1.fromJson(
+    jsonDecode(
+          File('assets/craft_viewer/${link.id}/craft.json').readAsStringSync(),
+        )
+        as Map<String, dynamic>,
+  );
+  return foldedModelFromCraft(craft, link.step, step)!;
+}
+
+/// Shortest distance between two rectangles, 0 when they meet.
+double _gap(Rect a, Rect b) {
+  final dx = math.max(0.0, math.max(b.left - a.right, a.left - b.right));
+  final dy = math.max(0.0, math.max(b.top - a.bottom, a.top - b.bottom));
+  return math.sqrt(dx * dx + dy * dy);
+}
+
 double _area(List<Offset> ring) {
   var sum = 0.0;
   for (var i = 0; i < ring.length; i++) {
@@ -42,7 +67,7 @@ CollectionSurface _wallFacing(List<CollectionSurface> surfaces, Vector3 n) =>
     surfaces.singleWhere((surface) => (surface.normal - n).length < 1e-9);
 
 void main() {
-  test('the test room parses into a floor, four walls, and three crafts', () {
+  test('the test room parses into a floor, four walls, and six crafts', () {
     final room = _testRoom();
     expect(room.id, 'test-room');
     expect(room.name, 'Test Room');
@@ -50,8 +75,11 @@ void main() {
       'cube',
       'box-stack',
       'grid-cube',
+      'rocket',
+      'birdhouse',
+      'coffee-cup',
     ]);
-    expect(room.crafts.first.at, const Offset(-7, 3));
+    expect(room.crafts.first.at, const Offset(-12, 4));
     expect(room.crafts.first.turnDegrees, 20);
     expect(room.surfaces, hasLength(5));
     final occluding = room.surfaces
@@ -62,12 +90,42 @@ void main() {
       (surface) => surface.category == SurfaceCategory.plain,
     );
     expect(floor.normal, Vector3(0, 0, 1));
-    expect(room.groundBounds, const Rect.fromLTRB(-15, -12, 15, 12));
+    expect(room.groundBounds, const Rect.fromLTRB(-32, -26, 32, 26));
     expect(room.camera.direction.y, lessThan(0));
     expect(
       room.camera.direction.z,
       closeTo(math.sin(32 * math.pi / 180), 1e-9),
     );
+  });
+
+  test('every craft in the test room stands inside it, clear of the rest', () {
+    final room = _testRoom();
+    const clearance = 3.0;
+    final ground = room.groundBounds.deflate(clearance);
+    final footprints = <Rect>[];
+    for (final spot in room.crafts) {
+      final box = placedCraft(_puzzleModel(spot.puzzleId), spot).bounds;
+      final footprint = Rect.fromLTRB(
+        box.min.x,
+        box.min.y,
+        box.max.x,
+        box.max.y,
+      );
+      expect(
+        ground.contains(footprint.topLeft) &&
+            ground.contains(footprint.bottomRight),
+        isTrue,
+        reason: '${spot.puzzleId} at $footprint',
+      );
+      for (final other in footprints) {
+        expect(
+          _gap(footprint, other),
+          greaterThanOrEqualTo(clearance),
+          reason: '${spot.puzzleId} at $footprint meets $other',
+        );
+      }
+      footprints.add(footprint);
+    }
   });
 
   test('a polygon entry is one surface as given', () {
@@ -111,19 +169,19 @@ void main() {
     expect(north.rings, hasLength(1));
     expect(north.rings.single, hasLength(8));
     for (final point in north.rings.single) {
-      expect(point.y, closeTo(12, 1e-9));
+      expect(point.y, closeTo(26, 1e-9));
     }
     Offset onWall(Vector3 point, bool alongX) =>
         Offset(alongX ? point.x : point.y, point.z);
     expect(
       _area([for (final p in north.rings.single) onWall(p, true)]),
-      closeTo(30 * 14 - 6 * 10, 1e-9),
+      closeTo(64 * 14 - 6 * 10, 1e-9),
     );
     for (final side in [east, west]) {
       expect(side.rings, hasLength(2));
       expect(
         _area([for (final p in side.rings.first) onWall(p, false)]),
-        closeTo(24 * 14, 1e-9),
+        closeTo(52 * 14, 1e-9),
       );
       expect(
         _area([for (final p in side.rings.last) onWall(p, false)]),
@@ -225,7 +283,7 @@ void main() {
     expect(surfaceOpacity(north, outside), 1);
     expect(surfaceOpacity(south, outside), closeTo(kOccludedOpacity, 1e-9));
     expect(surfaceOpacity(floor, Vector3(0, 0, -5)), 1);
-    final edgeOn = Vector3(0, -12, 7) + Vector3(0, 0.02, 1) * 30;
+    final edgeOn = Vector3(0, -26, 7) + Vector3(0, 0.02, 1) * 30;
     final between = surfaceOpacity(south, edgeOn);
     expect(between, lessThan(1));
     expect(between, greaterThan(kOccludedOpacity));

@@ -1,0 +1,4072 @@
+{
+  "version": 1,
+  "craft": "craft_Birdhouse",
+  "foldedModel": "folded.obj",
+  "steps": [
+    {
+      "craftingStep": 1,
+      "model": "folded.obj"
+    }
+  ],
+  "faces": [
+    {
+      "flatmates.surfaceId": "0",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.transformType": "movement",
+      "flatLoops": [
+        [
+          [
+            2.0,
+            2.0,
+            0.0
+          ],
+          [
+            10.0,
+            2.0,
+            0.0
+          ],
+          [
+            10.0,
+            12.0,
+            0.0
+          ],
+          [
+            2.0,
+            12.0,
+            0.0
+          ],
+          [
+            2.0,
+            2.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "movement",
+        "forward": [
+          1.0,
+          0.0,
+          0.0,
+          2.0,
+          0.0,
+          1.0,
+          0.0,
+          2.0,
+          0.0,
+          0.0,
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "inverse": [
+          1.0,
+          0.0,
+          0.0,
+          -2.0,
+          0.0,
+          1.0,
+          0.0,
+          -2.0,
+          0.0,
+          0.0,
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "id": "s1_p0_i0_f0"
+    },
+    {
+      "flatmates.surfaceId": "1",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "0",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            2.0,
+            1.0,
+            0.0
+          ],
+          [
+            10.0,
+            1.0,
+            0.0
+          ],
+          [
+            10.0,
+            2.0,
+            0.0
+          ],
+          [
+            2.0,
+            2.0,
+            0.0
+          ],
+          [
+            2.0,
+            1.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          2.0,
+          2.0,
+          0.0,
+          10.0,
+          2.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i0_f1"
+    },
+    {
+      "flatmates.surfaceId": "2",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "0",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            11.0,
+            2.0,
+            0.0
+          ],
+          [
+            11.0,
+            12.0,
+            0.0
+          ],
+          [
+            10.0,
+            12.0,
+            0.0
+          ],
+          [
+            10.0,
+            2.0,
+            0.0
+          ],
+          [
+            11.0,
+            2.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          10.0,
+          2.0,
+          0.0,
+          10.0,
+          12.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i0_f2"
+    },
+    {
+      "flatmates.surfaceId": "3",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "0",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            10.0,
+            13.0,
+            0.0
+          ],
+          [
+            2.0,
+            13.0,
+            0.0
+          ],
+          [
+            2.0,
+            12.0,
+            0.0
+          ],
+          [
+            10.0,
+            12.0,
+            0.0
+          ],
+          [
+            10.0,
+            13.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          10.0,
+          12.0,
+          0.0,
+          2.0,
+          12.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i0_f3"
+    },
+    {
+      "flatmates.surfaceId": "4",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "0",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            1.0,
+            12.0,
+            0.0
+          ],
+          [
+            1.0,
+            2.0,
+            0.0
+          ],
+          [
+            2.0,
+            2.0,
+            0.0
+          ],
+          [
+            2.0,
+            12.0,
+            0.0
+          ],
+          [
+            1.0,
+            12.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          2.0,
+          12.0,
+          0.0,
+          2.0,
+          2.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i0_f4"
+    },
+    {
+      "flatmates.surfaceId": "5",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "1",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            3.0,
+            0.0,
+            0.0
+          ],
+          [
+            9.0,
+            0.0,
+            0.0
+          ],
+          [
+            10.0,
+            1.0,
+            0.0
+          ],
+          [
+            2.0,
+            1.0,
+            0.0
+          ],
+          [
+            3.0,
+            0.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          2.0,
+          1.0,
+          0.0,
+          10.0,
+          1.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i0_f5"
+    },
+    {
+      "flatmates.surfaceId": "6",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "2",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            12.0,
+            3.0,
+            0.0
+          ],
+          [
+            12.0,
+            11.0,
+            0.0
+          ],
+          [
+            11.0,
+            12.0,
+            0.0
+          ],
+          [
+            11.0,
+            2.0,
+            0.0
+          ],
+          [
+            12.0,
+            3.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          11.0,
+          2.0,
+          0.0,
+          11.0,
+          12.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i0_f6"
+    },
+    {
+      "flatmates.surfaceId": "7",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "3",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            9.0,
+            14.0,
+            0.0
+          ],
+          [
+            3.0,
+            14.0,
+            0.0
+          ],
+          [
+            2.0,
+            13.0,
+            0.0
+          ],
+          [
+            10.0,
+            13.0,
+            0.0
+          ],
+          [
+            9.0,
+            14.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          10.0,
+          13.0,
+          0.0,
+          2.0,
+          13.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i0_f7"
+    },
+    {
+      "flatmates.surfaceId": "8",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "4",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            0.0,
+            11.0,
+            0.0
+          ],
+          [
+            0.0,
+            3.0,
+            0.0
+          ],
+          [
+            1.0,
+            2.0,
+            0.0
+          ],
+          [
+            1.0,
+            12.0,
+            0.0
+          ],
+          [
+            0.0,
+            11.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          1.0,
+          12.0,
+          0.0,
+          1.0,
+          2.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i0_f8"
+    },
+    {
+      "flatmates.surfaceId": "9",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.transformType": "movement",
+      "flatLoops": [
+        [
+          [
+            14.0,
+            20.0,
+            0.0
+          ],
+          [
+            6.0,
+            20.0,
+            0.0
+          ],
+          [
+            6.0,
+            16.0,
+            0.0
+          ],
+          [
+            14.0,
+            16.0,
+            0.0
+          ],
+          [
+            14.0,
+            20.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "movement",
+        "forward": [
+          0.0,
+          1.0,
+          0.0,
+          5.0,
+          0.0,
+          0.0,
+          1.0,
+          15.0,
+          1.0,
+          0.0,
+          0.0,
+          -1.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "inverse": [
+          0.0,
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          0.0,
+          0.0,
+          -5.0,
+          0.0,
+          1.0,
+          0.0,
+          -15.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "id": "s1_p0_i1_f9"
+    },
+    {
+      "flatmates.surfaceId": "10",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "9",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            6.0,
+            20.0,
+            0.0
+          ],
+          [
+            4.0,
+            18.0,
+            0.0
+          ],
+          [
+            4.0,
+            17.0,
+            0.0
+          ],
+          [
+            6.0,
+            16.0,
+            0.0
+          ],
+          [
+            6.0,
+            20.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          6.0,
+          20.0,
+          0.0,
+          6.0,
+          16.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i1_f10"
+    },
+    {
+      "flatmates.surfaceId": "11",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "9",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            20.0,
+            20.0,
+            0.0
+          ],
+          [
+            17.0,
+            24.0,
+            0.0
+          ],
+          [
+            14.0,
+            20.0,
+            0.0
+          ],
+          [
+            14.0,
+            16.0,
+            0.0
+          ],
+          [
+            20.0,
+            16.0,
+            0.0
+          ],
+          [
+            20.0,
+            20.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          14.0,
+          16.0,
+          0.0,
+          14.0,
+          20.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i1_f11"
+    },
+    {
+      "flatmates.surfaceId": "12",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "9",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            6.0,
+            20.0,
+            0.0
+          ],
+          [
+            14.0,
+            20.0,
+            0.0
+          ],
+          [
+            14.0,
+            25.0,
+            0.0
+          ],
+          [
+            6.0,
+            25.0,
+            0.0
+          ],
+          [
+            6.0,
+            20.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          6.0,
+          20.0,
+          0.0,
+          14.0,
+          20.0,
+          0.0
+        ],
+        "angleRadians": "-0.6435011087932837"
+      },
+      "id": "s1_p0_i1_f12"
+    },
+    {
+      "flatmates.surfaceId": "13",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "10",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            4.0,
+            17.0,
+            0.0
+          ],
+          [
+            2.0,
+            17.0,
+            0.0
+          ],
+          [
+            0.0,
+            16.0,
+            0.0
+          ],
+          [
+            6.0,
+            16.0,
+            0.0
+          ],
+          [
+            4.0,
+            17.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          4.0,
+          17.0,
+          0.0,
+          6.0,
+          16.0,
+          0.0
+        ],
+        "angleRadians": "-0.0"
+      },
+      "id": "s1_p0_i1_f13"
+    },
+    {
+      "flatmates.surfaceId": "14",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "10",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            4.0,
+            18.0,
+            0.0
+          ],
+          [
+            6.0,
+            20.0,
+            0.0
+          ],
+          [
+            3.0,
+            24.0,
+            0.0
+          ],
+          [
+            0.0,
+            20.0,
+            0.0
+          ],
+          [
+            2.0,
+            18.0,
+            0.0
+          ],
+          [
+            4.0,
+            18.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          6.0,
+          20.0,
+          0.0,
+          4.0,
+          18.0,
+          0.0
+        ],
+        "angleRadians": "-0.0"
+      },
+      "id": "s1_p0_i1_f14"
+    },
+    {
+      "flatmates.surfaceId": "15",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "11",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            28.0,
+            20.0,
+            0.0
+          ],
+          [
+            20.0,
+            20.0,
+            0.0
+          ],
+          [
+            20.0,
+            16.0,
+            0.0
+          ],
+          [
+            28.0,
+            16.0,
+            0.0
+          ],
+          [
+            28.0,
+            20.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          20.0,
+          16.0,
+          0.0,
+          20.0,
+          20.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i1_f15"
+    },
+    {
+      "flatmates.surfaceId": "16",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "12",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            11.0,
+            26.0,
+            0.0
+          ],
+          [
+            8.0,
+            26.0,
+            0.0
+          ],
+          [
+            6.0,
+            25.0,
+            0.0
+          ],
+          [
+            14.0,
+            25.0,
+            0.0
+          ],
+          [
+            11.0,
+            26.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          14.0,
+          25.0,
+          0.0,
+          6.0,
+          25.0,
+          0.0
+        ],
+        "angleRadians": "1.8545904360032253"
+      },
+      "id": "s1_p0_i1_f16"
+    },
+    {
+      "flatmates.surfaceId": "17",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "15",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            30.0,
+            17.0,
+            0.0
+          ],
+          [
+            30.0,
+            18.0,
+            0.0
+          ],
+          [
+            28.0,
+            20.0,
+            0.0
+          ],
+          [
+            28.0,
+            16.0,
+            0.0
+          ],
+          [
+            30.0,
+            17.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          28.0,
+          16.0,
+          0.0,
+          28.0,
+          20.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i1_f17"
+    },
+    {
+      "flatmates.surfaceId": "18",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "15",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            26.0,
+            21.0,
+            0.0
+          ],
+          [
+            23.0,
+            21.0,
+            0.0
+          ],
+          [
+            20.0,
+            20.0,
+            0.0
+          ],
+          [
+            28.0,
+            20.0,
+            0.0
+          ],
+          [
+            26.0,
+            21.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          28.0,
+          20.0,
+          0.0,
+          20.0,
+          20.0,
+          0.0
+        ],
+        "angleRadians": "0.6435011087932837"
+      },
+      "id": "s1_p0_i1_f18"
+    },
+    {
+      "flatmates.surfaceId": "19",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "18",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            26.0,
+            24.0,
+            0.0
+          ],
+          [
+            26.0,
+            21.0,
+            0.0
+          ],
+          [
+            28.0,
+            20.0,
+            0.0
+          ],
+          [
+            28.0,
+            25.0,
+            0.0
+          ],
+          [
+            26.0,
+            24.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          28.0,
+          20.0,
+          0.0,
+          26.0,
+          21.0,
+          0.0
+        ],
+        "angleRadians": "-5.858780601663576e-16"
+      },
+      "id": "s1_p0_i1_f19"
+    },
+    {
+      "flatmates.surfaceId": "20",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "18",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            23.0,
+            21.0,
+            0.0
+          ],
+          [
+            23.0,
+            24.0,
+            0.0
+          ],
+          [
+            20.0,
+            25.0,
+            0.0
+          ],
+          [
+            20.0,
+            20.0,
+            0.0
+          ],
+          [
+            23.0,
+            21.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          23.0,
+          21.0,
+          0.0,
+          20.0,
+          20.0,
+          0.0
+        ],
+        "angleRadians": "-6.688137757638646e-16"
+      },
+      "id": "s1_p0_i1_f20"
+    },
+    {
+      "flatmates.surfaceId": "21",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.transformType": "movement",
+      "flatLoops": [
+        [
+          [
+            7.0,
+            29.0,
+            0.0
+          ],
+          [
+            10.0,
+            29.0,
+            0.0
+          ],
+          [
+            10.0,
+            32.0,
+            0.0
+          ],
+          [
+            7.0,
+            32.0,
+            0.0
+          ],
+          [
+            7.0,
+            29.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "movement",
+        "forward": [
+          0.0,
+          1.0,
+          0.0,
+          4.0,
+          0.6000000000000003,
+          0.0,
+          -0.7999999999999997,
+          32.8,
+          -0.7999999999999997,
+          0.0,
+          -0.6000000000000003,
+          9.600000000000001,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "inverse": [
+          0.0,
+          0.6000000000000003,
+          -0.7999999999999997,
+          -12.0,
+          1.0,
+          0.0,
+          0.0,
+          -4.0,
+          0.0,
+          -0.7999999999999997,
+          -0.6000000000000003,
+          32.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "id": "s1_p0_i2_f21"
+    },
+    {
+      "flatmates.surfaceId": "22",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "21",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            7.0,
+            32.0,
+            0.0
+          ],
+          [
+            10.0,
+            32.0,
+            0.0
+          ],
+          [
+            10.0,
+            33.0,
+            0.0
+          ],
+          [
+            7.0,
+            33.0,
+            0.0
+          ],
+          [
+            7.0,
+            32.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          10.0,
+          32.0,
+          0.0,
+          7.0,
+          32.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i2_f22"
+    },
+    {
+      "flatmates.surfaceId": "23",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "21",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            10.0,
+            29.0,
+            0.0
+          ],
+          [
+            7.0,
+            29.0,
+            0.0
+          ],
+          [
+            7.0,
+            28.0,
+            0.0
+          ],
+          [
+            10.0,
+            28.0,
+            0.0
+          ],
+          [
+            10.0,
+            29.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          7.0,
+          29.0,
+          0.0,
+          10.0,
+          29.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i2_f23"
+    },
+    {
+      "flatmates.surfaceId": "24",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "21",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            7.0,
+            29.0,
+            0.0
+          ],
+          [
+            7.0,
+            32.0,
+            0.0
+          ],
+          [
+            6.0,
+            32.0,
+            0.0
+          ],
+          [
+            6.0,
+            29.0,
+            0.0
+          ],
+          [
+            7.0,
+            29.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          7.0,
+          32.0,
+          0.0,
+          7.0,
+          29.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i2_f24"
+    },
+    {
+      "flatmates.surfaceId": "25",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "21",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            10.0,
+            32.0,
+            0.0
+          ],
+          [
+            10.0,
+            29.0,
+            0.0
+          ],
+          [
+            11.0,
+            29.0,
+            0.0
+          ],
+          [
+            11.0,
+            32.0,
+            0.0
+          ],
+          [
+            10.0,
+            32.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          10.0,
+          29.0,
+          0.0,
+          10.0,
+          32.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i2_f25"
+    },
+    {
+      "flatmates.surfaceId": "26",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.transformType": "movement",
+      "flatLoops": [
+        [
+          [
+            1.0,
+            28.0,
+            0.0
+          ],
+          [
+            3.0,
+            28.0,
+            0.0
+          ],
+          [
+            3.0,
+            31.0,
+            0.0
+          ],
+          [
+            1.0,
+            31.0,
+            0.0
+          ],
+          [
+            1.0,
+            28.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "movement",
+        "forward": [
+          1.0,
+          0.0,
+          0.0,
+          -2.0,
+          0.0,
+          -1.0,
+          0.0,
+          29.0,
+          0.0,
+          0.0,
+          -1.0,
+          3.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "inverse": [
+          1.0,
+          0.0,
+          0.0,
+          2.0,
+          0.0,
+          -1.0,
+          0.0,
+          29.0,
+          0.0,
+          0.0,
+          -1.0,
+          3.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "id": "s1_p0_i3_f26"
+    },
+    {
+      "flatmates.surfaceId": "27",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "26",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            1.0,
+            28.0,
+            0.0
+          ],
+          [
+            1.0,
+            31.0,
+            0.0
+          ],
+          [
+            0.0,
+            31.0,
+            0.0
+          ],
+          [
+            0.0,
+            28.0,
+            0.0
+          ],
+          [
+            1.0,
+            28.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          1.0,
+          31.0,
+          0.0,
+          1.0,
+          28.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i3_f27"
+    },
+    {
+      "flatmates.surfaceId": "28",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "26",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            3.0,
+            31.0,
+            0.0
+          ],
+          [
+            3.0,
+            28.0,
+            0.0
+          ],
+          [
+            4.0,
+            28.0,
+            0.0
+          ],
+          [
+            4.0,
+            31.0,
+            0.0
+          ],
+          [
+            3.0,
+            31.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          3.0,
+          28.0,
+          0.0,
+          3.0,
+          31.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i3_f28"
+    },
+    {
+      "flatmates.surfaceId": "29",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "26",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            1.0,
+            31.0,
+            0.0
+          ],
+          [
+            3.0,
+            31.0,
+            0.0
+          ],
+          [
+            3.0,
+            32.0,
+            0.0
+          ],
+          [
+            1.0,
+            32.0,
+            0.0
+          ],
+          [
+            1.0,
+            31.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          3.0,
+          31.0,
+          0.0,
+          1.0,
+          31.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i3_f29"
+    },
+    {
+      "flatmates.surfaceId": "30",
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "flatmates.foldParentSurfaceId": "29",
+      "flatmates.transformType": "rotation",
+      "flatLoops": [
+        [
+          [
+            1.0,
+            32.0,
+            0.0
+          ],
+          [
+            3.0,
+            32.0,
+            0.0
+          ],
+          [
+            3.0,
+            35.0,
+            0.0
+          ],
+          [
+            1.0,
+            35.0,
+            0.0
+          ],
+          [
+            1.0,
+            32.0,
+            0.0
+          ]
+        ]
+      ],
+      "transform": {
+        "type": "rotation",
+        "axis": [
+          3.0,
+          32.0,
+          0.0,
+          1.0,
+          32.0,
+          0.0
+        ],
+        "angleRadians": "1.5707963267948966"
+      },
+      "id": "s1_p0_i3_f30"
+    }
+  ],
+  "edges": [
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          10.0,
+          1.0,
+          0.0
+        ],
+        [
+          10.0,
+          2.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f1",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          10.0,
+          2.0,
+          0.0
+        ],
+        [
+          2.0,
+          2.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f0",
+      "faceB": "s1_p0_i0_f1",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          2.0,
+          2.0,
+          0.0
+        ],
+        [
+          2.0,
+          1.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f1",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          11.0,
+          12.0,
+          0.0
+        ],
+        [
+          10.0,
+          12.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f2",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          10.0,
+          12.0,
+          0.0
+        ],
+        [
+          10.0,
+          2.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f0",
+      "faceB": "s1_p0_i0_f2",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          10.0,
+          2.0,
+          0.0
+        ],
+        [
+          11.0,
+          2.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f2",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          2.0,
+          13.0,
+          0.0
+        ],
+        [
+          2.0,
+          12.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f3",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          2.0,
+          12.0,
+          0.0
+        ],
+        [
+          10.0,
+          12.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f0",
+      "faceB": "s1_p0_i0_f3",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "3",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          10.0,
+          12.0,
+          0.0
+        ],
+        [
+          10.0,
+          13.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f3",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          1.0,
+          2.0,
+          0.0
+        ],
+        [
+          2.0,
+          2.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f4",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "0",
+      "flatmates.surfaceIdB": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          2.0,
+          2.0,
+          0.0
+        ],
+        [
+          2.0,
+          12.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f0",
+      "faceB": "s1_p0_i0_f4",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "4",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          2.0,
+          12.0,
+          0.0
+        ],
+        [
+          1.0,
+          12.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f4",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "5",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          3.0,
+          0.0,
+          0.0
+        ],
+        [
+          9.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f5",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "5",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          9.0,
+          0.0,
+          0.0
+        ],
+        [
+          10.0,
+          1.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f5",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "1",
+      "flatmates.surfaceIdB": "5",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          10.0,
+          1.0,
+          0.0
+        ],
+        [
+          2.0,
+          1.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f1",
+      "faceB": "s1_p0_i0_f5",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "5",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          2.0,
+          1.0,
+          0.0
+        ],
+        [
+          3.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f5",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "6",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          12.0,
+          3.0,
+          0.0
+        ],
+        [
+          12.0,
+          11.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f6",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "6",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          12.0,
+          11.0,
+          0.0
+        ],
+        [
+          11.0,
+          12.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f6",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "2",
+      "flatmates.surfaceIdB": "6",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          11.0,
+          12.0,
+          0.0
+        ],
+        [
+          11.0,
+          2.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f2",
+      "faceB": "s1_p0_i0_f6",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "6",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          11.0,
+          2.0,
+          0.0
+        ],
+        [
+          12.0,
+          3.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f6",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "7",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          9.0,
+          14.0,
+          0.0
+        ],
+        [
+          3.0,
+          14.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f7",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "7",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          3.0,
+          14.0,
+          0.0
+        ],
+        [
+          2.0,
+          13.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f7",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "3",
+      "flatmates.surfaceIdB": "7",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          2.0,
+          13.0,
+          0.0
+        ],
+        [
+          10.0,
+          13.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f3",
+      "faceB": "s1_p0_i0_f7",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "7",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          10.0,
+          13.0,
+          0.0
+        ],
+        [
+          9.0,
+          14.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f7",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "8",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          0.0,
+          11.0,
+          0.0
+        ],
+        [
+          0.0,
+          3.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f8",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "8",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          0.0,
+          3.0,
+          0.0
+        ],
+        [
+          1.0,
+          2.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f8",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "4",
+      "flatmates.surfaceIdB": "8",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          1.0,
+          2.0,
+          0.0
+        ],
+        [
+          1.0,
+          12.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f4",
+      "faceB": "s1_p0_i0_f8",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "0",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "8",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          1.0,
+          12.0,
+          0.0
+        ],
+        [
+          0.0,
+          11.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i0_f8",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "9",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          6.0,
+          16.0,
+          0.0
+        ],
+        [
+          14.0,
+          16.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f9",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "10",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          4.0,
+          18.0,
+          0.0
+        ],
+        [
+          4.0,
+          17.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f10",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "9",
+      "flatmates.surfaceIdB": "10",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          6.0,
+          16.0,
+          0.0
+        ],
+        [
+          6.0,
+          20.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f9",
+      "faceB": "s1_p0_i1_f10",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "11",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          20.0,
+          20.0,
+          0.0
+        ],
+        [
+          17.0,
+          24.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f11",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "11",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          17.0,
+          24.0,
+          0.0
+        ],
+        [
+          14.0,
+          20.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f11",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "9",
+      "flatmates.surfaceIdB": "11",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          14.0,
+          20.0,
+          0.0
+        ],
+        [
+          14.0,
+          16.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f9",
+      "faceB": "s1_p0_i1_f11",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "11",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          14.0,
+          16.0,
+          0.0
+        ],
+        [
+          20.0,
+          16.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f11",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "9",
+      "flatmates.surfaceIdB": "12",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          6.0,
+          20.0,
+          0.0
+        ],
+        [
+          14.0,
+          20.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f9",
+      "faceB": "s1_p0_i1_f12",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "12",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          14.0,
+          20.0,
+          0.0
+        ],
+        [
+          14.0,
+          25.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f12",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "12",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          6.0,
+          25.0,
+          0.0
+        ],
+        [
+          6.0,
+          20.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f12",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "13",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          4.0,
+          17.0,
+          0.0
+        ],
+        [
+          2.0,
+          17.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f13",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "13",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          2.0,
+          17.0,
+          0.0
+        ],
+        [
+          0.0,
+          16.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f13",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "13",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          0.0,
+          16.0,
+          0.0
+        ],
+        [
+          6.0,
+          16.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f13",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "10",
+      "flatmates.surfaceIdB": "13",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          6.0,
+          16.0,
+          0.0
+        ],
+        [
+          4.0,
+          17.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f10",
+      "faceB": "s1_p0_i1_f13",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "10",
+      "flatmates.surfaceIdB": "14",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          4.0,
+          18.0,
+          0.0
+        ],
+        [
+          6.0,
+          20.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f10",
+      "faceB": "s1_p0_i1_f14",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "14",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          6.0,
+          20.0,
+          0.0
+        ],
+        [
+          3.0,
+          24.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f14",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "14",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          3.0,
+          24.0,
+          0.0
+        ],
+        [
+          0.0,
+          20.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f14",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "14",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          0.0,
+          20.0,
+          0.0
+        ],
+        [
+          2.0,
+          18.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f14",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "14",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          2.0,
+          18.0,
+          0.0
+        ],
+        [
+          4.0,
+          18.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f14",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "11",
+      "flatmates.surfaceIdB": "15",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          20.0,
+          20.0,
+          0.0
+        ],
+        [
+          20.0,
+          16.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f11",
+      "faceB": "s1_p0_i1_f15",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "15",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          20.0,
+          16.0,
+          0.0
+        ],
+        [
+          28.0,
+          16.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f15",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "16",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          11.0,
+          26.0,
+          0.0
+        ],
+        [
+          8.0,
+          26.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f16",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "16",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          8.0,
+          26.0,
+          0.0
+        ],
+        [
+          6.0,
+          25.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f16",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "12",
+      "flatmates.surfaceIdB": "16",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          6.0,
+          25.0,
+          0.0
+        ],
+        [
+          14.0,
+          25.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f12",
+      "faceB": "s1_p0_i1_f16",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "16",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          14.0,
+          25.0,
+          0.0
+        ],
+        [
+          11.0,
+          26.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f16",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "17",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          30.0,
+          17.0,
+          0.0
+        ],
+        [
+          30.0,
+          18.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f17",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "17",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          30.0,
+          18.0,
+          0.0
+        ],
+        [
+          28.0,
+          20.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f17",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "15",
+      "flatmates.surfaceIdB": "17",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          28.0,
+          20.0,
+          0.0
+        ],
+        [
+          28.0,
+          16.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f15",
+      "faceB": "s1_p0_i1_f17",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "17",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          28.0,
+          16.0,
+          0.0
+        ],
+        [
+          30.0,
+          17.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f17",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "18",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          26.0,
+          21.0,
+          0.0
+        ],
+        [
+          23.0,
+          21.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f18",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "15",
+      "flatmates.surfaceIdB": "18",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          20.0,
+          20.0,
+          0.0
+        ],
+        [
+          28.0,
+          20.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f15",
+      "faceB": "s1_p0_i1_f18",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "19",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          26.0,
+          24.0,
+          0.0
+        ],
+        [
+          26.0,
+          21.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f19",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "18",
+      "flatmates.surfaceIdB": "19",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          26.0,
+          21.0,
+          0.0
+        ],
+        [
+          28.0,
+          20.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f18",
+      "faceB": "s1_p0_i1_f19",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "19",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          28.0,
+          20.0,
+          0.0
+        ],
+        [
+          28.0,
+          25.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f19",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "19",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          28.0,
+          25.0,
+          0.0
+        ],
+        [
+          26.0,
+          24.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f19",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "20",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          23.0,
+          21.0,
+          0.0
+        ],
+        [
+          23.0,
+          24.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f20",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "20",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          23.0,
+          24.0,
+          0.0
+        ],
+        [
+          20.0,
+          25.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f20",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "20",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          20.0,
+          25.0,
+          0.0
+        ],
+        [
+          20.0,
+          20.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f20",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "1",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "18",
+      "flatmates.surfaceIdB": "20",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          20.0,
+          20.0,
+          0.0
+        ],
+        [
+          23.0,
+          21.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i1_f18",
+      "faceB": "s1_p0_i1_f20",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "21",
+      "flatmates.surfaceIdB": "22",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          7.0,
+          32.0,
+          0.0
+        ],
+        [
+          10.0,
+          32.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f21",
+      "faceB": "s1_p0_i2_f22",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "22",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          10.0,
+          32.0,
+          0.0
+        ],
+        [
+          10.0,
+          33.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f22",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "22",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          10.0,
+          33.0,
+          0.0
+        ],
+        [
+          7.0,
+          33.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f22",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "22",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          7.0,
+          33.0,
+          0.0
+        ],
+        [
+          7.0,
+          32.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f22",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "21",
+      "flatmates.surfaceIdB": "23",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          10.0,
+          29.0,
+          0.0
+        ],
+        [
+          7.0,
+          29.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f21",
+      "faceB": "s1_p0_i2_f23",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "23",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          7.0,
+          29.0,
+          0.0
+        ],
+        [
+          7.0,
+          28.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f23",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "23",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          7.0,
+          28.0,
+          0.0
+        ],
+        [
+          10.0,
+          28.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f23",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "23",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          10.0,
+          28.0,
+          0.0
+        ],
+        [
+          10.0,
+          29.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f23",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "21",
+      "flatmates.surfaceIdB": "24",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          7.0,
+          29.0,
+          0.0
+        ],
+        [
+          7.0,
+          32.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f21",
+      "faceB": "s1_p0_i2_f24",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "24",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          7.0,
+          32.0,
+          0.0
+        ],
+        [
+          6.0,
+          32.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f24",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "24",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          6.0,
+          32.0,
+          0.0
+        ],
+        [
+          6.0,
+          29.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f24",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "24",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          6.0,
+          29.0,
+          0.0
+        ],
+        [
+          7.0,
+          29.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f24",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "21",
+      "flatmates.surfaceIdB": "25",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          10.0,
+          32.0,
+          0.0
+        ],
+        [
+          10.0,
+          29.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f21",
+      "faceB": "s1_p0_i2_f25",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "25",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          10.0,
+          29.0,
+          0.0
+        ],
+        [
+          11.0,
+          29.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f25",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "25",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          11.0,
+          29.0,
+          0.0
+        ],
+        [
+          11.0,
+          32.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f25",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "2",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "25",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          11.0,
+          32.0,
+          0.0
+        ],
+        [
+          10.0,
+          32.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i2_f25",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "26",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          1.0,
+          28.0,
+          0.0
+        ],
+        [
+          3.0,
+          28.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f26",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "26",
+      "flatmates.surfaceIdB": "27",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          1.0,
+          28.0,
+          0.0
+        ],
+        [
+          1.0,
+          31.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f26",
+      "faceB": "s1_p0_i3_f27",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "27",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          1.0,
+          31.0,
+          0.0
+        ],
+        [
+          0.0,
+          31.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f27",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "27",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          0.0,
+          31.0,
+          0.0
+        ],
+        [
+          0.0,
+          28.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f27",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "27",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          0.0,
+          28.0,
+          0.0
+        ],
+        [
+          1.0,
+          28.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f27",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "26",
+      "flatmates.surfaceIdB": "28",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          3.0,
+          31.0,
+          0.0
+        ],
+        [
+          3.0,
+          28.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f26",
+      "faceB": "s1_p0_i3_f28",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "28",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          3.0,
+          28.0,
+          0.0
+        ],
+        [
+          4.0,
+          28.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f28",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "28",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          4.0,
+          28.0,
+          0.0
+        ],
+        [
+          4.0,
+          31.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f28",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "28",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          4.0,
+          31.0,
+          0.0
+        ],
+        [
+          3.0,
+          31.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f28",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "26",
+      "flatmates.surfaceIdB": "29",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          1.0,
+          31.0,
+          0.0
+        ],
+        [
+          3.0,
+          31.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f26",
+      "faceB": "s1_p0_i3_f29",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "29",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          3.0,
+          31.0,
+          0.0
+        ],
+        [
+          3.0,
+          32.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f29",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "29",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          1.0,
+          32.0,
+          0.0
+        ],
+        [
+          1.0,
+          31.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f29",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "fold",
+      "flatmates.surfaceIdA": "29",
+      "flatmates.surfaceIdB": "30",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          1.0,
+          32.0,
+          0.0
+        ],
+        [
+          3.0,
+          32.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f29",
+      "faceB": "s1_p0_i3_f30",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "30",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          3.0,
+          32.0,
+          0.0
+        ],
+        [
+          3.0,
+          35.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f30",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "30",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          3.0,
+          35.0,
+          0.0
+        ],
+        [
+          1.0,
+          35.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f30",
+      "pieceIndex": 0
+    },
+    {
+      "flatmates.groupId": "craft_Birdhouse",
+      "flatmates.pieceKey": "craft_Birdhouse#0",
+      "flatmates.islandId": "3",
+      "flatmates.role": "cut",
+      "flatmates.surfaceIdA": "30",
+      "flatmates.craftingStep": "1",
+      "flatmates.layer": "Birdhouse::1",
+      "curve": [
+        [
+          1.0,
+          35.0,
+          0.0
+        ],
+        [
+          1.0,
+          32.0,
+          0.0
+        ]
+      ],
+      "faceA": "s1_p0_i3_f30",
+      "pieceIndex": 0
+    }
+  ]
+}

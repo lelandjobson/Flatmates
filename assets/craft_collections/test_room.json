@@ -6,8 +6,8 @@
     {
       "type": "room",
       "center": [0, 0],
-      "width": 30,
-      "depth": 24,
+      "width": 64,
+      "depth": 52,
       "height": 14,
       "openings": [
         {"wall": "north", "kind": "door", "center": 0, "width": 6, "height": 10},
@@ -17,8 +17,11 @@
     }
   ],
   "crafts": [
-    {"puzzle": "cube", "at": [-7, 3], "turn": 20},
-    {"puzzle": "box-stack", "at": [6, -2], "turn": -10},
-    {"puzzle": "grid-cube", "at": [1, 7], "turn": 15}
+    {"puzzle": "cube", "at": [-12, 4], "turn": 20},
+    {"puzzle": "box-stack", "at": [8, -2], "turn": -10},
+    {"puzzle": "grid-cube", "at": [1, 12], "turn": 15},
+    {"puzzle": "rocket", "at": [-19, -14], "turn": 0},
+    {"puzzle": "birdhouse", "at": [22, 4], "turn": -15},
+    {"puzzle": "coffee-cup", "at": [-3.5, -15], "turn": 10}
   ]
 }

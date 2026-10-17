@@ -6,6 +6,7 @@ import 'package:flatmates/geometry/polygon_union.dart';
 import 'package:flatmates/gridcraft/blueprint.dart';
 import 'package:flatmates/gridcraft/cube_craft.dart';
 import 'package:flatmates/gridcraft/folded_model.dart';
+import 'package:flatmates/gridcraft/pattern_paper_painter.dart';
 import 'package:flatmates/gridcraft/placement.dart';
 import 'package:flatmates/gridcraft/wrap_cut.dart';
 import 'package:flatmates/papercut/craft_v1.dart';
@@ -163,6 +164,38 @@ void main() {
       0,
     );
     expect(alignedCell(short, 0), isNull);
+  });
+
+  test('lined-up linework fades from white to a fifth along its piece', () {
+    expect(kPatternLineOpacity, 0.44);
+    const face = [Offset(0, 0), Offset(2, 0), Offset(2, 2), Offset(0, 2)];
+    final lines = <(Offset, Offset)>[
+      (const Offset(0, 0), const Offset(2, 0)),
+      (const Offset(2, 0), const Offset(2, 2)),
+      (const Offset(2, 2), const Offset(0, 2)),
+      (const Offset(0, 2), const Offset(0, 0)),
+      (const Offset(2, 0), const Offset(4, 0)),
+      (const Offset(4, 0), const Offset(6, 0)),
+      (const Offset(6, 0), const Offset(8, 0)),
+      (const Offset(20, 0), const Offset(22, 0)),
+      (const Offset(22, 0), const Offset(22, 2)),
+      (const Offset(1, 2), const Offset(1, 4)),
+    ];
+    final glow = patternLineGlow(lines, [(ring: face, fade: 1)]);
+    for (var i = 0; i < 5; i++) {
+      expect(glow[i], 1, reason: 'line $i touches the face');
+    }
+    expect(glow[5], closeTo(0.6, 1e-9));
+    expect(glow[6], closeTo(kLineGlowFar, 1e-9));
+    expect(glow[7], 0);
+    expect(glow[8], 0);
+    // A line ending mid-edge of the face joins it directly.
+    expect(glow[9], 1);
+
+    final dim = patternLineGlow(lines, [(ring: face, fade: 0.5)]);
+    expect(dim[0], closeTo(0.5, 1e-9));
+    expect(dim[6], closeTo(0.1, 1e-9));
+    expect(dim[7], 0);
   });
 
   test('cuts can start at each vertex of the face the paper lies on', () {
@@ -362,28 +395,31 @@ void main() {
     );
   });
 
-  test('the blade travels along the paper edge between cuts', () {
+  test('the blade does not slide along the paper edge', () {
     final level = _level();
     final model = _model(level);
-    var cut = _start(
-      level,
-      model,
-      level.pattern!.sheet,
-      0,
-    ).placedAt(const Offset(0, 5));
-    cut = _cutThrough(cut, const [Offset(-2, 5), Offset(-2, 10)]);
-    expect(cut.travels(0), isFalse);
-    expect(cut.travels(1), isTrue);
-    expect(cut.finished, isFalse);
-    cut = _cutThrough(cut, const [Offset(0, 10), Offset(0, 5)]);
-    expect(cut.finished, isTrue);
-    final areas = [
-      for (final piece in cut.result!.pieces)
-        polygonSignedArea(piece.vertices).abs(),
-    ]..sort();
-    expect(areas.first, closeTo(10, 1e-6));
+    final cut = _cutThrough(
+      _start(
+        level,
+        model,
+        level.pattern!.sheet,
+        0,
+      ).placedAt(const Offset(0, 5)),
+      const [Offset(-2, 5)],
+    );
+    expect(cut.blade, const Offset(-2, 5));
+    expect(
+      cut.options().where(
+        (option) => (option.end - const Offset(-2, 10)).distance < 1e-6,
+      ),
+      isEmpty,
+    );
+    expect(
+      cut.options().map((option) => option.end),
+      contains(const Offset(0, 5)),
+    );
 
-    // Back along the cut is travel too.
+    // Back along the cut still travels, cutting nothing.
     final back = _cutThrough(
       _start(level, model, level.pattern!.sheet, 0).placedAt(Offset.zero),
       const [Offset(5, 0), Offset.zero],
