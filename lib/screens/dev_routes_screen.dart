@@ -13,6 +13,7 @@ const kDevMenuRouteNames = {
   'dynamic_grid_puzzles',
   'puzzle_editor',
   'tool_animations',
+  'asmr',
 };
 
 class DevRoutesScreen extends StatelessWidget {

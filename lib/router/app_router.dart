@@ -1,6 +1,7 @@
 import 'package:go_router/go_router.dart';
 
 import '../gridcraft/blueprint.dart';
+import '../screens/asmr_view.dart';
 import '../screens/cards_debug_view.dart';
 import '../screens/dev_routes_screen.dart';
 import '../screens/gesture_system_view.dart';
@@ -186,6 +187,11 @@ final router = GoRouter(
       path: '/line-puzzle',
       name: 'line_puzzle',
       builder: (context, state) => const LinePuzzleView(),
+    ),
+    GoRoute(
+      path: '/asmr',
+      name: 'asmr',
+      builder: (context, state) => const AsmrView(),
     ),
   ],
 );

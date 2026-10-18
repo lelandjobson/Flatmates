@@ -50,6 +50,7 @@ void main() {
         'dynamic_grid_puzzles',
         'puzzle_editor',
         'tool_animations',
+        'asmr',
       });
     });
   });
