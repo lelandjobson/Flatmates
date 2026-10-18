@@ -1,5 +1,6 @@
 import 'dart:ui';
 
+import '../geometry/geometry_algorithms.dart' show segmentIntersection;
 import '../geometry/polygon_union.dart';
 import '../gridcraft/blueprint.dart' show pointBounds;
 import '../gridcraft/folded_model.dart';
@@ -244,6 +245,51 @@ Map<int, double> faceCoverage(
     coverage[f] = covered / points.length;
   }
   return coverage;
+}
+
+/// Desk units within which paper counts as touching a blueprint edge.
+const double kAsmrBlueprintTouch = 0.5;
+
+/// Whether [piece] touches an outer edge of [net]. Fold lines inside the
+/// blueprint do not count, and paper that only covers a face's middle does
+/// not either.
+bool onBlueprintEdge(AsmrPiece piece, AsmrNet net) {
+  if (net.isEmpty) return false;
+  for (final outline in net.outlines) {
+    for (var i = 0; i < outline.length; i++) {
+      final a = outline[i];
+      final b = outline[(i + 1) % outline.length];
+      if (_edgeMeetsPiece(a, b, piece)) return true;
+    }
+  }
+  return false;
+}
+
+bool _edgeMeetsPiece(Offset a, Offset b, AsmrPiece piece) {
+  if (piece.contains(a) || piece.contains(b) || piece.contains((a + b) / 2)) {
+    return true;
+  }
+  final rings = [piece.deskRing, ...piece.deskHoles];
+  for (final ring in rings) {
+    for (var i = 0; i < ring.length; i++) {
+      final c = ring[i];
+      final d = ring[(i + 1) % ring.length];
+      if (segmentIntersection(a, b, c, d).hasIntersection) return true;
+      if (_distanceToSegment(c, a, b) <= kAsmrBlueprintTouch) return true;
+    }
+  }
+  return false;
+}
+
+double _distanceToSegment(Offset p, Offset a, Offset b) {
+  final ab = b - a;
+  final len2 = ab.dx * ab.dx + ab.dy * ab.dy;
+  if (len2 < 1e-12) return (p - a).distance;
+  final t = (((p.dx - a.dx) * ab.dx + (p.dy - a.dy) * ab.dy) / len2).clamp(
+    0.0,
+    1.0,
+  );
+  return (p - (a + ab * t)).distance;
 }
 
 /// Whether [piece] covers any of [net]'s faces.

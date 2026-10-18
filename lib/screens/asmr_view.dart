@@ -1028,6 +1028,10 @@ class _AsmrViewState extends State<AsmrView>
               rotateHandle: _deskTool == _DeskTool.select && selected != null
                   ? _handleFor(selected)
                   : null,
+              blueprint: _net,
+              shadowThrow: _settings.shadowThrow,
+              shadowSpread: _settings.shadowSpread,
+              shadowColor: _settings.shadowPaint,
             ),
             child: const SizedBox.expand(),
           ),
@@ -1161,11 +1165,7 @@ class _AsmrViewState extends State<AsmrView>
             if (_devToolsOpen)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
-                child: AsmrDevPanel(
-                  curveSmoothing: _settings.curveSmoothing,
-                  onCurveSmoothing: (value) =>
-                      _settings.curveSmoothing = value,
-                ),
+                child: AsmrDevPanel(settings: _settings),
               ),
           ],
         ),

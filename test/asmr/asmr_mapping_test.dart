@@ -136,6 +136,40 @@ void main() {
     expect(overhangOf(bound(const Size(20, 20), at: const Offset(200, 0))), isEmpty);
   });
 
+  test('only paper on the blueprint edge counts as touching it', () {
+    final wide = single.bounds.width;
+    final tall = single.bounds.height;
+    final inside = AsmrPiece.sheet(
+      id: 'in',
+      paper: kAsmrPapers.first,
+      at: Offset.zero,
+      size: Size(wide * 0.4, tall * 0.4),
+    );
+    final covering = AsmrPiece.sheet(
+      id: 'over',
+      paper: kAsmrPapers.first,
+      at: Offset.zero,
+      size: Size(wide + 8, tall + 8),
+    );
+    final along = AsmrPiece.sheet(
+      id: 'along',
+      paper: kAsmrPapers.first,
+      at: Offset(single.bounds.right + 10, 0),
+      size: const Size(20, 20),
+    );
+    final aside = AsmrPiece.sheet(
+      id: 'off',
+      paper: kAsmrPapers.first,
+      at: Offset(wide + 80, 0),
+      size: const Size(20, 20),
+    );
+    expect(onBlueprintEdge(inside, single), isFalse);
+    expect(onBlueprintEdge(covering, single), isTrue);
+    expect(onBlueprintEdge(along, single), isTrue);
+    expect(onBlueprintEdge(aside, single), isFalse);
+    expect(onBlueprintEdge(covering, AsmrNet.empty), isFalse);
+  });
+
   test('a piece overlaps the hologram only where it covers a face', () {
     expect(overlapsNet(bound(const Size(10, 10)), single), isTrue);
     expect(

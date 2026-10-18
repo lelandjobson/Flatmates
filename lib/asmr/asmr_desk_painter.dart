@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'asmr_mapping.dart';
+import 'asmr_net.dart';
 import 'asmr_paper.dart';
 import 'asmr_piece.dart';
 
@@ -26,6 +28,10 @@ class AsmrDeskPainter extends CustomPainter {
     this.knifeTip,
     this.finger,
     this.rotateHandle,
+    this.blueprint,
+    this.shadowThrow = 10,
+    this.shadowSpread = 8,
+    this.shadowColor = const Color(0x73000000),
   });
 
   final List<AsmrPiece> pieces;
@@ -48,6 +54,18 @@ class AsmrDeskPainter extends CustomPainter {
   /// The selected piece's rotate handle, on screen.
   final Offset? rotateHandle;
 
+  /// The hologram on the desk. Pieces on its outer edge cast [shadowColor].
+  final AsmrNet? blueprint;
+
+  /// How far that shadow is offset, in screen pixels, down and a little right.
+  final double shadowThrow;
+
+  /// How soft that shadow is, in screen pixels.
+  final double shadowSpread;
+
+  /// The shadow's color, alpha included.
+  final Color shadowColor;
+
   @override
   void paint(Canvas canvas, Size size) {
     canvas.drawRect(Offset.zero & size, Paint()..color = kAsmrDeskColor);
@@ -55,68 +73,21 @@ class AsmrDeskPainter extends CustomPainter {
     canvas.translate(origin.dx, origin.dy);
     canvas.scale(scale);
     final px = 1 / scale;
+    final net = blueprint;
+    final onEdge = <String>{
+      if (net != null)
+        for (final piece in pieces)
+          if (onBlueprintEdge(piece, net)) piece.id,
+    };
     for (final piece in pieces) {
-      final path = piece.localPath;
-      if (piece.liberated) {
-        canvas.save();
-        canvas.translate(1.6 * px, 2.8 * px);
-        canvas.transform(piece.pose.storage);
-        canvas.drawPath(
-          path,
-          Paint()
-            ..color = Colors.black.withValues(alpha: 0.35)
-            ..maskFilter = MaskFilter.blur(BlurStyle.normal, 3 * px),
-        );
-        canvas.restore();
+      if (!onEdge.contains(piece.id)) {
+        _paintPiece(canvas, piece, px, contactShadow: true);
       }
-      canvas.save();
-      canvas.transform(piece.pose.storage);
-      canvas.drawPath(path, tiles.paint(piece.paper));
-      if (piece.scores.isNotEmpty) {
-        canvas.save();
-        canvas.clipPath(path);
-        final groove = Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.3 * px
-          ..strokeCap = StrokeCap.round
-          ..strokeJoin = StrokeJoin.round
-          ..color = _kGroove.withValues(alpha: 0.6);
-        for (final score in piece.scores) {
-          canvas.drawPath(_polyline(score), groove);
-        }
-        canvas.restore();
-      }
-      canvas.drawPath(
-        path,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = px
-          ..color = _kGroove.withValues(alpha: 0.45),
-      );
-      final ring = flash[piece.id] ?? 0;
-      if (ring > 0) {
-        canvas.drawPath(
-          path,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = (2 + 5 * ring) * px
-            ..color = Colors.white.withValues(alpha: 0.85 * ring)
-            ..maskFilter = MaskFilter.blur(
-              BlurStyle.normal,
-              (2 * ring + 0.5) * px,
-            ),
-        );
-      }
-      if (piece.id == selectedId && selectedOutline > 0) {
-        canvas.drawPath(
-          path,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 2.2 * px
-            ..color = Colors.white.withValues(alpha: 0.95 * selectedOutline),
-        );
-      }
-      canvas.restore();
+    }
+    for (final piece in pieces) {
+      if (!onEdge.contains(piece.id)) continue;
+      _paintEdgeShadow(canvas, piece, px);
+      _paintPiece(canvas, piece, px, contactShadow: false);
     }
 
     final cut = stroke;
@@ -196,6 +167,96 @@ class AsmrDeskPainter extends CustomPainter {
       );
     }
     if (tip != null) _crosshair(canvas, tip);
+  }
+
+  /// Down and a little to the right, the way the shadow is thrown.
+  static const Offset _shadowDir = Offset(0.330, 0.944);
+
+  void _paintEdgeShadow(Canvas canvas, AsmrPiece piece, double px) {
+    if (shadowColor.a == 0) return;
+    final throwPx = shadowThrow.clamp(0.0, 80.0);
+    final spreadPx = shadowSpread.clamp(0.0, 80.0);
+    canvas.save();
+    canvas.translate(_shadowDir.dx * throwPx * px, _shadowDir.dy * throwPx * px);
+    canvas.transform(piece.pose.storage);
+    canvas.drawPath(
+      piece.localPath,
+      Paint()
+        ..color = shadowColor
+        ..maskFilter = spreadPx > 0.05
+            ? MaskFilter.blur(BlurStyle.normal, spreadPx * px)
+            : null,
+    );
+    canvas.restore();
+  }
+
+  void _paintPiece(
+    Canvas canvas,
+    AsmrPiece piece,
+    double px, {
+    required bool contactShadow,
+  }) {
+    final path = piece.localPath;
+    if (piece.liberated && contactShadow) {
+      canvas.save();
+      canvas.translate(1.6 * px, 2.8 * px);
+      canvas.transform(piece.pose.storage);
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = Colors.black.withValues(alpha: 0.35)
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, 3 * px),
+      );
+      canvas.restore();
+    }
+    canvas.save();
+    canvas.transform(piece.pose.storage);
+    canvas.drawPath(path, tiles.paint(piece.paper));
+    if (piece.scores.isNotEmpty) {
+      canvas.save();
+      canvas.clipPath(path);
+      final groove = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.3 * px
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..color = _kGroove.withValues(alpha: 0.6);
+      for (final score in piece.scores) {
+        canvas.drawPath(_polyline(score), groove);
+      }
+      canvas.restore();
+    }
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = px
+        ..color = _kGroove.withValues(alpha: 0.45),
+    );
+    final ring = flash[piece.id] ?? 0;
+    if (ring > 0) {
+      canvas.drawPath(
+        path,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = (2 + 5 * ring) * px
+          ..color = Colors.white.withValues(alpha: 0.85 * ring)
+          ..maskFilter = MaskFilter.blur(
+            BlurStyle.normal,
+            (2 * ring + 0.5) * px,
+          ),
+      );
+    }
+    if (piece.id == selectedId && selectedOutline > 0) {
+      canvas.drawPath(
+        path,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.2 * px
+          ..color = Colors.white.withValues(alpha: 0.95 * selectedOutline),
+      );
+    }
+    canvas.restore();
   }
 
   void _crosshair(Canvas canvas, Offset at) {
