@@ -34,9 +34,15 @@ class AsmrSlice {
 }
 
 /// Paper of a bound piece that hangs past its net, in paper coordinates. It
-/// lies flat in the plane of net face [face], the face it hangs off.
+/// lies flat in the plane of net face [face], the face it hangs off. A margin
+/// that runs along several faces is split at the folds, so each face carries
+/// only the paper hanging off its own edges.
 class AsmrOverhang {
-  const AsmrOverhang({required this.face, required this.ring, this.holes = const []});
+  const AsmrOverhang({
+    required this.face,
+    required this.ring,
+    this.holes = const [],
+  });
 
   final int face;
   final List<Offset> ring;
@@ -80,13 +86,9 @@ List<AsmrSlice> _slices(AsmrPiece piece) {
   for (final face in net.faces) {
     if (face.ring.length < 3) continue;
     final local = [for (final point in face.ring) piece.toLocal(point)];
-    final split = applyPapercutCuts(
-      PapercutSheet(pieces: [whole]),
-      [
-        [...local, local.first],
-      ],
-      recordStroke: false,
-    );
+    final split = applyPapercutCuts(PapercutSheet(pieces: [whole]), [
+      [...local, local.first],
+    ], recordStroke: false);
     for (final part in split?.pieces ?? [whole]) {
       final probe = _solidPoint(part);
       if (probe == null) continue;
@@ -101,7 +103,9 @@ List<AsmrSlice> _slices(AsmrPiece piece) {
 
 /// The parts of [piece] outside its binding's net that touch it, each given
 /// to the net face it shares the most outline with. Paper that does not
-/// touch the net is left out.
+/// touch the net is left out. Fold lines are cut through the margin, so a
+/// strip that runs past several faces is not left whole on the one face it
+/// touches most.
 List<AsmrOverhang> overhangOf(AsmrPiece piece) =>
     _overhangCache[piece] ??= _overhang(piece);
 
@@ -114,15 +118,19 @@ List<AsmrOverhang> _overhang(AsmrPiece piece) {
     vertices: piece.ring,
     holes: piece.holes,
   );
-  final outlines = [
+  final strokes = <List<Offset>>[
     for (final outline in net.outlines)
       if (outline.length >= 3)
-        [for (final p in [...outline, outline.first]) piece.toLocal(p)],
+        [
+          for (final p in [...outline, outline.first]) piece.toLocal(p),
+        ],
+    for (final edge in net.edges)
+      if (edge.fold) _acrossPiece(piece, edge.a, edge.b),
   ];
   final parts =
       applyPapercutCuts(
         PapercutSheet(pieces: [whole]),
-        outlines,
+        strokes,
         recordStroke: false,
       )?.pieces ??
       [whole];
@@ -149,14 +157,36 @@ List<AsmrOverhang> _overhang(AsmrPiece piece) {
       }
     }
     if (shared.isEmpty) continue;
-    final face = shared.entries
-        .reduce((a, b) => b.value > a.value ? b : a)
-        .key;
+    final face = shared.entries.reduce((a, b) => b.value > a.value ? b : a).key;
     result.add(
       AsmrOverhang(face: face, ring: part.vertices, holes: part.holes),
     );
   }
   return result;
+}
+
+/// [a]–[b] extended both ways until it crosses [piece]. The fold itself sits
+/// inside the net; the extension is what divides the margin between faces.
+List<Offset> _acrossPiece(AsmrPiece piece, Offset a, Offset b) {
+  final start = piece.toLocal(a);
+  final end = piece.toLocal(b);
+  final dir = end - start;
+  final len = dir.distance;
+  if (len < 1e-6) return const [];
+  final ring = piece.ring;
+  var minX = ring.first.dx;
+  var maxX = minX;
+  var minY = ring.first.dy;
+  var maxY = minY;
+  for (final p in ring) {
+    if (p.dx < minX) minX = p.dx;
+    if (p.dx > maxX) maxX = p.dx;
+    if (p.dy < minY) minY = p.dy;
+    if (p.dy > maxY) maxY = p.dy;
+  }
+  final unit = dir / len;
+  final span = (maxX - minX) + (maxY - minY) + len + 1;
+  return [start - unit * span, end + unit * span];
 }
 
 /// A point just inside [part]'s paper, off its holes, or null for a sliver.

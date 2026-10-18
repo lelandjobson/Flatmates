@@ -25,18 +25,22 @@ class AsmrDevSettings extends ChangeNotifier {
     double shadowSpread = 8,
     Color shadowColor = const Color(0xFF000000),
     double shadowOpacity = 0.45,
+    double darkOverlay = 0.22,
   }) : _file = file ?? _defaultFile(),
        _curveSmoothing = curveSmoothing.clamp(0.0, 1.0),
        _shadowThrow = shadowThrow.clamp(0.0, 40.0),
        _shadowSpread = shadowSpread.clamp(0.0, 40.0),
        _shadowColor = shadowColor.withValues(alpha: 1),
-       _shadowOpacity = shadowOpacity.clamp(0.0, 1.0);
+       _shadowOpacity = shadowOpacity.clamp(0.0, 1.0),
+       _darkOverlay = darkOverlay.clamp(0.0, 1.0);
 
   /// `~/.flatmates/asmr_devtools.json`, or a temp file under tests so a
   /// developer's saved slider does not change them.
   static File _defaultFile() {
     if (Platform.environment['FLUTTER_TEST'] == 'true') {
-      return File('${Directory.systemTemp.path}/flatmates_asmr_devtools_test.json');
+      return File(
+        '${Directory.systemTemp.path}/flatmates_asmr_devtools_test.json',
+      );
     }
     final home =
         Platform.environment['HOME'] ??
@@ -51,6 +55,7 @@ class AsmrDevSettings extends ChangeNotifier {
   double _shadowSpread;
   Color _shadowColor;
   double _shadowOpacity;
+  double _darkOverlay;
 
   /// 0 leaves a tool curve as drawn. 1 smooths it as far as it goes.
   double get curveSmoothing => _curveSmoothing;
@@ -110,6 +115,18 @@ class AsmrDevSettings extends ChangeNotifier {
   /// [shadowColor] at [shadowOpacity], ready to paint.
   Color get shadowPaint => _shadowColor.withValues(alpha: _shadowOpacity);
 
+  /// How dark a piece is when it is not touching a blueprint edge. 0 leaves
+  /// it as printed.
+  double get darkOverlay => _darkOverlay;
+
+  set darkOverlay(double value) {
+    final next = value.clamp(0.0, 1.0);
+    if ((next - _darkOverlay).abs() < 1e-6) return;
+    _darkOverlay = next;
+    notifyListeners();
+    _save();
+  }
+
   /// Reads the saved file. Missing or unreadable files leave the defaults.
   Future<void> load() async {
     try {
@@ -157,6 +174,14 @@ class AsmrDevSettings extends ChangeNotifier {
           changed = true;
         }
       }
+      final overlay = json['darkOverlay'];
+      if (overlay is num) {
+        final next = overlay.toDouble().clamp(0.0, 1.0);
+        if ((next - _darkOverlay).abs() >= 1e-6) {
+          _darkOverlay = next;
+          changed = true;
+        }
+      }
       if (changed) notifyListeners();
     } catch (_) {}
   }
@@ -171,6 +196,7 @@ class AsmrDevSettings extends ChangeNotifier {
           'shadowSpread': _shadowSpread,
           'shadowColor': _shadowColor.toARGB32(),
           'shadowOpacity': _shadowOpacity,
+          'darkOverlay': _darkOverlay,
         }),
       );
     } catch (_) {}
@@ -193,7 +219,7 @@ class _AsmrDevPanelState extends State<AsmrDevPanel> {
   @override
   Widget build(BuildContext context) {
     final height = MediaQuery.sizeOf(context).height;
-    final maxHeight = height.isFinite ? math.min(420.0, height * 0.62) : 420.0;
+    final maxHeight = height.isFinite ? math.min(520.0, height * 0.82) : 520.0;
     final settings = widget.settings;
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: 272, maxHeight: maxHeight),
@@ -272,11 +298,11 @@ class _Tab extends StatelessWidget {
       onTap: onTap,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: selected ? Colors.white.withValues(alpha: 0.14) : Colors.transparent,
+          color: selected
+              ? Colors.white.withValues(alpha: 0.14)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-            color: selected ? Colors.white54 : Colors.white24,
-          ),
+          border: Border.all(color: selected ? Colors.white54 : Colors.white24),
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -338,7 +364,7 @@ class _ShadowPage extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Pieces on the blueprint edge cast this shadow onto pieces that are not touching it. Throw is how far it is offset. Spread is how soft it gets.',
+          'Pieces on the blueprint edge cast this shadow onto pieces that are not touching it. Throw is how far it is offset. Spread is how soft it gets. Dark overlay is how much those other pieces are darkened.',
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.45),
             fontSize: 10,
@@ -371,6 +397,15 @@ class _ShadowPage extends StatelessWidget {
           divisions: 20,
           readout: '${(settings.shadowOpacity * 100).round()}%',
           onChanged: (value) => settings.shadowOpacity = value,
+        ),
+        _SliderRow(
+          label: 'Overlay',
+          sliderKey: const Key('asmr-dark-overlay'),
+          value: settings.darkOverlay,
+          max: 1,
+          divisions: 20,
+          readout: '${(settings.darkOverlay * 100).round()}%',
+          onChanged: (value) => settings.darkOverlay = value,
         ),
         const SizedBox(height: 4),
         const Text(

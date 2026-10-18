@@ -8,7 +8,6 @@ import '../gridcraft/folded_model.dart';
 import '../gridcraft/model_painter.dart' show kPreselectColor;
 import '../papercut/camera.dart';
 import 'asmr_mapping.dart';
-import 'asmr_net.dart';
 import 'asmr_paper.dart';
 import 'asmr_piece.dart';
 
@@ -24,7 +23,8 @@ const double _kShadeDark = 0.72;
 /// it, and each slice is drawn in its own face's plane, so the two sides meet
 /// on the fold. Overhang sticks out flat from the face it hangs off.
 /// [highlight] fills faces with the preselect color under their paper, so the
-/// paper keeps its own color.
+/// paper keeps its own color. [tint] lays a color, alpha included, over a
+/// face under the highlight.
 void addBoundPaper({
   required Canvas canvas,
   required Size size,
@@ -34,10 +34,26 @@ void addBoundPaper({
   required AsmrPaperTiles tiles,
   required void Function(double depth, VoidCallback paint) add,
   Map<int, double> highlight = const {},
+  Map<int, Color> tint = const {},
 }) {
   final view = camera.camera.viewMatrix;
   final screen = _screenFromWorld(camera, size);
   final eyeNear = camera.camera.near;
+  for (final entry in tint.entries) {
+    final face = model.faces[entry.key];
+    final ring = face.worldRing();
+    if (!_inFront(view, ring, eyeNear)) continue;
+    final Matrix4 faceToScreen = screen * face.toWorld;
+    add(_depth(view, ring) + 3e-7, () {
+      canvas.save();
+      canvas.transform(_flat(faceToScreen));
+      canvas.drawPath(
+        Path()..addPolygon(face.outline, true),
+        Paint()..color = entry.value,
+      );
+      canvas.restore();
+    });
+  }
   for (final entry in highlight.entries) {
     final t = Curves.easeOut.transform(entry.value.clamp(0.0, 1.0));
     if (t <= 0) continue;
@@ -64,8 +80,6 @@ void addBoundPaper({
     for (final netFace in net.faces) {
       final f = netFace.face;
       final face = model.faces[f];
-      final ring = face.worldRing();
-      if (!_inFront(view, ring, eyeNear)) continue;
       final Matrix4 faceToScreen = screen * face.toWorld;
       final Matrix4 paperToFace = netFace.netToFace * piece.pose;
       final paint = tiles.paint(
@@ -73,9 +87,15 @@ void addBoundPaper({
         shade: _shade(model.outwardNormal(f)),
       );
       final tie = ++order * 1e-6;
+      List<Vector3> worldOf(List<Offset> loop) => [
+        for (final p in loop)
+          face.toWorld.transformed3(paperToFace.transformed3(_vec(p))),
+      ];
       for (final slice in slices) {
         if (slice.face != f) continue;
-        add(_depth(view, ring) + _kPaperDepthBias + tie, () {
+        final corners = worldOf(slice.ring);
+        if (!_inFront(view, corners, eyeNear)) continue;
+        add(_depth(view, corners) + _kPaperDepthBias + tie, () {
           canvas.save();
           canvas.transform(_flat(faceToScreen));
           canvas.transform(paperToFace.storage);
@@ -85,12 +105,7 @@ void addBoundPaper({
       }
       for (final part in overhang) {
         if (part.face != f) continue;
-        final corners = [
-          for (final p in part.ring)
-            face.toWorld.transformed3(
-              _vec(applyAffine(netFace.netToFace, piece.toDesk(p))),
-            ),
-        ];
+        final corners = worldOf(part.ring);
         if (!_inFront(view, corners, eyeNear)) continue;
         add(_depth(view, corners) + _kPaperDepthBias + tie, () {
           canvas.save();

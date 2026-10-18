@@ -27,7 +27,9 @@ AsmrPiece _sheet({
 
 void main() {
   test('a stroke across the sheet frees the smaller part', () {
-    final cut = cutPieces([_sheet()], _line(const Offset(20, -60), const Offset(20, 60)))!;
+    final cut = cutPieces([
+      _sheet(),
+    ], _line(const Offset(20, -60), const Offset(20, 60)))!;
     expect(cut.pieces, hasLength(2));
     expect(cut.split, isTrue);
     final freed = cut.pieces.where((p) => cut.freed.contains(p.id)).single;
@@ -39,7 +41,9 @@ void main() {
   });
 
   test('a cut that stops short of the edge scores, and a second one frees', () {
-    final first = cutPieces([_sheet()], _line(const Offset(20, -60), const Offset(20, 0)))!;
+    final first = cutPieces([
+      _sheet(),
+    ], _line(const Offset(20, -60), const Offset(20, 0)))!;
     expect(first.split, isFalse);
     expect(first.pieces.single.scores, hasLength(1));
     final second = cutPieces(
@@ -70,10 +74,9 @@ void main() {
 
   test('cuts land in paper coordinates of a moved, turned piece', () {
     final sheet = _sheet(at: const Offset(300, 100), angle: math.pi / 2);
-    final cut = cutPieces(
-      [sheet],
-      _line(const Offset(240, 120), const Offset(360, 120)),
-    )!;
+    final cut = cutPieces([
+      sheet,
+    ], _line(const Offset(240, 120), const Offset(360, 120)))!;
     expect(cut.pieces, hasLength(2));
     for (final piece in cut.pieces) {
       expect(piece.position, sheet.position);
@@ -90,7 +93,9 @@ void main() {
       const HologramPick(0),
     ]);
     final bound = _sheet().copyWith(liberated: true, binding: net);
-    final cut = cutPieces([bound], _line(const Offset(20, -60), const Offset(20, 60)))!;
+    final cut = cutPieces([
+      bound,
+    ], _line(const Offset(20, -60), const Offset(20, 60)))!;
     for (final piece in cut.pieces) {
       expect(piece.binding, same(net));
       expect(piece.liberated, isTrue);
@@ -103,12 +108,19 @@ void main() {
     expect((turned.deskCentroid - piece.deskCentroid).distance, lessThan(1e-9));
   });
 
+  test('turning about an edge center keeps that center in place', () {
+    final piece = _sheet(at: const Offset(10, 20));
+    const above = Offset(10, -80);
+    final pivot = piece.edgeCenterOpposite(above);
+    expect(pivot, const Offset(10, -30));
+    final turned = piece.turnedAbout(math.pi / 2, pivot);
+    final local = piece.toLocal(pivot);
+    expect((turned.toDesk(local) - pivot).distance, lessThan(1e-9));
+    expect((turned.deskCentroid - piece.deskCentroid).distance, greaterThan(1));
+  });
+
   test('curve smoothing keeps the ends and pulls a corner in', () {
-    const corner = [
-      Offset(0, 0),
-      Offset(10, 0),
-      Offset(10, 10),
-    ];
+    const corner = [Offset(0, 0), Offset(10, 0), Offset(10, 10)];
     final raw = smoothToolCurve(corner, 0);
     expect(raw, corner);
     final smooth = smoothToolCurve(corner, 1);
@@ -117,34 +129,99 @@ void main() {
     expect(smooth[1].dx, lessThan(10));
   });
 
-  test('a straight segment cuts every piece it crosses, and stops at its ends', () {
-    final left = _sheet(id: 'left', at: const Offset(-80, 0));
-    final right = _sheet(id: 'right', at: const Offset(80, 0));
-    final aside = _sheet(id: 'aside', at: const Offset(0, 200));
-    const segment = [Offset(-200, 0), Offset(200, 0)];
-    final cut = cutPieces([left, right, aside], segment, exact: true)!;
-    expect(cut.pieces, hasLength(5));
-    expect(cut.freed, hasLength(2));
-    final untouched = cut.pieces.where((p) => p.id == aside.id).single;
-    expect(untouched.ring, aside.ring);
-    for (final piece in cut.pieces.where((p) => p.id != aside.id)) {
-      for (final point in piece.ring) {
-        final onCut = (point.dy).abs() < 1e-6;
-        final corner =
-            (point.dx.abs() - 50).abs() < 1e-6 &&
-            (point.dy.abs() - 50).abs() < 1e-6;
-        expect(onCut || corner, isTrue, reason: '$point');
+  test(
+    'a straight segment cuts every piece it crosses, and stops at its ends',
+    () {
+      final left = _sheet(id: 'left', at: const Offset(-80, 0));
+      final right = _sheet(id: 'right', at: const Offset(80, 0));
+      final aside = _sheet(id: 'aside', at: const Offset(0, 200));
+      const segment = [Offset(-200, 0), Offset(200, 0)];
+      final cut = cutPieces([left, right, aside], segment, exact: true)!;
+      expect(cut.pieces, hasLength(5));
+      expect(cut.freed, hasLength(2));
+      final untouched = cut.pieces.where((p) => p.id == aside.id).single;
+      expect(untouched.ring, aside.ring);
+      for (final piece in cut.pieces.where((p) => p.id != aside.id)) {
+        for (final point in piece.ring) {
+          final onCut = (point.dy).abs() < 1e-6;
+          final corner =
+              (point.dx.abs() - 50).abs() < 1e-6 &&
+              (point.dy.abs() - 50).abs() < 1e-6;
+          expect(onCut || corner, isTrue, reason: '$point');
+        }
       }
+    },
+  );
+
+  test(
+    'a straight segment that stops inside the paper is not carried to the edge',
+    () {
+      const segment = [Offset(20, -60), Offset(20, 48)];
+      final exact = cutPieces([_sheet()], segment, exact: true)!;
+      expect(exact.split, isFalse);
+      expect(exact.pieces.single.scores, [segment]);
+      final reached = cutPieces([_sheet()], segment)!;
+      expect(reached.split, isTrue);
+    },
+  );
+
+  test('the straight cut preview lies on the paper it will cut', () {
+    final preview = straightCutPreview(
+      [_sheet()],
+      const Offset(-5, 10),
+      const Offset(5, 10),
+    );
+    expect(preview, hasLength(1));
+    final xs = preview.single.map((p) => p.dx).toList()..sort();
+    expect(xs.first, closeTo(-50, 1e-4));
+    expect(xs.last, closeTo(50, 1e-4));
+    for (final p in preview.single) {
+      expect(p.dy, closeTo(10, 1e-6));
     }
   });
 
-  test('a straight segment that stops inside the paper is not carried to the edge', () {
-    const segment = [Offset(20, -60), Offset(20, 48)];
-    final exact = cutPieces([_sheet()], segment, exact: true)!;
-    expect(exact.split, isFalse);
-    expect(exact.pieces.single.scores, [segment]);
-    final reached = cutPieces([_sheet()], segment)!;
-    expect(reached.split, isTrue);
+  test('a short straight drag cuts right through each piece it touches', () {
+    final sheet = _sheet(id: 'sheet');
+    final along = _sheet(id: 'along', at: const Offset(300, 0));
+    final cut = cutPiecesAlongLine(
+      [sheet, along],
+      const Offset(-5, 10),
+      const Offset(5, 10),
+    )!;
+    expect(cut.freed, hasLength(1));
+    expect(cut.pieces.where((p) => p.id == 'along').single.ring, along.ring);
+    final parts = cut.pieces.where((p) => p.id != 'along').toList();
+    expect(parts, hasLength(2));
+    final areas = parts.map((p) => p.area).toList()..sort();
+    expect(areas.first, closeTo(40 * 100, 1));
+    expect(areas.last, closeTo(60 * 100, 1));
+  });
+
+  test('a limit on the line stops the straight cut short', () {
+    final lines = straightCutLines(
+      [_sheet()],
+      const Offset(-5, 10),
+      const Offset(5, 10),
+      hi: 2.5,
+    );
+    final line = lines.single.$2;
+    expect(line.first.dx, closeTo(-50.5, 1e-9));
+    expect(line.last.dx, closeTo(20, 1e-9));
+    final cut = cutPiecesAlongLine(
+      [_sheet()],
+      const Offset(-5, 10),
+      const Offset(5, 10),
+      hi: 2.5,
+    )!;
+    expect(cut.split, isFalse);
+    expect(cut.pieces.single.scores, hasLength(1));
+  });
+
+  test('a straight drag that misses the paper cuts nothing', () {
+    expect(
+      cutPiecesAlongLine([_sheet()], const Offset(-5, 80), const Offset(5, 80)),
+      isNull,
+    );
   });
 
   test('a stroke off the paper misses', () {

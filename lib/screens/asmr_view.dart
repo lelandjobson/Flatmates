@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -11,14 +12,18 @@ import 'package:vector_math/vector_math_64.dart' hide Colors;
 import '../asmr/asmr_cube.dart';
 import '../asmr/asmr_dev.dart';
 import '../asmr/asmr_desk_painter.dart';
+import '../asmr/asmr_group.dart';
 import '../asmr/asmr_mapping.dart';
 import '../asmr/asmr_model_paper.dart';
 import '../asmr/asmr_net.dart';
 import '../asmr/asmr_paper.dart';
 import '../asmr/asmr_piece.dart';
+import '../asmr/asmr_scrub.dart';
+import '../asmr/asmr_session.dart';
+import '../asmr/asmr_straight_edge.dart';
 import '../asmr/hologram_painter.dart';
 import '../asmr/hologram_selection.dart';
-import '../gridcraft/edit.dart' show MarqueePick, marqueePick;
+import '../gridcraft/edit.dart' show MarqueePick, marqueePick, polygonInMarquee;
 import '../gridcraft/folded_model.dart';
 import '../gridcraft/model_painter.dart';
 import '../gridcraft/wrap_cut.dart' show FaceNeighbor, faceAdjacency;
@@ -38,6 +43,10 @@ const Duration _kPreselectFade = Duration(milliseconds: 180);
 const Duration _kEdgeFade = Duration(milliseconds: 250);
 const Duration _kOutlineFade = Duration(milliseconds: 250);
 const Duration _kFlashFade = Duration(milliseconds: 600);
+const Duration _kStraightEdgeFly = Duration(milliseconds: 450);
+
+/// How long a refused pickup takes to ease back to where it was taken from.
+const Duration _kWarp = Duration(milliseconds: 360);
 
 /// Seconds for the hologram's 3D framing to settle most of the way.
 const double _kHoloSettle = 0.12;
@@ -64,6 +73,14 @@ const int _kSplitCheckEvery = 4;
 const double _kHandleLift = 30;
 const double _kHandleRadius = 22;
 
+/// Empty space between the icons of neighboring tools: a 56px slot holds a
+/// 24px icon. Undo and redo keep half again that much space from the
+/// nearest tool. Their own icon is centered in a 40px box, and a tool icon
+/// starts 16px into its slot, so the pad on the widget is what remains.
+const double _kHistoryPad = 32 * 1.5 - 8 - 16;
+
+const int _kHistoryDepth = 40;
+
 /// Desk units that fit across the shorter side of the screen when the desk
 /// first opens.
 const double _kDeskSpan = 260;
@@ -81,10 +98,13 @@ final Vector3 _kModelUp = Vector3(0, 0, 1);
 /// dragged segment. Paper cut free over the hologram wraps those faces,
 /// until every face is filled.
 class AsmrView extends StatefulWidget {
-  const AsmrView({super.key, this.settings});
+  const AsmrView({super.key, this.settings, this.sessionFile});
 
   /// Saved DevTools values. Null uses the file in the home directory.
   final AsmrDevSettings? settings;
+
+  /// Where Save and Load keep the desk. Null uses `~/.flatmates/asmr_session.json`.
+  final File? sessionFile;
 
   @override
   State<AsmrView> createState() => _AsmrViewState();
@@ -98,7 +118,69 @@ class _HoloEdge {
   double target = 1;
 }
 
-enum _Drag { none, orbit, pan, marquee, cut, straight, move, rotate, deskPan }
+enum _Drag {
+  none,
+  orbit,
+  pan,
+  marquee,
+  cut,
+  straight,
+  move,
+  rotate,
+  pieceBox,
+  deskPan,
+  edgeSlide,
+  edgeTurn,
+}
+
+/// Where a dragged selection was released.
+enum _Bin { none, inventory, trash }
+
+/// Where a piece was when Select picked it up.
+class _Held {
+  _Held(this.id, this.position, this.angle);
+
+  final String id;
+  final Offset position;
+  final double angle;
+}
+
+/// Desk paper and the hologram it was cut against, for one undo step.
+class _CraftStep {
+  _CraftStep({
+    required this.loose,
+    required this.groups,
+    required this.picks,
+    required this.nextSheet,
+    required this.selectedIds,
+    required this.stowed,
+  });
+
+  final List<AsmrPiece> loose;
+  final List<AsmrGroup> groups;
+  final List<HologramPick> picks;
+  final int nextSheet;
+  final Set<String> selectedIds;
+  final List<AsmrPiece> stowed;
+}
+
+/// A piece easing from [from] back to [to], slow at both ends.
+class _Warp {
+  _Warp({
+    required this.id,
+    required this.from,
+    required this.to,
+    required this.fromAngle,
+    required this.toAngle,
+  });
+
+  final String id;
+  final Offset from;
+  final Offset to;
+  final double fromAngle;
+  final double toAngle;
+  double t = 0;
+}
 
 class _AsmrViewState extends State<AsmrView>
     with SingleTickerProviderStateMixin {
@@ -122,7 +204,23 @@ class _AsmrViewState extends State<AsmrView>
   final Map<String, _HoloEdge> _holoEdges = {};
   double _holoScale = 0;
 
-  final List<AsmrPiece> _pieces = [];
+  /// Paper laid with no faces selected.
+  final List<AsmrPiece> _loose = [];
+
+  /// A desk for faces that have no group yet. Opening the desk makes one.
+  final List<AsmrPiece> _ungrouped = [];
+  final List<AsmrGroup> _groups = [];
+
+  /// The group of the selected faces, whose paper the desk shows.
+  AsmrGroup? _group;
+
+  List<AsmrPiece> get _pieces =>
+      _group?.pieces ?? (_selection.picks.isEmpty ? _loose : _ungrouped);
+
+  Iterable<AsmrPiece> get _allPieces => [
+    ..._loose,
+    for (final group in _groups) ...group.pieces,
+  ];
   Offset _deskOrigin = Offset.zero;
   double _deskScale = 2.5;
   _DeskTool _deskTool = _DeskTool.exacto;
@@ -130,7 +228,13 @@ class _AsmrViewState extends State<AsmrView>
   int? _hoverFace;
   Offset? _marqueeStart;
   Offset? _marqueeEnd;
-  String? _selectedId;
+  final Set<String> _selectedIds = {};
+  Set<String>? _pieceBoxHome;
+  final Set<String> _moveIds = {};
+  final List<AsmrPiece> _stowed = [];
+  _Bin _bin = _Bin.none;
+  final GlobalKey _drawerKey = GlobalKey();
+  final GlobalKey _trashKey = GlobalKey();
   double _selectedOutline = 0;
   final Map<String, double> _flash = {};
   int _nextSheet = 0;
@@ -153,6 +257,31 @@ class _AsmrViewState extends State<AsmrView>
   double _rotateFrom = 0;
   double _rotateBase = 0;
 
+  /// Desk point the rotate handle hinges on: the center of the outline
+  /// edge it sits across from, held for the whole drag.
+  Offset _rotatePivot = Offset.zero;
+
+  /// Pose of the piece Select is holding, so a scrub can put it back.
+  final List<_Held> _held = [];
+  final List<_Warp> _warps = [];
+
+  final List<_CraftStep> _undoStack = [];
+  final List<_CraftStep> _redoStack = [];
+
+  /// Desk state at the start of a move or turn, committed if the piece changed.
+  _CraftStep? _gestureBefore;
+
+  /// Faces the marquee started from, restored if that drag is scrubbed away.
+  List<HologramPick>? _marqueeHome;
+
+  /// Straight-edge pose at the start of a slide or turn.
+  bool _edgeGrabbed = false;
+  Offset _edgeHomeAnchor = Offset.zero;
+  double _edgeHomeAngle = 0;
+
+  final Map<int, AsmrScrub> _scrubs = {};
+  final AsmrScrub _focalScrub = AsmrScrub();
+
   late final AsmrDevSettings _settings = widget.settings ?? AsmrDevSettings();
   AsmrDevSettings? _ownedSettings;
   bool _devToolsOpen = false;
@@ -161,9 +290,26 @@ class _AsmrViewState extends State<AsmrView>
   List<Offset>? _rawStroke;
   List<Offset>? _stroke;
 
-  /// The straight cut under way, in desk units. The cut is this segment.
+  /// The straight cut under way, in desk units. The segment sets the line;
+  /// the cut runs along it through each piece it touches.
   Offset? _segmentStart;
   Offset? _segmentEnd;
+  List<List<Offset>> _segmentReach = const [];
+
+  /// The straight edge, held to the screen. It stays out while other tools
+  /// are used, until its toolbar button is toggled off.
+  AsmrStraightEdge? _edge;
+  bool _edgeOn = false;
+  double _edgeShown = 0;
+
+  /// +1 or -1: the side of the straight edge it flies out to, and in from.
+  int _edgeFlySide = 1;
+  double _edgeTurnFrom = 0;
+  double _edgeTurnBase = 0;
+  Offset _edgePivot = Offset.zero;
+
+  /// The side of the straight edge the exacto cut under way keeps to.
+  int? _knifeSide;
   Offset? _tipDesk;
   Offset? _finger;
   double _tickDistance = 0;
@@ -191,9 +337,7 @@ class _AsmrViewState extends State<AsmrView>
 
   void _onDevSettings() {
     final raw = _rawStroke;
-    if (raw != null) {
-      _stroke = smoothToolCurve(raw, _settings.curveSmoothing);
-    }
+    if (raw != null) _stroke = _smoothed(raw);
     if (mounted) setState(() {});
   }
 
@@ -212,13 +356,14 @@ class _AsmrViewState extends State<AsmrView>
       final half = _camera
           .frameSphere(center, _model.radius * 2.2, size)
           .halfHeight;
-      final pose = CameraPose(
-        lookAt: Offset(center.x, center.y),
-        lookAtZ: center.z,
-        halfHeight: half,
-      ).withAngles(
-        _camera.anglesAlong(_turntableDirection(-1.0, 0.5), up: _kModelUp),
-      );
+      final pose =
+          CameraPose(
+            lookAt: Offset(center.x, center.y),
+            lookAtZ: center.z,
+            halfHeight: half,
+          ).withAngles(
+            _camera.anglesAlong(_turntableDirection(-1.0, 0.5), up: _kModelUp),
+          );
       _camera.beginFly(pose);
       _camera.setFly(1);
       _refreshHover();
@@ -316,8 +461,18 @@ class _AsmrViewState extends State<AsmrView>
   // Hologram
   // -------------------------------------------------------------------------
 
+  /// Lays out the hologram of the selection. Faces that make up a group
+  /// take that group's layout, so its paper lines up again.
   void _rebuildNet() {
-    _net = unfoldSelection(_model, _adjacency, _selection.picks);
+    final group = groupOfFaces(_groups, _selection.faces);
+    if (group != null) _selection.replace(group.picks);
+    if (!identical(group, _group)) {
+      _group = group;
+      _selectedIds.clear();
+      _held.clear();
+      _moveIds.clear();
+    }
+    _net = group?.net ?? unfoldSelection(_model, _adjacency, _selection.picks);
     final keys = <String>{};
     for (final edge in _net.edges) {
       keys.add(edge.key);
@@ -333,6 +488,53 @@ class _AsmrViewState extends State<AsmrView>
     for (final entry in _holoEdges.entries) {
       if (!keys.contains(entry.key)) entry.value.target = 0;
     }
+    _attachToBlueprint();
+  }
+
+  /// Gives the selected faces a group when the desk opens on them.
+  void _ensureGroup() {
+    if (_group != null || _selection.picks.isEmpty) return;
+    final group = AsmrGroup(
+      letter: nextGroupLetter(_groups),
+      picks: List.of(_selection.picks),
+      net: _net,
+      pieces: List.of(_ungrouped),
+    );
+    _ungrouped.clear();
+    _groups.add(group);
+    _group = group;
+    _attachToBlueprint();
+  }
+
+  /// Drops each group with no paper on its faces. What paper it had left
+  /// goes to the drawer.
+  void _pruneGroups() {
+    for (final group in _groups.where((g) => !g.anchored).toList()) {
+      _stowed.addAll([for (final piece in group.pieces) piece.unbound()]);
+      _groups.remove(group);
+      if (identical(group, _group)) {
+        _group = null;
+        _selectedIds.clear();
+      }
+    }
+  }
+
+  /// The group a tap on [face] takes: the open one if it has that face,
+  /// else the latest made that does.
+  AsmrGroup? _groupWith(int face) {
+    final open = _group;
+    if (open != null && open.faces.contains(face)) return open;
+    for (final group in _groups.reversed) {
+      if (group.faces.contains(face)) return group;
+    }
+    return null;
+  }
+
+  void _openGroup(AsmrGroup group) {
+    setState(() {
+      _selection.replace(group.picks);
+      _rebuildNet();
+    });
   }
 
   double _holoTarget() {
@@ -394,7 +596,7 @@ class _AsmrViewState extends State<AsmrView>
 
     _selectedOutline = step(
       _selectedOutline,
-      _selectedId == null ? 0 : 1,
+      _selectedIds.isEmpty ? 0 : 1,
       _kOutlineFade,
     );
     for (final id in _flash.keys.toList()) {
@@ -410,16 +612,47 @@ class _AsmrViewState extends State<AsmrView>
       _complete ? 1 : 0,
       const Duration(milliseconds: 800),
     );
+    _edgeShown = step(_edgeShown, _edgeOn ? 1 : 0, _kStraightEdgeFly);
+
+    if (_warps.isNotEmpty) {
+      final span = _kWarp.inMicroseconds / 1e6;
+      _warps.removeWhere((warp) {
+        warp.t = math.min(1, warp.t + dt / span);
+        final i = _pieces.indexWhere((p) => p.id == warp.id);
+        if (i < 0) return true;
+        final u = Curves.easeInOutCubic.transform(warp.t);
+        var delta = warp.toAngle - warp.fromAngle;
+        while (delta > math.pi) {
+          delta -= math.pi * 2;
+        }
+        while (delta < -math.pi) {
+          delta += math.pi * 2;
+        }
+        _pieces[i] = _pieces[i].copyWith(
+          position: Offset.lerp(warp.from, warp.to, u)!,
+          angle: warp.fromAngle + delta * u,
+        );
+        changed = true;
+        return warp.t >= 1;
+      });
+    }
     if (changed || _complete) setState(() {});
   }
 
   void _toggleMode() {
     setState(() {
       _in3d = !_in3d;
+      if (_in3d) {
+        _pruneGroups();
+      } else {
+        _ensureGroup();
+      }
       _rawStroke = null;
       _stroke = null;
+      _knifeSide = null;
       _segmentStart = null;
       _segmentEnd = null;
+      _segmentReach = const [];
       _tipDesk = null;
       _finger = null;
       _marqueeStart = null;
@@ -437,10 +670,16 @@ class _AsmrViewState extends State<AsmrView>
   Offset _toScreen(Offset desk) => _deskOrigin + desk * _deskScale;
 
   AsmrPiece? get _selected {
+    if (_selectedIds.length != 1) return null;
+    final id = _selectedIds.single;
     for (final piece in _pieces) {
-      if (piece.id == _selectedId) return piece;
+      if (piece.id == id) return piece;
     }
     return null;
+  }
+
+  void _keepSelection() {
+    _selectedIds.removeWhere((id) => !_pieces.any((piece) => piece.id == id));
   }
 
   Offset? _handleFor(AsmrPiece piece) {
@@ -472,14 +711,18 @@ class _AsmrViewState extends State<AsmrView>
 
   void _placeSheet(AsmrPaper paper, Offset desk) {
     setState(() {
+      _pushUndo();
       final piece = AsmrPiece.sheet(
         id: '${paper.id}-${_nextSheet++}',
         paper: paper,
         at: desk,
       );
       _pieces.add(piece);
-      _selectedId = piece.id;
+      _selectedIds
+        ..clear()
+        ..add(piece.id);
       _flash[piece.id] = 0.6;
+      _attachToBlueprint();
     });
   }
 
@@ -488,31 +731,40 @@ class _AsmrViewState extends State<AsmrView>
     if (i >= 0) _pieces[i] = piece;
   }
 
-  /// Binds [piece] to the hologram if it is liberated, unbound, and over it.
-  AsmrPiece _bindIfOver(AsmrPiece piece) {
-    if (!piece.liberated || piece.binding != null || _net.isEmpty) {
-      return piece;
+  /// Attaches every piece of the open group that overlaps its blueprint's
+  /// outer edge to the group's faces. Attached pieces stay attached when the
+  /// selection moves on.
+  void _attachToBlueprint() {
+    final group = _group;
+    if (group == null || group.net.isEmpty) return;
+    final pieces = group.pieces;
+    var changed = false;
+    for (var i = 0; i < pieces.length; i++) {
+      final piece = pieces[i];
+      if (identical(piece.binding, group.net)) continue;
+      if (!onBlueprintEdge(piece, group.net)) continue;
+      pieces[i] = piece.copyWith(binding: group.net);
+      changed = true;
     }
-    return overlapsNet(piece, _net) ? piece.copyWith(binding: _net) : piece;
+    if (changed) _refreshCoverage();
   }
 
   void _applyCut(AsmrCut cut) {
+    _pushUndo();
     _pieces
       ..clear()
-      ..addAll([
-        for (final piece in cut.pieces)
-          cut.freed.contains(piece.id) ? _bindIfOver(piece) : piece,
-      ]);
+      ..addAll(cut.pieces);
+    _attachToBlueprint();
     for (final id in cut.freed) {
       _flash[id] = 1;
     }
-    if (_selectedId != null && _selected == null) _selectedId = null;
+    _keepSelection();
     if (cut.split) HapticFeedback.mediumImpact();
     _refreshCoverage();
   }
 
   void _refreshCoverage() {
-    _coverage = faceCoverage(_model, _pieces);
+    _coverage = faceCoverage(_model, _allPieces);
     final done =
         _coverage.length == _model.faces.length &&
         _coverage.values.every((c) => c >= kAsmrFilled);
@@ -520,12 +772,258 @@ class _AsmrViewState extends State<AsmrView>
     _complete = done;
   }
 
+  File get _sessionFile => widget.sessionFile ?? asmrSessionFile();
+
+  void _saveSession() {
+    final edge = _edge;
+    final pieces = <AsmrPiece>[];
+    final pieceGroups = <int?>[];
+    for (final piece in _loose) {
+      pieces.add(piece);
+      pieceGroups.add(null);
+    }
+    for (final group in _groups) {
+      for (final piece in group.pieces) {
+        pieces.add(piece);
+        pieceGroups.add(group.letter);
+      }
+    }
+    AsmrSession(
+      picks: _selection.picks,
+      pieces: pieces,
+      bindings: [
+        for (final piece in pieces) picksOfNet(piece.binding ?? AsmrNet.empty),
+      ],
+      groups: {for (final group in _groups) group.letter: group.picks},
+      pieceGroups: pieceGroups,
+      deskOrigin: _deskOrigin,
+      deskScale: _deskScale,
+      in3d: _in3d,
+      azimuth: _camera.azimuth,
+      elevation: _camera.elevation,
+      roll: _camera.roll,
+      lookAt: _camera.lookAt,
+      lookAtZ: _camera.lookAtZ,
+      halfHeight: _camera.framedHalfHeightMm,
+      focal: _camera.focalLengthMm,
+      straightEdgeOn: _edgeOn,
+      straightEdgeAnchor: edge?.anchor ?? _center,
+      straightEdgeAngle: edge?.angle ?? 0,
+    ).write(_sessionFile);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Saved ${_sessionFile.path}')));
+  }
+
+  void _loadSession() {
+    final session = AsmrSession.read(_sessionFile);
+    if (session == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('No saved desk')));
+      return;
+    }
+    setState(() {
+      _pushUndo();
+      final groups = <int, AsmrGroup>{
+        for (final entry in session.groups.entries)
+          entry.key: AsmrGroup(
+            letter: entry.key,
+            picks: entry.value,
+            net: unfoldSelection(_model, _adjacency, entry.value),
+          ),
+      };
+      _loose.clear();
+      _ungrouped.clear();
+      for (var i = 0; i < session.pieces.length; i++) {
+        final piece = session.pieces[i];
+        final binding = session.bindings[i];
+        var group = groups[session.pieceGroups[i]];
+        if (group == null && binding.isNotEmpty) {
+          final faces = {for (final pick in binding) pick.face};
+          group = groupOfFaces(groups.values, faces);
+          if (group == null) {
+            final letter = nextGroupLetter(groups.values);
+            group = groups[letter] = AsmrGroup(
+              letter: letter,
+              picks: binding,
+              net: unfoldSelection(_model, _adjacency, binding),
+            );
+          }
+        }
+        if (group == null) {
+          _loose.add(piece);
+        } else {
+          group.pieces.add(
+            binding.isEmpty ? piece : piece.copyWith(binding: group.net),
+          );
+        }
+      }
+      _groups
+        ..clear()
+        ..addAll(groups.values.toList()..sort((a, b) => a.letter - b.letter));
+      _group = null;
+      var next = 0;
+      for (final piece in _allPieces) {
+        final tail = int.tryParse(piece.id.split('-').last);
+        if (tail != null && tail >= next) next = tail + 1;
+      }
+      _nextSheet = next;
+      _flash.clear();
+      _in3d = session.in3d;
+      if (_in3d) _pruneGroups();
+      _selection.replace(session.picks);
+      _rebuildNet();
+      if (!_in3d) _ensureGroup();
+      _selectedIds.clear();
+      _deskOrigin = session.deskOrigin;
+      _deskScale = session.deskScale;
+      _modeProgress = session.in3d ? 1 : 0;
+      _camera.setFocal(session.focal);
+      _camera.beginFly(
+        CameraPose(
+          lookAt: session.lookAt,
+          lookAtZ: session.lookAtZ,
+          halfHeight: session.halfHeight,
+          azimuth: session.azimuth,
+          elevation: session.elevation,
+          roll: session.roll,
+        ),
+      );
+      _camera.setFly(1);
+      _edgeOn = session.straightEdgeOn;
+      _edgeShown = session.straightEdgeOn ? 1 : 0;
+      _edge = session.straightEdgeOn
+          ? AsmrStraightEdge(
+              anchor: session.straightEdgeAnchor,
+              angle: session.straightEdgeAngle,
+            )
+          : null;
+      _refreshCoverage();
+      _refreshHover();
+    });
+  }
+
+  /// Clears the paper of the open desk. Other groups keep theirs.
   void _reset() {
     setState(() {
+      _pushUndo();
       _pieces.clear();
-      _selectedId = null;
+      _selectedIds.clear();
       _flash.clear();
       _refreshCoverage();
+    });
+  }
+
+  _CraftStep _capture() => _CraftStep(
+    loose: List.of(_loose),
+    groups: [for (final group in _groups) group.copy()],
+    picks: List.of(_selection.picks),
+    nextSheet: _nextSheet,
+    selectedIds: Set.of(_selectedIds),
+    stowed: List.of(_stowed),
+  );
+
+  bool _samePieces(List<AsmrPiece> a, List<AsmrPiece> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      final p = a[i];
+      final q = b[i];
+      if (p.id != q.id ||
+          p.position != q.position ||
+          p.angle != q.angle ||
+          p.liberated != q.liberated ||
+          p.ring.length != q.ring.length ||
+          p.holes.length != q.holes.length ||
+          p.scores.length != q.scores.length ||
+          !identical(p.binding, q.binding)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool _sameCraft(_CraftStep a, _CraftStep b) {
+    if (a.nextSheet != b.nextSheet || a.picks.length != b.picks.length) {
+      return false;
+    }
+    for (var i = 0; i < a.picks.length; i++) {
+      if (a.picks[i] != b.picks[i]) return false;
+    }
+    if (a.groups.length != b.groups.length) return false;
+    for (var i = 0; i < a.groups.length; i++) {
+      if (a.groups[i].letter != b.groups[i].letter ||
+          !_samePieces(a.groups[i].pieces, b.groups[i].pieces)) {
+        return false;
+      }
+    }
+    return _samePieces(a.loose, b.loose) && _samePieces(a.stowed, b.stowed);
+  }
+
+  void _pushUndo() {
+    _undoStack.add(_capture());
+    if (_undoStack.length > _kHistoryDepth) _undoStack.removeAt(0);
+    _redoStack.clear();
+  }
+
+  void _commitGesture() {
+    final before = _gestureBefore;
+    _gestureBefore = null;
+    if (before == null || _sameCraft(before, _capture())) return;
+    _undoStack.add(before);
+    if (_undoStack.length > _kHistoryDepth) _undoStack.removeAt(0);
+    _redoStack.clear();
+  }
+
+  void _restore(_CraftStep step) {
+    _loose
+      ..clear()
+      ..addAll(step.loose);
+    _ungrouped.clear();
+    _groups
+      ..clear()
+      ..addAll([for (final group in step.groups) group.copy()]);
+    _group = null;
+    _nextSheet = step.nextSheet;
+    _stowed
+      ..clear()
+      ..addAll(step.stowed);
+    _selection.replace(step.picks);
+    _rebuildNet();
+    if (!_in3d) _ensureGroup();
+    _selectedIds
+      ..clear()
+      ..addAll(step.selectedIds);
+    _keepSelection();
+    _flash.clear();
+    _warps.clear();
+    _held.clear();
+    _moveIds.clear();
+    _bin = _Bin.none;
+    _pieceBoxHome = null;
+    _gestureBefore = null;
+    _dropStroke();
+    _cancelStraight();
+    _marqueeStart = null;
+    _marqueeEnd = null;
+    _marqueeHome = null;
+    _drag = _Drag.none;
+    _refreshCoverage();
+  }
+
+  void _undo() {
+    if (_undoStack.isEmpty) return;
+    setState(() {
+      _redoStack.add(_capture());
+      _restore(_undoStack.removeLast());
+    });
+  }
+
+  void _redo() {
+    if (_redoStack.isEmpty) return;
+    setState(() {
+      _undoStack.add(_capture());
+      _restore(_redoStack.removeLast());
     });
   }
 
@@ -536,8 +1034,30 @@ class _AsmrViewState extends State<AsmrView>
   Offset _knifeAt(Offset pointer) =>
       _aimsWithCursor ? pointer : pointer + _kKnifeLift;
 
+  /// Where the blade is on screen: under or above the pointer, and kept on
+  /// its side of the straight edge, sliding along it when close.
+  Offset _bladeAt(Offset pointer) {
+    final tip = _knifeAt(pointer);
+    final edge = _liveEdge;
+    final side = _knifeSide;
+    if (edge == null || side == null) return tip;
+    return edge.hold(tip, side, snap: kStraightEdgeSnap);
+  }
+
+  /// [raw] smoothed by the DevTools amount, then kept off the straight edge,
+  /// which smoothing can round a corner into.
+  List<Offset> _smoothed(List<Offset> raw) {
+    final smooth = smoothToolCurve(raw, _settings.curveSmoothing);
+    final edge = _liveEdge;
+    final side = _knifeSide;
+    if (edge == null || side == null) return smooth;
+    return [for (final p in smooth) _toDesk(edge.hold(_toScreen(p), side))];
+  }
+
   void _beginCut(Offset pointer) {
-    final tip = _toDesk(_knifeAt(pointer));
+    final edge = _liveEdge;
+    _knifeSide = edge?.sideOf(_knifeAt(pointer));
+    final tip = _toDesk(_bladeAt(pointer));
     _tipDesk = tip;
     _finger = pointer;
     _rawStroke = [tip];
@@ -549,14 +1069,14 @@ class _AsmrViewState extends State<AsmrView>
   void _extendCut(Offset pointer) {
     final rawStroke = _rawStroke;
     if (rawStroke == null) return;
-    final raw = _toDesk(_knifeAt(pointer));
+    final raw = _toDesk(_bladeAt(pointer));
     final previous = _tipDesk ?? raw;
     final tip = _aimsWithCursor ? raw : Offset.lerp(previous, raw, 0.5)!;
     _tipDesk = tip;
     _finger = pointer;
     final before = rawStroke.length;
     addStrokePoint(rawStroke, tip);
-    _stroke = smoothToolCurve(rawStroke, _settings.curveSmoothing);
+    _stroke = _smoothed(rawStroke);
     final stroke = _stroke!;
     final added = rawStroke.length - before;
     if (added <= 0) return;
@@ -580,12 +1100,11 @@ class _AsmrViewState extends State<AsmrView>
 
   void _endCut() {
     final raw = _rawStroke;
-    final stroke = raw == null
-        ? null
-        : smoothToolCurve(raw, _settings.curveSmoothing);
+    final stroke = raw == null ? null : _smoothed(raw);
     _rawStroke = null;
     _stroke = null;
     _finger = null;
+    _knifeSide = null;
     if (!_aimsWithCursor) _tipDesk = null;
     if (stroke == null || stroke.length < 2) return;
     final cut = cutPieces(_pieces, stroke);
@@ -600,7 +1119,16 @@ class _AsmrViewState extends State<AsmrView>
     final desk = _toDesk(pointer);
     _segmentStart = desk;
     _segmentEnd = desk;
+    _segmentReach = const [];
     _stroke = [desk, desk];
+  }
+
+  /// How far the straight cut's line runs from its start before the
+  /// straight edge stops it, as line parameters.
+  (double, double) _straightLimits(Offset start, Offset end) {
+    final edge = _liveEdge;
+    if (edge == null) return (double.negativeInfinity, double.infinity);
+    return edge.lineLimits(_toScreen(start), _toScreen(end));
   }
 
   void _extendStraight(Offset pointer) {
@@ -609,11 +1137,14 @@ class _AsmrViewState extends State<AsmrView>
     final end = _toDesk(pointer);
     _segmentEnd = end;
     _stroke = [start, end];
+    final (lo, hi) = _straightLimits(start, end);
+    _segmentReach = straightCutPreview(_pieces, start, end, lo: lo, hi: hi);
   }
 
   void _cancelStraight() {
     _segmentStart = null;
     _segmentEnd = null;
+    _segmentReach = const [];
     _stroke = null;
   }
 
@@ -622,8 +1153,87 @@ class _AsmrViewState extends State<AsmrView>
     final end = _segmentEnd;
     _cancelStraight();
     if (start == null || end == null || !_dragMoved) return;
-    final cut = cutPieces(_pieces, [start, end], exact: true);
+    final (lo, hi) = _straightLimits(start, end);
+    final cut = cutPiecesAlongLine(_pieces, start, end, lo: lo, hi: hi);
     if (cut != null) _applyCut(cut);
+  }
+
+  // -------------------------------------------------------------------------
+  // Straight edge
+  // -------------------------------------------------------------------------
+
+  /// The straight edge where it stops and guides cuts: out, settled, and
+  /// on the desk.
+  AsmrStraightEdge? get _liveEdge =>
+      _edgeOn && _edgeShown >= 1 && !_in3d ? _edge : null;
+
+  /// Pixels the straight edge is moved along its normal while flying.
+  double get _edgeFly {
+    final t = _edgeOn
+        ? Curves.easeOutCubic.transform(_edgeShown)
+        : Curves.easeInCubic.transform(_edgeShown);
+    return (1 - t) *
+        (_viewport.longestSide + kStraightEdgeThickness * 2) *
+        _edgeFlySide;
+  }
+
+  Offset? get _edgeHandle {
+    final edge = _edge;
+    return edge?.rotateHandle(_center);
+  }
+
+  void _toggleEdge() {
+    setState(() {
+      final edge = _edge;
+      if (_edgeOn) {
+        _edgeOn = false;
+        if (edge != null) {
+          _edgeFlySide = edge.across(_center) <= 0 ? 1 : -1;
+        }
+        if (_drag == _Drag.edgeSlide || _drag == _Drag.edgeTurn) {
+          _drag = _Drag.none;
+        }
+      } else {
+        _edgeOn = true;
+        _edge ??= AsmrStraightEdge(anchor: _center);
+      }
+    });
+  }
+
+  /// Starts moving or turning the straight edge if [pointer] is on it.
+  bool _grabEdge(Offset pointer) {
+    final edge = _liveEdge;
+    if (edge == null) return false;
+    final handle = _edgeHandle;
+    final onHandle =
+        handle != null && (pointer - handle).distance <= _kHandleRadius;
+    if (!onHandle && !edge.contains(pointer)) return false;
+    final stored = _edge;
+    if (stored != null && !_edgeGrabbed) {
+      _edgeHomeAnchor = stored.anchor;
+      _edgeHomeAngle = stored.angle;
+      _edgeGrabbed = true;
+    }
+    if (onHandle) {
+      _drag = _Drag.edgeTurn;
+      _edgePivot = edge.nearestOnMiddle(_center);
+      _edgeTurnFrom = math.atan2(
+        pointer.dy - _edgePivot.dy,
+        pointer.dx - _edgePivot.dx,
+      );
+      _edgeTurnBase = edge.angle;
+      return true;
+    }
+    _drag = _Drag.edgeSlide;
+    return true;
+  }
+
+  /// Puts the straight edge's anchor, and so its handle, back across from
+  /// the middle of the screen.
+  void _settleEdge() {
+    final edge = _edge;
+    if (edge == null) return;
+    _edge = edge.copyWith(anchor: edge.nearestOnMiddle(_center));
   }
 
   // -------------------------------------------------------------------------
@@ -643,9 +1253,101 @@ class _AsmrViewState extends State<AsmrView>
     return _pointers.isEmpty ? Offset.zero : sum / _pointers.length.toDouble();
   }
 
+  /// True when a finger, or the pair of them, just scrubbed back and forth.
+  bool _scrubbed(Duration time) {
+    var hit = false;
+    for (final entry in _pointers.entries) {
+      final scrub = _scrubs.putIfAbsent(entry.key, AsmrScrub.new);
+      if (scrub.add(time, entry.value)) hit = true;
+    }
+    if (_pointers.length >= 2 && _focalScrub.add(time, _focal())) hit = true;
+    return hit;
+  }
+
+  void _dropStroke() {
+    _rawStroke = null;
+    _stroke = null;
+    _finger = null;
+    _tipDesk = null;
+    _knifeSide = null;
+  }
+
+  /// Drops the gesture under way. A piece in hand eases back to the pose it
+  /// had when it was picked up.
+  void _cancelGesture() {
+    final held = List<_Held>.of(_held);
+    final marquee = _marqueeHome;
+    final pieceBox = _pieceBoxHome;
+    final edgeGrabbed = _edgeGrabbed;
+    final drag = _drag;
+    if (drag == _Drag.none &&
+        held.isEmpty &&
+        marquee == null &&
+        pieceBox == null &&
+        !edgeGrabbed) {
+      return;
+    }
+    if (drag == _Drag.cut) _dropStroke();
+    if (drag == _Drag.straight) _cancelStraight();
+    if (marquee != null) {
+      if (_selection.replace(marquee)) _rebuildNet();
+      _marqueeStart = null;
+      _marqueeEnd = null;
+      _marqueeHome = null;
+    }
+    if (pieceBox != null) {
+      _selectedIds
+        ..clear()
+        ..addAll(pieceBox);
+      _marqueeStart = null;
+      _marqueeEnd = null;
+      _pieceBoxHome = null;
+    }
+    if (edgeGrabbed) {
+      final edge = _edge;
+      if (edge != null) {
+        _edge = edge.copyWith(anchor: _edgeHomeAnchor, angle: _edgeHomeAngle);
+      }
+      _edgeGrabbed = false;
+    }
+    _warps.clear();
+    for (final pose in held) {
+      final i = _pieces.indexWhere((p) => p.id == pose.id);
+      if (i < 0) continue;
+      final piece = _pieces[i];
+      _warps.add(
+        _Warp(
+          id: pose.id,
+          from: piece.position,
+          to: pose.position,
+          fromAngle: piece.angle,
+          toAngle: pose.angle,
+        ),
+      );
+    }
+    _held.clear();
+    _moveIds.clear();
+    _bin = _Bin.none;
+    _drag = _Drag.none;
+    _dragMoved = true;
+    _gestureBefore = null;
+    for (final scrub in _scrubs.values) {
+      scrub.reset();
+    }
+    _focalScrub.reset();
+    HapticFeedback.mediumImpact();
+  }
+
   void _onPointerDown(PointerDownEvent event) {
     _lastKind = event.kind;
+    final first = _pointers.isEmpty;
     _pointers[event.pointer] = event.localPosition;
+    if (first) {
+      _scrubs.clear();
+      _focalScrub.reset();
+    } else {
+      _focalScrub.reset();
+    }
     if (_aimsWithCursor) _hover = event.localPosition;
     if (_pointers.length >= 2) {
       _beginTwoFinger();
@@ -663,6 +1365,7 @@ class _AsmrViewState extends State<AsmrView>
           _drag = _Drag.pan;
         } else if (_modelTool == _ModelTool.select) {
           _drag = _Drag.marquee;
+          _marqueeHome = List.of(_selection.picks);
           _marqueeStart = event.localPosition;
           _marqueeEnd = event.localPosition;
         } else {
@@ -674,6 +1377,7 @@ class _AsmrViewState extends State<AsmrView>
         _drag = _Drag.deskPan;
         return;
       }
+      if (_grabEdge(event.localPosition)) return;
       _startDeskDrag(event.localPosition);
     });
   }
@@ -697,32 +1401,136 @@ class _AsmrViewState extends State<AsmrView>
         handle != null &&
         (pointer - handle).distance <= _kHandleRadius) {
       _drag = _Drag.rotate;
-      final center = _toScreen(selected.deskCentroid);
+      _warps.clear();
+      _held
+        ..clear()
+        ..add(_Held(selected.id, selected.position, selected.angle));
+      _rotatePivot = selected.edgeCenterOpposite(_toDesk(handle));
+      final center = _toScreen(_rotatePivot);
       _rotateFrom = math.atan2(pointer.dy - center.dy, pointer.dx - center.dx);
       _rotateBase = selected.angle;
+      _gestureBefore = _capture();
       return;
     }
     final hit = _pieceAt(desk);
     if (hit != null) {
       _drag = _Drag.move;
-      _selectedId = hit.id;
+      _warps.clear();
+      if (!_selectedIds.contains(hit.id)) {
+        _selectedIds
+          ..clear()
+          ..add(hit.id);
+      }
+      _moveIds
+        ..clear()
+        ..addAll(_selectedIds);
+      final moving = [
+        for (final piece in _pieces)
+          if (_moveIds.contains(piece.id)) piece,
+      ];
+      _pieces.removeWhere((piece) => _moveIds.contains(piece.id));
       _pieces
-        ..removeWhere((p) => p.id == hit.id)
+        ..addAll(moving.where((piece) => piece.id != hit.id))
         ..add(hit);
+      _held
+        ..clear()
+        ..addAll([
+          for (final piece in moving)
+            _Held(piece.id, piece.position, piece.angle),
+        ]);
+      _gestureBefore = _capture();
+      return;
+    }
+    if (_deskTool == _DeskTool.select) {
+      _drag = _Drag.pieceBox;
+      _marqueeStart = pointer;
+      _marqueeEnd = pointer;
+      _pieceBoxHome = Set.of(_selectedIds);
       return;
     }
     _drag = _Drag.deskPan;
   }
 
+  void _applyPieceMarquee() {
+    final start = _marqueeStart;
+    final end = _marqueeEnd;
+    if (start == null || end == null || (end - start).distance < _kTapSlop) {
+      return;
+    }
+    final rect = Rect.fromPoints(start, end);
+    final pick = marqueePick(start, end);
+    _selectedIds
+      ..clear()
+      ..addAll([
+        for (final piece in _pieces)
+          if (polygonInMarquee(
+            [for (final point in piece.deskRing) _toScreen(point)],
+            rect,
+            pick,
+          ))
+            piece.id,
+      ]);
+  }
+
+  bool _inside(GlobalKey key, Offset local) {
+    final stack = _stackKey.currentContext?.findRenderObject() as RenderBox?;
+    final box = key.currentContext?.findRenderObject() as RenderBox?;
+    if (stack == null || box == null || !box.attached || !box.hasSize) {
+      return false;
+    }
+    final global = stack.localToGlobal(local);
+    final origin = box.localToGlobal(Offset.zero);
+    return (origin & box.size).contains(global);
+  }
+
+  _Bin _binAt(Offset local) {
+    if (_inside(_trashKey, local)) return _Bin.trash;
+    if (_inside(_drawerKey, local)) return _Bin.inventory;
+    return _Bin.none;
+  }
+
+  void _takeHeld(List<AsmrPiece> into) {
+    final taken = _pieces
+        .where((piece) => _moveIds.contains(piece.id))
+        .toList();
+    _pieces.removeWhere((piece) => _moveIds.contains(piece.id));
+    into.addAll([for (final piece in taken) piece.unbound()]);
+    _selectedIds.removeAll(_moveIds);
+    _moveIds.clear();
+    _held.clear();
+    _warps.clear();
+    _refreshCoverage();
+  }
+
+  void _unstow(AsmrPiece piece) {
+    setState(() {
+      _pushUndo();
+      _stowed.remove(piece);
+      final back = piece.copyWith(position: _toDesk(_center));
+      _pieces.add(back);
+      _setDeskTool(_DeskTool.select);
+      _selectedIds
+        ..clear()
+        ..add(back.id);
+      _attachToBlueprint();
+    });
+  }
+
+  void _setDeskTool(_DeskTool tool) {
+    _deskTool = tool;
+    if (tool != _DeskTool.select) _selectedIds.clear();
+    if (tool != _DeskTool.exacto) _tipDesk = null;
+    if (tool != _DeskTool.straight || _drag == _Drag.straight) {
+      _cancelStraight();
+    }
+    if (_drag == _Drag.straight) _drag = _Drag.none;
+  }
+
   void _beginTwoFinger() {
     setState(() {
-      if (_drag == _Drag.cut) {
-        _rawStroke = null;
-        _stroke = null;
-        _finger = null;
-        _tipDesk = null;
-      }
+      if (_drag == _Drag.cut) _dropStroke();
       if (_drag == _Drag.straight) _cancelStraight();
+      if (_drag == _Drag.edgeSlide || _drag == _Drag.edgeTurn) _settleEdge();
       _drag = _Drag.pan;
       _dragMoved = true;
       _marqueeStart = null;
@@ -737,6 +1545,10 @@ class _AsmrViewState extends State<AsmrView>
     if (previous == null) return;
     _pointers[event.pointer] = event.localPosition;
     if (_aimsWithCursor) _hover = event.localPosition;
+    if (_scrubbed(event.timeStamp)) {
+      setState(_cancelGesture);
+      return;
+    }
     final delta = event.localPosition - previous;
     if ((event.localPosition - _dragStart).distance > _kTapSlop) {
       _dragMoved = true;
@@ -756,28 +1568,56 @@ class _AsmrViewState extends State<AsmrView>
         case _Drag.marquee:
           _marqueeEnd = event.localPosition;
           if (_dragMoved) _applyMarquee();
+        case _Drag.pieceBox:
+          _marqueeEnd = event.localPosition;
+          if (_dragMoved) _applyPieceMarquee();
         case _Drag.cut:
           _extendCut(event.localPosition);
         case _Drag.straight:
           _extendStraight(event.localPosition);
         case _Drag.move:
           final desk = _toDesk(event.localPosition);
-          final piece = _selected;
-          if (piece != null) {
-            _replace(piece.copyWith(position: piece.position + desk - _lastDesk));
+          final delta = desk - _lastDesk;
+          for (final id in _moveIds) {
+            final i = _pieces.indexWhere((piece) => piece.id == id);
+            if (i < 0) continue;
+            final piece = _pieces[i];
+            _pieces[i] = piece.copyWith(position: piece.position + delta);
           }
+          _attachToBlueprint();
           _lastDesk = desk;
+          _bin = _binAt(event.localPosition);
         case _Drag.rotate:
           final piece = _selected;
           if (piece == null) return;
-          final center = _toScreen(piece.deskCentroid);
+          final center = _toScreen(_rotatePivot);
           final now = math.atan2(
             event.localPosition.dy - center.dy,
             event.localPosition.dx - center.dx,
           );
-          _replace(piece.turnedTo(_rotateBase + now - _rotateFrom));
+          _replace(
+            piece.turnedAbout(_rotateBase + now - _rotateFrom, _rotatePivot),
+          );
+          _attachToBlueprint();
         case _Drag.deskPan:
           _deskOrigin += delta;
+        case _Drag.edgeSlide:
+          final edge = _edge;
+          if (edge == null) return;
+          final n = edge.normal;
+          final push = delta.dx * n.dx + delta.dy * n.dy;
+          _edge = edge.copyWith(anchor: edge.anchor + n * push);
+        case _Drag.edgeTurn:
+          final edge = _edge;
+          if (edge == null) return;
+          final now = math.atan2(
+            event.localPosition.dy - _edgePivot.dy,
+            event.localPosition.dx - _edgePivot.dx,
+          );
+          _edge = edge.copyWith(
+            anchor: _edgePivot,
+            angle: _edgeTurnBase + now - _edgeTurnFrom,
+          );
         case _Drag.none:
           break;
       }
@@ -816,13 +1656,14 @@ class _AsmrViewState extends State<AsmrView>
 
   void _onPointerUp(PointerEvent event) {
     _pointers.remove(event.pointer);
+    _scrubs.remove(event.pointer);
+    _focalScrub.reset();
     if (_pointers.isNotEmpty) {
       _lastFocal = _focal();
       _lastSpan = _span();
       return;
     }
-    final tap =
-        !_dragMoved && event.timeStamp - _dragStartTime < _kTapTime;
+    final tap = !_dragMoved && event.timeStamp - _dragStartTime < _kTapTime;
     setState(() {
       switch (_drag) {
         case _Drag.orbit:
@@ -832,7 +1673,7 @@ class _AsmrViewState extends State<AsmrView>
             final face = _faceAt(event.localPosition);
             final picks = face == null
                 ? const <HologramPick>[]
-                : [HologramPick(face)];
+                : _groupWith(face)?.picks ?? [HologramPick(face)];
             if (_selection.replace(picks)) _rebuildNet();
           }
           _marqueeStart = null;
@@ -841,18 +1682,43 @@ class _AsmrViewState extends State<AsmrView>
           _endCut();
         case _Drag.straight:
           _endStraight();
+        case _Drag.pieceBox:
+          if (tap) _selectedIds.clear();
+          _marqueeStart = null;
+          _marqueeEnd = null;
+          _pieceBoxHome = null;
         case _Drag.move:
+          final bin = _dragMoved ? _binAt(event.localPosition) : _Bin.none;
+          if (bin == _Bin.trash) {
+            _takeHeld(<AsmrPiece>[]);
+          } else if (bin == _Bin.inventory) {
+            _takeHeld(_stowed);
+          } else {
+            _attachToBlueprint();
+            _refreshCoverage();
+          }
+          _bin = _Bin.none;
         case _Drag.rotate:
           final piece = _selected;
-          if (piece != null) _replace(_bindIfOver(piece));
+          if (piece != null) _replace(piece);
+          _attachToBlueprint();
           _refreshCoverage();
         case _Drag.deskPan:
-          if (tap && _deskTool == _DeskTool.select) _selectedId = null;
+          if (tap && _deskTool == _DeskTool.select) _selectedIds.clear();
+        case _Drag.edgeSlide:
+        case _Drag.edgeTurn:
+          _settleEdge();
         case _Drag.pan:
         case _Drag.none:
           break;
       }
       _drag = _Drag.none;
+      _held.clear();
+      _moveIds.clear();
+      _marqueeHome = null;
+      _pieceBoxHome = null;
+      _edgeGrabbed = false;
+      _commitGesture();
     });
   }
 
@@ -931,7 +1797,11 @@ class _AsmrViewState extends State<AsmrView>
             key: _stackKey,
             children: [
               Positioned.fill(child: _deskLayer()),
-              if (t > 0.001) Positioned.fill(child: _veil(t)),
+              if (t > 0.001)
+                Positioned.fill(
+                  key: const ValueKey('asmr-veil'),
+                  child: _veil(t),
+                ),
               Positioned.fill(
                 child: IgnorePointer(
                   child: CustomPaint(
@@ -945,14 +1815,26 @@ class _AsmrViewState extends State<AsmrView>
                   ),
                 ),
               ),
+              Positioned.fill(child: _straightEdgeLayer(1 - t)),
+              if (_knifeScreen case final tip?)
+                Positioned.fill(
+                  key: const ValueKey('asmr-knife'),
+                  child: IgnorePointer(
+                    child: CustomPaint(
+                      painter: AsmrKnifePainter(tip: tip, finger: _finger),
+                    ),
+                  ),
+                ),
               if (t > 0.001)
                 Positioned.fill(
+                  key: const ValueKey('asmr-model'),
                   child: IgnorePointer(
                     child: Opacity(opacity: t, child: _modelLayer()),
                   ),
                 ),
               if (_marqueeStart != null && _marqueeEnd != null)
                 Positioned.fill(
+                  key: const ValueKey('asmr-marquee'),
                   child: IgnorePointer(
                     child: CustomPaint(
                       painter: _MarqueePainter(
@@ -964,6 +1846,7 @@ class _AsmrViewState extends State<AsmrView>
                 ),
               if (t > 0.5 && !_aimsWithCursor && _modelTool == _ModelTool.orbit)
                 Positioned.fill(
+                  key: const ValueKey('asmr-crosshair'),
                   child: Opacity(
                     opacity: (t - 0.5) * 2,
                     child: ViewCrosshair(selectable: _hoverFace != null),
@@ -977,21 +1860,48 @@ class _AsmrViewState extends State<AsmrView>
     );
   }
 
+  bool get _showKnife => !_in3d && _deskTool == _DeskTool.exacto;
+
+  /// Where the exacto's crosshair is drawn, on screen.
+  Offset? get _knifeScreen {
+    if (!_showKnife || _tipDesk == null) return null;
+    return _finger != null ? _bladeAt(_finger!) : _toScreen(_tipDesk!);
+  }
+
+  Widget _straightEdgeLayer(double flat) {
+    final edge = _edge;
+    if (edge == null || _edgeShown <= 0 || flat <= 0.01) {
+      return const SizedBox.shrink();
+    }
+    return IgnorePointer(
+      child: Opacity(
+        opacity: flat,
+        child: CustomPaint(
+          key: const Key('asmr-straight-edge'),
+          painter: AsmrStraightEdgePainter(
+            edge: edge,
+            fly: _edgeFly,
+            handle: _edgeHandle,
+            pressed: _drag == _Drag.edgeSlide || _drag == _Drag.edgeTurn,
+          ),
+          child: const SizedBox.expand(),
+        ),
+      ),
+    );
+  }
+
   Widget _deskLayer() {
     final selected = _selected;
-    final showKnife = !_in3d && _deskTool == _DeskTool.exacto;
+    final showKnife = _showKnife;
     final showStraight = !_in3d && _deskTool == _DeskTool.straight;
-    final tipScreen = showKnife && _tipDesk != null
-        ? (_finger != null ? _knifeAt(_finger!) : _toScreen(_tipDesk!))
-        : null;
     return DragTarget<AsmrPaper>(
       onAcceptWithDetails: (details) {
-        final box =
-            _stackKey.currentContext?.findRenderObject() as RenderBox?;
+        final box = _stackKey.currentContext?.findRenderObject() as RenderBox?;
         if (box == null) return;
         final local = box.globalToLocal(
           details.offset + _kSwatchSize.center(Offset.zero),
         );
+        setState(() => _setDeskTool(_DeskTool.select));
         _placeSheet(details.data, _toDesk(local));
       },
       builder: (context, candidate, rejected) => MouseRegion(
@@ -1019,12 +1929,13 @@ class _AsmrViewState extends State<AsmrView>
               tiles: _tiles,
               origin: _deskOrigin,
               scale: _deskScale,
-              selectedId: _deskTool == _DeskTool.select ? _selectedId : null,
+              selectedIds: _deskTool == _DeskTool.select
+                  ? Set.of(_selectedIds)
+                  : const {},
               selectedOutline: _selectedOutline,
               flash: Map.of(_flash),
               stroke: _stroke == null ? null : List.of(_stroke!),
-              knifeTip: tipScreen,
-              finger: showKnife ? _finger : null,
+              reach: _segmentReach,
               rotateHandle: _deskTool == _DeskTool.select && selected != null
                   ? _handleFor(selected)
                   : null,
@@ -1032,6 +1943,7 @@ class _AsmrViewState extends State<AsmrView>
               shadowThrow: _settings.shadowThrow,
               shadowSpread: _settings.shadowSpread,
               shadowColor: _settings.shadowPaint,
+              darkOverlay: _settings.darkOverlay,
             ),
             child: const SizedBox.expand(),
           ),
@@ -1064,6 +1976,28 @@ class _AsmrViewState extends State<AsmrView>
     );
   }
 
+  /// What the model draws. A piece that overlaps a blueprint edge keeps
+  /// those faces, including after they are deselected.
+  List<AsmrPiece> get _modelPieces => [
+    for (final piece in _allPieces)
+      if (piece.binding != null) piece,
+  ];
+
+  /// Each group's color, faded, on its faces. The open group is on top.
+  Map<int, Color> get _groupTints {
+    final tints = <int, Color>{};
+    for (final group in [
+      for (final group in _groups)
+        if (!identical(group, _group)) group,
+      ?_group,
+    ]) {
+      for (final face in group.faces) {
+        tints[face] = group.color.withValues(alpha: 0.3);
+      }
+    }
+    return tints;
+  }
+
   Widget _modelLayer() {
     final glow = _complete
         ? {
@@ -1085,10 +2019,11 @@ class _AsmrViewState extends State<AsmrView>
           size: size,
           camera: _camera,
           model: _model,
-          pieces: List.of(_pieces),
+          pieces: _modelPieces,
           tiles: _tiles,
           add: add,
           highlight: Map.of(_faceFill),
+          tint: _groupTints,
         ),
       ),
       child: const SizedBox.expand(),
@@ -1143,6 +2078,16 @@ class _AsmrViewState extends State<AsmrView>
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                _TextLink(
+                  label: 'Save',
+                  buttonKey: const Key('asmr-save'),
+                  onTap: _saveSession,
+                ),
+                _TextLink(
+                  label: 'Load',
+                  buttonKey: const Key('asmr-load'),
+                  onTap: _loadSession,
+                ),
                 if (flat > 0.01)
                   Opacity(
                     opacity: flat,
@@ -1175,84 +2120,157 @@ class _AsmrViewState extends State<AsmrView>
         bottom: padding.bottom + 16,
         child: _CubeToggle(on: _in3d, onTap: _toggleMode),
       ),
-      if (t > 0.01)
-        Positioned(
-          left: 88,
-          right: 88,
-          bottom: padding.bottom + 8,
-          child: Opacity(
-            opacity: t,
-            child: IgnorePointer(
-              ignoring: t < 0.5,
-              child: HudToolCarousel<_ModelTool>(
-                items: [
-                  HudCarouselItem(
-                    value: _ModelTool.orbit,
-                    icon: Icons.threed_rotation,
-                    label: 'Orbit',
-                    fill: CraftPalette.cerulean.fill,
-                  ),
-                  HudCarouselItem(
-                    value: _ModelTool.select,
-                    icon: Icons.highlight_alt,
-                    label: 'Select',
-                    fill: CraftPalette.kentuckyBlue.fill,
-                  ),
-                ],
-                selected: _modelTool,
-                onSelect: (tool) => setState(() {
-                  _modelTool = tool;
-                  _marqueeStart = null;
-                  _marqueeEnd = null;
-                }),
-              ),
+      Positioned(
+        left: 88,
+        right: 88,
+        bottom: padding.bottom + 8,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _HistoryButton(
+              buttonKey: const Key('asmr-undo'),
+              icon: Icons.undo,
+              tooltip: 'Undo',
+              enabled: _undoStack.isNotEmpty,
+              gap: const EdgeInsets.only(right: _kHistoryPad),
+              onTap: _undo,
             ),
-          ),
-        ),
-      if (flat > 0.01)
-        Positioned(
-          left: 88,
-          right: 88,
-          bottom: padding.bottom + 8,
-          child: Opacity(
-            opacity: flat,
-            child: IgnorePointer(
-              ignoring: flat < 0.5,
-              child: HudToolCarousel<_DeskTool>(
-                items: [
-                  HudCarouselItem(
-                    value: _DeskTool.select,
-                    icon: Icons.open_with,
-                    label: 'Select',
-                    fill: CraftPalette.kentuckyBlue.fill,
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                if (t > 0.01)
+                  Opacity(
+                    opacity: t,
+                    child: IgnorePointer(
+                      ignoring: t < 0.5,
+                      child: HudToolCarousel<_ModelTool>(
+                        items: [
+                          HudCarouselItem(
+                            value: _ModelTool.orbit,
+                            icon: Icons.threed_rotation,
+                            label: 'Orbit',
+                            fill: CraftPalette.cerulean.fill,
+                          ),
+                          HudCarouselItem(
+                            value: _ModelTool.select,
+                            icon: Icons.highlight_alt,
+                            label: 'Select',
+                            fill: CraftPalette.kentuckyBlue.fill,
+                          ),
+                        ],
+                        selected: _modelTool,
+                        onSelect: (tool) => setState(() {
+                          _modelTool = tool;
+                          _marqueeStart = null;
+                          _marqueeEnd = null;
+                        }),
+                      ),
+                    ),
                   ),
-                  HudCarouselItem(
-                    value: _DeskTool.exacto,
-                    icon: Icons.content_cut,
-                    label: 'Exacto',
-                    fill: CraftPalette.scarlet.fill,
+                if (flat > 0.01)
+                  Opacity(
+                    opacity: flat,
+                    child: IgnorePointer(
+                      ignoring: flat < 0.5,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          HudToolCarousel<_DeskTool>(
+                            items: [
+                              HudCarouselItem(
+                                value: _DeskTool.select,
+                                icon: Icons.open_with,
+                                label: 'Select',
+                                fill: CraftPalette.kentuckyBlue.fill,
+                              ),
+                              HudCarouselItem(
+                                value: _DeskTool.exacto,
+                                icon: Icons.content_cut,
+                                label: 'Exacto',
+                                fill: CraftPalette.scarlet.fill,
+                              ),
+                              HudCarouselItem(
+                                value: _DeskTool.straight,
+                                icon: Icons.horizontal_rule,
+                                label: 'Straight cut',
+                                fill: CraftPalette.ginger.fill,
+                              ),
+                            ],
+                            selected: _deskTool,
+                            onSelect: (tool) =>
+                                setState(() => _setDeskTool(tool)),
+                          ),
+                          Container(
+                            width: 1,
+                            height: 32,
+                            margin: const EdgeInsets.symmetric(horizontal: 6),
+                            color: Colors.white24,
+                          ),
+                          SizedBox(
+                            width: 56,
+                            height: 72,
+                            child: HudToolButton(
+                              icon: Icons.straighten,
+                              label: 'Straight edge',
+                              fill: CraftPalette.granite.fill,
+                              selected: _edgeOn,
+                              onTap: _toggleEdge,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                  HudCarouselItem(
-                    value: _DeskTool.straight,
-                    icon: Icons.horizontal_rule,
-                    label: 'Straight cut',
-                    fill: CraftPalette.ginger.fill,
-                  ),
-                ],
-                selected: _deskTool,
-                onSelect: (tool) => setState(() {
-                  _deskTool = tool;
-                  if (tool != _DeskTool.select) _selectedId = null;
-                  if (tool != _DeskTool.exacto) _tipDesk = null;
-                  if (tool != _DeskTool.straight || _drag == _Drag.straight) {
-                    _cancelStraight();
-                  }
-                  if (_drag == _Drag.straight) _drag = _Drag.none;
-                }),
-              ),
+              ],
             ),
-          ),
+            _HistoryButton(
+              buttonKey: const Key('asmr-redo'),
+              icon: Icons.redo,
+              tooltip: 'Redo',
+              enabled: _redoStack.isNotEmpty,
+              gap: const EdgeInsets.only(left: _kHistoryPad),
+              onTap: _redo,
+            ),
+          ],
         ),
+      ),
+      Positioned(
+        top: 0,
+        bottom: 0,
+        right: 12,
+        child: _groups.isEmpty || t <= 0.01
+            ? const SizedBox.shrink()
+            : IgnorePointer(
+                ignoring: t < 0.5,
+                child: Opacity(
+                  opacity: t,
+                  child: FractionalTranslation(
+                    translation: Offset((1 - t) * 1.2, 0),
+                    child: Center(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            for (final group in _groups)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 6,
+                                ),
+                                child: _GroupButton(
+                                  group: group,
+                                  tiles: _tiles,
+                                  open: identical(group, _group),
+                                  onTap: () => _openGroup(group),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+      ),
       Positioned(
         top: 0,
         bottom: 0,
@@ -1261,7 +2279,23 @@ class _AsmrViewState extends State<AsmrView>
           ignoring: flat < 0.5,
           child: FractionalTranslation(
             translation: Offset(t * 1.1, 0),
-            child: Center(child: _PaperDrawer(tiles: _tiles, onTap: _place)),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _PaperDrawer(
+                    key: _drawerKey,
+                    tiles: _tiles,
+                    onTap: _place,
+                    stowed: _stowed,
+                    onUnstow: _unstow,
+                    accepting: _bin == _Bin.inventory,
+                  ),
+                  const SizedBox(height: 18),
+                  _TrashButton(key: _trashKey, hot: _bin == _Bin.trash),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -1276,8 +2310,10 @@ class _AsmrViewState extends State<AsmrView>
                   ? _modelTool == _ModelTool.select
                         ? 'Drag a box around faces. To the right takes what is inside; to the left also takes what it crosses.'
                         : 'Drag to orbit. Switch to Select and drag a box around the faces to unfold.'
+                  : _deskTool == _DeskTool.select
+                  ? 'Drag a box from empty space to take pieces. Drag them into the drawer, or into the trash under it.'
                   : _deskTool == _DeskTool.straight
-                  ? 'Drag a straight line. Every piece it crosses is cut along that line.'
+                  ? 'Drag to set a line. Each piece it touches is cut right through along it, up to the straight edge.'
                   : 'Lay paper from the drawer and cut along the glowing outline.',
               textAlign: TextAlign.center,
               style: TextStyle(
@@ -1329,20 +2365,77 @@ class _AsmrViewState extends State<AsmrView>
 
 const Size _kSwatchSize = Size(56, 72);
 
+/// An undo or redo icon with no disc behind it.
+class _HistoryButton extends StatelessWidget {
+  const _HistoryButton({
+    required this.buttonKey,
+    required this.icon,
+    required this.tooltip,
+    required this.enabled,
+    required this.gap,
+    required this.onTap,
+  });
+
+  final Key buttonKey;
+  final IconData icon;
+  final String tooltip;
+  final bool enabled;
+  final EdgeInsets gap;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      key: buttonKey,
+      padding: gap,
+      child: Tooltip(
+        message: tooltip,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: enabled ? onTap : null,
+          child: SizedBox(
+            width: 40,
+            height: 40,
+            child: Icon(
+              icon,
+              size: 24,
+              color: enabled ? Colors.white : Colors.white24,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _PaperDrawer extends StatelessWidget {
-  const _PaperDrawer({required this.tiles, required this.onTap});
+  const _PaperDrawer({
+    super.key,
+    required this.tiles,
+    required this.onTap,
+    required this.stowed,
+    required this.onUnstow,
+    required this.accepting,
+  });
 
   final AsmrPaperTiles tiles;
   final ValueChanged<AsmrPaper> onTap;
+  final List<AsmrPiece> stowed;
+  final ValueChanged<AsmrPiece> onUnstow;
+  final bool accepting;
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      key: const Key('asmr-drawer'),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.35),
+        color: Colors.black.withValues(alpha: accepting ? 0.55 : 0.35),
         borderRadius: const BorderRadius.horizontal(left: Radius.circular(18)),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: accepting ? 0.75 : 0.12),
+          width: accepting ? 2 : 1,
+        ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1366,10 +2459,239 @@ class _PaperDrawer extends StatelessWidget {
                 ),
               ),
             ),
+          for (final piece in stowed)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Tooltip(
+                message: 'Lay ${piece.paper.name} back down',
+                child: GestureDetector(
+                  key: ValueKey('asmr-stowed-${piece.id}'),
+                  onTap: () => onUnstow(piece),
+                  child: _StowedSwatch(piece: piece, tiles: tiles),
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
+}
+
+/// A selection group in the 3D view's list: its blueprint with the paper on
+/// it, its letter, and its color. A tap selects its faces.
+class _GroupButton extends StatelessWidget {
+  const _GroupButton({
+    required this.group,
+    required this.tiles,
+    required this.open,
+    required this.onTap,
+  });
+
+  final AsmrGroup group;
+  final AsmrPaperTiles tiles;
+  final bool open;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = group.color;
+    return Tooltip(
+      message: 'Group ${group.name}',
+      child: GestureDetector(
+        key: Key('asmr-group-${group.name}'),
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          width: 64,
+          height: 64,
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: open ? 0.5 : 0.35),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: color.withValues(alpha: open ? 1 : 0.55),
+              width: open ? 2.5 : 1.5,
+            ),
+          ),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: CustomPaint(
+                    painter: _GroupThumbPainter(group: group, tiles: tiles),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 4,
+                top: 4,
+                child: Container(
+                  width: 18,
+                  height: 18,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    group.name,
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      height: 1,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GroupThumbPainter extends CustomPainter {
+  const _GroupThumbPainter({required this.group, required this.tiles});
+
+  final AsmrGroup group;
+  final AsmrPaperTiles tiles;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final net = group.net;
+    if (net.isEmpty) return;
+    final box = net.bounds;
+    final scale = math.min(
+      size.width / math.max(box.width, 1e-6),
+      size.height / math.max(box.height, 1e-6),
+    );
+    canvas.save();
+    canvas.translate(size.width / 2, size.height / 2);
+    canvas.scale(scale);
+    canvas.translate(-box.center.dx, -box.center.dy);
+    final faces = Path();
+    for (final face in net.faces) {
+      faces.addPolygon(face.ring, true);
+    }
+    canvas.drawPath(faces, Paint()..color = group.color.withValues(alpha: 0.3));
+    canvas.save();
+    canvas.clipPath(faces);
+    for (final piece in group.pieces) {
+      if (piece.binding == null) continue;
+      canvas.save();
+      canvas.transform(piece.pose.storage);
+      final path = Path()
+        ..fillType = PathFillType.evenOdd
+        ..addPolygon(piece.ring, true);
+      for (final hole in piece.holes) {
+        path.addPolygon(hole, true);
+      }
+      canvas.drawPath(path, tiles.paint(piece.paper));
+      canvas.restore();
+    }
+    canvas.restore();
+    canvas.drawPath(
+      faces,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2 / scale
+        ..color = Colors.white.withValues(alpha: 0.85),
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _GroupThumbPainter old) => true;
+}
+
+/// The trash under the paper drawer. A plain icon; it fills in while a
+/// selection is dragged onto it.
+class _TrashButton extends StatelessWidget {
+  const _TrashButton({super.key, required this.hot});
+
+  final bool hot;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Trash',
+      child: SizedBox(
+        width: 48,
+        height: 48,
+        child: Icon(
+          Icons.delete_outline,
+          size: hot ? 32 : 26,
+          color: hot ? const Color(0xFFE57373) : Colors.white,
+        ),
+      ),
+    );
+  }
+}
+
+class _StowedSwatch extends StatelessWidget {
+  const _StowedSwatch({required this.piece, required this.tiles});
+
+  final AsmrPiece piece;
+  final AsmrPaperTiles tiles;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.fromSize(
+      size: _kSwatchSize,
+      child: CustomPaint(
+        painter: _StowedPainter(piece: piece, tiles: tiles),
+      ),
+    );
+  }
+}
+
+class _StowedPainter extends CustomPainter {
+  const _StowedPainter({required this.piece, required this.tiles});
+
+  final AsmrPiece piece;
+  final AsmrPaperTiles tiles;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final ring = piece.ring;
+    if (ring.length < 3) return;
+    var minX = ring.first.dx;
+    var maxX = minX;
+    var minY = ring.first.dy;
+    var maxY = minY;
+    for (final point in ring) {
+      minX = math.min(minX, point.dx);
+      maxX = math.max(maxX, point.dx);
+      minY = math.min(minY, point.dy);
+      maxY = math.max(maxY, point.dy);
+    }
+    final width = math.max(maxX - minX, 1e-6);
+    final height = math.max(maxY - minY, 1e-6);
+    final scale = math.min(
+      (size.width - 8) / width,
+      (size.height - 8) / height,
+    );
+    final path = Path()..addPolygon(ring, true);
+    canvas.save();
+    canvas.translate(size.width / 2, size.height / 2);
+    canvas.scale(scale);
+    canvas.translate(-(minX + maxX) / 2, -(minY + maxY) / 2);
+    canvas.drawPath(path, tiles.paint(piece.paper));
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2 / scale
+        ..color = Colors.white.withValues(alpha: 0.7),
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _StowedPainter old) => old.piece != piece;
 }
 
 /// The select tool's box. Dragging right contains, in green; dragging left
@@ -1407,7 +2729,11 @@ class _MarqueePainter extends CustomPainter {
 }
 
 class _Swatch extends StatelessWidget {
-  const _Swatch({required this.paper, required this.tiles, this.lifted = false});
+  const _Swatch({
+    required this.paper,
+    required this.tiles,
+    this.lifted = false,
+  });
 
   final AsmrPaper paper;
   final AsmrPaperTiles tiles;
@@ -1450,10 +2776,7 @@ class _SwatchPainter extends CustomPainter {
     canvas.save();
     canvas.clipRRect(rect);
     canvas.scale(1.6);
-    canvas.drawRect(
-      Offset.zero & (size / 1.6),
-      tiles.paint(paper),
-    );
+    canvas.drawRect(Offset.zero & (size / 1.6), tiles.paint(paper));
     canvas.restore();
     canvas.drawRRect(
       rect,
@@ -1492,6 +2815,36 @@ class _RoundButton extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(10),
             child: Icon(icon, color: Colors.white70, size: 22),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TextLink extends StatelessWidget {
+  const _TextLink({
+    required this.label,
+    required this.buttonKey,
+    required this.onTap,
+  });
+
+  final String label;
+  final Key buttonKey;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: GestureDetector(
+        key: buttonKey,
+        onTap: onTap,
+        child: Text(
+          label,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.7),
+            fontSize: 13,
           ),
         ),
       ),

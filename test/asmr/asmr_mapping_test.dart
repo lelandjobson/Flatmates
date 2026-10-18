@@ -126,6 +126,94 @@ void main() {
       }
     }
     expect(shared, isTrue);
+    for (final slice in slices) {
+      final at = polygonCentroid(slice.ring);
+      final face = model.faces[slice.face];
+      final mapped = world(slice, at);
+      final center = face.world(face.centroid);
+      expect(
+        (mapped - center).length,
+        lessThan(1),
+        reason: 'face ${slice.face}',
+      );
+    }
+  });
+
+  test('a whole sheet across two faces slices onto both', () {
+    final b = adjacency[2].first!.face;
+    final pair = unfoldSelection(model, adjacency, [
+      const HologramPick(2),
+      HologramPick(b, from: 2),
+    ]);
+    final piece = bound(kAsmrSheetSize, net: pair);
+    expect(slicesOf(piece).map((s) => s.face).toSet(), {2, b});
+  });
+
+  test('a piece cut to the two-face outline still slices onto both faces', () {
+    final b = adjacency[2].first!.face;
+    final pair = unfoldSelection(model, adjacency, [
+      const HologramPick(2),
+      HologramPick(b, from: 2),
+    ]);
+    final union = unionPolygons([
+      for (final face in pair.faces) face.ring,
+    ]).first;
+    final piece = AsmrPiece(
+      id: 'cut',
+      paper: kAsmrPapers.first,
+      ring: union,
+      liberated: true,
+      binding: pair,
+    );
+    final slices = slicesOf(piece);
+    expect(slices.map((s) => s.face).toSet(), {2, b});
+  });
+
+  test('a strip past several faces hangs off each face, not one', () {
+    final net = unfoldSelection(model, adjacency, const [
+      HologramPick(4),
+      HologramPick(1, from: 4),
+      HologramPick(2, from: 4),
+      HologramPick(5, from: 1),
+    ]);
+    final piece = AsmrPiece(
+      id: 'strip',
+      paper: kAsmrPapers.first,
+      ring: const [
+        Offset(-31.63199865517926, 99.98179943009788),
+        Offset(24.141073579053526, 99.07215802325676),
+        Offset(22.153873743537964, -106.45096854543324),
+        Offset(-34.61307181916857, -105.62792177006273),
+      ],
+      position: const Offset(-2.4386809593023258, 5.687795239825582),
+      angle: 1.5852940085529306,
+      liberated: true,
+      binding: net,
+    );
+    final overhang = overhangOf(piece);
+    expect(overhang.length, greaterThan(1));
+    var area = 0.0;
+    for (final part in overhang) {
+      expect({4, 1, 2, 5}, contains(part.face));
+      area += polygonSignedArea(part.ring).abs();
+      for (final hole in part.holes) {
+        area -= polygonSignedArea(hole).abs();
+      }
+      final desk = [for (final p in part.ring) piece.toDesk(p)];
+      var minX = desk.first.dx;
+      var maxX = minX;
+      var minY = desk.first.dy;
+      var maxY = minY;
+      for (final p in desk) {
+        if (p.dx < minX) minX = p.dx;
+        if (p.dx > maxX) maxX = p.dx;
+        if (p.dy < minY) minY = p.dy;
+        if (p.dy > maxY) maxY = p.dy;
+      }
+      expect(maxX - minX, lessThan(80), reason: 'face ${part.face}');
+      expect(maxY - minY, lessThan(80), reason: 'face ${part.face}');
+    }
+    expect(area, closeTo(1569, 40));
   });
 
   test('paper inside the net has no overhang', () {
@@ -133,7 +221,10 @@ void main() {
   });
 
   test('paper off its net shows no overhang', () {
-    expect(overhangOf(bound(const Size(20, 20), at: const Offset(200, 0))), isEmpty);
+    expect(
+      overhangOf(bound(const Size(20, 20), at: const Offset(200, 0))),
+      isEmpty,
+    );
   });
 
   test('only paper on the blueprint edge counts as touching it', () {

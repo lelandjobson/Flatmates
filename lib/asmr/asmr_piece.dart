@@ -86,6 +86,18 @@ class AsmrPiece {
     scores: scores ?? this.scores,
   );
 
+  /// The same piece, attached to no faces.
+  AsmrPiece unbound() => AsmrPiece(
+    id: id,
+    paper: paper,
+    ring: ring,
+    holes: holes,
+    position: position,
+    angle: angle,
+    liberated: liberated,
+    scores: scores,
+  );
+
   /// Paper coordinates to the desk.
   Matrix4 get pose =>
       Matrix4.translationValues(position.dx, position.dy, 0) *
@@ -134,10 +146,37 @@ class AsmrPiece {
   bool contains(Offset desk) => containsLocal(toLocal(desk));
 
   /// The same piece turned to [angle] about its centroid.
-  AsmrPiece turnedTo(double angle) {
-    final center = deskCentroid;
-    final turned = copyWith(angle: angle);
-    return turned.copyWith(position: position + center - turned.deskCentroid);
+  AsmrPiece turnedTo(double angle) => turnedAbout(angle, deskCentroid);
+
+  /// The same piece turned to [angle] about [pivot], which stays where it is.
+  AsmrPiece turnedAbout(double angle, Offset pivot) {
+    final local = toLocal(pivot);
+    final c = math.cos(angle);
+    final s = math.sin(angle);
+    final spun = Offset(
+      c * local.dx - s * local.dy,
+      s * local.dx + c * local.dy,
+    );
+    return copyWith(position: pivot - spun, angle: angle);
+  }
+
+  /// Midpoint of the outline edge [from] sits across from.
+  Offset edgeCenterOpposite(Offset from) {
+    final ring = deskRing;
+    var best = double.infinity;
+    var mid = deskCentroid;
+    for (var i = 0; i < ring.length; i++) {
+      final a = ring[i];
+      final b = ring[(i + 1) % ring.length];
+      if ((b - a).distance < 1e-9) continue;
+      final center = Offset((a.dx + b.dx) / 2, (a.dy + b.dy) / 2);
+      final distance = (center - from).distance;
+      if (distance < best) {
+        best = distance;
+        mid = center;
+      }
+    }
+    return mid;
   }
 
   /// Paper outline as a path in paper coordinates, holes cut out.
@@ -157,12 +196,8 @@ class AsmrPiece {
     return path;
   }
 
-  PapercutPiece _asPapercut() => PapercutPiece(
-    id: id,
-    color: paper.color,
-    vertices: ring,
-    holes: holes,
-  );
+  PapercutPiece _asPapercut() =>
+      PapercutPiece(id: id, color: paper.color, vertices: ring, holes: holes);
 }
 
 /// What one exacto stroke did to the desk.
@@ -212,11 +247,10 @@ AsmrCut? cutPieces(
     final reached = finished && !exact
         ? _reachEdges(_closeLoop(_joinScores(local, piece.scores)), piece)
         : local;
-    final result = applyPapercutCuts(
-      PapercutSheet(pieces: [papercut]),
-      [...piece.scores, reached],
-      recordStroke: false,
-    );
+    final result = applyPapercutCuts(PapercutSheet(pieces: [papercut]), [
+      ...piece.scores,
+      reached,
+    ], recordStroke: false);
     final parts = result?.pieces ?? const <PapercutPiece>[];
     if (parts.length < 2) {
       next.add(
@@ -254,6 +288,114 @@ AsmrCut? cutPieces(
     }
   }
   if (!touched) return null;
+  return AsmrCut(pieces: next, freed: freed);
+}
+
+/// Desk units a straight cut runs past the paper's edge, so it leaves it.
+const double _kThroughEdge = 0.5;
+
+/// Where the line through [a] and [b] crosses [piece]'s outline and holes,
+/// as line parameters: 0 at [a], 1 at [b]. Cramer's rule against each edge,
+/// as in Boost.Geometry's `cartesian_segments`.
+List<double> lineCrossings(AsmrPiece piece, Offset a, Offset b) {
+  final dir = b - a;
+  final hits = <double>[];
+  for (final ring in [piece.deskRing, ...piece.deskHoles]) {
+    for (var i = 0; i < ring.length; i++) {
+      final c = ring[i];
+      final edge = ring[(i + 1) % ring.length] - c;
+      final denom = dir.dx * edge.dy - dir.dy * edge.dx;
+      if (denom.abs() < 1e-12) continue;
+      final w = c - a;
+      final t = (w.dx * edge.dy - w.dy * edge.dx) / denom;
+      final u = (w.dx * dir.dy - w.dy * dir.dx) / denom;
+      if (u >= -1e-9 && u <= 1 + 1e-9) hits.add(t);
+    }
+  }
+  hits.sort();
+  return hits;
+}
+
+/// The straight cut through each piece the segment [a]–[b] touches: the
+/// line through them, from where it enters that piece's paper to where it
+/// leaves, kept within the line parameters [lo]..[hi]. A piece the segment
+/// touches only outside [lo]..[hi] is not cut.
+List<(AsmrPiece, List<Offset>)> straightCutLines(
+  List<AsmrPiece> pieces,
+  Offset a,
+  Offset b, {
+  double lo = double.negativeInfinity,
+  double hi = double.infinity,
+}) {
+  final dir = b - a;
+  final length = dir.distance;
+  if (length < 1e-6) return const [];
+  final from = math.max(0.0, lo);
+  final to = math.min(1.0, hi);
+  if (to <= from) return const [];
+  final drawn = [a + dir * from, a + dir * to];
+  final past = _kThroughEdge / length;
+  final lines = <(AsmrPiece, List<Offset>)>[];
+  for (final piece in pieces) {
+    final local = [for (final p in drawn) piece.toLocal(p)];
+    if (clipStrokePolylines(local, piece._asPapercut()).isEmpty) continue;
+    final hits = lineCrossings(piece, a, b);
+    if (hits.length < 2) continue;
+    final start = math.max(hits.first - past, lo);
+    final end = math.min(hits.last + past, hi);
+    if (end - start < 1e-9) continue;
+    lines.add((piece, [a + dir * start, a + dir * end]));
+  }
+  return lines;
+}
+
+/// The parts of a straight cut that lie on the paper. The cut itself still
+/// runs a hair past the edge so it leaves the paper; this is the glowing
+/// preview of where that cut will be.
+List<List<Offset>> straightCutPreview(
+  List<AsmrPiece> pieces,
+  Offset a,
+  Offset b, {
+  double lo = double.negativeInfinity,
+  double hi = double.infinity,
+}) {
+  final preview = <List<Offset>>[];
+  for (final (piece, line) in straightCutLines(pieces, a, b, lo: lo, hi: hi)) {
+    final local = [for (final p in line) piece.toLocal(p)];
+    for (final part in clipStrokePolylines(local, piece._asPapercut())) {
+      if (part.length < 2) continue;
+      preview.add([for (final p in part) piece.toDesk(p)]);
+    }
+  }
+  return preview;
+}
+
+/// Cuts each piece the segment [a]–[b] touches along its [straightCutLines].
+/// Returns null when the segment touches no paper.
+AsmrCut? cutPiecesAlongLine(
+  List<AsmrPiece> pieces,
+  Offset a,
+  Offset b, {
+  double lo = double.negativeInfinity,
+  double hi = double.infinity,
+}) {
+  final lines = {
+    for (final (piece, line) in straightCutLines(pieces, a, b, lo: lo, hi: hi))
+      piece.id: line,
+  };
+  if (lines.isEmpty) return null;
+  final next = <AsmrPiece>[];
+  final freed = <String>{};
+  for (final piece in pieces) {
+    final line = lines[piece.id];
+    final cut = line == null ? null : cutPieces([piece], line, exact: true);
+    if (cut == null) {
+      next.add(piece);
+      continue;
+    }
+    next.addAll(cut.pieces);
+    freed.addAll(cut.freed);
+  }
   return AsmrCut(pieces: next, freed: freed);
 }
 
