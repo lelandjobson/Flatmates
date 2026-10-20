@@ -1,6 +1,7 @@
 import 'package:go_router/go_router.dart';
 
 import '../gridcraft/blueprint.dart';
+import '../screens/asmr_split_view.dart';
 import '../screens/asmr_view.dart';
 import '../screens/cards_debug_view.dart';
 import '../screens/dev_routes_screen.dart';
@@ -192,6 +193,11 @@ final router = GoRouter(
       path: '/asmr',
       name: 'asmr',
       builder: (context, state) => const AsmrView(),
+    ),
+    GoRoute(
+      path: '/asmr-split',
+      name: 'asmr_split',
+      builder: (context, state) => const AsmrSplitView(),
     ),
   ],
 );

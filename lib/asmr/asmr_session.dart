@@ -9,13 +9,17 @@ import 'asmr_piece.dart';
 
 /// `~/.flatmates/asmr_session.json`. Save writes the desk here so it can be
 /// opened again, or inspected when a piece is not showing.
-File asmrSessionFile() {
-  final home =
-      Platform.environment['HOME'] ??
-      Platform.environment['USERPROFILE'] ??
-      Directory.systemTemp.path;
-  return File('$home/.flatmates/asmr_session.json');
-}
+File asmrSessionFile() => File('${_home()}/.flatmates/asmr_session.json');
+
+/// `~/.flatmates/asmr_split_session.json`, the split view's desk, kept apart
+/// so it does not overwrite the other view's.
+File asmrSplitSessionFile() =>
+    File('${_home()}/.flatmates/asmr_split_session.json');
+
+String _home() =>
+    Platform.environment['HOME'] ??
+    Platform.environment['USERPROFILE'] ??
+    Directory.systemTemp.path;
 
 /// One saved desk: the hologram, the paper, the camera, and the straight edge.
 class AsmrSession {

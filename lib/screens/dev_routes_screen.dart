@@ -14,6 +14,7 @@ const kDevMenuRouteNames = {
   'puzzle_editor',
   'tool_animations',
   'asmr',
+  'asmr_split',
 };
 
 class DevRoutesScreen extends StatelessWidget {

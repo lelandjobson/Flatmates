@@ -8,6 +8,7 @@ import '../gridcraft/folded_model.dart';
 import '../gridcraft/model_painter.dart' show kPreselectColor;
 import '../papercut/camera.dart';
 import 'asmr_mapping.dart';
+import 'asmr_net.dart';
 import 'asmr_paper.dart';
 import 'asmr_piece.dart';
 
@@ -118,6 +119,26 @@ void addBoundPaper({
     }
   }
 }
+
+/// Paper coordinates of [piece] to screen pixels, as laid on [netFace] of
+/// its net: the canvas transform its slice on that face is drawn with.
+Matrix4 boundPaperToScreen({
+  required PapercutCamera camera,
+  required Size size,
+  required FoldedModel model,
+  required AsmrNetFace netFace,
+  required AsmrPiece piece,
+}) {
+  final face = model.faces[netFace.face];
+  final faceToScreen = Matrix4.fromFloat64List(
+    _flat(_screenFromWorld(camera, size) * face.toWorld),
+  );
+  return faceToScreen * (netFace.netToFace * piece.pose);
+}
+
+/// How brightly paper on [face] is lit.
+double faceShade(FoldedModel model, int face) =>
+    _shade(model.outwardNormal(face));
 
 Vector3 _vec(Offset p) => Vector3(p.dx, p.dy, 0);
 
