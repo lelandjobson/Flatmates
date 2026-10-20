@@ -170,6 +170,8 @@ Future<void> pickFace(WidgetTester tester) async {
   );
   await pick.up();
   await frames(tester, 300);
+  final reticle = find.byKey(const ValueKey('asmr-crosshair'));
+  expect(tester.getCenter(reticle), _modelMiddle);
   final net = desk(tester).blueprint!;
   expect(net.faces, hasLength(1));
 }

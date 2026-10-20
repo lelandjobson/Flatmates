@@ -55,6 +55,9 @@ const double _kHoloSettle = 0.12;
 /// Fill on the face under the aim, against 1 on a selected face.
 const double _kHoverFill = 0.55;
 
+/// Room around the 3D reticle, which is centered on the aim.
+const double _kReticleBox = 24;
+
 const double _kTapSlop = 8;
 const Duration _kTapTime = Duration(milliseconds: 350);
 const double _kOrbitPerPixel = 0.008;
@@ -1845,12 +1848,16 @@ class _AsmrViewState extends State<AsmrView>
                     ),
                   ),
                 ),
-              if (t > 0.5 && !_aimsWithCursor && _modelTool == _ModelTool.orbit)
-                Positioned.fill(
+              if (_aim case final aim? when t > 0.5)
+                Positioned(
                   key: const ValueKey('asmr-crosshair'),
+                  left: aim.dx - _kReticleBox / 2,
+                  top: aim.dy - _kReticleBox / 2,
+                  width: _kReticleBox,
+                  height: _kReticleBox,
                   child: Opacity(
                     opacity: (t - 0.5) * 2,
-                    child: ViewCrosshair(selectable: _hoverFace != null),
+                    child: const ViewCrosshair(),
                   ),
                 ),
               ..._chrome(context, t),
@@ -1906,7 +1913,7 @@ class _AsmrViewState extends State<AsmrView>
         _placeSheet(details.data, _toDesk(local));
       },
       builder: (context, candidate, rejected) => MouseRegion(
-        cursor: showKnife
+        cursor: showKnife || _in3d
             ? SystemMouseCursors.none
             : showStraight
             ? SystemMouseCursors.precise

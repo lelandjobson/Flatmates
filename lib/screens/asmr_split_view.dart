@@ -65,6 +65,9 @@ enum _Drag {
 enum _Bin { none, inventory, trash }
 
 const double _kDividerHeight = 16;
+
+/// Room around the model's reticle, which is centered on the aim.
+const double _kReticleBox = 24;
 const Size _kHandleSize = Size(44, 32);
 
 const Duration _kPreselectFade = Duration(milliseconds: 180);
@@ -384,13 +387,16 @@ class _AsmrSplitViewState extends State<AsmrSplitView>
       _lastKind == PointerDeviceKind.mouse ||
       _lastKind == PointerDeviceKind.trackpad;
 
-  void _refreshHover() {
+  /// Where the model is aimed at: the cursor while it is over the model
+  /// pane, else the pane's middle on touch.
+  Offset? get _aim {
+    if (!_aimsWithCursor) return _modelCenter;
     final hover = _hover;
-    final aim = _aimsWithCursor
-        ? hover != null && hover.dy < _modelHeight
-              ? hover
-              : null
-        : _modelCenter;
+    return hover != null && hover.dy < _modelHeight ? hover : null;
+  }
+
+  void _refreshHover() {
+    final aim = _aim;
     _hoverFace = aim == null ? null : _faceAt(aim);
   }
 
@@ -1705,14 +1711,14 @@ class _AsmrSplitViewState extends State<AsmrSplitView>
                     ),
                   ),
                 ),
-              if (!_aimsWithCursor && _modelTool == _ModelTool.orbit)
+              if (_aim case final aim?)
                 Positioned(
                   key: const ValueKey('asmr-crosshair'),
-                  left: 0,
-                  top: 0,
-                  right: 0,
-                  height: _modelHeight,
-                  child: ViewCrosshair(selectable: _hoverFace != null),
+                  left: aim.dx - _kReticleBox / 2,
+                  top: aim.dy - _kReticleBox / 2,
+                  width: _kReticleBox,
+                  height: _kReticleBox,
+                  child: const ViewCrosshair(),
                 ),
               ..._divider(),
               ..._chrome(context),
@@ -1830,15 +1836,18 @@ class _AsmrSplitViewState extends State<AsmrSplitView>
                 height: _modelHeight,
                 child: ClipRect(
                   key: const Key('asmr-split-model'),
-                  child: DecoratedBox(
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [kAsmrSkyColor, kAsmrDeskColor],
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.none,
+                    child: DecoratedBox(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [kAsmrSkyColor, kAsmrDeskColor],
+                        ),
                       ),
+                      child: _modelLayer(),
                     ),
-                    child: _modelLayer(),
                   ),
                 ),
               ),
