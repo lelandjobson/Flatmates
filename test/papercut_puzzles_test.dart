@@ -42,7 +42,12 @@ void main() {
           .toSet();
       expect(
         names,
-        containsAll(['gameview', 'legacy_crafting', 'papercut_puzzles']),
+        containsAll([
+          'gameview',
+          'legacy_crafting',
+          'papercut_puzzles',
+          'craft_room',
+        ]),
       );
       expect(kDevMenuRouteNames, {
         'blueprint_examination',
@@ -51,6 +56,8 @@ void main() {
         'puzzle_editor',
         'tool_animations',
         'asmr',
+        'asmr_split',
+        'craft_room',
       });
     });
   });

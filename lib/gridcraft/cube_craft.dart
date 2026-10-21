@@ -22,9 +22,10 @@ const double kBoxStackTwist = 15 * math.pi / 180;
 
 /// Version-1 craft for [cubeBlueprint]. Every square is one face of a single
 /// island. The hub is the root. Each other face turns a quarter about the
-/// penciled edge it shares with its parent, toward +z.
-Map<String, dynamic> cubeCraftJson() =>
-    _netCraftJson(kCubeCraftId, 'Cube', cubeBlueprint().steps.single);
+/// penciled edge it shares with its parent, toward +z. [face] is the edge
+/// length, as in [cubeBlueprint].
+Map<String, dynamic> cubeCraftJson({double face = kCubeFace}) =>
+    _netCraftJson(kCubeCraftId, 'Cube', cubeBlueprint(face: face).steps.single);
 
 String cubeCraftJsonText() => _jsonText(cubeCraftJson());
 

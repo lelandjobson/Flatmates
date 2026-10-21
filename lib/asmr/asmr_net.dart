@@ -79,7 +79,46 @@ class AsmrNetEdge {
 class AsmrNet {
   AsmrNet._(this.faces, this.edges);
 
+  /// [faces] and [edges] where they lie, as one net.
+  factory AsmrNet.fromParts(List<AsmrNetFace> faces, List<AsmrNetEdge> edges) =>
+      AsmrNet._(List.unmodifiable(faces), List.unmodifiable(edges));
+
   static final AsmrNet empty = AsmrNet._(const [], const []);
+
+  /// The same net with each island in [byIsland] carried on the desk by its
+  /// matrix. Other islands stay where they are.
+  AsmrNet transformedIslands(Map<int, Matrix4> byIsland) {
+    if (byIsland.isEmpty) return this;
+    final islandOf = {for (final face in faces) face.face: face.island};
+    return AsmrNet._(
+      [
+        for (final face in faces)
+          if (byIsland[face.island] case final by?)
+            AsmrNetFace(
+              face: face.face,
+              parent: face.parent,
+              island: face.island,
+              faceToNet: by * face.faceToNet,
+              ring: [for (final p in face.ring) applyAffine(by, p)],
+            )
+          else
+            face,
+      ],
+      [
+        for (final edge in edges)
+          if (byIsland[islandOf[edge.face]] case final by?)
+            AsmrNetEdge(
+              face: edge.face,
+              edge: edge.edge,
+              a: applyAffine(by, edge.a),
+              b: applyAffine(by, edge.b),
+              fold: edge.fold,
+            )
+          else
+            edge,
+      ],
+    );
+  }
 
   final List<AsmrNetFace> faces;
   final List<AsmrNetEdge> edges;
@@ -89,6 +128,11 @@ class AsmrNet {
   };
 
   bool get isEmpty => faces.isEmpty;
+
+  /// Island indexes, in face order.
+  late final List<int> islands = {
+    for (final face in faces) face.island,
+  }.toList();
 
   AsmrNetFace? of(int face) => _byFace[face];
 
@@ -102,10 +146,42 @@ class AsmrNet {
     for (final face in faces) {
       (islands[face.island] ??= []).add(face.ring);
     }
-    return [
-      for (final rings in islands.values) ...unionPolygons(rings),
-    ];
+    return [for (final rings in islands.values) ...unionPolygons(rings)];
   }();
+}
+
+/// Sets the islands of [placed] in a row. Each island keeps the shape it
+/// unfolded to; only a translation is applied, from its bounding box.
+void _packIslands(Map<int, AsmrNetFace> placed, List<int> order) {
+  final byIsland = <int, List<int>>{};
+  for (final face in order) {
+    (byIsland[placed[face]!.island] ??= []).add(face);
+  }
+  if (byIsland.length < 2) return;
+  final ids = byIsland.keys.toList()..sort();
+  Rect boxOf(int island) =>
+      polygonBounds([for (final face in byIsland[island]!) placed[face]!.ring]);
+  var cursor = boxOf(ids.first).right;
+  final rowCenter = boxOf(ids.first).center.dy;
+  for (final island in ids.skip(1)) {
+    final box = boxOf(island);
+    final dx = cursor + kAsmrIslandGap - box.left;
+    final dy = rowCenter - box.center.dy;
+    cursor = box.right + dx;
+    if (dx.abs() < 1e-9 && dy.abs() < 1e-9) continue;
+    final shift = Matrix4.translationValues(dx, dy, 0);
+    final delta = Offset(dx, dy);
+    for (final face in byIsland[island]!) {
+      final held = placed[face]!;
+      placed[face] = AsmrNetFace(
+        face: held.face,
+        parent: held.parent,
+        island: held.island,
+        faceToNet: shift * held.faceToNet,
+        ring: [for (final p in held.ring) p + delta],
+      );
+    }
+  }
 }
 
 Offset applyAffine(Matrix4 m, Offset p) {
@@ -114,9 +190,12 @@ Offset applyAffine(Matrix4 m, Offset p) {
 }
 
 /// Lays [picks] flat, in order. Each face hinges to its [HologramPick.from]
-/// face when that is placed and shares an edge with it, else to the earliest
-/// placed face that does. A face that shares no edge with any placed face
-/// starts a new island to the right.
+/// face when that is placed, shares an edge with it, and belongs to the same
+/// volume. Otherwise it hinges to the earliest placed face of that volume
+/// that it touches. A face with no such neighbor starts a new island, which
+/// is how separate volumes stay separate even where they meet in 3D. Islands
+/// are then set in a row, [kAsmrIslandGap] apart, by each island's bounding
+/// box, so one volume does not land on another.
 AsmrNet unfoldSelection(
   FoldedModel model,
   List<List<FaceNeighbor?>> adjacency,
@@ -143,13 +222,17 @@ AsmrNet unfoldSelection(
 
     int? parent;
     int? parentEdge;
+    final volume = model.faces[face].island;
+    bool sameVolume(int other) =>
+        placed.containsKey(other) && model.faces[other].island == volume;
     final from = pick.from;
-    if (from != null && placed.containsKey(from)) {
+    if (from != null && sameVolume(from)) {
       parentEdge = edgeTo(from);
       if (parentEdge != null) parent = from;
     }
     if (parent == null) {
       for (final other in order) {
+        if (!sameVolume(other)) continue;
         final e = edgeTo(other);
         if (e != null) {
           parent = other;
@@ -164,22 +247,6 @@ AsmrNet unfoldSelection(
     if (parent == null || parentEdge == null) {
       island = islands++;
       faceToNet = base;
-      if (placed.isNotEmpty) {
-        final current = polygonBounds([
-          for (final f in placed.values) f.ring,
-        ]);
-        final ring = [
-          for (final p in model.faces[face].outline) applyAffine(base, p),
-        ];
-        final own = polygonBounds([ring]);
-        faceToNet =
-            Matrix4.translationValues(
-              current.right + kAsmrIslandGap - own.left,
-              current.center.dy - own.center.dy,
-              0,
-            ) *
-            base;
-      }
     } else {
       final host = placed[parent]!;
       island = host.island;
@@ -197,10 +264,10 @@ AsmrNet unfoldSelection(
     order.add(face);
   }
 
+  _packIslands(placed, order);
+
   if (placed.isEmpty) return AsmrNet.empty;
-  final center = polygonBounds([
-    for (final f in placed.values) f.ring,
-  ]).center;
+  final center = polygonBounds([for (final f in placed.values) f.ring]).center;
   final shift = Matrix4.translationValues(-center.dx, -center.dy, 0);
   final faces = [
     for (final face in order)

@@ -15,8 +15,9 @@ class HologramEdgeView {
   final double opacity;
 }
 
-/// The hologram: the unfolded blueprint of the selected faces in glowing
-/// white. Desk point `p` lands on screen at `origin + p * scale`.
+/// The hologram: the unfolded blueprint of the selected faces. Desk point
+/// `p` lands on screen at `origin + p * scale`. [line] and [glow] default to
+/// white; a craft group passes its own colors.
 class HologramPainter extends CustomPainter {
   const HologramPainter({
     required this.edges,
@@ -25,6 +26,8 @@ class HologramPainter extends CustomPainter {
     required this.scale,
     this.faceOpacity = 1,
     this.contrast = 0,
+    this.line = const Color(0xFFFFFFFF),
+    this.glow = const Color(0xFFFFFFFF),
   });
 
   final List<HologramEdgeView> edges;
@@ -39,6 +42,10 @@ class HologramPainter extends CustomPainter {
   /// read over light paper on the desk.
   final double contrast;
 
+  /// The blueprint stroke, and the halo around edges that are off the paper.
+  final Color line;
+  final Color glow;
+
   Offset _screen(Offset p) => origin + p * scale;
 
   @override
@@ -48,11 +55,12 @@ class HologramPainter extends CustomPainter {
         ..color = Colors.white.withValues(alpha: 0.05 * faceOpacity);
       for (final ring in faces) {
         if (ring.length < 3) continue;
-        final path = Path()..addPolygon([for (final p in ring) _screen(p)], true);
+        final path = Path()
+          ..addPolygon([for (final p in ring) _screen(p)], true);
         canvas.drawPath(path, wash);
       }
     }
-    final glow = Paint()
+    final halo = Paint()
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
@@ -71,19 +79,19 @@ class HologramPainter extends CustomPainter {
       if (edge.fold) {
         core
           ..strokeWidth = 1.2
-          ..color = Colors.white.withValues(alpha: 0.38 * t);
+          ..color = line.withValues(alpha: 0.38 * t);
         _dashed(canvas, a, b, core);
         continue;
       }
-      glow
+      halo
         ..strokeWidth = 9
-        ..color = Colors.white.withValues(alpha: 0.32 * t);
-      canvas.drawLine(a, b, glow);
+        ..color = glow.withValues(alpha: 0.45 * t);
+      canvas.drawLine(a, b, halo);
       shade.color = Colors.black.withValues(alpha: (0.22 + 0.3 * contrast) * t);
       canvas.drawLine(a, b, shade);
       core
         ..strokeWidth = 1.8
-        ..color = Colors.white.withValues(alpha: 0.95 * t);
+        ..color = line.withValues(alpha: 0.95 * t);
       canvas.drawLine(a, b, core);
     }
   }
@@ -108,5 +116,7 @@ class HologramPainter extends CustomPainter {
       old.origin != origin ||
       old.scale != scale ||
       old.faceOpacity != faceOpacity ||
-      old.contrast != contrast;
+      old.contrast != contrast ||
+      old.line != line ||
+      old.glow != glow;
 }

@@ -4,6 +4,7 @@ import '../gridcraft/blueprint.dart';
 import '../screens/asmr_split_view.dart';
 import '../screens/asmr_view.dart';
 import '../screens/cards_debug_view.dart';
+import '../screens/craft_room_view.dart';
 import '../screens/dev_routes_screen.dart';
 import '../screens/gesture_system_view.dart';
 import '../screens/legacy_crafting_screen.dart';
@@ -198,6 +199,11 @@ final router = GoRouter(
       path: '/asmr-split',
       name: 'asmr_split',
       builder: (context, state) => const AsmrSplitView(),
+    ),
+    GoRoute(
+      path: '/craft-room',
+      name: 'craft_room',
+      builder: (context, state) => const CraftRoomView(),
     ),
   ],
 );

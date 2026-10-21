@@ -229,12 +229,17 @@ class HudToolCarousel<T> extends StatelessWidget {
     required this.items,
     required this.selected,
     required this.onSelect,
+    this.trailing = const [],
     this.compact = false,
   });
 
   final List<HudCarouselItem<T>> items;
   final T? selected;
   final ValueChanged<T> onSelect;
+
+  /// Buttons after the selectable tools, in the same row. A toggle that is
+  /// not one of [items], such as the straight edge.
+  final List<Widget> trailing;
   final bool compact;
 
   double get _slot => compact ? 48.0 : 56.0;
@@ -259,6 +264,7 @@ class HudToolCarousel<T> extends StatelessWidget {
             onTap: () => onSelect(item.value),
           ),
         ),
+      ...trailing,
     ];
     return LayoutBuilder(
       builder: (context, constraints) {

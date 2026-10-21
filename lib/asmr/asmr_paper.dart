@@ -4,8 +4,15 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/painting.dart';
 
-/// A faint repeating print on paper.
-enum AsmrPattern { circleGrid, linesAndCircles, triangles, hexagons, octagons }
+/// A faint repeating print on paper. [plain] prints nothing.
+enum AsmrPattern {
+  circleGrid,
+  linesAndCircles,
+  triangles,
+  hexagons,
+  octagons,
+  plain,
+}
 
 /// A paper in the ASMR drawer: a color printed with a faint pattern.
 class AsmrPaper {
@@ -69,6 +76,7 @@ Offset patternPeriod(AsmrPattern pattern) => switch (pattern) {
   AsmrPattern.triangles => Offset(10, 10 * math.sqrt(3)),
   AsmrPattern.hexagons => Offset(6 * math.sqrt(3), 18),
   AsmrPattern.octagons => const Offset(12, 12),
+  AsmrPattern.plain => const Offset(1, 1),
 };
 
 /// Each paper's tile, drawn once and repeated by an [ImageShader] wherever
@@ -209,5 +217,7 @@ void _drawPattern(Canvas canvas, AsmrPattern pattern, Offset p, Paint ink) {
           ..close();
         canvas.drawPath(path, ink);
       });
+    case AsmrPattern.plain:
+      break;
   }
 }

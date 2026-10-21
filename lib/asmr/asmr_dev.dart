@@ -203,11 +203,29 @@ class AsmrDevSettings extends ChangeNotifier {
   }
 }
 
-/// The ASMR DevTools sheet.
+/// A page a view adds to the DevTools sheet after its own tabs.
+class AsmrDevPage {
+  const AsmrDevPage({
+    required this.label,
+    required this.tabKey,
+    required this.builder,
+  });
+
+  final String label;
+  final Key tabKey;
+  final WidgetBuilder builder;
+}
+
+/// The ASMR DevTools sheet, with any [pages] a view adds.
 class AsmrDevPanel extends StatefulWidget {
-  const AsmrDevPanel({super.key, required this.settings});
+  const AsmrDevPanel({
+    super.key,
+    required this.settings,
+    this.pages = const [],
+  });
 
   final AsmrDevSettings settings;
+  final List<AsmrDevPage> pages;
 
   @override
   State<AsmrDevPanel> createState() => _AsmrDevPanelState();
@@ -215,6 +233,9 @@ class AsmrDevPanel extends StatefulWidget {
 
 class _AsmrDevPanelState extends State<AsmrDevPanel> {
   AsmrDevTab _tab = AsmrDevTab.curves;
+
+  /// The added page showing, or null for one of [AsmrDevTab].
+  int? _page;
 
   @override
   Widget build(BuildContext context) {
@@ -245,25 +266,45 @@ class _AsmrDevPanelState extends State<AsmrDevPanel> {
                 ),
               ),
               const SizedBox(height: 8),
-              Row(
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
                 children: [
                   _Tab(
                     label: 'Curves',
                     tabKey: const Key('asmr-dev-tab-curves'),
-                    selected: _tab == AsmrDevTab.curves,
-                    onTap: () => setState(() => _tab = AsmrDevTab.curves),
+                    selected: _page == null && _tab == AsmrDevTab.curves,
+                    onTap: () => setState(() {
+                      _tab = AsmrDevTab.curves;
+                      _page = null;
+                    }),
                   ),
-                  const SizedBox(width: 6),
                   _Tab(
                     label: 'Shadow',
                     tabKey: const Key('asmr-dev-tab-shadow'),
-                    selected: _tab == AsmrDevTab.shadow,
-                    onTap: () => setState(() => _tab = AsmrDevTab.shadow),
+                    selected: _page == null && _tab == AsmrDevTab.shadow,
+                    onTap: () => setState(() {
+                      _tab = AsmrDevTab.shadow;
+                      _page = null;
+                    }),
                   ),
+                  for (var i = 0; i < widget.pages.length; i++)
+                    _Tab(
+                      label: widget.pages[i].label,
+                      tabKey: widget.pages[i].tabKey,
+                      selected: _page == i,
+                      onTap: () => setState(() => _page = i),
+                    ),
                 ],
               ),
               const SizedBox(height: 8),
-              if (_tab == AsmrDevTab.curves)
+              if (_page case final page? when page < widget.pages.length)
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: widget.pages[page].builder(context),
+                  ),
+                )
+              else if (_tab == AsmrDevTab.curves)
                 _CurvesPage(
                   amount: settings.curveSmoothing,
                   onChanged: (value) => settings.curveSmoothing = value,

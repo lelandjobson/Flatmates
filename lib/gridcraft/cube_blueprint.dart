@@ -27,11 +27,12 @@ class CubeFace {
 
 enum CubeFaceRole { front, back, left, right, top, bottom }
 
-/// Latin cross of a 5×5×5 cube. The hub at (5, 5)–(10, 10) is the front.
+/// Latin cross of a cube with [face]-long edges, 5×5×5 by default. The hub
+/// at (face, face)–(2·face, 2·face) is the front.
 ///
 /// Each shared side is penciled on both squares. Every outer edge stays penned.
-GridBlueprint cubeBlueprint() {
-  final net = _crossNet(Offset.zero);
+GridBlueprint cubeBlueprint({double face = kCubeFace}) {
+  final net = _crossNet(Offset.zero, face: face);
   return GridBlueprint(
     id: 'cube',
     name: 'Cube',
@@ -77,16 +78,17 @@ GridBlueprint boxStackBlueprint({CraftLink? craft}) {
 }
 
 ({List<List<Offset>> polygons, List<List<EdgeStyle>> edgeStyles}) _crossNet(
-  Offset origin,
-) {
-  List<Offset> square(double left, double bottom) {
-    final x = origin.dx + left;
-    final y = origin.dy + bottom;
+  Offset origin, {
+  double face = kCubeFace,
+}) {
+  List<Offset> square(double column, double row) {
+    final x = origin.dx + column * face;
+    final y = origin.dy + row * face;
     return [
       Offset(x, y),
-      Offset(x + kCubeFace, y),
-      Offset(x + kCubeFace, y + kCubeFace),
-      Offset(x, y + kCubeFace),
+      Offset(x + face, y),
+      Offset(x + face, y + face),
+      Offset(x, y + face),
     ];
   }
 
@@ -102,12 +104,12 @@ GridBlueprint boxStackBlueprint({CraftLink? craft}) {
 
   return (
     polygons: [
-      square(5, 5),
-      square(0, 5),
-      square(10, 5),
-      square(15, 5),
-      square(5, 10),
-      square(5, 0),
+      square(1, 1),
+      square(0, 1),
+      square(2, 1),
+      square(3, 1),
+      square(1, 2),
+      square(1, 0),
     ],
     edgeStyles: [
       edges(bottom: true, right: true, top: true, left: true),

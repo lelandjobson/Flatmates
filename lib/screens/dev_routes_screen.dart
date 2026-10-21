@@ -15,6 +15,7 @@ const kDevMenuRouteNames = {
   'tool_animations',
   'asmr',
   'asmr_split',
+  'craft_room',
 };
 
 class DevRoutesScreen extends StatelessWidget {
