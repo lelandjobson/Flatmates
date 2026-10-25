@@ -191,6 +191,7 @@ class CraftBenchPainter extends CustomPainter {
     this.islandColor = Colors.white,
     this.pencil = const [],
     this.rotateHandle,
+    this.background = true,
   });
 
   final List<BenchPaper> papers;
@@ -233,11 +234,17 @@ class CraftBenchPainter extends CustomPainter {
   /// The selected paper's turn handle, on screen.
   final Offset? rotateHandle;
 
+  /// Fills the desk with [theme]'s desk color first. Off when whatever is
+  /// under the bench should show between the papers.
+  final bool background;
+
   Offset _screen(Offset desk) => origin + desk * scale;
 
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.drawRect(Offset.zero & size, Paint()..color = theme.desk);
+    if (background) {
+      canvas.drawRect(Offset.zero & size, Paint()..color = theme.desk);
+    }
     _paintGrid(canvas, size);
     for (final paper in papers) {
       _paintPaper(canvas, paper);

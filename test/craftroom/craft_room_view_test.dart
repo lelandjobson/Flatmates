@@ -6,6 +6,7 @@ import 'package:flatmates/craftroom/craft_bench_painter.dart';
 import 'package:flatmates/craftroom/craft_theme.dart';
 import 'package:flatmates/craftroom/room_crafts.dart';
 import 'package:flatmates/craftroom/snap_rules.dart';
+import 'package:flatmates/craftroom/workview.dart';
 import 'package:flatmates/gridcraft/craft_collection.dart';
 import 'package:flatmates/screens/craft_room_view.dart';
 import 'package:flatmates/ui/game/dev_tools_button.dart';
@@ -13,11 +14,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math_64.dart' show Vector3;
 
-/// 800 by 600 with a 16 pixel divider: with the bench open each pane is 292
-/// tall, the desk from 308 down.
-const double _paneHeight = 292;
+/// 800 by 600. Both workviews fill the screen; the cube is in the middle.
 const Offset _screenMiddle = Offset(400, 300);
-const Offset _modelMiddle = Offset(400, 146);
+const Offset _modelMiddle = _screenMiddle;
+
+/// The inactive workview's opacity in these tests.
+const double _inactive = 0.33;
 
 /// One 3x3 cube in the middle of an empty room, the camera aimed at it.
 final _room = CraftCollection(
@@ -28,55 +30,131 @@ final _room = CraftCollection(
 );
 
 void main() {
-  testWidgets('the divider rises after the orbit, once the level has loaded, '
-      'and drops before the fly out', (tester) async {
+  testWidgets('the desk workview fades in after the orbit, once the level has '
+      'loaded, and fades out before the fly out', (tester) async {
     await open(tester);
-    expect(find.byKey(const Key('craft-room-divider')), findsNothing);
+    expect(find.byKey(const Key('craft-room-desk')), findsNothing);
     await enterCube(tester);
 
     // Still inside the 800 ms orbit.
     await frames(tester, 736);
-    expect(find.byKey(const Key('craft-room-divider')), findsNothing);
+    expect(find.byKey(const Key('craft-room-desk')), findsNothing);
     expect(find.byKey(const Key('craft-room-room')), findsOneWidget);
-    expect(topHeight(tester), 600);
 
     // Orbit done, the level load still running.
     await frames(tester, 128);
     expect(find.byKey(const Key('craft-room-model')), findsOneWidget);
-    expect(find.byKey(const Key('craft-room-divider')), findsNothing);
-    expect(topHeight(tester), 600);
+    expect(find.byKey(const Key('craft-room-desk')), findsNothing);
 
     await frames(tester, 640);
-    expect(find.byKey(const Key('craft-room-divider')), findsNothing);
-    expect(topHeight(tester), 600);
+    expect(find.byKey(const Key('craft-room-desk')), findsNothing);
 
-    // The load has finished and the divider is on its way up.
+    // The load has finished and the desk is fading in, under the model.
     await frames(tester, 192);
-    expect(find.byKey(const Key('craft-room-divider')), findsOneWidget);
-    final rising = topHeight(tester);
-    expect(rising, lessThan(590));
-    expect(rising, greaterThan(_paneHeight + 20));
+    expect(find.byKey(const Key('craft-room-desk')), findsOneWidget);
+    final rising = look(tester, Workview.desk);
+    expect(rising, greaterThan(0));
+    expect(rising, lessThan(_inactive - 0.02));
 
     await frames(tester, 400);
     expect(find.byKey(const Key('craft-room-model')), findsOneWidget);
-    expect(find.byKey(const Key('craft-room-desk')), findsOneWidget);
-    expect(topHeight(tester), closeTo(_paneHeight, 0.5));
+    expect(look(tester, Workview.desk), closeTo(_inactive, 1e-6));
+    expect(look(tester, Workview.model), 1);
+    expect(find.byTooltip('Select faces'), findsOneWidget);
+    expect(find.byTooltip('Straight cut'), findsNothing);
 
     await tester.tap(find.byKey(const Key('craft-room-back')));
     await frames(tester, 16 * 5);
     expect(find.byKey(const Key('craft-room-desk')), findsOneWidget);
     expect(find.byKey(const Key('craft-room-room')), findsNothing);
-    final falling = topHeight(tester);
-    expect(falling, greaterThan(_paneHeight));
-    expect(falling, lessThan(600));
+    final falling = look(tester, Workview.desk);
+    expect(falling, greaterThan(0));
+    expect(falling, lessThan(_inactive));
 
     await frames(tester, 16 * 25);
     expect(find.byKey(const Key('craft-room-desk')), findsNothing);
     expect(find.byKey(const Key('craft-room-room')), findsOneWidget);
 
     await frames(tester, 900);
-    expect(find.byKey(const Key('craft-room-divider')), findsNothing);
-    expect(topHeight(tester), 600);
+    expect(look(tester, Workview.model), 1);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('a double-tap on empty space switches the active workview', (
+    tester,
+  ) async {
+    await open(tester);
+    await reachBench(tester);
+    expect(look(tester, Workview.model), 1);
+
+    // On the cube: geometry, not empty space.
+    await doubleTap(tester, _modelMiddle);
+    expect(look(tester, Workview.model), 1);
+
+    // Too far apart.
+    await doubleTap(tester, _offCube, second: const Offset(60, 0));
+    expect(look(tester, Workview.model), 1);
+
+    // Too slow.
+    await doubleTap(tester, _offCube, gapMs: 520);
+    expect(look(tester, Workview.model), 1);
+
+    // Two fingers at once, twice.
+    for (var i = 0; i < 2; i++) {
+      final a = await tester.startGesture(_offCube, pointer: 7);
+      final b = await tester.startGesture(
+        _offCube + const Offset(4, 0),
+        pointer: 8,
+      );
+      await a.up();
+      await b.up();
+      await frames(tester, 48);
+    }
+    await frames(tester, 400);
+    expect(look(tester, Workview.model), 1);
+
+    await doubleTap(tester, _offCube);
+    expect(look(tester, Workview.desk), 1);
+    expect(look(tester, Workview.model), closeTo(_inactive, 1e-6));
+    expect(find.byTooltip('Straight cut'), findsOneWidget);
+    expect(find.byTooltip('Select faces'), findsNothing);
+    expect(find.byKey(const Key('craft-room-paper')), findsOneWidget);
+
+    await doubleTap(tester, _offCube);
+    expect(look(tester, Workview.model), 1);
+    expect(look(tester, Workview.desk), closeTo(_inactive, 1e-6));
+    expect(find.byKey(const Key('craft-room-paper')), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('the Workviews tab sets how the inactive workview is drawn', (
+    tester,
+  ) async {
+    final looks = workviews();
+    await open(tester, looks: looks);
+    await reachBench(tester);
+
+    await tester.tap(find.byType(DevToolsButton));
+    await frames(tester, 50);
+    await tester.tap(find.byKey(const Key('craft-room-dev-tab-workviews')));
+    await frames(tester, 50);
+    final opacity = find.byKey(const Key('workview-opacity'));
+    expect(tester.widget<Slider>(opacity).value, closeTo(_inactive, 1e-6));
+    tester.widget<Slider>(opacity).onChanged!(0.6);
+    tester.widget<Slider>(find.byKey(const Key('workview-blur'))).onChanged!(8);
+    await frames(tester, 50);
+    expect(looks.opacity, 0.6);
+    expect(looks.blur, 8);
+    expect(look(tester, Workview.desk), closeTo(0.6, 1e-6));
+    final filtered = tester.widget<ImageFiltered>(
+      find.descendant(
+        of: find.byKey(const ValueKey('craft-room-workview-desk')),
+        matching: find.byType(ImageFiltered),
+      ),
+    );
+    expect(filtered.enabled, isTrue);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
@@ -96,6 +174,13 @@ void main() {
     await frames(tester, 300);
     final face = hologram(tester).faces.single;
     expect(face, hasLength(4));
+
+    // A tap on the sky with Select faces would clear the selection, so
+    // switch to the desk from Orbit.
+    await tester.tap(find.byTooltip('Orbit'));
+    await frames(tester, 50);
+    await doubleTap(tester, _offCube);
+    expect(hologram(tester).faces, hasLength(1));
 
     await tester.tap(find.byKey(const Key('craft-room-paper')));
     await frames(tester, 50);
@@ -127,6 +212,8 @@ void main() {
       );
     }
 
+    await doubleTap(tester, _offCube);
+    expect(look(tester, Workview.model), 1);
     await tester.tap(find.byTooltip('Select faces'));
     await frames(tester, 50);
     await click(tester, _offCube);
@@ -134,6 +221,8 @@ void main() {
     await click(tester, _modelMiddle);
     expect(hologram(tester).faces, isEmpty);
 
+    await frames(tester, 400);
+    await doubleTap(tester, _offCube);
     await tester.tap(find.byKey(const Key('craft-room-paper')));
     await frames(tester, 50);
     for (var i = 0; i < kScrapSlots; i++) {
@@ -176,6 +265,10 @@ void main() {
     await frames(tester, 50);
     expect(find.byKey(const Key('craft-room-save')), findsNothing);
     expect(find.byKey(const ValueKey('craft-room-group-A')), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Orbit'));
+    await frames(tester, 50);
+    await doubleTap(tester, _offCube);
     expect(find.text('Group A'), findsOneWidget);
     expect(find.byTooltip('Arrange'), findsOneWidget);
 
@@ -227,6 +320,7 @@ void main() {
     await reachBench(tester);
     await tester.tap(find.byTooltip('Select faces'));
     await frames(tester, 50);
+    await doubleTap(tester, _offCube);
 
     expect(find.byKey(const Key('craft-room-slot-0')), findsNothing);
     await tester.tap(find.byKey(const Key('craft-room-paper')));
@@ -235,9 +329,10 @@ void main() {
     expect(find.byKey(const Key('craft-room-slot-1')), findsOneWidget);
     final slot = tester.getCenter(find.byKey(const Key('craft-room-slot-1')));
     expect(slot.dx, greaterThan(700));
-    expect(slot.dy, closeTo(_paneHeight + 16 + _paneHeight / 2, 24));
+    expect(slot.dy, closeTo(408, 24));
     expect(find.byKey(const ValueKey('craft-room-group-A')), findsNothing);
 
+    await doubleTap(tester, _offCube);
     final pick = await tester.startGesture(
       _modelMiddle,
       kind: PointerDeviceKind.mouse,
@@ -251,6 +346,9 @@ void main() {
     expect(hologram(tester).line, kCraftGroupAccents[0]);
     expect(hologram(tester).glow, craftGroupTheme(0).glow);
 
+    await tester.tap(find.byTooltip('Orbit'));
+    await frames(tester, 50);
+    await doubleTap(tester, _offCube);
     await tester.tap(find.byKey(const Key('craft-room-paper')));
     await frames(tester, 400);
     expect(find.byKey(const ValueKey('craft-room-group-A')), findsOneWidget);
@@ -261,8 +359,11 @@ void main() {
       find.byKey(const ValueKey('craft-room-group-A')),
     );
     expect(chipAt.dx, greaterThan(700));
-    expect(chipAt.dy, closeTo(_paneHeight / 2, 40));
+    expect(chipAt.dy, closeTo(170, 40));
 
+    await doubleTap(tester, _offCube);
+    await tester.tap(find.byTooltip('Select faces'));
+    await frames(tester, 50);
     await click(tester, _offCube);
     expect(paperIds(tester), ['paper-0']);
     expect(hologram(tester).faces, isEmpty);
@@ -273,6 +374,9 @@ void main() {
     await click(tester, _modelMiddle);
     expect(paperIds(tester), ['paper-1']);
     expect(find.byKey(const Key('craft-room-save')), findsNothing);
+    await tester.tap(find.byTooltip('Orbit'));
+    await frames(tester, 50);
+    await doubleTap(tester, _offCube);
     expect(find.text('Group A'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
@@ -288,7 +392,7 @@ int stowIcons(WidgetTester tester) => find
     .evaluate()
     .length;
 
-/// Empty sky beside the cube in the model's pane.
+/// Empty sky beside the cube, and empty desk beside the paper.
 const Offset _offCube = Offset(140, 110);
 
 Future<void> click(WidgetTester tester, Offset at) async {
@@ -297,17 +401,61 @@ Future<void> click(WidgetTester tester, Offset at) async {
   await frames(tester, 300);
 }
 
+/// Two clicks [gapMs] apart, the second [second] from the first, then
+/// time for the switch to finish.
+Future<void> doubleTap(
+  WidgetTester tester,
+  Offset at, {
+  Offset second = Offset.zero,
+  int gapMs = 48,
+}) async {
+  final first = await tester.startGesture(at, kind: PointerDeviceKind.mouse);
+  await first.up();
+  await frames(tester, gapMs);
+  final next = await tester.startGesture(
+    at + second,
+    kind: PointerDeviceKind.mouse,
+  );
+  await next.up();
+  await frames(tester, 400);
+}
+
+/// The opacity [view] is drawn at.
+double look(WidgetTester tester, Workview view) => tester
+    .widget<Opacity>(find.byKey(ValueKey('craft-room-workview-${view.name}')))
+    .opacity;
+
 List<String> paperIds(WidgetTester tester) => [
   for (final paper in bench(tester).papers) paper.id,
 ];
 
-Future<void> open(WidgetTester tester, {SnapSettings? snap}) async {
+WorkviewSettings workviews() {
+  final file = File(
+    '${Directory.systemTemp.path}/craft_room_workviews_${DateTime.now().microsecondsSinceEpoch}.json',
+  );
+  addTearDown(() {
+    if (file.existsSync()) file.deleteSync();
+  });
+  final looks = WorkviewSettings(file: file, opacity: _inactive);
+  addTearDown(looks.dispose);
+  return looks;
+}
+
+Future<void> open(
+  WidgetTester tester, {
+  SnapSettings? snap,
+  WorkviewSettings? looks,
+}) async {
   tester.view.physicalSize = const Size(800, 600);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   await tester.pumpWidget(
     MaterialApp(
-      home: CraftRoomView(collection: _room, snapSettings: snap),
+      home: CraftRoomView(
+        collection: _room,
+        snapSettings: snap,
+        workviewSettings: looks ?? workviews(),
+      ),
     ),
   );
   await frames(tester, 100);
@@ -321,23 +469,16 @@ Future<void> enterCube(WidgetTester tester) async {
   await tap.up();
 }
 
-/// The orbit, the level load, and the divider's rise.
+/// The orbit, the level load, and the desk's fade in.
 Future<void> reachBench(WidgetTester tester) async {
   await enterCube(tester);
   await frames(
     tester,
     kCraftFlyDuration.inMilliseconds +
         kLevelLoadDelay.inMilliseconds +
-        kBenchTravelDuration.inMilliseconds +
+        kDeskFadeDuration.inMilliseconds +
         200,
   );
-}
-
-/// Height of the top pane: the room, or the craft once in it.
-double topHeight(WidgetTester tester) {
-  final room = find.byKey(const Key('craft-room-room'));
-  final model = find.byKey(const Key('craft-room-model'));
-  return tester.getSize(room.evaluate().isEmpty ? model : room).height;
 }
 
 Future<void> frames(WidgetTester tester, int ms) async {

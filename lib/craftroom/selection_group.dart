@@ -103,6 +103,14 @@ int? islandAt(AsmrNet net, Offset desk) {
   return null;
 }
 
+/// The model face whose net face lies under [desk], or null.
+int? netFaceAt(AsmrNet net, Offset desk) {
+  for (final face in net.faces.reversed) {
+    if (_inside(desk, face.ring)) return face.face;
+  }
+  return null;
+}
+
 /// Turns [island] by [angle] about [pivot], then slides it by [shift].
 Matrix4 islandMove({
   Offset shift = Offset.zero,
