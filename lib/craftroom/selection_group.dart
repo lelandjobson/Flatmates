@@ -65,14 +65,70 @@ class CraftGroup {
   );
 }
 
+/// How far inside the screen a framed blueprint stays, in pixels. Clears
+/// the tool row along the bottom and the chips along the right.
+const double kBlueprintFramePad = 96;
+
+/// How long the 2D view takes to move onto a selection's blueprint.
+const Duration kBlueprintFrameDuration = Duration(milliseconds: 250);
+
+/// The largest scale at which [bounds] fits in [view] with [pad] pixels
+/// spare on every side.
+double netFitScale(Rect bounds, Size view, double pad) {
+  final availW = math.max(1.0, view.width - 2 * pad);
+  final availH = math.max(1.0, view.height - 2 * pad);
+  return math.min(
+    availW / math.max(bounds.width, 1e-6),
+    availH / math.max(bounds.height, 1e-6),
+  );
+}
+
 /// [picks] unfolded one model unit to a grid square, slid so the net's top
 /// left corner sits on a grid point.
 AsmrNet gridNet(
   FoldedModel model,
   List<List<FaceNeighbor?>> adjacency,
   List<HologramPick> picks,
-) {
-  final net = unfoldSelection(model, adjacency, picks, scale: kBenchGrid);
+) => _snapTopLeft(unfoldSelection(model, adjacency, picks, scale: kBenchGrid));
+
+/// [net] turned a quarter turn when that lets it sit larger in [view].
+///
+/// The turn that fills more of the screen wins. When both orientations fit
+/// the same, a portrait [view] keeps the taller layout and a landscape view
+/// the wider one, so a square screen prefers portrait. The result's top
+/// left sits on a grid point.
+AsmrNet orientNetToView(
+  AsmrNet net,
+  Size view, {
+  double pad = kBlueprintFramePad,
+}) {
+  if (net.isEmpty || view.isEmpty) return net;
+  final turned = _quarterTurn(net);
+  final fit = netFitScale(net.bounds, view, pad);
+  final turnedFit = netFitScale(turned.bounds, view, pad);
+  final useTurn =
+      turnedFit > fit + 1e-6 ||
+      ((turnedFit - fit).abs() <= 1e-6 &&
+          _preferTurn(net.bounds, turned.bounds, view));
+  return _snapTopLeft(useTurn ? turned : net);
+}
+
+/// True when the quarter-turned bounds match [view] better on a tie.
+bool _preferTurn(Rect upright, Rect turned, Size view) {
+  if (view.height >= view.width) return turned.height > upright.height + 1e-6;
+  return turned.width > upright.width + 1e-6;
+}
+
+AsmrNet _quarterTurn(AsmrNet net) {
+  final pivot = net.bounds.center;
+  final turn = islandMove(angle: math.pi / 2, pivot: pivot);
+  return net.transformedIslands({
+    for (final island in net.islands) island: turn,
+  });
+}
+
+/// [net] slid so its top left corner sits on a grid point.
+AsmrNet _snapTopLeft(AsmrNet net) {
   if (net.isEmpty) return net;
   final corner = net.bounds.topLeft;
   final shift = Offset(

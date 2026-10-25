@@ -45,11 +45,11 @@ Future<void> fmHaptic(FmHapticStyle style) {
 }
 
 FmHapticStyle fmHapticStyleForLevel(FmHapticLevel level) => switch (level) {
-      FmHapticLevel.faint => FmHapticStyle.selectionClick,
-      FmHapticLevel.light => FmHapticStyle.lightImpact,
-      FmHapticLevel.medium => FmHapticStyle.mediumImpact,
-      FmHapticLevel.heavy => FmHapticStyle.heavyImpact,
-    };
+  FmHapticLevel.faint => FmHapticStyle.selectionClick,
+  FmHapticLevel.light => FmHapticStyle.lightImpact,
+  FmHapticLevel.medium => FmHapticStyle.mediumImpact,
+  FmHapticLevel.heavy => FmHapticStyle.heavyImpact,
+};
 
 /// Place strength from object size (tiles / cells / segments).
 FmHapticLevel fmHapticPlaceLevel(int size) {
@@ -75,3 +75,99 @@ Future<void> fmHapticDelete(int size) =>
 Future<void> fmHapticSmallClick() => fmHaptic(kFmHapticSmallClick);
 
 Future<void> fmHapticBigClick() => fmHaptic(kFmHapticBigClick);
+
+/// How many selection taps a single moment will play. The last step is a
+/// heavy thump.
+const int kFmSelectionTapCap = 4;
+
+/// Seconds of gathering a selection before its taps start.
+const double kFmSelectionMoment = 0.07;
+
+/// Seconds between the taps of one selection crescendo.
+const double kFmSelectionTapGap = 0.046;
+
+/// Seconds between the light ticks of an exacto buzz.
+const double kFmExactoBuzzGap = 0.034;
+
+/// Seconds between the stronger pulses of a straight cut or a snip.
+const double kFmCutPulseGap = 0.09;
+
+/// What a cut in progress should feel like.
+enum FmCutFeel { none, exacto, pulse }
+
+const List<FmHapticStyle> _kSelectionLadder = [
+  FmHapticStyle.selectionClick,
+  FmHapticStyle.lightImpact,
+  FmHapticStyle.mediumImpact,
+  FmHapticStyle.heavyImpact,
+];
+
+/// Taps for [count] objects selected in one moment. One object is a light
+/// tick. Each further object adds a stronger tap, up to a heavy thump.
+List<FmHapticStyle> fmSelectionTaps(int count) {
+  if (count <= 0) return const [];
+  final n = count < kFmSelectionTapCap ? count : kFmSelectionTapCap;
+  return [for (var i = 0; i < n; i++) _kSelectionLadder[i]];
+}
+
+/// Gathers a selection into moments, then plays a crescendo. Also ticks
+/// while a cut is moving. [take] is the clock: pass the same seconds the
+/// view advances, and play everything it returns.
+class FmHapticPlayer {
+  int _added = 0;
+  bool _moment = false;
+  double _momentEnd = 0;
+
+  List<FmHapticStyle> _queue = const [];
+  int _at = 0;
+  double _nextTap = 0;
+  double _buzzAt = 0;
+
+  /// [count] objects just became selected.
+  void noteSelected(int count, double now) {
+    if (count <= 0) return;
+    _added += count;
+    if (_queue.isNotEmpty || _moment) return;
+    _moment = true;
+    _momentEnd = now + kFmSelectionMoment;
+  }
+
+  /// Feels due at [now]. A cut buzz or pulse only runs while [cutting] says
+  /// the blade is moving, and stops as soon as it is not.
+  List<FmHapticStyle> take(double now, {FmCutFeel cutting = FmCutFeel.none}) {
+    final out = <FmHapticStyle>[];
+    if (_moment && _queue.isEmpty && now >= _momentEnd) {
+      _queue = fmSelectionTaps(_added);
+      _added = 0;
+      _moment = false;
+      _at = 0;
+      _nextTap = now;
+    }
+    if (_queue.isNotEmpty && now >= _nextTap) {
+      out.add(_queue[_at]);
+      _at++;
+      if (_at >= _queue.length) {
+        _queue = const [];
+        if (_added > 0) {
+          _moment = true;
+          _momentEnd = now;
+        }
+      } else {
+        _nextTap = now + kFmSelectionTapGap;
+      }
+    }
+    if (cutting == FmCutFeel.none) {
+      _buzzAt = now + kFmExactoBuzzGap;
+    } else if (now >= _buzzAt) {
+      out.add(
+        cutting == FmCutFeel.exacto
+            ? FmHapticStyle.selectionClick
+            : FmHapticStyle.lightImpact,
+      );
+      _buzzAt =
+          now +
+          (cutting == FmCutFeel.exacto ? kFmExactoBuzzGap : kFmCutPulseGap);
+    }
+    return out;
+  }
+}

@@ -16,8 +16,8 @@ class HologramEdgeView {
 }
 
 /// The hologram: the unfolded blueprint of the selected faces. Desk point
-/// `p` lands on screen at `origin + p * scale`. [line] and [glow] default to
-/// white; a craft group passes its own colors.
+/// `p` lands on screen at `origin + p * scale`. Edges stay [line] and [glow],
+/// white by default. A craft group colors [vertex] circles on the corners.
 class HologramPainter extends CustomPainter {
   const HologramPainter({
     required this.edges,
@@ -28,6 +28,7 @@ class HologramPainter extends CustomPainter {
     this.contrast = 0,
     this.line = const Color(0xFFFFFFFF),
     this.glow = const Color(0xFFFFFFFF),
+    this.vertex = const Color(0x00000000),
   });
 
   final List<HologramEdgeView> edges;
@@ -45,6 +46,9 @@ class HologramPainter extends CustomPainter {
   /// The blueprint stroke, and the halo around edges that are off the paper.
   final Color line;
   final Color glow;
+
+  /// Filled circles on the blueprint's corners. Nothing is drawn at alpha 0.
+  final Color vertex;
 
   Offset _screen(Offset p) => origin + p * scale;
 
@@ -94,6 +98,28 @@ class HologramPainter extends CustomPainter {
         ..color = line.withValues(alpha: 0.95 * t);
       canvas.drawLine(a, b, core);
     }
+    _paintVertices(canvas);
+  }
+
+  /// One circle per corner, so a shared vertex of several faces is drawn once.
+  void _paintVertices(Canvas canvas) {
+    if (vertex.a == 0) return;
+    final seen = <Offset>[];
+    final fill = Paint()..color = vertex;
+    for (final ring in faces) {
+      for (final point in ring) {
+        var duplicate = false;
+        for (final have in seen) {
+          if ((have - point).distance < 1e-3) {
+            duplicate = true;
+            break;
+          }
+        }
+        if (duplicate) continue;
+        seen.add(point);
+        canvas.drawCircle(_screen(point), 4.5, fill);
+      }
+    }
   }
 
   void _dashed(Canvas canvas, Offset a, Offset b, Paint paint) {
@@ -118,5 +144,6 @@ class HologramPainter extends CustomPainter {
       old.faceOpacity != faceOpacity ||
       old.contrast != contrast ||
       old.line != line ||
-      old.glow != glow;
+      old.glow != glow ||
+      old.vertex != vertex;
 }

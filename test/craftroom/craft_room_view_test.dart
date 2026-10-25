@@ -1,13 +1,18 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flatmates/asmr/hologram_painter.dart';
 import 'package:flatmates/craftroom/craft_bench_painter.dart';
 import 'package:flatmates/craftroom/craft_theme.dart';
 import 'package:flatmates/craftroom/room_crafts.dart';
+import 'package:flatmates/craftroom/selection_group.dart';
 import 'package:flatmates/craftroom/snap_rules.dart';
 import 'package:flatmates/craftroom/workview.dart';
 import 'package:flatmates/gridcraft/craft_collection.dart';
+import 'package:flatmates/gridcraft/craft_collection_painter.dart';
+import 'package:flatmates/papercut/camera.dart';
+import 'package:flatmates/gridcraft/model_painter.dart';
 import 'package:flatmates/screens/craft_room_view.dart';
 import 'package:flatmates/ui/game/dev_tools_button.dart';
 import 'package:flutter/material.dart';
@@ -77,6 +82,124 @@ void main() {
 
     await frames(tester, 900);
     expect(look(tester, Workview.model), 1);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('a pinch in the room zooms and does not pan when a finger lifts', (
+    tester,
+  ) async {
+    await open(tester);
+    final before = roomCamera(tester);
+    final lookAt = before.lookAt;
+    final height = before.framedHalfHeightMm;
+
+    final first = await tester.startGesture(const Offset(120, 300), pointer: 1);
+    final second = await tester.startGesture(
+      const Offset(520, 300),
+      pointer: 2,
+    );
+    await second.moveTo(const Offset(200, 300));
+    await second.up();
+    // The finger still down drifts as the pinch lets go.
+    await first.moveBy(const Offset(24, 16));
+    await first.up();
+    await frames(tester, 50);
+
+    final after = roomCamera(tester);
+    expect(after.lookAt, lookAt);
+    expect(after.framedHalfHeightMm, greaterThan(height + 1));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('a pinch zooms about the middle and leaves the pan where it is', (
+    tester,
+  ) async {
+    await open(tester);
+    await reachBench(tester);
+    final before = modelPainter(tester).camera;
+    final lookAt = before.lookAt;
+    final height = before.framedHalfHeightMm;
+
+    final still = await tester.startGesture(const Offset(40, 200), pointer: 1);
+    final moving = await tester.startGesture(
+      const Offset(440, 200),
+      pointer: 2,
+    );
+    await moving.moveTo(const Offset(120, 200));
+    await moving.up();
+    await still.up();
+    await frames(tester, 50);
+
+    final after = modelPainter(tester).camera;
+    expect(after.lookAt, lookAt);
+    expect(after.lookAtZ, before.lookAtZ);
+    expect(after.framedHalfHeightMm, greaterThan(height + 1));
+
+    await doubleTap(tester, _offCube);
+    final origin = bench(tester).origin;
+    final scale = bench(tester).scale;
+    final center = (const Offset(400, 300) - origin) / scale;
+    final held = await tester.startGesture(const Offset(120, 400), pointer: 1);
+    final spreading = await tester.startGesture(
+      const Offset(200, 400),
+      pointer: 2,
+    );
+    await spreading.moveTo(const Offset(360, 400));
+    await spreading.up();
+    await held.up();
+    await frames(tester, 50);
+
+    final zoomed = bench(tester);
+    expect(zoomed.scale, greaterThan(scale + 1));
+    expect((const Offset(400, 300) - zoomed.origin) / zoomed.scale, center);
+
+    final panned = zoomed.origin;
+    final a = await tester.startGesture(const Offset(200, 400), pointer: 1);
+    final b = await tester.startGesture(const Offset(280, 400), pointer: 2);
+    await a.moveBy(const Offset(0, 40));
+    await b.moveBy(const Offset(0, 40));
+    await a.up();
+    await b.up();
+    await frames(tester, 50);
+    expect(bench(tester).origin.dy, closeTo(panned.dy + 40, 0.5));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('selecting a face zooms the inactive desk onto its blueprint', (
+    tester,
+  ) async {
+    await open(tester);
+    await reachBench(tester);
+    await tester.tap(find.byTooltip('Select faces'));
+    await frames(tester, 50);
+    final before = bench(tester).scale;
+
+    final pick = await tester.startGesture(
+      _modelMiddle,
+      kind: PointerDeviceKind.mouse,
+    );
+    await pick.up();
+    await frames(tester, 96);
+    final mid = bench(tester).scale;
+    expect(mid, greaterThan(before + 1));
+    expect(look(tester, Workview.desk), closeTo(_inactive, 1e-6));
+
+    await frames(tester, 250);
+    final holo = hologram(tester);
+    final box = _screenBox(holo);
+    const pad = kBlueprintFramePad;
+    expect(box.left, greaterThanOrEqualTo(pad - 1.5));
+    expect(box.top, greaterThanOrEqualTo(pad - 1.5));
+    expect(box.right, lessThanOrEqualTo(800 - pad + 1.5));
+    expect(box.bottom, lessThanOrEqualTo(600 - pad + 1.5));
+    expect(box.height, closeTo(600 - 2 * pad, 1.5));
+    expect(box.width, closeTo(box.height, 1.5));
+    expect(box.center.dx, closeTo(400, 1.5));
+    expect(box.center.dy, closeTo(300, 1.5));
+    expect(holo.scale, greaterThan(mid));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
@@ -197,22 +320,12 @@ void main() {
     expect(find.byKey(const ValueKey('craft-room-flight')), findsOneWidget);
     expect(hologram(tester).faces, isEmpty);
     expect(stowIcons(tester), inInclusiveRange(1, kScrapSlots));
+    expect(find.byKey(const ValueKey('craft-room-group-A')), findsNothing);
 
     await frames(tester, 800);
     expect(find.byKey(const ValueKey('craft-room-flight')), findsNothing);
     expect(stowIcons(tester), 0);
     expect(find.text('Faces filled  1 / 6'), findsOneWidget);
-    for (var i = 0; i < kScrapSlots; i++) {
-      expect(
-        find.descendant(
-          of: find.byKey(Key('craft-room-slot-$i')),
-          matching: find.byType(CustomPaint),
-        ),
-        findsOneWidget,
-      );
-    }
-
-    await doubleTap(tester, _offCube);
     expect(look(tester, Workview.model), 1);
     await tester.tap(find.byTooltip('Select faces'));
     await frames(tester, 50);
@@ -262,13 +375,10 @@ void main() {
     expect(find.byKey(const Key('craft-room-save')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('craft-room-save')));
-    await frames(tester, 50);
+    await frames(tester, 400);
     expect(find.byKey(const Key('craft-room-save')), findsNothing);
     expect(find.byKey(const ValueKey('craft-room-group-A')), findsOneWidget);
-
-    await tester.tap(find.byTooltip('Orbit'));
-    await frames(tester, 50);
-    await doubleTap(tester, _offCube);
+    expect(look(tester, Workview.desk), 1);
     expect(find.text('Group A'), findsOneWidget);
     expect(find.byTooltip('Arrange'), findsOneWidget);
 
@@ -283,6 +393,18 @@ void main() {
     await tester.tap(chip);
     await frames(tester, 400);
     expect(hologram(tester).faces, hasLength(1));
+
+    // The open group's chip hides it and returns to the model. From the
+    // model, the same chip brings the desk back with that group showing.
+    await tester.tap(chip);
+    await frames(tester, 800);
+    expect(look(tester, Workview.model), 1);
+    expect(hologram(tester).faces, isEmpty);
+    await tester.tap(chip);
+    await frames(tester, 800);
+    expect(look(tester, Workview.desk), 1);
+    expect(hologram(tester).faces, hasLength(1));
+
     await drag(tester, [
       tester.getCenter(chip),
       tester.getCenter(find.byKey(const Key('craft-room-trash'))),
@@ -342,9 +464,10 @@ void main() {
     expect(paperIds(tester), isEmpty);
     expect(find.byKey(const Key('craft-room-save')), findsOneWidget);
     expect(bench(tester).theme.desk, kCraftNoneTheme.desk);
-    expect(bench(tester).theme.line, kCraftGroupAccents[0]);
-    expect(hologram(tester).line, kCraftGroupAccents[0]);
-    expect(hologram(tester).glow, craftGroupTheme(0).glow);
+    expect(bench(tester).theme.line, kCraftNoneTheme.line);
+    expect(hologram(tester).line, kCraftNoneTheme.line);
+    expect(hologram(tester).glow, kCraftNoneTheme.glow);
+    expect(hologram(tester).vertex, kCraftGroupAccents[0]);
 
     await tester.tap(find.byTooltip('Orbit'));
     await frames(tester, 50);
@@ -361,6 +484,9 @@ void main() {
     expect(chipAt.dx, greaterThan(700));
     expect(chipAt.dy, closeTo(170, 40));
 
+    // The sheet fills the screen once the blueprint is framed, so pull back
+    // until empty desk shows before switching workviews.
+    await zoomDeskOut(tester);
     await doubleTap(tester, _offCube);
     await tester.tap(find.byTooltip('Select faces'));
     await frames(tester, 50);
@@ -370,6 +496,7 @@ void main() {
     await frames(tester, 400);
     expect(bench(tester).theme.desk, kCraftNoneTheme.desk);
     expect(hologram(tester).line, kCraftNoneTheme.line);
+    expect(hologram(tester).vertex.a, 0);
 
     await click(tester, _modelMiddle);
     expect(paperIds(tester), ['paper-1']);
@@ -378,6 +505,134 @@ void main() {
     await frames(tester, 50);
     await doubleTap(tester, _offCube);
     expect(find.text('Group A'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('tools sit above undo, paper is a centered plus, and the '
+      'trash follows the selection', (tester) async {
+    await open(tester);
+    await reachBench(tester);
+    expect(find.textContaining('Cut freely'), findsNothing);
+    expect(find.textContaining('Drag to turn'), findsNothing);
+
+    final select = tester.getCenter(find.byTooltip('Select faces'));
+    final undo = tester.getCenter(find.byKey(const Key('craft-room-undo')));
+    expect(select.dy, lessThan(undo.dy - 8));
+    expect(trashColor(tester), Colors.white24);
+
+    await doubleTap(tester, _offCube);
+    expect(find.textContaining('Cut freely'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('craft-room-paper')),
+        matching: find.byIcon(Icons.add),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester.getCenter(find.byKey(const Key('craft-room-paper'))).dx,
+      closeTo(400, 12),
+    );
+    final exacto = tester.getCenter(find.byTooltip('Exacto'));
+    expect(exacto.dy, lessThan(undo.dy - 8));
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('craft-room-tools-desk')),
+        matching: find.byType(Scrollable),
+      ),
+      findsNothing,
+    );
+    expect(trashColor(tester), Colors.white24);
+
+    await tester.tap(find.byKey(const Key('craft-room-paper')));
+    await frames(tester, 50);
+    expect(trashColor(tester), Colors.white);
+    await tester.tap(find.byKey(const Key('craft-room-trash')));
+    await frames(tester, 50);
+    expect(paperIds(tester), isEmpty);
+    expect(trashColor(tester), Colors.white24);
+
+    await tester.tap(find.byTooltip('Exacto'));
+    await frames(tester, 50);
+    expect(find.textContaining('Cut freely'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('portrait tools wrap from the top left and grow downward', (
+    tester,
+  ) async {
+    const size = Size(400, 800);
+    await open(tester, size: size);
+    final middle = size.center(Offset.zero);
+    final tap = await tester.startGesture(
+      middle,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tap.up();
+    await frames(
+      tester,
+      kCraftFlyDuration.inMilliseconds +
+          kLevelLoadDelay.inMilliseconds +
+          kDeskFadeDuration.inMilliseconds +
+          200,
+    );
+    await doubleTap(tester, const Offset(24, 180));
+
+    final select = tester.getCenter(find.byTooltip('Select'));
+    final folder = tester.getCenter(find.byTooltip('Folder'));
+    expect(folder.dy, greaterThan(select.dy + 24));
+    expect(folder.dx, closeTo(select.dx, 4));
+    final edge = tester.getCenter(find.byTooltip('Straight edge'));
+    expect(edge.dy, closeTo(folder.dy, 4));
+    expect(edge.dx, greaterThan(folder.dx + 20));
+    expect(
+      tester.getCenter(find.byKey(const Key('craft-room-paper'))).dx,
+      closeTo(size.width / 2, 12),
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('a quick double-tap saves the selection and opens the desk', (
+    tester,
+  ) async {
+    await open(tester);
+    await reachBench(tester);
+    await tester.tap(find.byTooltip('Select faces'));
+    await frames(tester, 50);
+    await click(tester, _modelMiddle);
+    expect(hologram(tester).faces, hasLength(1));
+
+    await doubleTap(tester, _offCube);
+    expect(look(tester, Workview.desk), 1);
+    expect(find.byKey(const ValueKey('craft-room-group-A')), findsOneWidget);
+    expect(hologram(tester).faces, hasLength(1));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('a slow second tap clears the selection, and Save opens the desk', (
+    tester,
+  ) async {
+    await open(tester);
+    await reachBench(tester);
+    await tester.tap(find.byTooltip('Select faces'));
+    await frames(tester, 50);
+    await click(tester, _modelMiddle);
+
+    await doubleTap(tester, _offCube, gapMs: 520);
+    expect(look(tester, Workview.model), 1);
+    expect(hologram(tester).faces, isEmpty);
+    expect(find.byKey(const ValueKey('craft-room-group-A')), findsNothing);
+
+    await click(tester, _modelMiddle);
+    await tester.tap(find.byKey(const Key('craft-room-save')));
+    await frames(tester, 400);
+    expect(look(tester, Workview.desk), 1);
+    expect(find.byKey(const ValueKey('craft-room-group-A')), findsOneWidget);
+    expect(hologram(tester).faces, hasLength(1));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
@@ -394,6 +649,15 @@ int stowIcons(WidgetTester tester) => find
 
 /// Empty sky beside the cube, and empty desk beside the paper.
 const Offset _offCube = Offset(140, 110);
+
+Color trashColor(WidgetTester tester) => tester
+    .widget<Icon>(
+      find.descendant(
+        of: find.byKey(const Key('craft-room-trash')),
+        matching: find.byIcon(Icons.delete_outline),
+      ),
+    )
+    .color!;
 
 Future<void> click(WidgetTester tester, Offset at) async {
   final gesture = await tester.startGesture(at, kind: PointerDeviceKind.mouse);
@@ -445,8 +709,9 @@ Future<void> open(
   WidgetTester tester, {
   SnapSettings? snap,
   WorkviewSettings? looks,
+  Size size = const Size(800, 600),
 }) async {
-  tester.view.physicalSize = const Size(800, 600);
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   await tester.pumpWidget(
@@ -481,6 +746,17 @@ Future<void> reachBench(WidgetTester tester) async {
   );
 }
 
+/// Pinches the desk down so a sheet framed on a face no longer covers
+/// the corner used as empty space.
+Future<void> zoomDeskOut(WidgetTester tester) async {
+  final held = await tester.startGesture(const Offset(200, 280), pointer: 1);
+  final closing = await tester.startGesture(const Offset(600, 280), pointer: 2);
+  await closing.moveTo(const Offset(230, 280));
+  await closing.up();
+  await held.up();
+  await frames(tester, 50);
+}
+
 Future<void> frames(WidgetTester tester, int ms) async {
   for (var t = 0; t < ms; t += 16) {
     await tester.pump(const Duration(milliseconds: 16));
@@ -503,11 +779,41 @@ Future<void> drag(WidgetTester tester, List<Offset> path) async {
   await frames(tester, 50);
 }
 
+PapercutCamera roomCamera(WidgetTester tester) => tester
+    .widgetList<CustomPaint>(find.byType(CustomPaint))
+    .map((paint) => paint.painter)
+    .whereType<CraftCollectionPainter>()
+    .single
+    .camera;
+
+ModelPainter modelPainter(WidgetTester tester) => tester
+    .widgetList<CustomPaint>(find.byType(CustomPaint))
+    .map((paint) => paint.painter)
+    .whereType<ModelPainter>()
+    .single;
+
 CraftBenchPainter bench(WidgetTester tester) => tester
     .widgetList<CustomPaint>(find.byType(CustomPaint))
     .map((paint) => paint.painter)
     .whereType<CraftBenchPainter>()
     .single;
+
+Rect _screenBox(HologramPainter holo) {
+  var left = double.infinity;
+  var top = double.infinity;
+  var right = -double.infinity;
+  var bottom = -double.infinity;
+  for (final ring in holo.faces) {
+    for (final point in ring) {
+      final screen = holo.origin + point * holo.scale;
+      left = math.min(left, screen.dx);
+      top = math.min(top, screen.dy);
+      right = math.max(right, screen.dx);
+      bottom = math.max(bottom, screen.dy);
+    }
+  }
+  return Rect.fromLTRB(left, top, right, bottom);
+}
 
 HologramPainter hologram(WidgetTester tester) => tester
     .widgetList<CustomPaint>(find.byType(CustomPaint))

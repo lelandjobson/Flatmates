@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:ui' show Color;
+import 'dart:ui' show Color, Size;
 
 import 'package:flatmates/asmr/asmr_net.dart' show HologramPick, kAsmrIslandGap;
 import 'package:flatmates/asmr/hologram_selection.dart';
@@ -405,7 +405,8 @@ void main() {
       };
       expect(accents, hasLength(kMaxCraftGroups));
       expect(lettered(2, {2}).theme.accent, kCraftGroupAccents[2]);
-      expect(lettered(2, {2}).theme.line, kCraftGroupAccents[2]);
+      expect(lettered(2, {2}).theme.line, kCraftNoneTheme.line);
+      expect(lettered(2, {2}).theme.vertex, kCraftGroupAccents[2]);
       expect(lettered(2, {2}).theme.desk, kCraftNoneTheme.desk);
       expect(lettered(2, {2}).theme.dot, kCraftNoneTheme.dot);
       expect(CraftGroup.none.theme.line, kCraftNoneTheme.line);
@@ -461,6 +462,57 @@ void main() {
         expect(guide.bare, isEmpty);
       },
     );
+  });
+
+  group('selection layout', () {
+    test('a new net turns to fill the screen it is made on', () {
+      final model = roomCraft(kRoomCubeId)!.model;
+      final adjacency = faceAdjacency(model);
+      int? other;
+      for (final neighbor in adjacency[0]) {
+        if (neighbor != null) {
+          other = neighbor.face;
+          break;
+        }
+      }
+      final net = gridNet(
+        model,
+        adjacency,
+        hologramPicks([0, other!], adjacency),
+      );
+      expect(net.bounds.width, isNot(closeTo(net.bounds.height, 0.5)));
+
+      const portrait = Size(300, 800);
+      final tall = orientNetToView(net, portrait);
+      expect(tall.bounds.height, greaterThan(tall.bounds.width));
+      expect(
+        netFitScale(tall.bounds, portrait, kBlueprintFramePad),
+        greaterThanOrEqualTo(
+          netFitScale(net.bounds, portrait, kBlueprintFramePad) - 1e-6,
+        ),
+      );
+
+      const landscape = Size(800, 300);
+      final wide = orientNetToView(net, landscape);
+      expect(wide.bounds.width, greaterThan(wide.bounds.height));
+      expect(
+        netFitScale(wide.bounds, landscape, kBlueprintFramePad),
+        greaterThanOrEqualTo(
+          netFitScale(net.bounds, landscape, kBlueprintFramePad) - 1e-6,
+        ),
+      );
+
+      // A square screen prefers the taller layout.
+      final square = orientNetToView(net, const Size(500, 500));
+      expect(square.bounds.height, greaterThan(square.bounds.width));
+
+      for (final face in [...tall.faces, ...wide.faces, ...square.faces]) {
+        for (final point in face.ring) {
+          expect(point.dx, closeTo(point.dx.roundToDouble(), 1e-6));
+          expect(point.dy, closeTo(point.dy.roundToDouble(), 1e-6));
+        }
+      }
+    });
   });
 
   group('folding', () {

@@ -41,6 +41,7 @@ import '../gridcraft/wrap_cut.dart' show FaceNeighbor, faceAdjacency;
 import '../papercut/camera.dart';
 import '../papercut/paper.dart';
 import '../ui/craft_palette.dart';
+import '../ui/fm_haptics.dart';
 import '../ui/game/dev_tools_button.dart';
 import '../ui/game/game_tool_carousel.dart';
 import '../ui/game/view_crosshair.dart';
@@ -115,12 +116,16 @@ const double _kMaxTilt = 85 * math.pi / 180;
 const double _kModelTurn = -1.0;
 const double _kModelTilt = 0.5;
 const double _kFraming = 1.7;
-const Offset _kKnifeLift = Offset(0, -56);
 const double _kHandleLift = 30;
 const double _kHandleRadius = 22;
 const double _kHistoryPad = 32 * 1.5 - 8 - 16;
 const int _kHistoryDepth = 40;
 const double _kDeskSpan = 28;
+
+/// Desk zoom, in screen pixels per desk unit. Wide enough that framing a
+/// face can fill the screen.
+const double _kDeskScaleMin = 2;
+const double _kDeskScaleMax = 4000;
 const double _kStrokeSpacing = 0.1;
 const double _kHoverFill = 0.55;
 const Duration _kPreselectFade = Duration(milliseconds: 180);
@@ -137,10 +142,15 @@ const Duration _kStowFlight = Duration(milliseconds: 450);
 const Duration _kNoteFade = Duration(milliseconds: 2400);
 const double _kGroupChip = 40;
 
-/// Room left at the bottom of the screen for the trash, and for the tool
-/// carousel and hint.
+/// Scrap slots stop above the trash in the bottom corner.
 const double _kTrashClear = 84;
-const double _kToolsClear = 128;
+
+/// The save button stays above the tool rows and the undo row.
+const double _kToolsClear = 200;
+
+/// Side inset so a wrapped tool row stays clear of the scrap column and
+/// still sits on the screen's center line.
+const double _kToolInset = 64;
 
 final Vector3 _kUp = Vector3(0, 0, 1);
 
@@ -244,6 +254,22 @@ class _HoloEdge {
   final AsmrNetEdge edge;
 }
 
+/// A zoom of the desk onto a blueprint, from where the desk is now.
+class _BlueprintFrame {
+  _BlueprintFrame({
+    required this.origin0,
+    required this.origin1,
+    required this.scale0,
+    required this.scale1,
+  });
+
+  final Offset origin0;
+  final Offset origin1;
+  final double scale0;
+  final double scale1;
+  double t = 0;
+}
+
 class _Settle {
   _Settle(this.paper, this.from, this.to, {required this.preview});
 
@@ -265,6 +291,7 @@ class _CraftRoomViewState extends State<CraftRoomView>
     for (var i = 0; i < kScrapSlots; i++) GlobalKey(),
   ];
   final GlobalKey _trashKey = GlobalKey();
+  final FmHapticPlayer _haptics = FmHapticPlayer();
   late final Ticker _ticker;
   Duration _lastTick = Duration.zero;
   Size _size = Size.zero;
@@ -338,10 +365,16 @@ class _CraftRoomViewState extends State<CraftRoomView>
   };
   final WorkviewDoubleTap _doubleTap = WorkviewDoubleTap();
 
+  /// Faces a quick second tap can still save, after the first tap cleared them.
+  ({int? open, List<HologramPick> extra, AsmrNet net})? _groupOffer;
+
   /// A second finger came down during the gesture, so it is no tap.
   bool _manyFingers = false;
   Offset _deskOrigin = Offset.zero;
   double _deskScale = 10;
+
+  /// The desk easing onto the blueprint of the selection being previewed.
+  _BlueprintFrame? _blueprintFrame;
 
   _Tool _tool = _Tool.select;
   _ModelTool _modelTool = _ModelTool.orbit;
@@ -360,6 +393,15 @@ class _CraftRoomViewState extends State<CraftRoomView>
   bool _dragMoved = false;
   double _lastSpan = 0;
   Offset _lastFocal = Offset.zero;
+
+  /// The two-finger gesture's start, so a pinch can zoom back to it without
+  /// the view walking onto a finger.
+  double? _pinchSpan;
+  Offset? _pinchFocal;
+  Offset? _pinchOrigin;
+  double? _pinchScale;
+  double? _pinchHeight;
+  Vector3? _pinchTarget;
   Offset _deskStart = Offset.zero;
   Offset? _marqueeStart;
   Offset? _marqueeEnd;
@@ -781,6 +823,7 @@ class _CraftRoomViewState extends State<CraftRoomView>
     final before = _deskCenter;
     _size = size;
     if (_deskShown) _deskOrigin += _deskCenter - before;
+    if (_blueprintFrame != null) _frameBlueprint();
     _poseRoom();
   }
 
@@ -1011,8 +1054,9 @@ class _CraftRoomViewState extends State<CraftRoomView>
     ];
     if (extra.length == _bench.extra.length) return;
     _bench.extra = extra;
-    _bench.extraNet = gridNet(_model, _bench.adjacency, extra);
+    _bench.extraNet = _layoutNet(extra);
     _syncSelection();
+    _frameBlueprint();
   }
 
   /// Selects [faces] on the model. A face of a group brings its whole group;
@@ -1021,6 +1065,7 @@ class _CraftRoomViewState extends State<CraftRoomView>
   /// group that is showing. Returns whether anything changed.
   bool _selectFaces(Set<int> faces, {int? prefer}) {
     final bench = _bench;
+    final before = _chosenFaces;
     final resolved = resolveSelection(faces, bench.groups, prefer: prefer);
     final extra = hologramPicks(
       resolved.free,
@@ -1035,13 +1080,31 @@ class _CraftRoomViewState extends State<CraftRoomView>
     if (resolved.open == bench.open && sameExtra) return false;
     bench.open = resolved.open;
     bench.extra = extra;
-    bench.extraNet = gridNet(_model, bench.adjacency, extra);
+    bench.extraNet = _layoutNet(extra);
     if (_tool == _Tool.arrange && (_hasPending || bench.open == null)) {
       _tool = _Tool.select;
     }
     _syncSelection();
+    final after = _chosenFaces;
+    var added = 0;
+    for (final face in after) {
+      if (!before.contains(face)) added++;
+    }
+    _haptics.noteSelected(added, _clock);
+    // A marquee still changing the selection frames once, when the drag ends.
+    if (_drag != _Drag.marquee) _frameBlueprint();
     return true;
   }
+
+  /// Faces showing as selected: the open group, plus any not saved yet.
+  Set<int> get _chosenFaces => {
+    ...?_groupOf(_bench.open)?.faces,
+    for (final pick in _bench.extra) pick.face,
+  };
+
+  /// A new selection's net, turned to fill the screen it is being made on.
+  AsmrNet _layoutNet(List<HologramPick> picks) =>
+      orientNetToView(gridNet(_model, _bench.adjacency, picks), _size);
 
   /// Shows the open group's faces and the extra faces as selected, and the
   /// desk's net to match.
@@ -1141,15 +1204,16 @@ class _CraftRoomViewState extends State<CraftRoomView>
     bench.redo.clear();
   }
 
-  void _commitGesture() {
+  bool _commitGesture() {
     final before = _gestureBefore;
     _gestureBefore = null;
-    if (before == null) return;
+    if (before == null) return false;
     final now = _capture();
-    if (_sameStep(before, now)) return;
+    if (_sameStep(before, now)) return false;
     _bench.undo.add(before);
     if (_bench.undo.length > _kHistoryDepth) _bench.undo.removeAt(0);
     _bench.redo.clear();
+    return true;
   }
 
   bool _sameStep(_Step a, _Step b) {
@@ -1174,7 +1238,7 @@ class _CraftRoomViewState extends State<CraftRoomView>
     bench.none = step.none;
     bench.open = step.open;
     bench.extra = step.extra;
-    bench.extraNet = gridNet(_model, bench.adjacency, step.extra);
+    bench.extraNet = _layoutNet(step.extra);
     bench.bound = List.of(step.bound);
     bench.slots = List.of(step.slots);
     bench.nextPaper = step.nextPaper;
@@ -1192,6 +1256,7 @@ class _CraftRoomViewState extends State<CraftRoomView>
     setState(() {
       bench.redo.add(_capture());
       _restore(bench.undo.removeLast());
+      _feelTap();
     });
   }
 
@@ -1201,6 +1266,7 @@ class _CraftRoomViewState extends State<CraftRoomView>
     setState(() {
       bench.undo.add(_capture());
       _restore(bench.redo.removeLast());
+      _feelTap();
     });
   }
 
@@ -1286,6 +1352,18 @@ class _CraftRoomViewState extends State<CraftRoomView>
     }
 
     if (_deskShown) {
+      final frame = _blueprintFrame;
+      if (frame != null) {
+        changed = true;
+        frame.t = math.min(
+          1,
+          frame.t + dt / (kBlueprintFrameDuration.inMicroseconds / 1e6),
+        );
+        final u = Curves.easeOutCubic.transform(frame.t);
+        _deskOrigin = Offset.lerp(frame.origin0, frame.origin1, u)!;
+        _deskScale = frame.scale0 + (frame.scale1 - frame.scale0) * u;
+        if (frame.t >= 1) _blueprintFrame = null;
+      }
       final model = _model;
       final owners = _owners;
       final extra = {for (final pick in _bench.extra) pick.face};
@@ -1365,7 +1443,25 @@ class _CraftRoomViewState extends State<CraftRoomView>
         });
       }
     }
-    if (changed || _complete) setState(() {});
+    if (changed) setState(() {});
+    for (final style in _haptics.take(_clock, cutting: _cutFeel)) {
+      fmHaptic(style);
+    }
+  }
+
+  /// Exacto ticks while the blade is moving. A straight cut or a snip pulses
+  /// a little harder. A still finger is quiet.
+  FmCutFeel get _cutFeel {
+    if (!_dragMoved) return FmCutFeel.none;
+    return switch (_drag) {
+      _Drag.cut => FmCutFeel.exacto,
+      _Drag.straight || _Drag.scissors => FmCutFeel.pulse,
+      _ => FmCutFeel.none,
+    };
+  }
+
+  void _feelTap() {
+    fmHapticSmallClick();
   }
 
   // -------------------------------------------------------------------------
@@ -1377,9 +1473,42 @@ class _CraftRoomViewState extends State<CraftRoomView>
   Offset _toScreen(Offset desk) => _deskOrigin + desk * _deskScale;
 
   void _zoomDesk(double factor, Offset focal) {
+    _stopBlueprintFrame();
     final desk = _toDesk(focal);
-    _deskScale = (_deskScale * factor).clamp(2.0, 120.0);
+    _deskScale = (_deskScale * factor).clamp(_kDeskScaleMin, _kDeskScaleMax);
     _deskOrigin = focal - desk * _deskScale;
+  }
+
+  /// Drops the zoom onto the blueprint, so a pan or zoom of the desk wins.
+  void _stopBlueprintFrame() => _blueprintFrame = null;
+
+  /// Eases the desk, over [kBlueprintFrameDuration], until the blueprint
+  /// fills the screen inside [kBlueprintFramePad]. An empty net leaves the
+  /// desk where it is. The 2D workview may be inactive; it is still drawn.
+  void _frameBlueprint() {
+    final net = _net;
+    if (net.isEmpty || _size.isEmpty) {
+      _blueprintFrame = null;
+      return;
+    }
+    final bounds = net.bounds;
+    final scale = netFitScale(
+      bounds,
+      _size,
+      kBlueprintFramePad,
+    ).clamp(_kDeskScaleMin, _kDeskScaleMax);
+    final origin = _deskCenter - bounds.center * scale;
+    if ((_deskOrigin - origin).distance < 0.5 &&
+        (_deskScale - scale).abs() < 0.02) {
+      _blueprintFrame = null;
+      return;
+    }
+    _blueprintFrame = _BlueprintFrame(
+      origin0: _deskOrigin,
+      origin1: origin,
+      scale0: _deskScale,
+      scale1: scale,
+    );
   }
 
   SnapContext get _snapContext => SnapContext(
@@ -1439,6 +1568,7 @@ class _CraftRoomViewState extends State<CraftRoomView>
         ..clear()
         ..add(paper.id);
       _flash[paper.id] = 0.6;
+      _feelTap();
     });
   }
 
@@ -1508,8 +1638,8 @@ class _CraftRoomViewState extends State<CraftRoomView>
   }
 
   /// The open group's faces are all crafted. Leftover paper, largest first,
-  /// flies into the empty scrap slots, and the desk returns to the null
-  /// group at the same moment the icons appear.
+  /// flies into the empty scrap slots, that selection group is deleted, and
+  /// the 3D workview becomes active so the paper can be seen landing.
   void _bankLeftovers() {
     final free = [
       for (var i = 0; i < kScrapSlots; i++)
@@ -1538,12 +1668,17 @@ class _CraftRoomViewState extends State<CraftRoomView>
         );
       }
     }
+    final letter = _bench.open;
+    if (letter != null) {
+      _bench.groups.removeWhere((group) => group.letter == letter);
+    }
     _bench.open = null;
     _bench.extra = const [];
     _bench.extraNet = AsmrNet.empty;
     _selectedIds.clear();
     if (_tool == _Tool.arrange) _tool = _Tool.select;
     _syncSelection();
+    _setActive(Workview.model);
   }
 
   Offset _paperScreen(BenchPaper paper) =>
@@ -1582,15 +1717,12 @@ class _CraftRoomViewState extends State<CraftRoomView>
   // Exacto
   // -------------------------------------------------------------------------
 
-  Offset _knifeAt(Offset pointer) =>
-      _aimsWithCursor ? pointer : pointer + _kKnifeLift;
-
+  /// The blade sits on the finger. A straight edge still holds it to one side.
   Offset _bladeAt(Offset pointer) {
-    final tip = _knifeAt(pointer);
     final edge = _liveEdge;
     final side = _knifeSide;
-    if (edge == null || side == null) return tip;
-    return edge.hold(tip, side, snap: kStraightEdgeSnap);
+    if (edge == null || side == null) return pointer;
+    return edge.hold(pointer, side, snap: kStraightEdgeSnap);
   }
 
   List<Offset> _smoothed(List<Offset> raw) {
@@ -1602,7 +1734,7 @@ class _CraftRoomViewState extends State<CraftRoomView>
   }
 
   void _beginCut(Offset pointer) {
-    _knifeSide = _liveEdge?.sideOf(_knifeAt(pointer));
+    _knifeSide = _liveEdge?.sideOf(pointer);
     final tip = _snapTo(SnapUser.exacto, _toDesk(_bladeAt(pointer)));
     _tipDesk = tip;
     _finger = pointer;
@@ -1739,6 +1871,7 @@ class _CraftRoomViewState extends State<CraftRoomView>
     );
     _folding = true;
     _foldSigned = 0;
+    _feelTap();
     _foldAnchor = _pointers.values.isEmpty
         ? _dragStart
         : _pointers.values.first;
@@ -1750,7 +1883,6 @@ class _CraftRoomViewState extends State<CraftRoomView>
       facing: FoldFacing.toward,
       pieceIds: {guide.pieceId},
     );
-    HapticFeedback.mediumImpact();
   }
 
   Offset? _flapFor(FolderGuide guide, double signed) {
@@ -1946,6 +2078,7 @@ class _CraftRoomViewState extends State<CraftRoomView>
 
   void _toggleEdge() {
     setState(() {
+      _feelTap();
       if (_edgeOn) {
         _edgeOn = false;
         final edge = _edge;
@@ -2109,8 +2242,23 @@ class _CraftRoomViewState extends State<CraftRoomView>
   void _saveGroup() {
     setState(() {
       _cancelGesture(quiet: true);
-      _claim();
+      final onModel = _modelActive;
+      if (_claim() && onModel) _setActive(Workview.desk);
     });
+  }
+
+  /// Saves the selection the previous tap cleared, and opens it on the desk.
+  /// False when this double-tap is only a workview switch.
+  bool _saveOfferedGroup() {
+    final offer = _groupOffer;
+    _groupOffer = null;
+    if (offer == null) return false;
+    _bench.open = offer.open;
+    _bench.extra = List.of(offer.extra);
+    _bench.extraNet = offer.net;
+    _syncSelection();
+    if (_claim()) _setActive(Workview.desk);
+    return true;
   }
 
   void _openGroup(int letter) {
@@ -2118,6 +2266,19 @@ class _CraftRoomViewState extends State<CraftRoomView>
     if (group == null) return;
     setState(() {
       _cancelGesture(quiet: true);
+      // From the model, the chip brings that group's blueprint onto the desk.
+      // From the desk, the open group's chip puts the blueprint away and
+      // returns to the model.
+      if (_modelActive) {
+        _selectFaces(group.faces);
+        _setActive(Workview.desk);
+        return;
+      }
+      if (_bench.open == letter) {
+        _selectFaces(const {});
+        _setActive(Workview.model);
+        return;
+      }
       _selectFaces(group.faces);
     });
   }
@@ -2233,6 +2394,28 @@ class _CraftRoomViewState extends State<CraftRoomView>
     _selectedIds.removeWhere((id) => _paper(id) == null);
   }
 
+  /// Selected desk paper can be thrown away. The trash stays grey until
+  /// then, and goes grey again once the selection is gone.
+  bool get _canTrashSelection =>
+      _deskActive &&
+      _tool == _Tool.select &&
+      _selectedIds.any((id) => _paper(id) != null);
+
+  void _trashSelection() {
+    if (!_canTrashSelection) return;
+    setState(() {
+      _cancelGesture(quiet: true);
+      _pushUndo();
+      final ids = Set<String>.of(_selectedIds);
+      _papers = [
+        for (final paper in _papers)
+          if (!ids.contains(paper.id)) paper,
+      ];
+      _selectedIds.removeWhere(ids.contains);
+      HapticFeedback.mediumImpact();
+    });
+  }
+
   void _unstow(int slot) {
     final paper = _bench.slots[slot];
     if (paper == null) return;
@@ -2302,7 +2485,7 @@ class _CraftRoomViewState extends State<CraftRoomView>
     if (home != null) {
       _bench.open = home.open;
       _bench.extra = home.extra;
-      _bench.extraNet = gridNet(_model, _bench.adjacency, home.extra);
+      _bench.extraNet = _layoutNet(home.extra);
       _syncSelection();
     }
     _marqueeStart = null;
@@ -2390,6 +2573,7 @@ class _CraftRoomViewState extends State<CraftRoomView>
       }
       if (secondary) {
         _drag = _Drag.deskPan;
+        _stopBlueprintFrame();
         return;
       }
       if (_grabEdge(event.localPosition)) return;
@@ -2413,18 +2597,21 @@ class _CraftRoomViewState extends State<CraftRoomView>
       case _Tool.exacto:
         _drag = _Drag.cut;
         _beginCut(pointer);
+        _feelTap();
         return;
       case _Tool.straight:
         _drag = _Drag.straight;
         _segmentStart = _snapTo(SnapUser.straightCut, desk);
         _segmentEnd = _segmentStart;
         _snapShown = _segmentStart;
+        _feelTap();
         return;
       case _Tool.scissors:
         _drag = _Drag.scissors;
         _segmentStart = _snapTo(SnapUser.scissors, desk);
         _segmentEnd = _segmentStart;
         _snapShown = _segmentStart;
+        _feelTap();
         return;
       case _Tool.folder:
         if (_settle != null) {
@@ -2439,6 +2626,7 @@ class _CraftRoomViewState extends State<CraftRoomView>
         final island = islandAt(_net, desk);
         if (island == null) {
           _drag = _Drag.deskPan;
+          _stopBlueprintFrame();
           return;
         }
         _drag = _Drag.island;
@@ -2467,6 +2655,7 @@ class _CraftRoomViewState extends State<CraftRoomView>
         _selectedIds
           ..clear()
           ..add(hit.id);
+        _haptics.noteSelected(1, _clock);
       }
       _moveFrom = {
         for (final paper in _papers)
@@ -2484,6 +2673,7 @@ class _CraftRoomViewState extends State<CraftRoomView>
       return;
     }
     _drag = _Drag.deskPan;
+    _stopBlueprintFrame();
   }
 
   bool _onHandle(Offset pointer) {
@@ -2501,13 +2691,52 @@ class _CraftRoomViewState extends State<CraftRoomView>
           _drag != _Drag.orbit) {
         _cancelGesture(quiet: true);
       }
-      _drag = _Drag.pan;
+      // A leftover finger keeps this drag. Pan is the model's, so it is only
+      // for the bench; in the room the finger goes on panning the floor.
+      _drag = !_inBench
+          ? (_phase == _Phase.room ? _Drag.room : _Drag.none)
+          : (_modelActive ? _Drag.pan : _Drag.deskPan);
+      if (_drag == _Drag.deskPan) _stopBlueprintFrame();
+      // The room grab belongs to the first finger. A pinch zooms about the
+      // middle, and the finger that is still down on release must not pan
+      // back to that grab.
+      if (_phase == _Phase.room) _roomGrab = null;
       _dragMoved = true;
       _marqueeStart = null;
       _marqueeEnd = null;
       _lastSpan = _span();
       _lastFocal = _focal();
+      _pinchSpan = _lastSpan;
+      _pinchFocal = _lastFocal;
+      _pinchOrigin = _deskOrigin;
+      _pinchScale = _deskScale;
+      _pinchHeight = _camera.framedHalfHeightMm;
+      _pinchTarget = _camera.target;
     });
+  }
+
+  /// Puts the framed height back to [height]. Zooming in never goes below
+  /// the camera's own closest limit.
+  void _setFramedHeight(double height) {
+    final current = _camera.framedHalfHeightMm;
+    if (current <= 0) return;
+    final factor = current / height;
+    if ((factor - 1).abs() < 1e-6) return;
+    _camera.zoomByScale(factor);
+  }
+
+  void _restoreTarget(Vector3 saved) {
+    final shift = saved - _camera.target;
+    if (shift.length2 < 1e-12) return;
+    if (_inBench) {
+      _camera.shiftTarget(
+        shift,
+        anchor: _model.center,
+        limit: _model.radius * 3,
+      );
+    } else {
+      _camera.shiftTarget(shift);
+    }
   }
 
   void _onPointerMove(PointerMoveEvent event) {
@@ -2531,6 +2760,7 @@ class _CraftRoomViewState extends State<CraftRoomView>
       final local = event.localPosition;
       switch (_drag) {
         case _Drag.room:
+          if (_manyFingers) return;
           if ((local - _dragStart).distance < _kRoomSlop) return;
           _panRoom(local);
           _refreshHover();
@@ -2539,7 +2769,7 @@ class _CraftRoomViewState extends State<CraftRoomView>
           _turntable(-delta.dx * _kOrbitPerPixel, delta.dy * _kOrbitPerPixel);
           _refreshHover();
         case _Drag.pan:
-          _panView(delta);
+          if (_inBench) _panView(delta);
         case _Drag.marquee:
           _marqueeEnd = local;
           if (_dragMoved) _applyMarquee();
@@ -2564,6 +2794,7 @@ class _CraftRoomViewState extends State<CraftRoomView>
         case _Drag.island:
           _moveIsland(_toDesk(local) - _deskStart);
         case _Drag.deskPan:
+          _stopBlueprintFrame();
           _deskOrigin += delta;
         case _Drag.edgeSlide:
           final edge = _edge;
@@ -2658,29 +2889,71 @@ class _CraftRoomViewState extends State<CraftRoomView>
       ),
     );
     _rebuildNet();
+    _feelTap();
   }
 
   void _twoFingerMove() {
+    final span0 = _pinchSpan;
+    final focal0 = _pinchFocal;
+    final height0 = _pinchHeight;
+    final target0 = _pinchTarget;
+    final origin0 = _pinchOrigin;
+    final scale0 = _pinchScale;
+    if (span0 == null ||
+        focal0 == null ||
+        height0 == null ||
+        target0 == null ||
+        origin0 == null ||
+        scale0 == null ||
+        span0 <= 1) {
+      return;
+    }
     final focal = _focal();
     final span = _span();
-    final scale = _lastSpan > 1 && span > 1 ? span / _lastSpan : 1.0;
-    final delta = focal - _lastFocal;
+    final scale = span > 1 ? span / span0 : 1.0;
     _lastFocal = focal;
     _lastSpan = span;
+    // Past a small wobble, the fingers are pinching: zoom about the middle
+    // of the view and leave the pan where the gesture started. A two-finger
+    // drag, whose span comes back, pans by the fingers together.
+    final zooming = (scale - 1).abs() > 0.01;
     if (!_inBench) {
-      if (_phase == _Phase.room && (scale - 1).abs() > 1e-4) {
-        _camera.zoomByScale(scale);
+      if (_phase == _Phase.room) {
+        _setFramedHeight((height0 / scale).clamp(8.0, 8000.0));
         _refreshHover();
       }
       return;
     }
     if (_modelActive) {
-      _panView(delta);
-      if ((scale - 1).abs() > 1e-4) _camera.zoomByScale(scale);
-    } else {
-      _deskOrigin += delta;
-      if ((scale - 1).abs() > 1e-4) _zoomDesk(scale, focal);
+      _restoreTarget(target0);
+      if (zooming) {
+        _setFramedHeight((height0 / scale).clamp(8.0, 8000.0));
+      } else {
+        _setFramedHeight(height0);
+        _panView(focal - focal0);
+        _pinchTarget = _camera.target;
+        _pinchHeight = _camera.framedHalfHeightMm;
+        _pinchFocal = focal;
+        _pinchSpan = span;
+      }
+      _refreshHover();
+      return;
     }
+    final center = _size.center(Offset.zero);
+    final anchored = (center - origin0) / scale0;
+    _stopBlueprintFrame();
+    final next = (scale0 * scale).clamp(_kDeskScaleMin, _kDeskScaleMax);
+    if (zooming) {
+      _deskScale = next;
+      _deskOrigin = center - anchored * next;
+      return;
+    }
+    _deskScale = scale0;
+    _deskOrigin = origin0 + (focal - focal0);
+    _pinchOrigin = _deskOrigin;
+    _pinchScale = _deskScale;
+    _pinchFocal = focal;
+    _pinchSpan = span;
   }
 
   void _onPointerUp(PointerEvent event) {
@@ -2690,9 +2963,11 @@ class _CraftRoomViewState extends State<CraftRoomView>
     if (_pointers.isNotEmpty) {
       _lastFocal = _focal();
       _lastSpan = _span();
+      if (_phase == _Phase.room && _manyFingers) _roomGrab = null;
       return;
     }
     final moved = _dragMoved;
+    final kind = _drag;
     final tap = !moved && event.timeStamp - _dragStartTime < _kTapTime;
     final switchTap =
         _inBench &&
@@ -2701,6 +2976,7 @@ class _CraftRoomViewState extends State<CraftRoomView>
         event is PointerUpEvent &&
         (event.localPosition - _dragStart).distance < _kTapSlop &&
         _emptyAt(event.localPosition);
+    var stashed = false;
     setState(() {
       switch (_drag) {
         case _Drag.room:
@@ -2715,6 +2991,16 @@ class _CraftRoomViewState extends State<CraftRoomView>
           if (tap) {
             final aim = _aimFace(event.localPosition);
             if (!aim.blocked) {
+              // A second tap, close and quick, can still save what this tap
+              // clears. A lone tap leaves the selection cleared.
+              if (switchTap && _modelActive && _hasPending) {
+                _groupOffer = (
+                  open: _bench.open,
+                  extra: List.of(_bench.extra),
+                  net: _bench.extraNet,
+                );
+                stashed = true;
+              }
               _selectFaces(
                 aim.face == null ? const {} : {aim.face!},
                 prefer: aim.face,
@@ -2723,6 +3009,7 @@ class _CraftRoomViewState extends State<CraftRoomView>
           }
           _marqueeStart = null;
           _marqueeEnd = null;
+          _frameBlueprint();
         case _Drag.cut:
           _endCut();
         case _Drag.straight:
@@ -2761,11 +3048,26 @@ class _CraftRoomViewState extends State<CraftRoomView>
       _movePrimary = null;
       _marqueeHome = null;
       _bin = null;
-      _commitGesture();
+      final changed = _commitGesture();
+      if (moved &&
+          changed &&
+          (kind == _Drag.move ||
+              kind == _Drag.rotate ||
+              kind == _Drag.island)) {
+        _feelTap();
+      }
+      if (moved && (kind == _Drag.edgeSlide || kind == _Drag.edgeTurn)) {
+        _feelTap();
+      }
       if (!switchTap) {
         if (tap) _doubleTap.reset();
+        _groupOffer = null;
       } else if (_doubleTap.tap(event.localPosition, _clock)) {
-        _setActive(_modelActive ? Workview.desk : Workview.model);
+        if (stashed || !_saveOfferedGroup()) {
+          _setActive(_modelActive ? Workview.desk : Workview.model);
+        }
+      } else if (!stashed) {
+        _groupOffer = null;
       }
       if (_inBench && _deskActive) _refreshHover();
     });
@@ -2819,11 +3121,17 @@ class _CraftRoomViewState extends State<CraftRoomView>
       }
       if (!_inBench) return;
       if (_panZoomModel) {
-        _panView(event.localPanDelta);
-        if ((factor - 1).abs() > 1e-4) _camera.zoomByScale(factor);
+        if ((factor - 1).abs() > 1e-4) {
+          _camera.zoomByScale(factor);
+          _refreshHover();
+        } else {
+          _panView(event.localPanDelta);
+        }
+      } else if ((factor - 1).abs() > 1e-4) {
+        _zoomDesk(factor, _size.center(Offset.zero));
       } else {
+        _stopBlueprintFrame();
         _deskOrigin += event.localPanDelta;
-        if ((factor - 1).abs() > 1e-4) _zoomDesk(factor, event.localPosition);
       }
     });
   }
@@ -3055,6 +3363,7 @@ class _CraftRoomViewState extends State<CraftRoomView>
               contrast: 1,
               line: _theme.line,
               glow: _theme.glow,
+              vertex: _theme.vertex,
             ),
           ),
         ),
@@ -3089,12 +3398,6 @@ class _CraftRoomViewState extends State<CraftRoomView>
 
   Widget _modelLayer() {
     final model = _model;
-    final glow = _complete
-        ? {
-            for (var f = 0; f < model.faces.length; f++)
-              f: _completeShown * (0.6 + 0.4 * math.sin(_clock * 3)),
-          }
-        : const <int, double>{};
     return CustomPaint(
       key: const Key('craft-room-model'),
       painter: ModelPainter(
@@ -3104,7 +3407,6 @@ class _CraftRoomViewState extends State<CraftRoomView>
           for (final entry in _coverage.entries)
             if (entry.value >= kAsmrFilled) entry.key: 1.0,
         },
-        glow: glow,
         sheets: (canvas, size, add) => addBoundPaper(
           canvas: canvas,
           size: size,
@@ -3153,29 +3455,6 @@ class _CraftRoomViewState extends State<CraftRoomView>
     }
     return _collection?.name ?? 'Craft Room';
   }
-
-  String get _hint => _modelActive
-      ? switch (_modelTool) {
-          _ModelTool.orbit =>
-            'Drag to turn the craft. Double-tap empty space for the desk.',
-          _ModelTool.select =>
-            'Drag a box or tap a face to select. Double-tap empty space for the desk.',
-        }
-      : _deskHint;
-
-  String get _deskHint => switch (_tool) {
-    _Tool.select =>
-      'Drag paper to move it, or into a scrap slot. Turn it by its handle.',
-    _Tool.exacto =>
-      'Cut freely. Cut a net island out exactly and it folds onto the craft.',
-    _Tool.straight =>
-      'Drag to set a line. The paper it crosses is cut right through along it.',
-    _Tool.scissors =>
-      'Press on a grid point and drag: each snip cuts 3 squares.',
-    _Tool.folder =>
-      'Hold on paper, then drag across the crease to fold. Tap a crease to open it.',
-    _Tool.arrange => 'Drag a net island to move it. Tap it to turn it.',
-  };
 
   void _back(BuildContext context) {
     if (_phase == _Phase.loading || _phase == _Phase.rising || _inBench) {
@@ -3257,6 +3536,7 @@ class _CraftRoomViewState extends State<CraftRoomView>
   }
 
   Widget _modelCarousel() => HudToolCarousel<_ModelTool>(
+    wrap: true,
     items: [
       HudCarouselItem(
         value: _ModelTool.orbit,
@@ -3280,6 +3560,7 @@ class _CraftRoomViewState extends State<CraftRoomView>
   );
 
   Widget _deskCarousel(CraftGroup group) => HudToolCarousel<_Tool>(
+    wrap: true,
     items: [
       HudCarouselItem(
         value: _Tool.select,
@@ -3368,13 +3649,22 @@ class _CraftRoomViewState extends State<CraftRoomView>
         bottom: padding.bottom + 12,
         child: DragTarget<int>(
           onAcceptWithDetails: (details) => _deleteGroup(details.data),
-          builder: (context, candidate, rejected) => KeyedSubtree(
-            key: const Key('craft-room-trash'),
-            child: AsmrTrashButton(
-              key: _trashKey,
-              hot: _bin == -1 || candidate.isNotEmpty,
-            ),
-          ),
+          builder: (context, candidate, rejected) {
+            final over = _bin == -1 || candidate.isNotEmpty;
+            final canTrash = _canTrashSelection || over;
+            return KeyedSubtree(
+              key: const Key('craft-room-trash'),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _canTrashSelection ? _trashSelection : null,
+                child: AsmrTrashButton(
+                  key: _trashKey,
+                  hot: over,
+                  enabled: canTrash,
+                ),
+              ),
+            );
+          },
         ),
       ),
       if (_noteShown > 0)
@@ -3403,17 +3693,6 @@ class _CraftRoomViewState extends State<CraftRoomView>
                 ),
               ),
             ),
-          ),
-        ),
-      if (desk)
-        Positioned(
-          top: padding.top + 56,
-          left: 8,
-          child: _PillButton(
-            buttonKey: const Key('craft-room-paper'),
-            icon: Icons.note_add_outlined,
-            label: 'Paper',
-            onTap: _layPaper,
           ),
         ),
       if (desk &&
@@ -3488,48 +3767,52 @@ class _CraftRoomViewState extends State<CraftRoomView>
       Positioned(
         left: 0,
         right: 0,
-        bottom: padding.bottom + 84,
-        child: IgnorePointer(
-          child: Center(
-            child: Text(
-              _hint,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.45),
-                fontSize: 12,
-              ),
-            ),
-          ),
-        ),
-      ),
-      Positioned(
-        left: 64,
-        right: 72,
         bottom: padding.bottom + 8,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            AsmrHistoryButton(
-              buttonKey: const Key('craft-room-undo'),
-              icon: Icons.undo,
-              tooltip: 'Undo',
-              enabled: _bench.undo.isNotEmpty,
-              gap: const EdgeInsets.only(right: _kHistoryPad),
-              onTap: _undo,
-            ),
-            Flexible(
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: _kToolInset),
               child: KeyedSubtree(
                 key: ValueKey('craft-room-tools-${_active.name}'),
                 child: desk ? _deskCarousel(group) : _modelCarousel(),
               ),
             ),
-            AsmrHistoryButton(
-              buttonKey: const Key('craft-room-redo'),
-              icon: Icons.redo,
-              tooltip: 'Redo',
-              enabled: _bench.redo.isNotEmpty,
-              gap: const EdgeInsets.only(left: _kHistoryPad),
-              onTap: _redo,
+            Padding(
+              // Matches the trash in the corner so undo, paper, and redo
+              // stay on the screen's center line.
+              padding: const EdgeInsets.symmetric(horizontal: 56),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  AsmrHistoryButton(
+                    buttonKey: const Key('craft-room-undo'),
+                    icon: Icons.undo,
+                    tooltip: 'Undo',
+                    enabled: _bench.undo.isNotEmpty,
+                    gap: const EdgeInsets.only(right: _kHistoryPad),
+                    onTap: _undo,
+                  ),
+                  if (desk)
+                    AsmrHistoryButton(
+                      buttonKey: const Key('craft-room-paper'),
+                      icon: Icons.add,
+                      tooltip: 'Paper',
+                      enabled: true,
+                      gap: EdgeInsets.zero,
+                      onTap: _layPaper,
+                    ),
+                  AsmrHistoryButton(
+                    buttonKey: const Key('craft-room-redo'),
+                    icon: Icons.redo,
+                    tooltip: 'Redo',
+                    enabled: _bench.redo.isNotEmpty,
+                    gap: const EdgeInsets.only(left: _kHistoryPad),
+                    onTap: _redo,
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -3652,54 +3935,14 @@ class _CraftRoomViewState extends State<CraftRoomView>
           ),
           childWhenDragging: Opacity(opacity: 0.35, child: chip()),
           child: Tooltip(
-            message: 'Group ${group.name}: tap to open, double-tap to invert',
+            message:
+                'Group ${group.name}: tap opens it on the desk, or hides it and returns to the model. Double-tap inverts.',
             child: GestureDetector(
               key: ValueKey('craft-room-group-${group.name}'),
               onTap: () => _openGroup(letter),
               onDoubleTap: () => _invertGroup(letter),
               child: chip(hot: candidate.isNotEmpty),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PillButton extends StatelessWidget {
-  const _PillButton({
-    required this.buttonKey,
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final Key buttonKey;
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.black.withValues(alpha: 0.4),
-      shape: const StadiumBorder(side: BorderSide(color: Colors.white24)),
-      child: InkWell(
-        key: buttonKey,
-        customBorder: const StadiumBorder(),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 18, color: Colors.white),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: const TextStyle(color: Colors.white, fontSize: 13),
-              ),
-            ],
           ),
         ),
       ),

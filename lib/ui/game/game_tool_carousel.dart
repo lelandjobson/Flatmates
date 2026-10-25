@@ -58,18 +58,18 @@ enum GameSelectViewFilter { all, program }
 
 extension GameModeX on GameMode {
   IconData get icon => switch (this) {
-        GameMode.select => Icons.ads_click,
-        GameMode.edit => Icons.tune,
-        GameMode.create => Icons.add,
-        GameMode.action => Icons.route,
-      };
+    GameMode.select => Icons.ads_click,
+    GameMode.edit => Icons.tune,
+    GameMode.create => Icons.add,
+    GameMode.action => Icons.route,
+  };
 
   String get label => switch (this) {
-        GameMode.select => 'Select',
-        GameMode.edit => 'Edit',
-        GameMode.create => 'Create',
-        GameMode.action => 'Actions',
-      };
+    GameMode.select => 'Select',
+    GameMode.edit => 'Edit',
+    GameMode.create => 'Create',
+    GameMode.action => 'Actions',
+  };
 
   Color get fill => gameModeFill(this);
 
@@ -81,22 +81,22 @@ extension GameModeX on GameMode {
 
 extension GameEditToolX on GameEditTool {
   IconData get icon => switch (this) {
-        GameEditTool.transform => Icons.open_with,
-        GameEditTool.paint => Icons.format_color_fill,
-        GameEditTool.delete => Icons.delete_outline,
-      };
+    GameEditTool.transform => Icons.open_with,
+    GameEditTool.paint => Icons.format_color_fill,
+    GameEditTool.delete => Icons.delete_outline,
+  };
 
   String get label => switch (this) {
-        GameEditTool.transform => 'Transform',
-        GameEditTool.paint => 'Paint',
-        GameEditTool.delete => 'Delete',
-      };
+    GameEditTool.transform => 'Transform',
+    GameEditTool.paint => 'Paint',
+    GameEditTool.delete => 'Delete',
+  };
 
   Color get fill => switch (this) {
-        GameEditTool.transform => CraftPalette.goldenTan.fill,
-        GameEditTool.paint => CraftPalette.chartreuse.fill,
-        GameEditTool.delete => CraftPalette.scarlet.fill,
-      };
+    GameEditTool.transform => CraftPalette.goldenTan.fill,
+    GameEditTool.paint => CraftPalette.chartreuse.fill,
+    GameEditTool.delete => CraftPalette.scarlet.fill,
+  };
 
   GameEditTool stepped(int delta) {
     final n = GameEditTool.values.length;
@@ -106,19 +106,19 @@ extension GameEditToolX on GameEditTool {
 
 extension GameSelectViewFilterX on GameSelectViewFilter {
   IconData get icon => switch (this) {
-        GameSelectViewFilter.all => Icons.layers,
-        GameSelectViewFilter.program => Icons.weekend_outlined,
-      };
+    GameSelectViewFilter.all => Icons.layers,
+    GameSelectViewFilter.program => Icons.weekend_outlined,
+  };
 
   String get label => switch (this) {
-        GameSelectViewFilter.all => 'All',
-        GameSelectViewFilter.program => 'Program',
-      };
+    GameSelectViewFilter.all => 'All',
+    GameSelectViewFilter.program => 'Program',
+  };
 
   Color get fill => switch (this) {
-        GameSelectViewFilter.all => CraftPalette.kentuckyBlue.fill,
-        GameSelectViewFilter.program => CraftPalette.seaGreen.fill,
-      };
+    GameSelectViewFilter.all => CraftPalette.kentuckyBlue.fill,
+    GameSelectViewFilter.program => CraftPalette.seaGreen.fill,
+  };
 
   GameSelectViewFilter stepped(int delta) {
     final n = GameSelectViewFilter.values.length;
@@ -128,22 +128,22 @@ extension GameSelectViewFilterX on GameSelectViewFilter {
 
 extension GameCreateToolX on GameCreateTool {
   IconData get icon => switch (this) {
-        GameCreateTool.volume => Icons.add_box,
-        GameCreateTool.path => Icons.add_road,
-        GameCreateTool.playground => Icons.grid_on,
-      };
+    GameCreateTool.volume => Icons.add_box,
+    GameCreateTool.path => Icons.add_road,
+    GameCreateTool.playground => Icons.grid_on,
+  };
 
   String get label => switch (this) {
-        GameCreateTool.volume => 'Volumes',
-        GameCreateTool.path => 'Paths',
-        GameCreateTool.playground => 'Playgrounds',
-      };
+    GameCreateTool.volume => 'Volumes',
+    GameCreateTool.path => 'Paths',
+    GameCreateTool.playground => 'Playgrounds',
+  };
 
   Color get fill => switch (this) {
-        GameCreateTool.volume => CraftPalette.cerulean.fill,
-        GameCreateTool.path => CraftPalette.turquoise.fill,
-        GameCreateTool.playground => CraftPalette.springGreen.fill,
-      };
+    GameCreateTool.volume => CraftPalette.cerulean.fill,
+    GameCreateTool.path => CraftPalette.turquoise.fill,
+    GameCreateTool.playground => CraftPalette.springGreen.fill,
+  };
 
   GameCreateTool stepped(int delta) {
     final n = GameCreateTool.values.length;
@@ -166,48 +166,48 @@ class HudCarouselItem<T> {
 }
 
 List<HudCarouselItem<GameMode>> gameModeItems({required bool showAction}) => [
-      for (final mode in GameMode.values)
-        if (mode != GameMode.action || showAction)
-          HudCarouselItem(
-            value: mode,
-            icon: mode.icon,
-            label: mode.label,
-            fill: mode.fill,
-          ),
-    ];
+  for (final mode in GameMode.values)
+    if (mode != GameMode.action || showAction)
+      HudCarouselItem(
+        value: mode,
+        icon: mode.icon,
+        label: mode.label,
+        fill: mode.fill,
+      ),
+];
 
 List<HudCarouselItem<GameMode>> get kGameModeItems =>
     gameModeItems(showAction: false);
 
 List<HudCarouselItem<GameEditTool>> get kGameEditToolItems => [
-      for (final tool in GameEditTool.values)
-        HudCarouselItem(
-          value: tool,
-          icon: tool.icon,
-          label: tool.label,
-          fill: tool.fill,
-        ),
-    ];
+  for (final tool in GameEditTool.values)
+    HudCarouselItem(
+      value: tool,
+      icon: tool.icon,
+      label: tool.label,
+      fill: tool.fill,
+    ),
+];
 
 List<HudCarouselItem<GameSelectViewFilter>> get kGameSelectViewFilterItems => [
-      for (final filter in GameSelectViewFilter.values)
-        HudCarouselItem(
-          value: filter,
-          icon: filter.icon,
-          label: filter.label,
-          fill: filter.fill,
-        ),
-    ];
+  for (final filter in GameSelectViewFilter.values)
+    HudCarouselItem(
+      value: filter,
+      icon: filter.icon,
+      label: filter.label,
+      fill: filter.fill,
+    ),
+];
 
 List<HudCarouselItem<GameCreateTool>> get kGameCreateToolItems => [
-      for (final tool in GameCreateTool.values)
-        HudCarouselItem(
-          value: tool,
-          icon: tool.icon,
-          label: tool.label,
-          fill: tool.fill,
-        ),
-    ];
+  for (final tool in GameCreateTool.values)
+    HudCarouselItem(
+      value: tool,
+      icon: tool.icon,
+      label: tool.label,
+      fill: tool.fill,
+    ),
+];
 
 Widget hudCarouselSubmenuTransition(Widget child, Animation<double> animation) {
   return FadeTransition(
@@ -231,6 +231,7 @@ class HudToolCarousel<T> extends StatelessWidget {
     required this.onSelect,
     this.trailing = const [],
     this.compact = false,
+    this.wrap = false,
   });
 
   final List<HudCarouselItem<T>> items;
@@ -241,6 +242,10 @@ class HudToolCarousel<T> extends StatelessWidget {
   /// not one of [items], such as the straight edge.
   final List<Widget> trailing;
   final bool compact;
+
+  /// Lay the tools out from the top left and let extra tools wrap onto
+  /// another row, growing the bar. One row is centered. Nothing scrolls.
+  final bool wrap;
 
   double get _slot => compact ? 48.0 : 56.0;
   double get _icon => compact ? 20.0 : 24.0;
@@ -266,6 +271,7 @@ class HudToolCarousel<T> extends StatelessWidget {
         ),
       ...trailing,
     ];
+    if (wrap) return _stacked(buttons);
     return LayoutBuilder(
       builder: (context, constraints) {
         if (!constraints.hasBoundedWidth) {
@@ -284,6 +290,49 @@ class HudToolCarousel<T> extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: buttons,
               ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Rows grow downward from the top of the bar. A single row is centered;
+  /// further rows stay left-aligned inside that centered block.
+  Widget _stacked(List<Widget> buttons) {
+    if (buttons.isEmpty) return const SizedBox.shrink();
+    final cells = [
+      for (final button in buttons)
+        SizedBox(width: _slot, height: _height, child: button),
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        if (!width.isFinite) {
+          return Row(mainAxisSize: MainAxisSize.min, children: cells);
+        }
+        var columns = (width / _slot).floor();
+        if (columns < 1) columns = 1;
+        if (columns > cells.length) columns = cells.length;
+        final rows = <Widget>[];
+        for (var i = 0; i < cells.length; i += columns) {
+          final end = i + columns < cells.length ? i + columns : cells.length;
+          rows.add(Row(children: cells.sublist(i, end)));
+        }
+        if (rows.length == 1) {
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: cells,
+          );
+        }
+        return Align(
+          alignment: Alignment.topCenter,
+          child: SizedBox(
+            width: columns * _slot,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: rows,
             ),
           ),
         );
@@ -319,7 +368,8 @@ class HudToolButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final border = borderColor ??
+    final border =
+        borderColor ??
         (selected ? Color.lerp(fill, Colors.white, 0.45)! : Colors.white24);
     final button = GestureDetector(
       behavior: HitTestBehavior.opaque,

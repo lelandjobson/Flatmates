@@ -10,9 +10,10 @@ const int kMaxCraftGroups = 5;
 const double kPaperGridOpacity = 0.25;
 
 /// How one selection group looks everywhere it shows: its chip and Save
-/// button, the blueprint's lines and glow on the desk, and the tint on its
-/// faces in 3D. The crafting background stays the plain desk. The null group
-/// has a plain theme.
+/// button, the circles on the blueprint's corners, and the tint on its
+/// faces in 3D. Blueprint edges stay white off the paper and pencil on it.
+/// The crafting background stays the plain desk. The null group has a plain
+/// theme.
 class CraftTheme {
   const CraftTheme({
     required this.accent,
@@ -21,6 +22,7 @@ class CraftTheme {
     required this.majorDot,
     required this.line,
     required this.glow,
+    required this.vertex,
     required this.faceTint,
     required this.openFaceTint,
   });
@@ -37,8 +39,12 @@ class CraftTheme {
   final Color majorDot;
 
   /// Blueprint edges, and the soft halo around the ones off the paper.
+  /// Both stay white; a group's own color is [vertex].
   final Color line;
   final Color glow;
+
+  /// Circles on the blueprint's corners. Transparent for the null group.
+  final Color vertex;
 
   /// Over the group's faces on the model, and stronger while it is open.
   final Color faceTint;
@@ -54,6 +60,7 @@ class CraftTheme {
       majorDot: Color.lerp(a.majorDot, b.majorDot, t)!,
       line: Color.lerp(a.line, b.line, t)!,
       glow: Color.lerp(a.glow, b.glow, t)!,
+      vertex: Color.lerp(a.vertex, b.vertex, t)!,
       faceTint: Color.lerp(a.faceTint, b.faceTint, t)!,
       openFaceTint: Color.lerp(a.openFaceTint, b.openFaceTint, t)!,
     );
@@ -68,6 +75,7 @@ const CraftTheme kCraftNoneTheme = CraftTheme(
   majorDot: Color(0x66FFFFFF),
   line: Color(0xFFFFFFFF),
   glow: Color(0xFFFFFFFF),
+  vertex: Color(0x00000000),
   faceTint: Color(0x00000000),
   openFaceTint: Color(0x00000000),
 );
@@ -90,8 +98,9 @@ CraftTheme craftGroupTheme(int letter) {
     desk: kCraftNoneTheme.desk,
     dot: kCraftNoneTheme.dot,
     majorDot: kCraftNoneTheme.majorDot,
-    line: accent,
-    glow: Color.lerp(accent, const Color(0xFFFFFFFF), 0.35)!,
+    line: kCraftNoneTheme.line,
+    glow: kCraftNoneTheme.glow,
+    vertex: accent,
     faceTint: accent.withValues(alpha: 0.3),
     openFaceTint: accent.withValues(alpha: 0.5),
   );

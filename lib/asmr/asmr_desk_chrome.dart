@@ -123,24 +123,29 @@ class AsmrPaperDrawer extends StatelessWidget {
 }
 
 /// The trash under the paper drawer. A plain icon; it fills in while a
-/// selection is dragged onto it.
+/// selection is dragged onto it. Grey until something can be thrown away,
+/// the same as undo or redo with an empty history.
 class AsmrTrashButton extends StatelessWidget {
-  const AsmrTrashButton({super.key, required this.hot});
+  const AsmrTrashButton({super.key, required this.hot, this.enabled = true});
 
   final bool hot;
 
+  /// White when a drop or a tap would throw something away.
+  final bool enabled;
+
   @override
   Widget build(BuildContext context) {
+    final color = hot
+        ? const Color(0xFFE57373)
+        : enabled
+        ? Colors.white
+        : Colors.white24;
     return Tooltip(
       message: 'Trash',
       child: SizedBox(
         width: 48,
         height: 48,
-        child: Icon(
-          Icons.delete_outline,
-          size: hot ? 32 : 26,
-          color: hot ? const Color(0xFFE57373) : Colors.white,
-        ),
+        child: Icon(Icons.delete_outline, size: hot ? 32 : 26, color: color),
       ),
     );
   }
