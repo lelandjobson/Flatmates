@@ -39,6 +39,30 @@ List<HologramPick> _walk(FoldedModel model, List<List<FaceNeighbor?>> adj) {
 }
 
 void main() {
+  test(
+    'object hull centroid uses area rather than a face center or vertex average',
+    () {
+      final net = AsmrNet.fromParts([
+        AsmrNetFace(
+          face: 0,
+          parent: null,
+          island: 0,
+          faceToNet: Matrix4.identity(),
+          ring: const [Offset(0, 0), Offset(6, 0), Offset(0, 3)],
+        ),
+        AsmrNetFace(
+          face: 1,
+          parent: null,
+          island: 1,
+          faceToNet: Matrix4.identity(),
+          ring: const [Offset(0, 0), Offset(1, 0), Offset(1, 1), Offset(0, 1)],
+        ),
+      ], const []);
+      expect(net.hullCentroid.dx, closeTo(2, 1e-9));
+      expect(net.hullCentroid.dy, closeTo(1, 1e-9));
+    },
+  );
+
   final model = asmrCubeModel();
   final adjacency = faceAdjacency(model);
 
@@ -127,7 +151,12 @@ void main() {
 }
 
 Rect polygonBounds(List<Offset> ring) {
-  var box = Rect.fromLTRB(ring.first.dx, ring.first.dy, ring.first.dx, ring.first.dy);
+  var box = Rect.fromLTRB(
+    ring.first.dx,
+    ring.first.dy,
+    ring.first.dx,
+    ring.first.dy,
+  );
   for (final p in ring) {
     box = box.expandToInclude(Rect.fromLTRB(p.dx, p.dy, p.dx, p.dy));
   }

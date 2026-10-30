@@ -38,6 +38,25 @@ void main() {
     expect(kept.liberated, isFalse);
     expect(freed.area, closeTo(30 * 100, 1));
     expect(kept.area, closeTo(70 * 100, 1));
+    expect(freed.edgeTone, isNotNull);
+    expect(kept.edgeTone, isNotNull);
+    expect(freed.edgeTone, isNot(kept.edgeTone));
+    for (final piece in cut.pieces) {
+      expect(piece.cutEdges, isNotEmpty);
+      expect(
+        piece.cutEdges
+            .expand((edge) => edge)
+            .every((p) => (p.dx - 20).abs() < 1e-6),
+        isTrue,
+      );
+      final length = piece.cutEdges.fold<double>(
+        0,
+        (total, edge) => total + (edge.last - edge.first).distance,
+      );
+      expect(length, closeTo(100, 1e-6));
+      expect(piece.copyWith(angle: 1).unbound().cutEdges, piece.cutEdges);
+      expect(piece.copyWith(angle: 1).unbound().edgeTone, piece.edgeTone);
+    }
   });
 
   test('a cut that stops short of the edge scores, and a second one frees', () {
@@ -46,6 +65,8 @@ void main() {
     ], _line(const Offset(20, -60), const Offset(20, 0)))!;
     expect(first.split, isFalse);
     expect(first.pieces.single.scores, hasLength(1));
+    expect(first.pieces.single.edgeTone, isNull);
+    expect(first.pieces.single.cutEdges, isEmpty);
     final second = cutPieces(
       first.pieces,
       _line(const Offset(20, 1.5), const Offset(20, 60)),
@@ -70,6 +91,29 @@ void main() {
     expect(freed.area, closeTo(400, 20));
     final kept = cut.pieces.where((p) => !cut.freed.contains(p.id)).single;
     expect(kept.holes, hasLength(1));
+  });
+
+  test('later splits keep inherited cut edges but not factory edges', () {
+    final first = cutPieces(
+      [_sheet()],
+      const [Offset(20, -60), Offset(20, 60)],
+      exact: true,
+    )!;
+    final second = cutPieces(first.pieces, const [
+      Offset(-60, 0),
+      Offset(60, 0),
+    ], exact: true)!;
+    expect(second.pieces, hasLength(4));
+    for (final piece in second.pieces) {
+      expect(piece.cutEdges, hasLength(2));
+      for (final edge in piece.cutEdges) {
+        expect(
+          edge.every((p) => (p.dx - 20).abs() < 1e-6) ||
+              edge.every((p) => p.dy.abs() < 1e-6),
+          isTrue,
+        );
+      }
+    }
   });
 
   test('cuts land in paper coordinates of a moved, turned piece', () {

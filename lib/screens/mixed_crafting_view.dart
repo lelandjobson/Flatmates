@@ -18,7 +18,6 @@ import '../gridcraft/level_io.dart';
 import '../gridcraft/mixed_craft.dart';
 import '../gridcraft/mixed_craft_painter.dart';
 import '../gridcraft/paper_stack.dart';
-import '../gridcraft/scissor.dart';
 import '../gridcraft/scissor_glyph.dart';
 import '../gridcraft/tool_animation.dart';
 import '../gridcraft/tool_flight.dart';
@@ -41,9 +40,12 @@ enum _CraftTool { select, scissors, folder }
 
 enum _SelectMode { point, marquee }
 
-enum _CutPulse { idle, engage, wipe }
+enum _CutPulse { idle, wipe }
 
 /// One performed stroke, in drawn space, while the blade travels it.
+///
+/// The blade travels [from] to [to]. [stroke] is the whole chord, in the
+/// piece's model space, and is what gets cut.
 class _CutWipe {
   const _CutWipe({
     required this.from,
@@ -52,7 +54,6 @@ class _CutWipe {
     required this.stroke,
     required this.sheetId,
     required this.pieceId,
-    required this.fromScale,
     required this.roll,
     required this.open,
   });
@@ -63,7 +64,6 @@ class _CutWipe {
   final List<Offset> stroke;
   final String sheetId;
   final String pieceId;
-  final double fromScale;
 
   /// Seated glyph, frozen so the travel does not roll or recock the blades.
   final double roll;
@@ -71,21 +71,24 @@ class _CutWipe {
 }
 
 /// One performed crease, in drawn space, while the folder travels it.
+///
+/// The folder travels [from] to [to]. The crease runs [start] to [to].
 class _FoldWipe {
   const _FoldWipe({
     required this.from,
+    required this.start,
     required this.to,
     required this.direction,
     required this.sheetId,
     required this.pieceId,
     required this.face,
     required this.fold,
-    required this.fromScale,
     required this.roll,
     required this.open,
   });
 
   final Offset from;
+  final Offset start;
   final Offset to;
   final Offset direction;
   final String sheetId;
@@ -94,13 +97,18 @@ class _FoldWipe {
 
   /// True folds the flap. False scores the crease.
   final bool fold;
-  final double fromScale;
   final double roll;
   final double open;
 }
 
-/// How long the cut point grows before a stroke, and how long a fold mark travels.
+/// How long a fold mark travels when nothing sets the length.
 const Duration _kCutPulse = Duration(milliseconds: 200);
+
+/// A released twist eases the view onto the nearest roll step.
+const Duration _kRollSettle = Duration(milliseconds: 180);
+
+/// Pixels from the bottom of the view to the seated blade, above the toolbar.
+const double _kGuideRest = 120;
 
 /// Horizontal settle when the carets change boards.
 const Duration _kBoardPan = Duration(milliseconds: 320);
@@ -165,17 +173,21 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
   double? _span;
   Offset? _pinchCentroid;
 
-  CutLock? _cut;
-  bool _cutGlowing = false;
+  /// Screen angle of the two contacts, while a twist can roll the view.
+  double? _twistAngle;
+  bool _twisted = false;
+  double _panZoomScale = 1;
+  double _panZoomRotation = 0;
+  double _rollFrom = 0;
+  double _rollTo = 0;
+  late final AnimationController _rollSettle;
+
   _CutPulse _cutPulseKind = _CutPulse.idle;
   _CutWipe? _cutWipe;
-  double _pointScale = 1;
   late final AnimationController _cutPulse;
 
-  CutLock? _fold;
   _CutPulse _foldPulseKind = _CutPulse.idle;
   _FoldWipe? _foldWipe;
-  double _foldPointScale = 1;
   late final AnimationController _foldPulse;
   _CreaseFlutter? _flutter;
   late final AnimationController _creaseAnim;
@@ -230,6 +242,8 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
     _foldPulse = AnimationController(vsync: this, duration: _kCutPulse)
       ..addListener(_onFoldPulseTick)
       ..addStatusListener(_onFoldPulseStatus);
+    _rollSettle = AnimationController(vsync: this, duration: _kRollSettle)
+      ..addListener(_onRollSettleTick);
     _creaseAnim = AnimationController(vsync: this, duration: _kCreaseFlutter)
       ..addListener(() {
         if (mounted) setState(() {});
@@ -250,6 +264,7 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
   @override
   void dispose() {
     _creaseAnim.dispose();
+    _rollSettle.dispose();
     _foldPulse.dispose();
     _cutPulse.dispose();
     _gridFade.dispose();
@@ -429,35 +444,117 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
     );
   }
 
+  /// Rolls the view by a screen-space sweep of [turn] radians, clockwise
+  /// positive. The sheet turns with the fingers around the middle of the view.
+  void _twist(double turn) {
+    if (turn.abs() < 1e-6) return;
+    if (_rollSettle.isAnimating) _rollSettle.stop();
+    _camera.setRoll(_camera.roll - turn);
+    _twisted = true;
+  }
+
+  void _endTwist() {
+    _twistAngle = null;
+    if (!_twisted) return;
+    _twisted = false;
+    _rollFrom = _camera.roll;
+    _rollTo = PapercutCamera.snapRoll(_rollFrom);
+    if ((_rollTo - _rollFrom).abs() < 1e-6) {
+      _camera.setRoll(_rollTo);
+      return;
+    }
+    _rollSettle.forward(from: 0);
+  }
+
+  void _onRollSettleTick() {
+    final t = Curves.easeOutCubic.transform(_rollSettle.value);
+    _camera.setRoll(_rollFrom + (_rollTo - _rollFrom) * t);
+    if (mounted) setState(() {});
+  }
+
+  /// The visible world around the look-at point, wide enough for any roll.
   Rect _visible() {
     final halfH = _camera.framedHalfHeightMm;
     final aspect = _viewport.height < 2
         ? 1.0
         : _viewport.width / _viewport.height;
     final halfW = halfH * aspect;
+    final reach = math.sqrt(halfW * halfW + halfH * halfH);
     return Rect.fromCenter(
       center: _camera.lookAt,
-      width: halfW * 2,
-      height: halfH * 2,
+      width: reach * 2,
+      height: reach * 2,
     );
   }
 
+  bool get _guided =>
+      _tool == _CraftTool.scissors || _tool == _CraftTool.folder;
+
+  /// The guideline on screen: the bottom edge, then the middle of the view.
+  (Offset, Offset) _guideScreen() {
+    final x = _viewport.width / 2;
+    return (Offset(x, _viewport.height), Offset(x, _viewport.height / 2));
+  }
+
+  /// Where the seated blade rests on the guideline.
+  Offset _restScreen() {
+    final top = _viewport.height / 2;
+    return Offset(
+      _viewport.width / 2,
+      math.max(top + 24, _viewport.height - _kGuideRest),
+    );
+  }
+
+  GuideChord? _guideChord() {
+    if (_viewport.width < 2 || _viewport.height < 2) return null;
+    final (bottom, top) = _guideScreen();
+    final from = _world(bottom);
+    final to = _world(top);
+    if (from == null || to == null) return null;
+    return guidelineChord(_area, from, to, scale: _scale, snap: _snapRadius());
+  }
+
+  /// Seated blade on the guideline, pointing up it.
+  ToolCue? _guideCue() {
+    if (_viewport.width < 2 || _viewport.height < 2) return null;
+    final rest = _world(_restScreen());
+    final top = _world(_guideScreen().$2);
+    if (rest == null || top == null) return null;
+    final along = top - rest;
+    if (along.distance < 1e-6) return null;
+    return ToolCue(
+      anchor: rest,
+      direction: along / along.distance,
+      aim: rest,
+      reach: _scale * 0.75,
+    );
+  }
+
+  /// Where the blade starts along [chord]: the seated blade, or the chord's
+  /// start when the paper begins above it.
+  Offset _bladeStart(GuideChord chord) {
+    final rest = _world(_restScreen());
+    if (rest == null) return chord.start;
+    final dir = chord.direction;
+    final rel = rest - chord.start;
+    final along = rel.dx * dir.dx + rel.dy * dir.dy;
+    if (along <= 0 || along >= (chord.end - chord.start).distance) {
+      return chord.start;
+    }
+    return chord.start + dir * along;
+  }
+
   void _clearCut() {
-    _cut = null;
-    _cutGlowing = false;
     _cutWipe = null;
     _cutPulseKind = _CutPulse.idle;
-    _pointScale = 1;
     if (_cutPulse.isAnimating) _cutPulse.stop();
   }
 
   void _clearFold() {
-    _fold = null;
     _foldWipe = null;
     _flutter = null;
     if (_creaseAnim.isAnimating) _creaseAnim.stop();
     _foldPulseKind = _CutPulse.idle;
-    _foldPointScale = 1;
     if (_foldPulse.isAnimating) _foldPulse.stop();
   }
 
@@ -480,6 +577,7 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
       _dragged = true;
       _span = null;
       _pinchCentroid = null;
+      _twistAngle = null;
       _marqueeStart = null;
       _marqueeCurrent = null;
       setState(() {});
@@ -489,7 +587,8 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
     _downScreen = event.localPosition;
     if (_transforming) {
       _transformDown(event.localPosition);
-    } else if (_tool == _CraftTool.select && _selectMode == _SelectMode.marquee) {
+    } else if (_tool == _CraftTool.select &&
+        _selectMode == _SelectMode.marquee) {
       _marqueeStart = event.localPosition;
       _marqueeCurrent = event.localPosition;
     } else if (_moving) {
@@ -545,9 +644,11 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
   void _onPointerUp(PointerUpEvent event) {
     final alone = _pointers.length == 1;
     _pointers.remove(event.pointer);
+    if (_pointers.length < 2) _endTwist();
     if (_pointers.isNotEmpty) {
       _span = null;
       _pinchCentroid = null;
+      _twistAngle = null;
       setState(() {});
       return;
     }
@@ -570,8 +671,6 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
       _finishTransform(dragged);
     } else if (!dragged) {
       _onTap();
-    } else if (_tool == _CraftTool.scissors && _cut != null) {
-      _cutGlowing = true;
     }
     _downScreen = null;
     setState(() {});
@@ -579,7 +678,30 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
 
   void _onPointerCancel(PointerCancelEvent event) {
     _pointers.remove(event.pointer);
+    if (_pointers.length < 2) _endTwist();
     if (_pointers.isEmpty) _cancelGesture();
+    setState(() {});
+  }
+
+  void _onPanZoomStart(PointerPanZoomStartEvent event) {
+    _panZoomScale = 1;
+    _panZoomRotation = 0;
+  }
+
+  /// Trackpad: two fingers pan, pinch, and twist, as on a touch screen.
+  void _onPanZoomUpdate(PointerPanZoomUpdateEvent event) {
+    _pan(event.localPanDelta);
+    if (_panZoomScale > 0 && event.scale > 0) {
+      _zoom(event.scale / _panZoomScale);
+    }
+    _panZoomScale = event.scale;
+    _twist(event.rotation - _panZoomRotation);
+    _panZoomRotation = event.rotation;
+    setState(() {});
+  }
+
+  void _onPanZoomEnd(PointerPanZoomEndEvent event) {
+    _endTwist();
     setState(() {});
   }
 
@@ -607,11 +729,20 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
     final span = (points[0] - points[1]).distance;
     final previousCentroid = _pinchCentroid;
     final previousSpan = _span;
+    final previousAngle = _twistAngle;
     _pinchCentroid = centroid;
     _span = span;
+    final apart = points[1] - points[0];
+    _twistAngle = span > PapercutCamera.rotationMinSpan
+        ? math.atan2(apart.dy, apart.dx)
+        : null;
     if (previousCentroid != null) _pan(centroid - previousCentroid);
     if (previousSpan != null && previousSpan > 12 && span > 12) {
       _zoom(span / previousSpan);
+    }
+    final angle = _twistAngle;
+    if (previousAngle != null && angle != null) {
+      _twist(PapercutCamera.signedAngleDelta(previousAngle, angle));
     }
   }
 
@@ -622,7 +753,7 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
       case _CraftTool.select:
         if (_selectMode == _SelectMode.point) _selectTap(aim);
       case _CraftTool.scissors:
-        _cutTap(aim);
+        _cutTap();
       case _CraftTool.folder:
         _foldTap(aim);
     }
@@ -648,36 +779,31 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
     _area = _area.copy(selected: {key});
   }
 
-  void _cutTap(Offset aim) {
+  /// Cuts the piece the guideline lies across, edge to edge.
+  void _cutTap() {
     if (_cutWipe != null) return;
-    final lock = _cut;
-    if (lock == null) {
-      // The glyph is already on the nearest edge. The tap starts there even
-      // when the reticle sits well inside the paper.
-      _cut = lockCut(aim, _area, _scale, maxCells: null);
-      _cutGlowing = false;
-      if (_cut != null) _beginEngage();
-      return;
-    }
-    final end = _dictatedEnd(lock, aim);
-    if (end == null || (end - lock.point).distance < 1e-3) return;
-    final piece = pieceForKey(_area, mixedPieceKey(lock.sheetId, lock.pieceId));
-    final separation = piece?.separation ?? Offset.zero;
-    final from = lock.point + separation;
-    final to = end + separation;
+    final chord = _guideChord();
+    if (chord == null) return;
+    final piece = pieceForKey(
+      _area,
+      mixedPieceKey(chord.sheetId, chord.pieceId),
+    );
+    if (piece == null) return;
+    final separation = piece.separation;
+    final from = _bladeStart(chord);
+    final to = chord.end;
     final delta = to - from;
     if (delta.distance < 1e-3) return;
-    final direction = delta / delta.distance;
+    final direction = chord.direction;
     _seatTool(_flight, _flightAnim, anchor: to, direction: direction);
     final seated = _flight.pose(0);
     _cutWipe = _CutWipe(
       from: from,
       to: to,
       direction: direction,
-      stroke: [...lock.path, end],
-      sheetId: lock.sheetId,
-      pieceId: lock.pieceId,
-      fromScale: _pointScale,
+      stroke: [chord.start - separation, chord.end - separation],
+      sheetId: chord.sheetId,
+      pieceId: chord.pieceId,
       roll: seated.roll,
       open: seated.open,
     );
@@ -687,22 +813,7 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
     _cutPulse.forward(from: 0);
   }
 
-  void _beginEngage() {
-    _cutPulseKind = _CutPulse.engage;
-    _pointScale = 1;
-    unawaited(fmHaptic(FmHapticStyle.mediumImpact));
-    _cutPulse.duration = _kCutPulse;
-    _cutPulse.forward(from: 0);
-  }
-
   void _onCutPulseTick() {
-    final t = _cutPulse.value;
-    if (_cutPulseKind == _CutPulse.engage) {
-      _pointScale = 1 + 3 * Curves.easeOut.transform(t);
-    } else if (_cutPulseKind == _CutPulse.wipe) {
-      final from = _cutWipe?.fromScale ?? 4;
-      _pointScale = from + (1 - from) * _approach(t);
-    }
     if (mounted) setState(() {});
   }
 
@@ -711,12 +822,6 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
     final kind = _cutPulseKind;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _cutPulseKind != kind) return;
-      if (kind == _CutPulse.engage) {
-        _cutPulseKind = _CutPulse.idle;
-        _pointScale = 4;
-        setState(() {});
-        return;
-      }
       if (kind == _CutPulse.wipe) _finishCutWipe();
     });
   }
@@ -727,95 +832,35 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
     _cutPulseKind = _CutPulse.idle;
     if (wipe == null) return;
     final committed = commitCut(_area, wipe.sheetId, wipe.stroke);
-    if (committed == null) {
-      _seatTool(
-        _flight,
-        _flightAnim,
-        anchor: wipe.from,
-        direction: wipe.direction,
-      );
-      _pointScale = 4;
-      setState(() {});
-      return;
-    }
-    _apply(committed.area);
-    if (!committed.stoppedInside) {
-      _seatTool(
-        _flight,
-        _flightAnim,
-        anchor: wipe.to,
-        direction: wipe.direction,
-      );
-      _cut = null;
-      _cutGlowing = false;
-      _pointScale = 1;
-      setState(() {});
-      return;
-    }
-    final end = wipe.stroke.last;
-    final previous = wipe.stroke[wipe.stroke.length - 2];
-    final delta = end - previous;
-    final piece = pieceForKey(
-      committed.area,
-      mixedPieceKey(wipe.sheetId, wipe.pieceId),
-    );
-    final direction = delta.distance < 1e-6
-        ? wipe.direction
-        : delta / delta.distance;
-    _cut = CutLock(
-      sheetId: wipe.sheetId,
-      pieceId: piece?.id ?? wipe.pieceId,
-      path: wipe.stroke,
-      direction: direction,
-    );
-    _cutGlowing = false;
-    _seatTool(
-      _flight,
-      _flightAnim,
-      anchor: end + (piece?.separation ?? Offset.zero),
-      direction: direction,
-    );
+    if (committed != null) _apply(committed.area);
+    _returnToGuide(_flight, _flightAnim, _scissorCue(), _approachFor);
     setState(() {});
-    _beginEngage();
   }
 
-  /// Model-space end under the reticle. The stroke stops on a grid point or
-  /// a piece vertex, including when that point is still inside the paper.
-  Offset? _dictatedEnd(CutLock lock, Offset aim) {
-    final piece = pieceForKey(_area, mixedPieceKey(lock.sheetId, lock.pieceId));
-    final separation = piece?.separation ?? Offset.zero;
-    return snapCut(aim, _scale, _area) - separation;
+  /// Sends a tool seated at the end of its stroke back down the guideline.
+  void _returnToGuide(
+    ToolFlight flight,
+    AnimationController anim,
+    ToolCue? cue,
+    ScreenApproach? Function(ToolCue? next) approach,
+  ) {
+    final duration = flight.offer(cue, t: anim.value, approach: approach(cue));
+    if (duration == null) return;
+    anim.duration = duration;
+    anim.forward(from: 0);
   }
 
+  /// Scores the piece the guideline lies across. Off the paper, a tap
+  /// unfolds the latest crease under the middle of the view.
   void _foldTap(Offset aim) {
     if (_foldWipe != null) return;
-    final lock = _fold;
-    if (lock == null) {
-      _fold = lockCut(aim, _area, _scale, maxCells: null);
-      if (_fold != null) {
-        _beginFoldEngage();
-        return;
-      }
+    final chord = _guideChord();
+    if (chord == null) {
       final opened = unfoldUnder(_area, aim);
       if (opened != null) _apply(opened);
       return;
     }
-    final chord = _foldChord(aim);
-    if (chord == null) return;
     _beginFoldWipe(chord);
-  }
-
-  /// Crease from the locked edge through the reticle, out the far side.
-  FoldChord? _foldChord(Offset aim) {
-    final lock = _fold;
-    if (lock == null) return null;
-    final piece = pieceForKey(_area, mixedPieceKey(lock.sheetId, lock.pieceId));
-    final separation = piece?.separation ?? Offset.zero;
-    return foldThroughPiece(
-      _area,
-      lock.point + separation,
-      snapCut(aim, _scale, _area),
-    );
   }
 
   /// A point just beside the crease, so the fold has a side to turn.
@@ -826,19 +871,12 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
     return mid + Offset(-dir.dy, dir.dx);
   }
 
-  void _beginFoldEngage() {
-    _foldPulseKind = _CutPulse.engage;
-    _foldPointScale = 1;
-    unawaited(fmHaptic(FmHapticStyle.mediumImpact));
-    _foldPulse.duration = _kCutPulse;
-    _foldPulse.forward(from: 0);
-  }
-
-  void _beginFoldWipe(FoldChord chord) {
+  void _beginFoldWipe(GuideChord chord) {
     if (_foldWipe != null) return;
-    final delta = chord.end - chord.start;
+    final from = _bladeStart(chord);
+    final delta = chord.end - from;
     if (delta.distance < 1e-3) return;
-    final direction = delta / delta.distance;
+    final direction = chord.direction;
     _seatTool(
       _foldFlight,
       _foldFlightAnim,
@@ -847,14 +885,14 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
     );
     final seated = _foldFlight.pose(0);
     _foldWipe = _FoldWipe(
-      from: chord.start,
+      from: from,
+      start: chord.start,
       to: chord.end,
       direction: direction,
       sheetId: chord.sheetId,
       pieceId: chord.pieceId,
       face: _flapBeside(chord.start, chord.end),
       fold: false,
-      fromScale: _foldPointScale,
       roll: seated.roll,
       open: seated.open,
     );
@@ -866,13 +904,6 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
   }
 
   void _onFoldPulseTick() {
-    final t = _foldPulse.value;
-    if (_foldPulseKind == _CutPulse.engage) {
-      _foldPointScale = 1 + 3 * Curves.easeOut.transform(t);
-    } else if (_foldPulseKind == _CutPulse.wipe) {
-      final from = _foldWipe?.fromScale ?? 4;
-      _foldPointScale = from + (1 - from) * _approach(t);
-    }
     if (mounted) setState(() {});
   }
 
@@ -881,12 +912,6 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
     final kind = _foldPulseKind;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _foldPulseKind != kind) return;
-      if (kind == _CutPulse.engage) {
-        _foldPulseKind = _CutPulse.idle;
-        _foldPointScale = 4;
-        setState(() {});
-        return;
-      }
       if (kind == _CutPulse.wipe) _finishFoldWipe();
     });
   }
@@ -897,29 +922,13 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
     _foldPulseKind = _CutPulse.idle;
     if (wipe == null) return;
     final next = wipe.fold
-        ? foldSpan(_area, wipe.sheetId, wipe.from, wipe.to, wipe.face)
-        : scoreSpan(_area, wipe.sheetId, wipe.from, wipe.to, wipe.face);
-    if (next == null) {
-      _seatTool(
-        _foldFlight,
-        _foldFlightAnim,
-        anchor: wipe.from,
-        direction: wipe.direction,
-      );
-      _foldPointScale = 4;
-      setState(() {});
-      return;
+        ? foldSpan(_area, wipe.sheetId, wipe.start, wipe.to, wipe.face)
+        : scoreSpan(_area, wipe.sheetId, wipe.start, wipe.to, wipe.face);
+    if (next != null) {
+      _apply(next);
+      _beginCreaseFlutter(wipe, next);
     }
-    _apply(next);
-    _seatTool(
-      _foldFlight,
-      _foldFlightAnim,
-      anchor: wipe.to,
-      direction: wipe.direction,
-    );
-    _fold = null;
-    _foldPointScale = 1;
-    _beginCreaseFlutter(wipe, next);
+    _returnToGuide(_foldFlight, _foldFlightAnim, _folderCue(), _foldApproach);
     setState(() {});
   }
 
@@ -932,7 +941,7 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
     );
     if (sheet == null || piece == null) return;
     final shift = piece.separation;
-    final a = wipe.from - shift;
+    final a = wipe.start - shift;
     final b = wipe.to - shift;
     final side = sideOfLine(wipe.face - shift, a, b);
     if (side.abs() < 1e-4) return;
@@ -1157,41 +1166,23 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
     return Rect.fromLTRB(minX, minY, maxX, maxY);
   }
 
-  (Offset, Offset)? _segment() {
-    final aim = _aim();
-    if (_tool == _CraftTool.scissors) {
-      final wipe = _cutWipe;
-      if (wipe != null) {
-        final tip = Offset.lerp(
-          wipe.from,
-          wipe.to,
-          _approach(_cutPulse.value),
-        )!;
-        if ((wipe.to - tip).distance < 0.05) return null;
-        return (tip, wipe.to);
-      }
-      final lock = _cut;
-      if (lock == null || aim == null) return null;
-      final piece = pieceForKey(
-        _area,
-        mixedPieceKey(lock.sheetId, lock.pieceId),
-      );
-      final separation = piece?.separation ?? Offset.zero;
-      final end = _dictatedEnd(lock, aim);
-      if (end == null) return null;
-      return (lock.point + separation, end + separation);
+  /// The stroke still ahead of a travelling tool, or the chord a tap would
+  /// take along the guideline.
+  (Offset, Offset)? _segment(GuideChord? chord) {
+    final Offset from;
+    final Offset to;
+    final double t;
+    if (_tool == _CraftTool.scissors && _cutWipe != null) {
+      (from, to, t) = (_cutWipe!.from, _cutWipe!.to, _cutPulse.value);
+    } else if (_tool == _CraftTool.folder && _foldWipe != null) {
+      (from, to, t) = (_foldWipe!.from, _foldWipe!.to, _foldPulse.value);
+    } else {
+      if (!_guided || chord == null) return null;
+      return (chord.start, chord.end);
     }
-    if (_tool != _CraftTool.folder || _fold == null) return null;
-    final wipe = _foldWipe;
-    if (wipe != null) {
-      final tip = Offset.lerp(wipe.from, wipe.to, _approach(_foldPulse.value))!;
-      if ((wipe.to - tip).distance < 0.05) return null;
-      return (tip, wipe.to);
-    }
-    if (aim == null) return null;
-    final chord = _foldChord(aim);
-    if (chord == null) return null;
-    return (chord.start, chord.end);
+    final tip = Offset.lerp(from, to, _approach(t))!;
+    if ((to - tip).distance < 0.05) return null;
+    return (tip, to);
   }
 
   /// Stroke progress that leaves quickly and settles at the end.
@@ -1262,31 +1253,29 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
       next,
       t: _flightAnim.value,
       approach: _approachFor(next),
+      follow: true,
     );
     if (duration != null) _playFlight(duration);
   }
 
   ToolCue? _scissorCue() {
     if (_tool != _CraftTool.scissors) return null;
-    final aim = _aim();
-    if (aim == null) return null;
-    final lock = _cut;
-    if (lock == null) return _shownEdgeCue(aim);
-    final piece = pieceForKey(_area, mixedPieceKey(lock.sheetId, lock.pieceId));
-    if (piece == null) return null;
-    var direction = lock.direction;
-    final line = _segment();
-    if (line != null) {
-      final delta = line.$2 - line.$1;
-      if (delta.distance > 1e-6) direction = delta / delta.distance;
+    return _guideCue();
+  }
+
+  /// Keeps a seated tool on the guideline while the camera moves under it.
+  void _trackGuide(ToolFlight flight, ToolCue? cue, bool wiping) {
+    if (cue == null || wiping) return;
+    switch (flight.phase) {
+      case ToolFlightPhase.hold:
+      case ToolFlightPhase.arrive:
+      case ToolFlightPhase.relocate:
+        flight.target = cue;
+      case ToolFlightPhase.absent:
+      case ToolFlightPhase.leave:
+      case ToolFlightPhase.cut:
+        break;
     }
-    if (direction.distance < 1e-6) direction = const Offset(1, 0);
-    return ToolCue(
-      anchor: lock.point + piece.separation,
-      direction: direction,
-      aim: aim,
-      reach: _scale * 0.75,
-    );
   }
 
   ScreenApproach? _approachFor(ToolCue? next) {
@@ -1346,50 +1335,14 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
       next,
       t: _foldFlightAnim.value,
       approach: _foldApproach(next),
+      follow: true,
     );
     if (duration != null) _playFoldFlight(duration);
   }
 
-  /// Nearest paper edge, with no distance cutoff. Cut and fold both start here.
-  ToolCue? _shownEdgeCue(Offset aim) {
-    final preview = lockCut(aim, _area, _scale, maxCells: null);
-    if (preview == null) return null;
-    final piece = pieceForKey(
-      _area,
-      mixedPieceKey(preview.sheetId, preview.pieceId),
-    );
-    if (piece == null) return null;
-    final march = placeOnRing(preview.point, piece.vertices);
-    if (march == null) return null;
-    return ToolCue(
-      anchor: preview.point + piece.separation,
-      direction: march.direction,
-      aim: aim,
-      reach: _scale * 0.75,
-    );
-  }
-
   ToolCue? _folderCue() {
     if (_tool != _CraftTool.folder) return null;
-    final aim = _aim();
-    if (aim == null) return null;
-    final lock = _fold;
-    if (lock == null) return _shownEdgeCue(aim);
-    final piece = pieceForKey(_area, mixedPieceKey(lock.sheetId, lock.pieceId));
-    if (piece == null) return null;
-    var direction = lock.direction;
-    final chord = _foldWipe == null ? _foldChord(aim) : null;
-    final along = chord == null ? null : chord.end - chord.start;
-    if (along != null && along.distance > 1e-6) {
-      direction = along / along.distance;
-    }
-    if (direction.distance < 1e-6) direction = const Offset(1, 0);
-    return ToolCue(
-      anchor: lock.point + piece.separation,
-      direction: direction,
-      aim: aim,
-      reach: _scale * 0.75,
-    );
+    return _guideCue();
   }
 
   ScreenApproach? _foldApproach(ToolCue? next) {
@@ -1501,25 +1454,25 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
                         }
                         final chrome = _chrome(_viewport);
                         final aim = _aim();
-                        final snap = aim == null
-                            ? null
-                            : snapCut(aim, _scale, _area);
-                        final cutMark = _cutWipe != null
-                            ? _cutWipe!.to
-                            : (_tool == _CraftTool.scissors && _cut != null
-                                  ? snap
-                                  : null);
-                        final foldMark = _foldWipe != null
-                            ? _foldWipe!.to
-                            : (_tool == _CraftTool.folder &&
-                                      _fold != null &&
-                                      aim != null
-                                  ? _foldChord(aim)?.end
-                                  : null);
-                        final hover = aim == null
-                            ? null
-                            : pieceUnderAim(_area, aim);
-                        final segment = _segment();
+                        final chord = _guided ? _guideChord() : null;
+                        _trackGuide(_flight, _scissorCue(), _cutWipe != null);
+                        _trackGuide(
+                          _foldFlight,
+                          _folderCue(),
+                          _foldWipe != null,
+                        );
+                        final cutMark =
+                            _cutWipe?.to ??
+                            (_tool == _CraftTool.scissors ? chord?.end : null);
+                        final foldMark =
+                            _foldWipe?.to ??
+                            (_tool == _CraftTool.folder ? chord?.end : null);
+                        final hover = _guided
+                            ? (chord == null
+                                  ? null
+                                  : mixedPieceKey(chord.sheetId, chord.pieceId))
+                            : (aim == null ? null : pieceUnderAim(_area, aim));
+                        final segment = _segment(chord);
                         final transformBounds = _transforming
                             ? craftSelectionBounds(_area)
                             : null;
@@ -1553,6 +1506,9 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
                                 onPointerMove: _onPointerMove,
                                 onPointerUp: _onPointerUp,
                                 onPointerCancel: _onPointerCancel,
+                                onPointerPanZoomStart: _onPanZoomStart,
+                                onPointerPanZoomUpdate: _onPanZoomUpdate,
+                                onPointerPanZoomEnd: _onPanZoomEnd,
                                 child: AnimatedBuilder(
                                   animation: _camera,
                                   builder: (context, _) {
@@ -1567,10 +1523,6 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
                                         view: _visible(),
                                         hoverKey: hover,
                                         segment: segment,
-                                        segmentGlows:
-                                            _tool == _CraftTool.scissors
-                                            ? _cutGlowing
-                                            : _fold != null,
                                         foldSegment: _tool == _CraftTool.folder,
                                         marquee: _marqueeRect(),
                                         marqueeCross:
@@ -1610,10 +1562,6 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
                                           pose: _scissorPose(),
                                           tool: _scissors,
                                           glyphScale: 0.5,
-                                          pointScale:
-                                              _cut == null && _cutWipe == null
-                                              ? 1
-                                              : _pointScale,
                                           destination: cutMark,
                                         ),
                                       );
@@ -1636,10 +1584,6 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
                                           camera: _camera,
                                           pose: _folderPose(),
                                           destination: foldMark,
-                                          pointScale:
-                                              _fold == null && _foldWipe == null
-                                              ? 1
-                                              : _foldPointScale,
                                         ),
                                       );
                                     },
@@ -1661,7 +1605,15 @@ class _MixedCraftingViewState extends State<MixedCraftingView>
                                   ),
                                 ),
                               ),
-                            if (!_transforming)
+                            if (_guided)
+                              const Positioned.fill(
+                                child: IgnorePointer(
+                                  child: CustomPaint(
+                                    painter: _GuidelinePainter(),
+                                  ),
+                                ),
+                              ),
+                            if (_tool == _CraftTool.select && !_transforming)
                               const IgnorePointer(child: ViewCrosshair()),
                             if (_tool == _CraftTool.select &&
                                 menuCenter != null &&
@@ -2033,4 +1985,24 @@ bool _sameKeys(List<String> a, List<String> b) {
   if (a.length != b.length) return false;
   final other = b.toSet();
   return a.every(other.contains);
+}
+
+/// The cut line, fixed to the screen: up from the bottom edge to the middle.
+class _GuidelinePainter extends CustomPainter {
+  const _GuidelinePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final x = size.width / 2;
+    final top = Offset(x, size.height / 2);
+    final paint = Paint()
+      ..color = const Color(0xB3FFFFFF)
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(x, size.height), top, paint);
+    canvas.drawCircle(top, 3, Paint()..color = const Color(0xE6FFFFFF));
+  }
+
+  @override
+  bool shouldRepaint(covariant _GuidelinePainter oldDelegate) => false;
 }

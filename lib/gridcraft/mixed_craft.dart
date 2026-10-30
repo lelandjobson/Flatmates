@@ -358,6 +358,198 @@ FoldChord? foldThroughPiece(MixedCraftArea area, Offset start, Offset through) {
   return best;
 }
 
+/// A cut or crease along the guideline, across one piece, in drawn space.
+class GuideChord {
+  const GuideChord({
+    required this.sheetId,
+    required this.pieceId,
+    required this.start,
+    required this.end,
+  });
+
+  final String sheetId;
+  final String pieceId;
+
+  /// Edge nearer the blade, at the bottom of the screen.
+  final Offset start;
+
+  /// Far edge of the same piece.
+  final Offset end;
+
+  Offset get direction {
+    final delta = end - start;
+    final length = delta.distance;
+    return length < 1e-9 ? const Offset(0, 1) : delta / length;
+  }
+}
+
+/// The piece the guideline lies across, edge to edge.
+///
+/// The guideline is drawn from [from], at the blade, to [to]. Its line runs
+/// on past both, so a chord can start below the screen or end past [to],
+/// but the piece has to cross the drawn part. Of every span that does, the
+/// one reaching nearest [to] wins, and the front-most piece wins a tie.
+///
+/// A crafting-grid point or a piece vertex within [snap] of the drawn part
+/// slides the line sideways onto it. The line keeps its direction.
+GuideChord? guidelineChord(
+  MixedCraftArea area,
+  Offset from,
+  Offset to, {
+  required int scale,
+  double snap = 0,
+}) {
+  final along = to - from;
+  final length = along.distance;
+  if (length < 1e-6) return null;
+  final dir = along / length;
+  final origin = from + _guideSnap(area, from, dir, length, scale, snap);
+  GuideChord? best;
+  var bestReach = double.negativeInfinity;
+  for (final sheet in area.sheets.reversed) {
+    final pieces = sheet.paper.pieces;
+    for (var i = pieces.length - 1; i >= 0; i--) {
+      final piece = pieces[i];
+      if (area.hidden.contains(mixedPieceKey(sheet.id, piece.id))) continue;
+      final shift = piece.separation;
+      final outer = [for (final v in piece.vertices) v + shift];
+      final holes = [
+        for (final hole in piece.holes) [for (final v in hole) v + shift],
+      ];
+      for (final span in _lineSpans(origin, dir, outer, holes)) {
+        if (span.$2 < 0 || span.$1 > length) continue;
+        final reach = math.min(span.$2, length);
+        if (reach <= bestReach + 1e-6) continue;
+        bestReach = reach;
+        best = GuideChord(
+          sheetId: sheet.id,
+          pieceId: piece.id,
+          start: origin + dir * span.$1,
+          end: origin + dir * span.$2,
+        );
+      }
+    }
+  }
+  return best;
+}
+
+/// Sideways shift that puts the nearest grid point or vertex on the line.
+Offset _guideSnap(
+  MixedCraftArea area,
+  Offset origin,
+  Offset dir,
+  double length,
+  int scale,
+  double snap,
+) {
+  if (snap <= 0) return Offset.zero;
+  final normal = Offset(-dir.dy, dir.dx);
+  double? best;
+  void consider(Offset point) {
+    final rel = point - origin;
+    final t = rel.dx * dir.dx + rel.dy * dir.dy;
+    if (t < -snap || t > length + snap) return;
+    final side = rel.dx * normal.dx + rel.dy * normal.dy;
+    if (side.abs() > snap) return;
+    if (best != null && side.abs() >= best!.abs()) return;
+    best = side;
+  }
+
+  for (final sheet in area.sheets) {
+    for (final piece in sheet.paper.pieces) {
+      if (area.hidden.contains(mixedPieceKey(sheet.id, piece.id))) continue;
+      for (final ring in [piece.vertices, ...piece.holes]) {
+        for (final vertex in ring) {
+          consider(vertex + piece.separation);
+        }
+      }
+    }
+  }
+  if (scale > 0) {
+    final cell = scale.toDouble();
+    final end = origin + dir * length;
+    final vertical = dir.dy.abs() >= dir.dx.abs();
+    final a = vertical ? origin.dy : origin.dx;
+    final b = vertical ? end.dy : end.dx;
+    final first = (math.min(a, b) / cell).floor();
+    final last = (math.max(a, b) / cell).ceil();
+    if (last - first <= 4000) {
+      for (var k = first; k <= last; k++) {
+        final major = k * cell;
+        final minor = vertical
+            ? origin.dx + dir.dx * (major - origin.dy) / dir.dy
+            : origin.dy + dir.dy * (major - origin.dx) / dir.dx;
+        final grid = (minor / cell).round() * cell;
+        consider(vertical ? Offset(grid, major) : Offset(major, grid));
+      }
+    }
+  }
+  final side = best;
+  return side == null ? Offset.zero : normal * side;
+}
+
+/// Parameter spans of the line `origin + dir * t` that lie inside [outer]
+/// and outside every hole, in order. Crossings come from Cramer's rule, as
+/// in Boost.Geometry's `cartesian_segments`.
+List<(double, double)> _lineSpans(
+  Offset origin,
+  Offset dir,
+  List<Offset> outer,
+  List<List<Offset>> holes,
+) {
+  if (outer.length < 3) return const [];
+  const eps = 1e-9;
+  final ts = <double>[];
+  for (final ring in [outer, ...holes]) {
+    for (var i = 0; i < ring.length; i++) {
+      final a = ring[i];
+      final edge = ring[(i + 1) % ring.length] - a;
+      final denom = dir.dx * edge.dy - dir.dy * edge.dx;
+      if (denom.abs() < eps) continue;
+      final w = a - origin;
+      final t = (w.dx * edge.dy - w.dy * edge.dx) / denom;
+      final u = (w.dx * dir.dy - w.dy * dir.dx) / denom;
+      if (u < -1e-9 || u > 1 + 1e-9) continue;
+      ts.add(t);
+    }
+  }
+  if (ts.length < 2) return const [];
+  ts.sort();
+  final cuts = <double>[ts.first];
+  for (final t in ts.skip(1)) {
+    if (t - cuts.last > 1e-6) cuts.add(t);
+  }
+  final spans = <(double, double)>[];
+  for (var i = 0; i + 1 < cuts.length; i++) {
+    final mid = origin + dir * ((cuts[i] + cuts[i + 1]) / 2);
+    if (!_strictlyInside(mid, outer, holes)) continue;
+    if (spans.isNotEmpty && (spans.last.$2 - cuts[i]).abs() < 1e-6) {
+      spans[spans.length - 1] = (spans.last.$1, cuts[i + 1]);
+    } else {
+      spans.add((cuts[i], cuts[i + 1]));
+    }
+  }
+  return spans;
+}
+
+bool _strictlyInside(
+  Offset point,
+  List<Offset> outer,
+  List<List<Offset>> holes,
+) {
+  if (!isInsidePolygon(point, outer)) return false;
+  for (final hole in holes) {
+    if (isInsidePolygon(point, hole)) return false;
+  }
+  for (final ring in [outer, ...holes]) {
+    for (var i = 0; i < ring.length; i++) {
+      final on = _projectSegment(point, ring[i], ring[(i + 1) % ring.length]);
+      if ((on - point).distance <= 1e-4) return false;
+    }
+  }
+  return true;
+}
+
 bool _outlineContains(Offset local, PapercutPiece piece) {
   final rings = [piece.vertices, ...piece.holes];
   for (final ring in rings) {

@@ -1,62 +1,148 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'asmr_net.dart';
 import 'asmr_piece.dart';
 
-/// Colors of selection groups A, B, C, and on, in letter order.
-const List<Color> kAsmrGroupColors = [
-  Color(0xFFFF7A59),
-  Color(0xFF4FC3F7),
-  Color(0xFFB388FF),
-  Color(0xFF81C784),
-  Color(0xFFFFD54F),
-  Color(0xFFF06292),
-  Color(0xFF4DB6AC),
-  Color(0xFFFFB74D),
+/// How faint a group's hatch is on the cube.
+const double kAsmrHatchOpacity = 0.3;
+
+/// The lines a group's faces are hatched with on the cube, in the plane of
+/// each face. Lengths are model units; a cube face is 5 across.
+class AsmrHatch {
+  const AsmrHatch({
+    required this.color,
+    required this.angle,
+    required this.spacing,
+    required this.width,
+    this.cross = false,
+  });
+
+  /// Opaque. It is drawn at [kAsmrHatchOpacity].
+  final Color color;
+
+  /// Radians from the face's x axis.
+  final double angle;
+  final double spacing;
+  final double width;
+
+  /// A second set of lines across the first.
+  final bool cross;
+}
+
+/// One hatch per group letter, in turn: each a different color, angle, and
+/// density, so neighboring groups read apart.
+const List<AsmrHatch> kAsmrHatches = [
+  AsmrHatch(
+    color: Color(0xFFFFB74D),
+    angle: math.pi / 4,
+    spacing: 0.5,
+    width: 0.08,
+  ),
+  AsmrHatch(
+    color: Color(0xFF4DD0E1),
+    angle: -math.pi / 4,
+    spacing: 0.32,
+    width: 0.05,
+  ),
+  AsmrHatch(color: Color(0xFFF06292), angle: 0, spacing: 0.75, width: 0.14),
+  AsmrHatch(
+    color: Color(0xFFAED581),
+    angle: math.pi / 2,
+    spacing: 0.42,
+    width: 0.07,
+  ),
+  AsmrHatch(
+    color: Color(0xFFB39DDB),
+    angle: math.pi / 4,
+    spacing: 0.6,
+    width: 0.06,
+    cross: true,
+  ),
+  AsmrHatch(
+    color: Color(0xFFFF8A65),
+    angle: math.pi / 6,
+    spacing: 0.28,
+    width: 0.04,
+  ),
+  AsmrHatch(
+    color: Color(0xFF81D4FA),
+    angle: -math.pi / 3,
+    spacing: 0.9,
+    width: 0.18,
+  ),
+  AsmrHatch(
+    color: Color(0xFFFFF176),
+    angle: 0,
+    spacing: 0.5,
+    width: 0.06,
+    cross: true,
+  ),
 ];
 
-/// The faces paper was laid for, and that paper.
+AsmrHatch hatchOfGroup(int letter) =>
+    kAsmrHatches[letter % kAsmrHatches.length];
+
+/// The faces a stretch of the craft is cut for, and the paper already on
+/// them.
 ///
-/// Opening the desk on a selection makes its group, or reopens the group of
-/// the same faces. Two selections of the same faces are the same group,
-/// whatever order the faces were taken in; [picks] keeps the order the group
-/// was made with, so its hologram unfolds the same way each time and the
-/// paper lines up with it. A group lasts only while some of its paper is
-/// attached to its faces.
+/// A deal divides the object into 2, 3, or 4 of these. Two selections of the
+/// same faces are the same group, whatever order the faces were taken in.
+/// [picks] keeps the order the group
+/// was made with, so its hologram unfolds the same way each time. Every
+/// group cuts from the one shared desk; a piece cut close enough to the
+/// group's blueprint leaves the desk and joins [bound], on the model. A
+/// group stays until it is undone, with or without paper.
 class AsmrGroup {
   AsmrGroup({
     required this.letter,
     required this.picks,
     required this.net,
-    List<AsmrPiece>? pieces,
-  }) : pieces = pieces ?? [];
+    List<AsmrPiece>? bound,
+    List<AsmrPiece>? draft,
+    this.cutsUsed = 0,
+    this.editing = false,
+  }) : bound = bound ?? [],
+       draft = draft ?? [];
 
   /// 0 for A, 1 for B, and on.
   final int letter;
+
+  /// Successful scissors strokes spent on this group.
+  int cutsUsed;
+
+  /// Reopened submitted paper is held off the model until sent back.
+  bool editing;
   final List<HologramPick> picks;
   final AsmrNet net;
 
-  /// The group's desk, attached or not.
-  final List<AsmrPiece> pieces;
+  /// Paper on the group's faces, each piece bound to [net].
+  final List<AsmrPiece> bound;
+
+  /// Detached paper being edited, separate from the shared desk.
+  final List<AsmrPiece> draft;
 
   late final Set<int> faces = {for (final pick in picks) pick.face};
 
   String get name => String.fromCharCode(0x41 + letter % 26);
 
-  Color get color => kAsmrGroupColors[letter % kAsmrGroupColors.length];
+  AsmrHatch get hatch => hatchOfGroup(letter);
 
-  /// Whether any of its paper is attached to its faces.
-  bool get anchored => pieces.any((piece) => piece.binding != null);
+  /// Whether any paper is on its faces.
+  bool get anchored => bound.isNotEmpty;
 
   bool holds(Set<int> other) =>
       other.length == faces.length && faces.containsAll(other);
 
-  /// A copy whose desk can change without touching this one.
+  /// A copy whose paper can change without touching this one.
   AsmrGroup copy() => AsmrGroup(
     letter: letter,
     picks: picks,
     net: net,
-    pieces: List.of(pieces),
+    bound: List.of(bound),
+    draft: List.of(draft),
+    cutsUsed: cutsUsed,
+    editing: editing,
   );
 }
 

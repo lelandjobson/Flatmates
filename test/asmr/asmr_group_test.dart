@@ -1,4 +1,7 @@
+import 'dart:ui';
+
 import 'package:flatmates/asmr/asmr_group.dart';
+import 'package:flatmates/asmr/asmr_model_paper.dart';
 import 'package:flatmates/asmr/asmr_net.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -29,6 +32,31 @@ void main() {
     expect(nextGroupLetter(groups), 1);
     expect(groups.first.name, 'A');
     expect(groups.last.name, 'C');
-    expect(groups.first.color, isNot(groups.last.color));
+  });
+
+  test('neighboring groups get different hatches, and paint without '
+      'trouble', () async {
+    final seen = {
+      for (var i = 0; i < kAsmrHatches.length; i++) hatchOfGroup(i),
+    };
+    expect(seen, hasLength(kAsmrHatches.length));
+    expect(hatchOfGroup(kAsmrHatches.length), same(hatchOfGroup(0)));
+    expect(group(1, const [HologramPick(0)]).hatch, same(hatchOfGroup(1)));
+
+    final recorder = PictureRecorder();
+    final canvas = Canvas(recorder);
+    for (final hatch in kAsmrHatches) {
+      paintHatch(canvas, const [
+        Offset(0, 0),
+        Offset(5, 0),
+        Offset(5, 5),
+        Offset(0, 5),
+      ], hatch);
+    }
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(8, 8);
+    expect(image.width, 8);
+    image.dispose();
+    picture.dispose();
   });
 }

@@ -19,6 +19,47 @@ const double kAsmrCutReach = 3;
 /// Desk units between exacto stroke samples.
 const double kAsmrStrokeSpacing = 1;
 
+/// A blueprint printed in a piece's local coordinates. Splits retain this
+/// rigid transform, so every fragment carries its own portion of the print.
+class AsmrBlueprintStamp {
+  const AsmrBlueprintStamp({
+    required this.group,
+    required this.origin,
+    required this.angle,
+  });
+  final int group;
+  final Offset origin;
+  final double angle;
+
+  Offset toPaper(Offset net) {
+    final c = math.cos(angle), s = math.sin(angle);
+    return origin + Offset(c * net.dx - s * net.dy, s * net.dx + c * net.dy);
+  }
+
+  Offset toNet(Offset local) {
+    final p = local - origin;
+    final c = math.cos(angle), s = math.sin(angle);
+    return Offset(c * p.dx + s * p.dy, -s * p.dx + c * p.dy);
+  }
+}
+
+final Expando<Map<int, AsmrPiece>> _blueprintSpaceCache = Expando();
+final Expando<Path> _outlinePathCache = Expando();
+final Expando<Path> _scorePathCache = Expando();
+final Expando<Path> _cutEdgePathCache = Expando();
+
+Path _pathsOf(List<List<Offset>> lines) {
+  final path = Path();
+  for (final line in lines) {
+    if (line.length < 2) continue;
+    path.moveTo(line.first.dx, line.first.dy);
+    for (final point in line.skip(1)) {
+      path.lineTo(point.dx, point.dy);
+    }
+  }
+  return path;
+}
+
 /// A paper piece on the ASMR desk. [ring] and [holes] are in the paper's
 /// own coordinates, where its pattern is printed; [position] and [angle]
 /// lay it on the desk.
@@ -37,6 +78,9 @@ class AsmrPiece {
     this.liberated = false,
     this.binding,
     this.scores = const [],
+    this.blueprints = const [],
+    this.edgeTone,
+    this.cutEdges = const [],
   });
 
   /// A whole sheet of [paper] centered on [at].
@@ -65,18 +109,61 @@ class AsmrPiece {
   final bool liberated;
   final AsmrNet? binding;
 
+  /// Stable position in the paper-derived edge palette, assigned on separation.
+  final double? edgeTone;
+
+  /// Actual cut boundary segments, in local paper coordinates, not score lines.
+  final List<List<Offset>> cutEdges;
+
   /// Cuts that did not free anything yet, in paper coordinates.
   final List<List<Offset>> scores;
+  final List<AsmrBlueprintStamp> blueprints;
+
+  AsmrBlueprintStamp? blueprintFor(int group) {
+    for (final stamp in blueprints) {
+      if (stamp.group == group) return stamp;
+    }
+    return null;
+  }
+
+  /// The same physical piece in its printed blueprint's canonical space,
+  /// for judging and binding regardless of where the player moved it.
+  AsmrPiece inBlueprintSpace(int group) {
+    final stamp = blueprintFor(group);
+    if (stamp == null) return this;
+    final cache = _blueprintSpaceCache[this] ??= {};
+    return cache[group] ??= copyWith(
+      position: stamp.toNet(Offset.zero),
+      angle: -stamp.angle,
+    );
+  }
+
+  AsmrPiece affixedTo(int group) => copyWith(
+    blueprints: [
+      for (final stamp in blueprints)
+        if (stamp.group != group) stamp,
+      AsmrBlueprintStamp(
+        group: group,
+        origin: toLocal(Offset.zero),
+        angle: -angle,
+      ),
+    ],
+  );
 
   AsmrPiece copyWith({
     Offset? position,
+    AsmrPaper? paper,
+    List<AsmrBlueprintStamp>? blueprints,
     double? angle,
     bool? liberated,
     AsmrNet? binding,
     List<List<Offset>>? scores,
+    double? edgeTone,
+    List<List<Offset>>? cutEdges,
   }) => AsmrPiece(
     id: id,
-    paper: paper,
+    paper: paper ?? this.paper,
+    blueprints: blueprints ?? this.blueprints,
     ring: ring,
     holes: holes,
     position: position ?? this.position,
@@ -84,6 +171,8 @@ class AsmrPiece {
     liberated: liberated ?? this.liberated,
     binding: binding ?? this.binding,
     scores: scores ?? this.scores,
+    edgeTone: edgeTone ?? this.edgeTone,
+    cutEdges: cutEdges ?? this.cutEdges,
   );
 
   /// The same piece, attached to no faces.
@@ -96,6 +185,9 @@ class AsmrPiece {
     angle: angle,
     liberated: liberated,
     scores: scores,
+    blueprints: blueprints,
+    edgeTone: edgeTone,
+    cutEdges: cutEdges,
   );
 
   /// Paper coordinates to the desk.
@@ -179,8 +271,15 @@ class AsmrPiece {
     return mid;
   }
 
+  /// Cached paper-local geometry. Treat these paths as read-only. Weak
+  /// caches release old cut states when undo history and pieces release them.
+  Path get scorePath => _scorePathCache[scores] ??= _pathsOf(scores);
+  Path get cutEdgePath => _cutEdgePathCache[cutEdges] ??= _pathsOf(cutEdges);
+
   /// Paper outline as a path in paper coordinates, holes cut out.
-  Path get localPath {
+  Path get localPath => _outlinePathCache[this] ??= _buildLocalPath();
+
+  Path _buildLocalPath() {
     final path = Path()..fillType = PathFillType.evenOdd;
     void addRing(List<Offset> ring) {
       if (ring.length < 3) return;
@@ -276,12 +375,15 @@ AsmrCut? cutPieces(
       final part = AsmrPiece(
         id: '${piece.id}.$i',
         paper: piece.paper,
+        edgeTone: ((piece.edgeTone ?? 0.12) + (i + 1) * 0.38196601125) % 1,
+        cutEdges: _separatedEdges(piece, parts[i].vertices, parts[i].holes),
         ring: parts[i].vertices,
         holes: parts[i].holes,
         position: piece.position,
         angle: piece.angle,
         liberated: piece.liberated || i != largest,
         binding: piece.binding,
+        blueprints: piece.blueprints,
       );
       if (i != largest) freed.add(part.id);
       next.add(part);
@@ -289,6 +391,47 @@ AsmrCut? cutPieces(
   }
   if (!touched) return null;
   return AsmrCut(pieces: next, freed: freed);
+}
+
+/// Retain old cut edges and identify boundaries introduced by a separation.
+List<List<Offset>> _separatedEdges(
+  AsmrPiece source,
+  List<Offset> outline,
+  List<List<Offset>> holes,
+) {
+  // Boost.Geometry closest_points_pt_seg: project with a clamped dot product.
+  bool onSegment(Offset p, Offset a, Offset b) {
+    final v = b - a;
+    final length2 = v.distanceSquared;
+    if (length2 < 1e-18) return (p - a).distanceSquared <= 1e-12;
+    final w = p - a;
+    final t = ((w.dx * v.dx + w.dy * v.dy) / length2).clamp(0.0, 1.0);
+    return (p - (a + v * t)).distanceSquared <= 1e-12;
+  }
+
+  bool covered(Offset a, Offset b, Iterable<List<Offset>> lines) {
+    for (final line in lines) {
+      for (var i = 1; i < line.length; i++) {
+        if (onSegment(a, line[i - 1], line[i]) &&
+            onSegment(b, line[i - 1], line[i])) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  final oldBoundary = [
+    for (final ring in [source.ring, ...source.holes])
+      if (ring.isNotEmpty) [...ring, ring.first],
+  ];
+  return [
+    for (final ring in [outline, ...holes])
+      for (var i = 0; i < ring.length; i++)
+        if (!covered(ring[i], ring[(i + 1) % ring.length], oldBoundary) ||
+            covered(ring[i], ring[(i + 1) % ring.length], source.cutEdges))
+          [ring[i], ring[(i + 1) % ring.length]],
+  ];
 }
 
 /// Desk units a straight cut runs past the paper's edge, so it leaves it.

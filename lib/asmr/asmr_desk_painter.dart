@@ -1,9 +1,16 @@
+import 'dart:math' as math;
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
+import '../ui/game/view_crosshair.dart';
+import 'asmr_cut_style.dart';
 import 'asmr_mapping.dart';
 import 'asmr_net.dart';
 import 'asmr_paper.dart';
 import 'asmr_piece.dart';
+import 'asmr_theme.dart';
+import 'asmr_turn_dial.dart';
 
 /// The 2D crafting desk, and the last stop of the 3D view's gradient.
 const Color kAsmrDeskColor = Color(0xFF14152A);
@@ -14,14 +21,18 @@ const Color kAsmrSkyColor = Color(0xFF2B2D4A);
 const Color _kGroove = Color(0xFF2A2440);
 
 /// The desk: paper pieces with their prints, scores, and the cut under way.
-/// Desk point `p` lands on screen at `origin + p * scale`.
+/// Desk point `p` lands on screen at `origin + p * scale`, turned clockwise
+/// by [angle] about [origin].
 class AsmrDeskPainter extends CustomPainter {
   const AsmrDeskPainter({
     required this.pieces,
     required this.tiles,
     required this.origin,
     required this.scale,
+    this.angle = 0,
+    this.projection,
     this.selectedIds = const {},
+    this.hoveredId,
     this.selectedOutline = 0,
     this.flash = const {},
     this.stroke,
@@ -30,17 +41,30 @@ class AsmrDeskPainter extends CustomPainter {
     this.finger,
     this.rotateHandle,
     this.blueprint,
+    this.affixedNets = const {},
+    this.blueprintColors = const {},
+    this.placementGlow = 0,
+    this.placementGroup,
     this.shadowThrow = 10,
     this.shadowSpread = 8,
     this.shadowColor = const Color(0x73000000),
     this.darkOverlay = 0.22,
+    this.theme,
+    this.ghost = 0,
+    this.paintBackground = true,
   });
 
   final List<AsmrPiece> pieces;
   final AsmrPaperTiles tiles;
   final Offset origin;
   final double scale;
+  final double angle;
+
+  /// Desk point to screen, when the cut pitches the view. Null keeps the flat
+  /// translate, rotate, and scale.
+  final Float64List? projection;
   final Set<String> selectedIds;
+  final String? hoveredId;
   final double selectedOutline;
 
   /// Piece id to 0–1: a white ring flashing round a piece just cut free.
@@ -61,6 +85,10 @@ class AsmrDeskPainter extends CustomPainter {
 
   /// The hologram on the desk. Pieces on its outer edge cast [shadowColor].
   final AsmrNet? blueprint;
+  final Map<int, AsmrNet> affixedNets;
+  final Map<int, Map<String, Color>> blueprintColors;
+  final double placementGlow;
+  final int? placementGroup;
 
   /// How far that shadow is offset, in screen pixels, down and a little right.
   final double shadowThrow;
@@ -74,29 +102,67 @@ class AsmrDeskPainter extends CustomPainter {
   /// How much a piece is darkened when it is not on a blueprint edge.
   final double darkOverlay;
 
+  /// Colors for this view. Null keeps the colors the desk was drawn with.
+  final AsmrTheme? theme;
+
+  /// 0–1: how far the paper is drawn as dashed outlines instead of filled,
+  /// for the desk seen behind the 3D view.
+  final double ghost;
+
+  /// Whether the desk color is drawn under the paper. Off when a backdrop
+  /// behind this layer draws it.
+  final bool paintBackground;
+
+  Color _dye(AsmrThemeSlot slot, Color color) =>
+      theme?.ink(slot, color) ?? color;
+
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.drawRect(Offset.zero & size, Paint()..color = kAsmrDeskColor);
-    canvas.save();
-    canvas.translate(origin.dx, origin.dy);
-    canvas.scale(scale);
-    final px = 1 / scale;
-    final net = blueprint;
-    final hasBlueprint = net != null && !net.isEmpty;
-    final onEdge = <String>{
-      if (hasBlueprint)
-        for (final piece in pieces)
-          if (onBlueprintEdge(piece, net)) piece.id,
-    };
-    for (final piece in pieces) {
-      if (!onEdge.contains(piece.id)) {
-        _paintPiece(canvas, piece, px, contactShadow: true, dim: hasBlueprint);
-      }
+    if (paintBackground) {
+      canvas.drawRect(
+        Offset.zero & size,
+        Paint()..color = theme?.solid(AsmrThemeSlot.desk) ?? kAsmrDeskColor,
+      );
     }
-    for (final piece in pieces) {
-      if (!onEdge.contains(piece.id)) continue;
-      _paintEdgeShadow(canvas, piece, px);
-      _paintPiece(canvas, piece, px, contactShadow: false, dim: false);
+    canvas.save();
+    // Bound native blur/layer allocation before entering the pitched plane.
+    canvas.clipRect(Offset.zero & size);
+    final view = projection;
+    if (view != null) {
+      canvas.transform(view);
+    } else {
+      canvas.translate(origin.dx, origin.dy);
+      canvas.rotate(angle);
+      canvas.scale(scale);
+    }
+    final px = 1 / scale;
+    final dashed = ghost.clamp(0.0, 1.0);
+    if (dashed < 1) {
+      if (dashed > 0) {
+        canvas.saveLayer(
+          null,
+          Paint()..color = Colors.white.withValues(alpha: 1 - dashed),
+        );
+      }
+      _paintPieces(canvas, px);
+      if (dashed > 0) canvas.restore();
+    }
+    if (dashed > 0) _paintGhosts(canvas, px, dashed);
+
+    if (hoveredId != null && ghost < 1) {
+      for (final piece in pieces) {
+        if (piece.id != hoveredId) continue;
+        canvas.save();
+        canvas.transform(piece.pose.storage);
+        canvas.drawPath(
+          piece.localPath,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2 * px
+            ..color = _dye(AsmrThemeSlot.selection, const Color(0xB3FFFFFF)),
+        );
+        canvas.restore();
+      }
     }
 
     for (final line in reach) {
@@ -106,27 +172,7 @@ class AsmrDeskPainter extends CustomPainter {
     final cut = stroke;
     if (cut != null && cut.length >= 2) {
       final path = _polyline(cut);
-      canvas.drawPath(
-        path,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.8 * px
-          ..strokeCap = StrokeCap.round
-          ..strokeJoin = StrokeJoin.round
-          ..color = _kGroove.withValues(alpha: 0.85),
-      );
-      canvas.save();
-      canvas.translate(0.6 * px, 0.8 * px);
-      canvas.drawPath(
-        path,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 0.8 * px
-          ..strokeCap = StrokeCap.round
-          ..strokeJoin = StrokeJoin.round
-          ..color = Colors.white.withValues(alpha: 0.45),
-      );
-      canvas.restore();
+      _paintPaperCut(canvas, path, px);
     }
     canvas.restore();
 
@@ -144,7 +190,10 @@ class AsmrDeskPainter extends CustomPainter {
         Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2
-          ..color = Colors.white.withValues(alpha: 0.9 * a),
+          ..color = _dye(
+            AsmrThemeSlot.selection,
+            Colors.white.withValues(alpha: 0.9 * a),
+          ),
       );
       final arc = Rect.fromCircle(center: handle, radius: 6);
       canvas.drawArc(
@@ -156,16 +205,81 @@ class AsmrDeskPainter extends CustomPainter {
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.8
           ..strokeCap = StrokeCap.round
-          ..color = Colors.white.withValues(alpha: 0.9 * a),
+          ..color = _dye(
+            AsmrThemeSlot.selection,
+            Colors.white.withValues(alpha: 0.9 * a),
+          ),
       );
     }
 
     final tip = knifeTip;
-    if (tip != null) paintKnife(canvas, tip, finger);
+    if (tip != null) paintKnife(canvas, tip, finger, theme: theme);
+  }
+
+  void _paintPieces(Canvas canvas, double px) {
+    final net = blueprint;
+    final hasBlueprint = net != null && !net.isEmpty;
+    final onEdge = <String>{
+      if (hasBlueprint)
+        for (final piece in pieces)
+          if (piece.blueprints.isNotEmpty || onBlueprintEdge(piece, net))
+            piece.id,
+    };
+    for (final piece in pieces) {
+      if (!onEdge.contains(piece.id)) {
+        _paintPiece(canvas, piece, px, contactShadow: true, dim: hasBlueprint);
+      }
+    }
+    for (final piece in pieces) {
+      if (!onEdge.contains(piece.id)) continue;
+      _paintEdgeShadow(canvas, piece, px);
+      _paintPiece(canvas, piece, px, contactShadow: false, dim: false);
+    }
+  }
+
+  /// Each piece's outline and holes as white dashes, [amount] strong.
+  void _paintGhosts(Canvas canvas, double px, double amount) {
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4 * px
+      ..strokeCap = StrokeCap.round
+      ..color = _dye(
+        AsmrThemeSlot.selection,
+        Colors.white.withValues(alpha: 0.8 * amount),
+      );
+    final dash = 7 * px;
+    final gap = 5 * px;
+    for (final piece in pieces) {
+      canvas.save();
+      canvas.transform(piece.pose.storage);
+      _paintAffixedBlueprint(canvas, piece, px, opacity: amount);
+      canvas.restore();
+      for (final ring in [piece.deskRing, ...piece.deskHoles]) {
+        if (ring.length < 2) continue;
+        final path = Path()..addPolygon(ring, true);
+        for (final metric in path.computeMetrics()) {
+          var at = 0.0;
+          while (at < metric.length) {
+            canvas.drawPath(
+              metric.extractPath(at, math.min(at + dash, metric.length)),
+              paint,
+            );
+            at += dash + gap;
+          }
+        }
+      }
+    }
   }
 
   /// The exacto's crosshair at [tip], tied to the [finger] holding it.
-  static void paintKnife(Canvas canvas, Offset tip, Offset? finger) {
+  static void paintKnife(
+    Canvas canvas,
+    Offset tip,
+    Offset? finger, {
+    AsmrTheme? theme,
+  }) {
+    Color dye(AsmrThemeSlot slot, Color color) =>
+        theme?.ink(slot, color) ?? color;
     final hand = finger;
     if (hand != null && (hand - tip).distance > 1) {
       canvas.drawCircle(
@@ -174,20 +288,49 @@ class AsmrDeskPainter extends CustomPainter {
         Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.5
-          ..color = Colors.white.withValues(alpha: 0.25),
+          ..color = dye(
+            AsmrThemeSlot.knife,
+            Colors.white.withValues(alpha: 0.25),
+          ),
       );
       canvas.drawLine(
         hand + (tip - hand) / (tip - hand).distance * 22,
         tip + (hand - tip) / (hand - tip).distance * 9,
         Paint()
           ..strokeWidth = 1
-          ..color = Colors.white.withValues(alpha: 0.25),
+          ..color = dye(
+            AsmrThemeSlot.knife,
+            Colors.white.withValues(alpha: 0.25),
+          ),
       );
     }
-    _crosshair(canvas, tip);
+    _crosshair(canvas, tip, theme);
   }
 
-  /// A red hologram of the straight cut, on the paper it will go through.
+  /// Active cuts and unfinished scores stay white until pieces separate.
+  void _paintPaperCut(Canvas canvas, Path path, double px) {
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4 * px
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..color = Colors.white.withValues(alpha: 0.6)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 2.5 * px),
+    );
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4 * px
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..color = Colors.white,
+    );
+  }
+
+  /// White preview of the straight cut on the paper it will go through.
   void _paintCutGlow(Canvas canvas, List<Offset> line, double px) {
     if (line.length < 2) return;
     final path = _polyline(line);
@@ -198,7 +341,7 @@ class AsmrDeskPainter extends CustomPainter {
         ..strokeWidth = 10 * px
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = const Color(0xFFFF2A2A).withValues(alpha: 0.4)
+        ..color = Colors.white.withValues(alpha: 0.4)
         ..maskFilter = MaskFilter.blur(BlurStyle.normal, 6 * px),
     );
     canvas.drawPath(
@@ -217,7 +360,7 @@ class AsmrDeskPainter extends CustomPainter {
         ..strokeWidth = 1.6 * px
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = const Color(0xFFFF5A5F),
+        ..color = Colors.white,
     );
   }
 
@@ -229,10 +372,8 @@ class AsmrDeskPainter extends CustomPainter {
     final throwPx = shadowThrow.clamp(0.0, 80.0);
     final spreadPx = shadowSpread.clamp(0.0, 80.0);
     canvas.save();
-    canvas.translate(
-      _shadowDir.dx * throwPx * px,
-      _shadowDir.dy * throwPx * px,
-    );
+    final cast = _onScreen(_shadowDir * throwPx * px);
+    canvas.translate(cast.dx, cast.dy);
     canvas.transform(piece.pose.storage);
     canvas.drawPath(
       piece.localPath,
@@ -255,7 +396,8 @@ class AsmrDeskPainter extends CustomPainter {
     final path = piece.localPath;
     if (piece.liberated && contactShadow) {
       canvas.save();
-      canvas.translate(1.6 * px, 2.8 * px);
+      final drop = _onScreen(Offset(1.6 * px, 2.8 * px));
+      canvas.translate(drop.dx, drop.dy);
       canvas.transform(piece.pose.storage);
       canvas.drawPath(
         path,
@@ -267,7 +409,34 @@ class AsmrDeskPainter extends CustomPainter {
     }
     canvas.save();
     canvas.transform(piece.pose.storage);
-    canvas.drawPath(path, tiles.paint(piece.paper));
+    final tone = theme;
+    if (tone != null &&
+        !tone.plain(AsmrThemeSlot.paper) &&
+        piece.paper.pattern == AsmrPattern.plain) {
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = piece.paper.color.withValues(
+            alpha: tone.opacityOf(AsmrThemeSlot.paper),
+          ),
+      );
+    } else if (tone != null && !tone.plain(AsmrThemeSlot.paper)) {
+      canvas.saveLayer(
+        path.getBounds(),
+        Paint()
+          ..color = Colors.white.withValues(
+            alpha: tone.opacityOf(AsmrThemeSlot.paper),
+          )
+          ..colorFilter = ColorFilter.mode(
+            tone.colorOf(AsmrThemeSlot.paper),
+            BlendMode.modulate,
+          ),
+      );
+      canvas.drawPath(path, tiles.paint(piece.paper));
+      canvas.restore();
+    } else {
+      canvas.drawPath(path, tiles.paint(piece.paper));
+    }
     final shade = darkOverlay.clamp(0.0, 1.0);
     if (dim && shade > 0) {
       canvas.drawPath(
@@ -275,18 +444,12 @@ class AsmrDeskPainter extends CustomPainter {
         Paint()..color = Colors.black.withValues(alpha: shade),
       );
     }
+    _paintAffixedBlueprint(canvas, piece, px);
     if (piece.scores.isNotEmpty) {
       canvas.save();
       canvas.clipPath(path);
-      final groove = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.3 * px
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round
-        ..color = _kGroove.withValues(alpha: 0.6);
-      for (final score in piece.scores) {
-        canvas.drawPath(_polyline(score), groove);
-      }
+      // One stroke/blur per piece rather than one per accumulated cut line.
+      _paintPaperCut(canvas, piece.scorePath, px);
       canvas.restore();
     }
     canvas.drawPath(
@@ -294,16 +457,27 @@ class AsmrDeskPainter extends CustomPainter {
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = px
-        ..color = _kGroove.withValues(alpha: 0.45),
+        ..color = _dye(AsmrThemeSlot.score, _kGroove.withValues(alpha: 0.45)),
     );
+    paintAsmrCutEdges(canvas, piece, px);
     final ring = flash[piece.id] ?? 0;
     if (ring > 0) {
+      final flashPath = piece.edgeTone == null ? path : Path();
+      if (piece.edgeTone != null) {
+        for (final edge in piece.cutEdges) {
+          if (edge.length >= 2) flashPath.addPath(_polyline(edge), Offset.zero);
+        }
+      }
       canvas.drawPath(
-        path,
+        flashPath,
         Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = (2 + 5 * ring) * px
-          ..color = Colors.white.withValues(alpha: 0.85 * ring)
+          ..color =
+              (piece.edgeTone == null
+                      ? Colors.white
+                      : piece.paper.cutEdgeColor(piece.edgeTone!))
+                  .withValues(alpha: 0.6 * ring)
           ..maskFilter = MaskFilter.blur(
             BlurStyle.normal,
             (2 * ring + 0.5) * px,
@@ -316,16 +490,110 @@ class AsmrDeskPainter extends CustomPainter {
         Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2.2 * px
-          ..color = Colors.white.withValues(alpha: 0.95 * selectedOutline),
+          ..color = _dye(
+            AsmrThemeSlot.selection,
+            Colors.white.withValues(alpha: 0.95 * selectedOutline),
+          ),
       );
     }
     canvas.restore();
   }
 
-  static void _crosshair(Canvas canvas, Offset at) {
+  /// The blueprint is ink on the paper: clip before drawing each stamp so
+  /// holes, cuts and moved fragments keep exactly their portion of the lines.
+  void _paintAffixedBlueprint(
+    Canvas canvas,
+    AsmrPiece piece,
+    double px, {
+    double opacity = 1,
+  }) {
+    if (piece.blueprints.isEmpty) return;
+    canvas.save();
+    canvas.clipPath(piece.localPath);
+    final bounds = piece.localPath.getBounds();
+    for (final stamp in piece.blueprints) {
+      final net = affixedNets[stamp.group];
+      if (net == null) continue;
+      final bright = _dye(AsmrThemeSlot.hologram, piece.paper.markingColor);
+      final pulse = stamp.group == placementGroup
+          ? math.sin(math.pi * placementGlow)
+          : 0.0;
+      if (pulse > 0) {
+        for (final face in net.faces) {
+          canvas.drawPath(
+            Path()
+              ..addPolygon([for (final p in face.ring) stamp.toPaper(p)], true),
+            Paint()..color = bright.withValues(alpha: 0.18 * pulse * opacity),
+          );
+        }
+      }
+      for (final edge in net.edges) {
+        final a = stamp.toPaper(edge.a), b = stamp.toPaper(edge.b);
+        if (!Rect.fromPoints(
+          a,
+          b,
+        ).inflate((4 + 8 * pulse) * px).overlaps(bounds)) {
+          continue;
+        }
+        if ((b - a).distanceSquared < 1e-16) continue;
+        final ink = blueprintColors[stamp.group]?[edge.key] ?? bright;
+        final path = Path()
+          ..moveTo(a.dx, a.dy)
+          ..lineTo(b.dx, b.dy);
+        if (edge.fold) {
+          final paint = Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.2 * px
+            ..color = ink.withValues(alpha: 0.65 * opacity);
+          for (final metric in path.computeMetrics()) {
+            for (var at = 0.0; at < metric.length; at += 8 * px) {
+              canvas.drawPath(
+                metric.extractPath(at, math.min(at + 4 * px, metric.length)),
+                paint,
+              );
+            }
+          }
+        } else {
+          canvas.drawPath(
+            path,
+            Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = (3 + 6 * pulse) * px
+              ..maskFilter = MaskFilter.blur(
+                BlurStyle.normal,
+                (1 + 3 * pulse) * px,
+              )
+              ..color = ink.withValues(alpha: (0.25 + 0.4 * pulse) * opacity),
+          );
+          canvas.drawPath(
+            path,
+            Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.7 * px
+              ..strokeCap = StrokeCap.round
+              ..color = ink.withValues(alpha: ink.a * opacity),
+          );
+        }
+      }
+    }
+    canvas.restore();
+  }
+
+  /// A screen-space offset as a desk offset, so shadows fall down the
+  /// screen however the desk is turned.
+  Offset _onScreen(Offset v) {
+    if (angle == 0) return v;
+    final c = math.cos(angle);
+    final s = math.sin(angle);
+    return Offset(c * v.dx + s * v.dy, -s * v.dx + c * v.dy);
+  }
+
+  static void _crosshair(Canvas canvas, Offset at, AsmrTheme? theme) {
+    Color dye(AsmrThemeSlot slot, Color color) =>
+        theme?.ink(slot, color) ?? color;
     for (final (width, color) in [
       (3.2, Colors.black.withValues(alpha: 0.45)),
-      (1.4, Colors.white),
+      (1.4, dye(AsmrThemeSlot.knife, Colors.white)),
     ]) {
       final paint = Paint()
         ..strokeWidth = width
@@ -354,7 +622,7 @@ class AsmrDeskPainter extends CustomPainter {
         paint,
       );
     }
-    canvas.drawCircle(at, 1.3, Paint()..color = const Color(0xFFFF5A5F));
+    canvas.drawCircle(at, 1.3, Paint()..color = Colors.white);
   }
 
   static Path _polyline(List<Offset> points) {
@@ -371,16 +639,179 @@ class AsmrDeskPainter extends CustomPainter {
 
 /// The exacto's crosshair on its own layer, over the straight edge.
 class AsmrKnifePainter extends CustomPainter {
-  const AsmrKnifePainter({required this.tip, this.finger});
+  const AsmrKnifePainter({required this.tip, this.finger, this.theme});
 
   final Offset tip;
   final Offset? finger;
+  final AsmrTheme? theme;
 
   @override
   void paint(Canvas canvas, Size size) =>
-      AsmrDeskPainter.paintKnife(canvas, tip, finger);
+      AsmrDeskPainter.paintKnife(canvas, tip, finger, theme: theme);
 
   @override
   bool shouldRepaint(covariant AsmrKnifePainter old) =>
-      old.tip != tip || old.finger != finger;
+      old.tip != tip ||
+      old.finger != finger ||
+      old.theme?.stamp != theme?.stamp;
+}
+
+/// The scissors' blade on screen: a line from where the cut starts, [from],
+/// up to the blade's tip, [to], drawn faint. [mark] is how far the drag under
+/// way will cut, drawn over the blade in red. [dial] is the turn bar below
+/// the blade, and its circle is the reticle's, [knob] pixels from the middle.
+class AsmrScissorsPainter extends CustomPainter {
+  const AsmrScissorsPainter({
+    required this.from,
+    required this.to,
+    this.mark,
+    this.circle,
+    this.aiming = false,
+    this.controlsOpacity = 1,
+    this.aimPoints = const [],
+    this.stuck = false,
+    this.dial,
+    this.knob = 0,
+    this.dialHeld = false,
+    this.cruise = false,
+    this.theme,
+  });
+
+  final Offset from;
+  final Offset to;
+  final AsmrTurnDial? dial;
+  final double knob;
+  final bool dialHeld;
+  final bool cruise;
+  final AsmrTheme? theme;
+
+  Color _dye(AsmrThemeSlot slot, Color color) =>
+      theme?.ink(slot, color) ?? color;
+
+  /// Where the drag under way stops on the blade, on screen.
+  final Offset? mark;
+
+  /// Screen position of the circle, including the camera advance after a cut.
+  final Offset? circle;
+  final bool aiming;
+
+  /// Blade and rotation bar visibility while the camera finishes lining up.
+  /// The circle and any live cut preview retain their own opacity.
+  final double controlsOpacity;
+  final List<Offset> aimPoints;
+  final bool stuck;
+
+  static const _cut = Color(0xFFE5484D);
+  static const _reticle = 0.3;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (aiming) {
+      final at = circle ?? from;
+      final red = _dye(AsmrThemeSlot.scissorsMark, _cut);
+      for (final point in aimPoints) {
+        canvas.drawLine(
+          at,
+          point,
+          Paint()
+            ..color = red.withValues(alpha: red.a * 0.4)
+            ..strokeWidth = 1,
+        );
+        canvas.drawCircle(
+          point,
+          5,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2
+            ..color = red,
+        );
+      }
+      paintReticleCircle(
+        canvas,
+        at,
+        _dye(AsmrThemeSlot.reticle, const Color(0xF2FFFFFF)),
+      );
+      return;
+    }
+    canvas.saveLayer(
+      Offset.zero & size,
+      Paint()
+        ..color = Color.fromRGBO(255, 255, 255, _reticle * controlsOpacity),
+    );
+    canvas.drawLine(
+      from,
+      to,
+      Paint()
+        ..color = _dye(AsmrThemeSlot.scissors, const Color(0x55000000))
+        ..strokeWidth = 4
+        ..strokeCap = StrokeCap.round,
+    );
+    canvas.drawLine(
+      from,
+      to,
+      Paint()
+        ..color = _dye(AsmrThemeSlot.scissors, const Color(0xE6FFFFFF))
+        ..strokeWidth = 1.5
+        ..strokeCap = StrokeCap.round,
+    );
+    canvas.drawCircle(
+      to,
+      3,
+      Paint()..color = _dye(AsmrThemeSlot.scissors, const Color(0xE6FFFFFF)),
+    );
+    canvas.restore();
+
+    final end = mark;
+    if (end != null && (end - from).distance >= 0.5) {
+      canvas.drawLine(
+        from,
+        end,
+        Paint()
+          ..color = Colors.white.withValues(alpha: 0.4)
+          ..strokeWidth = 6
+          ..strokeCap = StrokeCap.round
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5),
+      );
+      canvas.drawLine(
+        from,
+        end,
+        Paint()
+          ..color = Colors.white
+          ..strokeWidth = 1.6
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+    final handle = dial;
+    if (handle == null) return;
+    final gripInk = _dye(AsmrThemeSlot.turnGrip, const Color(0xE6FFFFFF));
+    handle.paint(
+      canvas,
+      cruise: cruise,
+      ink: gripInk.withValues(alpha: gripInk.a * controlsOpacity),
+    );
+    paintReticleCircle(
+      canvas,
+      circle ?? end ?? handle.center + Offset(knob, 0),
+      stuck
+          ? _dye(AsmrThemeSlot.scissorsMark, _cut)
+          : _dye(AsmrThemeSlot.reticle, const Color(0xF2FFFFFF)),
+    );
+  }
+
+  @override
+  bool shouldRepaint(AsmrScissorsPainter old) =>
+      old.from != from ||
+      old.to != to ||
+      old.mark != mark ||
+      old.circle != circle ||
+      old.aiming != aiming ||
+      old.controlsOpacity != controlsOpacity ||
+      old.aimPoints != aimPoints ||
+      old.stuck != stuck ||
+      old.dial?.center != dial?.center ||
+      old.dial?.halfLength != dial?.halfLength ||
+      old.knob != knob ||
+      old.dialHeld != dialHeld ||
+      old.cruise != cruise ||
+      old.theme?.stamp != theme?.stamp;
 }

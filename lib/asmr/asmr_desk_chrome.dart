@@ -217,27 +217,39 @@ class _StowedPainter extends CustomPainter {
 /// The select tool's box. Dragging right contains, in green; dragging left
 /// also crosses, in blue. Same reading as the puzzle editor's marquee.
 class AsmrMarqueePainter extends CustomPainter {
-  const AsmrMarqueePainter({required this.start, required this.end});
+  const AsmrMarqueePainter({
+    required this.start,
+    required this.end,
+    this.contain = const Color(0xFF66BB6A),
+    this.crossColor = const Color(0xFF42A5F5),
+    this.containOpacity = 1,
+    this.crossOpacity = 1,
+  });
 
   final Offset start;
   final Offset end;
+  final Color contain;
+  final Color crossColor;
+  final double containOpacity;
+  final double crossOpacity;
 
   @override
   void paint(Canvas canvas, Size size) {
     if ((end - start).distance < 2) return;
     final box = Rect.fromPoints(start, end);
     final cross = marqueePick(start, end) == MarqueePick.cross;
-    final color = cross ? const Color(0xFF42A5F5) : const Color(0xFF66BB6A);
+    final color = cross ? crossColor : contain;
+    final fade = cross ? crossOpacity : containOpacity;
     canvas.drawRect(
       box,
       Paint()
-        ..color = color.withValues(alpha: 0.12)
+        ..color = color.withValues(alpha: 0.12 * fade)
         ..style = PaintingStyle.fill,
     );
     canvas.drawRect(
       box,
       Paint()
-        ..color = color
+        ..color = color.withValues(alpha: fade)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5,
     );
@@ -245,7 +257,12 @@ class AsmrMarqueePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant AsmrMarqueePainter old) =>
-      old.start != start || old.end != end;
+      old.start != start ||
+      old.end != end ||
+      old.contain != contain ||
+      old.crossColor != crossColor ||
+      old.containOpacity != containOpacity ||
+      old.crossOpacity != crossOpacity;
 }
 
 class _Swatch extends StatelessWidget {
@@ -317,11 +334,13 @@ class AsmrRoundButton extends StatelessWidget {
     required this.icon,
     required this.tooltip,
     required this.onTap,
+    this.iconColor = Colors.white70,
   });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback onTap;
+  final Color iconColor;
 
   @override
   Widget build(BuildContext context) {
@@ -335,7 +354,7 @@ class AsmrRoundButton extends StatelessWidget {
           onTap: onTap,
           child: Padding(
             padding: const EdgeInsets.all(10),
-            child: Icon(icon, color: Colors.white70, size: 22),
+            child: Icon(icon, color: iconColor, size: 22),
           ),
         ),
       ),
@@ -349,11 +368,13 @@ class AsmrTextLink extends StatelessWidget {
     required this.label,
     required this.buttonKey,
     required this.onTap,
+    this.color = const Color(0xB3FFFFFF),
   });
 
   final String label;
   final Key buttonKey;
   final VoidCallback onTap;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
@@ -362,13 +383,7 @@ class AsmrTextLink extends StatelessWidget {
       child: GestureDetector(
         key: buttonKey,
         onTap: onTap,
-        child: Text(
-          label,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.7),
-            fontSize: 13,
-          ),
-        ),
+        child: Text(label, style: TextStyle(color: color, fontSize: 13)),
       ),
     );
   }

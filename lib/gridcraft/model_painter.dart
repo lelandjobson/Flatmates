@@ -73,6 +73,12 @@ class ModelPainter extends CustomPainter {
     this.covered = const {},
     this.edgeGlow = const {},
     this.sheets,
+    this.blueprintInk = kBlueprintInk,
+    this.blueprintFade = 1,
+    this.preselectInk = kPreselectColor,
+    this.preselectFade = 1,
+    this.completeInk = kCriterionMetColor,
+    this.completeFade = 1,
   });
 
   final PapercutCamera camera;
@@ -125,6 +131,23 @@ class ModelPainter extends CustomPainter {
     void Function(double depth, VoidCallback paint) add,
   )?
   sheets;
+
+  /// Blueprint, preselect, and complete ink. Fade multiplies each paint's alpha.
+  final Color blueprintInk;
+  final double blueprintFade;
+  final Color preselectInk;
+  final double preselectFade;
+  final Color completeInk;
+  final double completeFade;
+
+  Color _blueprint(double alpha) =>
+      blueprintInk.withValues(alpha: alpha * blueprintFade);
+
+  Color _preselect(double alpha) =>
+      preselectInk.withValues(alpha: alpha * preselectFade);
+
+  Color _complete(double alpha) =>
+      completeInk.withValues(alpha: alpha * completeFade);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -191,7 +214,7 @@ class ModelPainter extends CustomPainter {
         canvas,
         size,
         model.faces[entry.key].worldRing(pose),
-        kPreselectColor.withValues(alpha: 0.34 * t),
+        _preselect(0.34 * t),
       );
     }
     for (final entry in glow.entries) {
@@ -199,35 +222,16 @@ class ModelPainter extends CustomPainter {
       final pose = paperPoses[entry.key] ?? ghostPoses[entry.key];
       final ring = model.faces[entry.key].worldRing(pose);
       final t = entry.value.clamp(0.0, 1.0);
-      _fill(canvas, size, ring, kCriterionMetColor.withValues(alpha: 0.22 * t));
-      _stroke(
-        canvas,
-        size,
-        ring,
-        kCriterionMetColor.withValues(alpha: 0.75 * t),
-        width: 3 + 5 * t,
-      );
+      _fill(canvas, size, ring, _complete(0.22 * t));
+      _stroke(canvas, size, ring, _complete(0.75 * t), width: 3 + 5 * t);
     }
     for (final entry in edgeGlow.entries) {
       if (entry.value <= 0 || entry.key < 0) continue;
       if (entry.key >= model.faces.length) continue;
       final t = Curves.easeOut.transform(entry.value.clamp(0.0, 1.0));
       final ring = model.faces[entry.key].worldRing(paperPoses[entry.key]);
-      _stroke(
-        canvas,
-        size,
-        ring,
-        kPreselectColor.withValues(alpha: 0.35 * t),
-        width: 9,
-        blur: 4,
-      );
-      _stroke(
-        canvas,
-        size,
-        ring,
-        kPreselectColor.withValues(alpha: 0.9 * t),
-        width: 2.5,
-      );
+      _stroke(canvas, size, ring, _preselect(0.35 * t), width: 9, blur: 4);
+      _stroke(canvas, size, ring, _preselect(0.9 * t), width: 2.5);
     }
   }
 
@@ -243,7 +247,7 @@ class ModelPainter extends CustomPainter {
     _fill(canvas, size, ring, Colors.white.withValues(alpha: 0.035));
     final t = Curves.easeOut.transform(deskHighlight.clamp(0.0, 1.0));
     if (t > 0) {
-      _fill(canvas, size, ring, kPreselectColor.withValues(alpha: 0.22 * t));
+      _fill(canvas, size, ring, _preselect(0.22 * t));
     }
     _stroke(
       canvas,
@@ -267,20 +271,8 @@ class ModelPainter extends CustomPainter {
     if (opacity <= 0) return;
     final facing = _facing(face, pose, ring, eye);
     final shade = 0.55 + 0.45 * facing.abs();
-    _fill(
-      canvas,
-      size,
-      ring,
-      kBlueprintInk.withValues(alpha: (0.06 + 0.10 * shade) * opacity),
-    );
-    _edges(
-      canvas,
-      size,
-      face,
-      ring,
-      kBlueprintInk.withValues(alpha: 0.85 * opacity),
-      width: 1.6,
-    );
+    _fill(canvas, size, ring, _blueprint((0.06 + 0.10 * shade) * opacity));
+    _edges(canvas, size, face, ring, _blueprint(0.85 * opacity), width: 1.6);
     if (facing > 0) {
       _decals(canvas, size, face, pose, _kGhostDecalOpacity * opacity);
     }
@@ -298,7 +290,7 @@ class ModelPainter extends CustomPainter {
     final base = paperColors[face] ?? const Color(0xFFFFF3B0);
     final shade = 0.72 + 0.28 * facing.abs();
     _fill(canvas, size, ring, Color.lerp(Colors.black, base, shade)!);
-    _edges(canvas, size, face, ring, kBlueprintInk, width: 1.8);
+    _edges(canvas, size, face, ring, _blueprint(1), width: 1.8);
     _stroke(
       canvas,
       size,
@@ -370,7 +362,7 @@ class ModelPainter extends CustomPainter {
     }
     _fill(canvas, size, piece.ring, piece.color);
     for (final (a, b) in piece.ink) {
-      _stroke(canvas, size, [a, b], kBlueprintInk, width: 1.6);
+      _stroke(canvas, size, [a, b], _blueprint(1), width: 1.6);
     }
     final plane = piece.plane;
     if (plane != null) {
@@ -379,6 +371,8 @@ class ModelPainter extends CustomPainter {
           canvas,
           decal,
           (point) => camera.camera.projectToScreen(plane.world(point), size),
+          color: blueprintInk,
+          opacity: blueprintFade,
         );
       }
     }
@@ -434,7 +428,8 @@ class ModelPainter extends CustomPainter {
         decal,
         (point) =>
             camera.camera.projectToScreen(modelFace.world(point, pose), size),
-        opacity: opacity,
+        color: blueprintInk,
+        opacity: opacity * blueprintFade,
       );
     }
   }

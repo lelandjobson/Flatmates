@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter/animation.dart' show Curves;
@@ -7,6 +8,8 @@ import 'package:vector_math/vector_math_64.dart';
 import '../gridcraft/folded_model.dart';
 import '../gridcraft/model_painter.dart' show kPreselectColor;
 import '../papercut/camera.dart';
+import 'asmr_cut_style.dart';
+import 'asmr_group.dart';
 import 'asmr_mapping.dart';
 import 'asmr_net.dart';
 import 'asmr_paper.dart';
@@ -22,10 +25,11 @@ const double _kShadeDark = 0.72;
 /// Adds every bound piece to the model's back-to-front list, through
 /// `ModelPainter.sheets`. A piece that crosses a fold is already sliced along
 /// it, and each slice is drawn in its own face's plane, so the two sides meet
-/// on the fold. Overhang sticks out flat from the face it hangs off.
+/// on the fold. Excess paper outside the net is hidden in 3D; the full piece
+/// stays intact on the desk for editing.
 /// [highlight] fills faces with the preselect color under their paper, so the
 /// paper keeps its own color. [tint] lays a color, alpha included, over a
-/// face under the highlight.
+/// face under the highlight. [hatch] draws lines over a face and its paper.
 void addBoundPaper({
   required Canvas canvas,
   required Size size,
@@ -36,11 +40,26 @@ void addBoundPaper({
   required void Function(double depth, VoidCallback paint) add,
   Map<int, double> highlight = const {},
   Map<int, Color> tint = const {},
+  Map<int, AsmrHatch> hatch = const {},
 }) {
   final view = camera.camera.viewMatrix;
   final screen = _screenFromWorld(camera, size);
   final eyeNear = camera.camera.near;
+  for (final entry in hatch.entries) {
+    if (entry.key < 0 || entry.key >= model.faces.length) continue;
+    final face = model.faces[entry.key];
+    final ring = face.worldRing();
+    if (!_inFront(view, ring, eyeNear)) continue;
+    final Matrix4 faceToScreen = screen * face.toWorld;
+    add(_depth(view, ring) + _kPaperDepthBias * 1.5, () {
+      canvas.save();
+      canvas.transform(_flat(faceToScreen));
+      paintHatch(canvas, face.outline, entry.value);
+      canvas.restore();
+    });
+  }
   for (final entry in tint.entries) {
+    if (entry.key < 0 || entry.key >= model.faces.length) continue;
     final face = model.faces[entry.key];
     final ring = face.worldRing();
     if (!_inFront(view, ring, eyeNear)) continue;
@@ -58,6 +77,7 @@ void addBoundPaper({
   for (final entry in highlight.entries) {
     final t = Curves.easeOut.transform(entry.value.clamp(0.0, 1.0));
     if (t <= 0) continue;
+    if (entry.key < 0 || entry.key >= model.faces.length) continue;
     final face = model.faces[entry.key];
     final ring = face.worldRing();
     if (!_inFront(view, ring, eyeNear)) continue;
@@ -76,7 +96,6 @@ void addBoundPaper({
   for (final piece in pieces) {
     final net = piece.binding;
     if (net == null) continue;
-    final overhang = overhangOf(piece);
     final slices = slicesOf(piece);
     for (final netFace in net.faces) {
       final f = netFace.face;
@@ -101,18 +120,8 @@ void addBoundPaper({
           canvas.transform(_flat(faceToScreen));
           canvas.transform(paperToFace.storage);
           canvas.drawPath(slice.localPath, paint);
-          canvas.restore();
-        });
-      }
-      for (final part in overhang) {
-        if (part.face != f) continue;
-        final corners = worldOf(part.ring);
-        if (!_inFront(view, corners, eyeNear)) continue;
-        add(_depth(view, corners) + _kPaperDepthBias + tie, () {
-          canvas.save();
-          canvas.transform(_flat(faceToScreen));
-          canvas.transform(paperToFace.storage);
-          canvas.drawPath(part.localPath, paint);
+          canvas.clipPath(slice.localPath);
+          paintAsmrCutEdges(canvas, piece, 0.4);
           canvas.restore();
         });
       }
@@ -134,6 +143,36 @@ Matrix4 boundPaperToScreen({
     _flat(_screenFromWorld(camera, size) * face.toWorld),
   );
   return faceToScreen * (netFace.netToFace * piece.pose);
+}
+
+/// Hatches [outline] with [hatch], clipped to it, in the canvas's units.
+void paintHatch(Canvas canvas, List<Offset> outline, AsmrHatch hatch) {
+  if (outline.length < 3 || hatch.spacing <= 0) return;
+  final path = Path()..addPolygon(outline, true);
+  final paint = Paint()
+    ..color = hatch.color.withValues(alpha: kAsmrHatchOpacity)
+    ..strokeWidth = hatch.width
+    ..style = PaintingStyle.stroke;
+  canvas.save();
+  canvas.clipPath(path);
+  for (final angle in [hatch.angle, if (hatch.cross) hatch.angle + pi / 2]) {
+    final along = Offset(cos(angle), sin(angle));
+    final across = Offset(-along.dy, along.dx);
+    var low = double.infinity;
+    var high = -double.infinity;
+    var reach = 0.0;
+    for (final p in outline) {
+      final d = p.dx * across.dx + p.dy * across.dy;
+      low = min(low, d);
+      high = max(high, d);
+      reach = max(reach, p.distance);
+    }
+    for (var k = (low / hatch.spacing).ceil(); k * hatch.spacing <= high; k++) {
+      final mid = across * (k * hatch.spacing);
+      canvas.drawLine(mid - along * reach * 2, mid + along * reach * 2, paint);
+    }
+  }
+  canvas.restore();
 }
 
 /// How brightly paper on [face] is lit.

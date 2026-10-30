@@ -2,14 +2,33 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+/// Diameter and stroke of the reticle's circle, shared with the scissors'
+/// handle so the two are the same circle.
+const double kReticleDiameter = 14;
+const double kReticleStroke = 3.5;
+
+/// The reticle's circle, centered on [at].
+void paintReticleCircle(Canvas canvas, Offset at, Color color) {
+  final box = kReticleDiameter + kReticleStroke;
+  canvas.save();
+  canvas.translate(at.dx - box / 2, at.dy - box / 2);
+  CrosshairPainter(
+    diameter: kReticleDiameter,
+    strokeWidth: kReticleStroke,
+    color: color,
+    morph: 0,
+  ).paint(canvas, Size.square(box));
+  canvas.restore();
+}
+
 /// Center-fixed pointer: a thick-stroke circle that morphs into an X
 /// when nothing under the cursor can be selected.
 class ViewCrosshair extends StatelessWidget {
   const ViewCrosshair({
     super.key,
     this.selectable = true,
-    this.diameter = 14,
-    this.strokeWidth = 3.5,
+    this.diameter = kReticleDiameter,
+    this.strokeWidth = kReticleStroke,
     this.color = const Color(0xF2FFFFFF),
     this.duration = const Duration(milliseconds: 220),
   });

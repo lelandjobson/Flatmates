@@ -37,11 +37,16 @@ class AsmrSession {
     required this.lookAtZ,
     required this.halfHeight,
     required this.focal,
+    this.deskAngle = 0,
     this.straightEdgeOn = false,
     this.straightEdgeAnchor = Offset.zero,
     this.straightEdgeAngle = 0,
     this.groups = const {},
+    this.groupCutsUsed = const {},
+    this.groupDrafts = const {},
     this.pieceGroups = const [],
+    this.slots = const [],
+    this.objectId,
   });
 
   final List<HologramPick> picks;
@@ -52,13 +57,26 @@ class AsmrSession {
 
   /// Each selection group's letter, 0 for A, to the picks it was made with.
   final Map<int, List<HologramPick>> groups;
+  final Map<int, int> groupCutsUsed;
+
+  /// Keys identify groups with detached work in progress, even when empty.
+  final Map<int, List<AsmrPiece>> groupDrafts;
 
   /// The group letter of each piece, parallel to [pieces]. Null for paper
   /// laid with no faces selected, and for every piece of a file saved before
   /// groups, whose groups are rebuilt from [bindings].
   final List<int?> pieceGroups;
+
+  /// Leftover pieces put away beside the desk. Null for an empty slot.
+  final List<AsmrPiece?> slots;
+
+  /// Which object the groups belong to. Null in a file saved before objects.
+  final String? objectId;
   final Offset deskOrigin;
   final double deskScale;
+
+  /// The desk's turn on screen, in radians, clockwise.
+  final double deskAngle;
   final bool in3d;
   final double azimuth;
   final double elevation;
@@ -75,7 +93,9 @@ class AsmrSession {
     'picks': [for (final pick in picks) _pickJson(pick)],
     'deskOrigin': _offsetJson(deskOrigin),
     'deskScale': deskScale,
+    'deskAngle': deskAngle,
     'in3d': in3d,
+    if (objectId != null) 'object': objectId,
     'camera': {
       'azimuth': azimuth,
       'elevation': elevation,
@@ -94,6 +114,12 @@ class AsmrSession {
       for (final entry in groups.entries)
         {
           'letter': entry.key,
+          'cutsUsed': groupCutsUsed[entry.key] ?? 0,
+          if (groupDrafts.containsKey(entry.key))
+            'draft': [
+              for (final piece in groupDrafts[entry.key]!)
+                _pieceJson(piece, const []),
+            ],
           'picks': [for (final pick in entry.value) _pickJson(pick)],
         },
     ],
@@ -108,6 +134,10 @@ class AsmrSession {
             'group': pieceGroups[i],
         },
     ],
+    'slots': [
+      for (final piece in slots)
+        piece == null ? null : _pieceJson(piece, const []),
+    ],
   };
 
   static AsmrSession? fromJson(Object? raw) {
@@ -116,13 +146,26 @@ class AsmrSession {
     final edge = raw['straightEdge'];
     if (camera is! Map) return null;
     final groups = <int, List<HologramPick>>{};
+    final groupCutsUsed = <int, int>{};
+    final groupDrafts = <int, List<AsmrPiece>>{};
     final storedGroups = raw['groups'];
     if (storedGroups is List) {
       for (final entry in storedGroups) {
         if (entry is! Map || entry['letter'] is! num) continue;
         final picks = _picks(entry['picks']);
         if (picks.isEmpty) continue;
-        groups[(entry['letter'] as num).toInt()] = picks;
+        final letter = (entry['letter'] as num).toInt();
+        groups[letter] = picks;
+        final draft = entry['draft'];
+        if (draft is List) {
+          groupDrafts[letter] = [
+            for (final storedPiece in draft)
+              if (storedPiece is Map)
+                if (_piece(storedPiece) case final piece?) piece.unbound(),
+          ];
+        }
+        final used = entry['cutsUsed'];
+        if (used is int && used >= 0) groupCutsUsed[letter] = used;
       }
     }
     final pieces = <AsmrPiece>[];
@@ -144,14 +187,24 @@ class AsmrSession {
         );
       }
     }
+    final slots = <AsmrPiece?>[
+      if (raw['slots'] is List)
+        for (final entry in raw['slots'] as List)
+          entry is Map ? _piece(entry) : null,
+    ];
     return AsmrSession(
       picks: _picks(raw['picks']),
       pieces: pieces,
       bindings: bindings,
       groups: groups,
+      groupCutsUsed: groupCutsUsed,
+      groupDrafts: groupDrafts,
       pieceGroups: pieceGroups,
+      slots: slots,
+      objectId: raw['object'] is String ? raw['object'] as String : null,
       deskOrigin: _offset(raw['deskOrigin']) ?? Offset.zero,
       deskScale: _num(raw['deskScale']) ?? 1,
+      deskAngle: _num(raw['deskAngle']) ?? 0,
       in3d: raw['in3d'] != false,
       azimuth: _num(camera['azimuth']) ?? 0,
       elevation: _num(camera['elevation']) ?? 0,
@@ -220,6 +273,19 @@ Map<String, dynamic> _pieceJson(
   'position': _offsetJson(piece.position),
   'angle': piece.angle,
   'liberated': piece.liberated,
+  if (piece.edgeTone != null) 'edgeTone': piece.edgeTone,
+  'cutEdges': [
+    for (final edge in piece.cutEdges)
+      [for (final point in edge) _offsetJson(point)],
+  ],
+  'blueprints': [
+    for (final stamp in piece.blueprints)
+      {
+        'group': stamp.group,
+        'origin': _offsetJson(stamp.origin),
+        'angle': stamp.angle,
+      },
+  ],
   'scores': [
     for (final score in piece.scores) [for (final p in score) _offsetJson(p)],
   ],
@@ -231,10 +297,7 @@ AsmrPiece? _piece(Map raw) {
   final id = raw['id'];
   final paperId = raw['paper'];
   if (id is! String || paperId is! String) return null;
-  AsmrPaper? paper;
-  for (final candidate in kAsmrPapers) {
-    if (candidate.id == paperId) paper = candidate;
-  }
+  final paper = asmrPaperById(paperId);
   if (paper == null) return null;
   final ring = _ring(raw['ring']);
   if (ring.length < 3) return null;
@@ -250,6 +313,24 @@ AsmrPiece? _piece(Map raw) {
     position: _offset(raw['position']) ?? Offset.zero,
     angle: _num(raw['angle']) ?? 0,
     liberated: raw['liberated'] == true,
+    edgeTone: _num(raw['edgeTone'])?.clamp(0.0, 1.0),
+    cutEdges: [
+      if (raw['cutEdges'] is List)
+        for (final edge in raw['cutEdges'] as List)
+          if (_ring(edge).length >= 2) _ring(edge),
+    ],
+    blueprints: [
+      if (raw['blueprints'] is List)
+        for (final entry in raw['blueprints'] as List)
+          if (entry is Map &&
+              entry['group'] is int &&
+              _offset(entry['origin']) != null)
+            AsmrBlueprintStamp(
+              group: entry['group'] as int,
+              origin: _offset(entry['origin'])!,
+              angle: _num(entry['angle']) ?? 0,
+            ),
+    ],
     scores: [
       if (raw['scores'] is List)
         for (final score in raw['scores'] as List)

@@ -5,6 +5,7 @@ import 'package:flutter/rendering.dart';
 
 import '../gridcraft/folded_model.dart';
 import '../papercut/camera.dart';
+import 'asmr_cut_style.dart';
 import 'asmr_mapping.dart';
 import 'asmr_model_paper.dart';
 import 'asmr_net.dart';
@@ -57,9 +58,10 @@ Matrix4 lerpHomography(Matrix4 a, Matrix4 b, double t, Offset at) {
   return out;
 }
 
-/// Pieces in flight, over both panes of the split view. Each slice and
-/// overhang part eases from the desk to its own face, whose end is worked
-/// out every frame so a landing follows the model while it turns.
+/// Pieces in flight, over both panes of the split view. Each visible slice
+/// eases from the desk to its own face, whose end is worked
+/// out every frame so a landing follows the model while it turns. Paper
+/// outside the blueprint is omitted, just as it is on the landed model.
 class AsmrFlightPainter extends CustomPainter {
   const AsmrFlightPainter({
     required this.flights,
@@ -90,8 +92,6 @@ class AsmrFlightPainter extends CustomPainter {
       final parts = <(int, List<Offset>, Path)>[
         for (final slice in slicesOf(piece))
           (slice.face, slice.ring, slice.localPath),
-        for (final part in overhangOf(piece))
-          (part.face, part.ring, part.localPath),
       ];
       for (final (face, ring, path) in parts) {
         final netFace = faces[face];
@@ -112,6 +112,8 @@ class AsmrFlightPainter extends CustomPainter {
         canvas.save();
         canvas.transform(lerpHomography(flight.from, to, u, center).storage);
         canvas.drawPath(path, tiles.paint(piece.paper, shade: shade));
+        canvas.clipPath(path);
+        paintAsmrCutEdges(canvas, piece, 0.4);
         canvas.restore();
       }
     }

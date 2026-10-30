@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flatmates/gridcraft/edit.dart';
 import 'package:flatmates/gridcraft/fold.dart';
 import 'package:flatmates/gridcraft/mixed_craft.dart';
+import 'package:flatmates/gridcraft/mixed_craft_painter.dart';
 import 'package:flatmates/papercut/models.dart';
 import 'package:flatmates/papercut/paper.dart';
 import 'package:flatmates/screens/mixed_crafting_view.dart';
@@ -160,6 +161,79 @@ void main() {
       final shown = lockCut(Offset.zero, area, 4, maxCells: null);
       expect(shown, isNotNull);
       expect(shown!.point.distance, 12);
+    });
+
+    test('the guideline takes the sheet edge to edge, past its ends', () {
+      final chord = guidelineChord(
+        mixedOpeningArea(),
+        const Offset(0, -20),
+        Offset.zero,
+        scale: 4,
+      );
+      expect(chord, isNotNull);
+      expect(chord!.sheetId, 'sheet-1');
+      expect(chord.start, const Offset(0, -12));
+      expect(chord.end, const Offset(0, 12));
+    });
+
+    test('a guideline near a grid line slides onto it', () {
+      final chord = guidelineChord(
+        mixedOpeningArea(),
+        const Offset(0.3, -20),
+        const Offset(0.3, 0),
+        scale: 4,
+        snap: 0.5,
+      );
+      expect(chord, isNotNull);
+      expect(chord!.start.dx, closeTo(0, 1e-9));
+      expect(chord.end.dx, closeTo(0, 1e-9));
+    });
+
+    test(
+      'a guideline that misses the paper or runs along an edge is no cut',
+      () {
+        final area = mixedOpeningArea();
+        expect(
+          guidelineChord(
+            area,
+            const Offset(30, -20),
+            const Offset(30, 0),
+            scale: 4,
+          ),
+          isNull,
+        );
+        expect(
+          guidelineChord(
+            area,
+            const Offset(-12, -20),
+            const Offset(-12, 0),
+            scale: 4,
+          ),
+          isNull,
+        );
+        expect(
+          guidelineChord(
+            area,
+            const Offset(0, -40),
+            const Offset(0, -20),
+            scale: 4,
+          ),
+          isNull,
+        );
+      },
+    );
+
+    test('a slanted guideline cuts the sheet in two', () {
+      final area = mixedOpeningArea();
+      final chord = guidelineChord(
+        area,
+        const Offset(-10, -20),
+        const Offset(0, 0),
+        scale: 4,
+      )!;
+      final next = commitCut(area, chord.sheetId, [chord.start, chord.end])!;
+      expect(next.stoppedInside, isFalse);
+      expect(next.area.sheets.single.paper.pieces, hasLength(2));
     });
 
     test('a full crossing takes 150ms and a shorter cut keeps that speed', () {
@@ -481,126 +555,142 @@ void main() {
     expect(button(const Key('mixed-undo')).onTap, isNotNull);
   });
 
-  testWidgets('a second tap cuts through the reticle', (tester) async {
-    tester.view.physicalSize = const Size(800, 600);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    await tester.pumpWidget(
-      ChangeNotifierProvider(
-        create: (_) => FmThemeData(),
-        child: const MaterialApp(home: MixedCraftingView()),
-      ),
-    );
+  testWidgets('one tap cuts along the guideline', (tester) async {
+    await _pumpBench(tester);
+    await tester.tap(find.byIcon(Icons.content_cut));
     await tester.pump();
-    await _openCraftBench(tester);
 
-    GestureDetector button(Key key) {
-      return tester.widget<GestureDetector>(find.byKey(key));
-    }
+    expect(_undo(tester).onTap, isNull);
+    await tester.tap(find.byKey(const Key('mixed-craft-canvas')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump();
+    expect(_undo(tester).onTap, isNotNull);
 
+    final area = _painter(tester).area;
+    expect(area.sheets.single.paper.pieces, hasLength(2));
+    expect(
+      pieceUnderAim(area, const Offset(-6, 0)),
+      isNot(pieceUnderAim(area, const Offset(6, 0))),
+    );
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a drag pans the paper under the blade and does not cut', (
+    tester,
+  ) async {
+    await _pumpBench(tester);
+    await tester.tap(find.byIcon(Icons.content_cut));
+    await tester.pump();
+
+    final canvas = find.byKey(const Key('mixed-craft-canvas'));
+    final before = _painter(tester).camera.lookAt;
+    await tester.drag(canvas, const Offset(80, -60));
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump();
+    expect(_undo(tester).onTap, isNull);
+    expect(_painter(tester).camera.lookAt, isNot(before));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a tap with the guideline off the paper does nothing', (
+    tester,
+  ) async {
+    await _pumpBench(tester);
+    await tester.tap(find.byIcon(Icons.content_cut));
+    await tester.pump();
+
+    final canvas = find.byKey(const Key('mixed-craft-canvas'));
+    await tester.drag(canvas, const Offset(300, 0));
+    await tester.pump();
+    await tester.tap(canvas);
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump();
+    expect(_undo(tester).onTap, isNull);
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('one tap creases along the guideline', (tester) async {
+    await _pumpBench(tester);
+    await tester.tap(find.byIcon(Icons.flip));
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('mixed-craft-canvas')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump();
+    expect(_undo(tester).onTap, isNotNull);
+    expect(_painter(tester).area.sheets.single.paper.scores, isNotEmpty);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(_undo(tester).onTap, isNotNull);
+  });
+
+  testWidgets('a two-finger twist rolls the view onto a 5° step', (
+    tester,
+  ) async {
+    await _pumpBench(tester);
     await tester.tap(find.byIcon(Icons.content_cut));
     await tester.pump();
 
     final canvas = find.byKey(const Key('mixed-craft-canvas'));
     final center = tester.getCenter(canvas);
-    const margin = kMixedPaperSize / 2 * 1.35;
-    final aspect = 800 / 600;
-    final fit = math.max(margin, margin / math.max(aspect, 0.05));
-    final pixelsPerUnit = 600 / (2 * fit * 1.35);
+    const radius = 100.0;
+    Offset at(double angle, double sign) =>
+        center + Offset(math.cos(angle), math.sin(angle)) * radius * sign;
 
-    Future<void> pan(Offset delta) async {
-      final gesture = await tester.startGesture(center);
-      await gesture.moveBy(delta);
-      await gesture.up();
+    final first = await tester.startGesture(at(0, -1), pointer: 1);
+    final second = await tester.startGesture(at(0, 1), pointer: 2);
+    const turn = 32 * math.pi / 180;
+    const steps = 8;
+    for (var i = 1; i <= steps; i++) {
+      final angle = turn * i / steps;
+      await first.moveTo(at(angle, -1));
+      await second.moveTo(at(angle, 1));
       await tester.pump();
     }
+    await first.up();
+    await second.up();
+    await tester.pumpAndSettle();
 
-    await pan(Offset(12 * pixelsPerUnit, 0));
-    await tester.tap(canvas);
-    await tester.pump();
-    expect(button(const Key('mixed-undo')).onTap, isNull);
+    final roll = _painter(tester).camera.roll;
+    expect(roll, closeTo(-30 * math.pi / 180, 1e-6));
+    expect(_undo(tester).onTap, isNull);
 
-    await pan(Offset(-24 * pixelsPerUnit, 0));
     await tester.tap(canvas);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
     await tester.pump();
-    expect(button(const Key('mixed-undo')).onTap, isNotNull);
+    final area = _painter(tester).area;
+    expect(area.sheets.single.paper.pieces, hasLength(2));
+    final across = Offset(math.cos(roll), -math.sin(roll)) * 6;
+    expect(pieceUnderAim(area, across), isNot(pieceUnderAim(area, -across)));
     await tester.pumpAndSettle();
   });
-
-  testWidgets('a second tap creases through the shown start', (tester) async {
-    tester.view.physicalSize = const Size(800, 600);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    await tester.pumpWidget(
-      ChangeNotifierProvider(
-        create: (_) => FmThemeData(),
-        child: const MaterialApp(home: MixedCraftingView()),
-      ),
-    );
-    await tester.pump();
-    await _openCraftBench(tester);
-
-    GestureDetector button(Key key) {
-      return tester.widget<GestureDetector>(find.byKey(key));
-    }
-
-    await tester.tap(find.byIcon(Icons.flip));
-    await tester.pump();
-
-    final canvas = find.byKey(const Key('mixed-craft-canvas'));
-    await tester.tap(canvas);
-    await tester.pump();
-    expect(button(const Key('mixed-undo')).onTap, isNull);
-
-    await tester.tap(canvas);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
-    await tester.pump();
-    expect(button(const Key('mixed-undo')).onTap, isNotNull);
-    await tester.pump(const Duration(milliseconds: 400));
-    expect(button(const Key('mixed-undo')).onTap, isNotNull);
-  });
-
-  testWidgets('a tap starts the cut from the shown scissors', (tester) async {
-    tester.view.physicalSize = const Size(800, 600);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    await tester.pumpWidget(
-      ChangeNotifierProvider(
-        create: (_) => FmThemeData(),
-        child: const MaterialApp(home: MixedCraftingView()),
-      ),
-    );
-    await tester.pump();
-    await _openCraftBench(tester);
-
-    GestureDetector button(Key key) {
-      return tester.widget<GestureDetector>(find.byKey(key));
-    }
-
-    await tester.tap(find.byIcon(Icons.content_cut));
-    await tester.pump();
-
-    final canvas = find.byKey(const Key('mixed-craft-canvas'));
-    await tester.tap(canvas);
-    await tester.pump();
-    expect(button(const Key('mixed-undo')).onTap, isNull);
-
-    await tester.tap(canvas);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
-    await tester.pump();
-    expect(button(const Key('mixed-undo')).onTap, isNotNull);
-  });
 }
+
+Future<void> _pumpBench(WidgetTester tester) async {
+  tester.view.physicalSize = const Size(800, 600);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  await tester.pumpWidget(
+    ChangeNotifierProvider(
+      create: (_) => FmThemeData(),
+      child: const MaterialApp(home: MixedCraftingView()),
+    ),
+  );
+  await tester.pump();
+  await _openCraftBench(tester);
+}
+
+GestureDetector _undo(WidgetTester tester) =>
+    tester.widget<GestureDetector>(find.byKey(const Key('mixed-undo')));
+
+MixedCraftPainter _painter(WidgetTester tester) =>
+    tester
+            .widget<CustomPaint>(find.byKey(const Key('mixed-craft-canvas')))
+            .painter!
+        as MixedCraftPainter;
 
 Future<void> _openCraftBench(WidgetTester tester) async {
   await tester.tap(find.byKey(const Key('board-caret-right')));

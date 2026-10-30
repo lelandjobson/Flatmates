@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:vector_math/vector_math_64.dart';
 
+import '../geometry/geometry_algorithms.dart' show convexHull;
 import '../geometry/polygon_union.dart' show polygonCentroid, unionPolygons;
 import '../gridcraft/blueprint.dart' show polygonBounds;
 import '../gridcraft/folded_model.dart';
@@ -139,6 +140,14 @@ class AsmrNet {
   late final Rect bounds = faces.isEmpty
       ? Rect.zero
       : polygonBounds([for (final face in faces) face.ring]);
+
+  /// Area centroid of the convex hull of the whole unfolded object, cached
+  /// independently of the camera and paper cuts.
+  late final Offset hullCentroid = polygonCentroid(
+    convexHull([
+      ...{for (final face in faces) ...face.ring},
+    ]),
+  );
 
   /// Outline of each island, as one or more loops.
   late final List<List<Offset>> outlines = () {

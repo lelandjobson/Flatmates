@@ -96,10 +96,18 @@ class AsmrStraightEdgePainter extends CustomPainter {
     this.fly = 0,
     this.handle,
     this.pressed = false,
+    this.body = _kBody,
+    this.bodyOpacity = 1,
   });
 
   final AsmrStraightEdge edge;
   final double fly;
+
+  /// The rule's color, and how much of it shows.
+  final Color body;
+  final double bodyOpacity;
+
+  Color _body(double alpha) => body.withValues(alpha: alpha * bodyOpacity);
 
   /// The rotate handle, on screen, or null to hide it.
   final Offset? handle;
@@ -126,17 +134,13 @@ class AsmrStraightEdgePainter extends CustomPainter {
         ..shader = LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [
-            _kBody.withValues(alpha: 0.96),
-            _kBody.withValues(alpha: pressed ? 0.62 : 0.5),
-            _kBody.withValues(alpha: 0.96),
-          ],
+          colors: [_body(0.96), _body(pressed ? 0.62 : 0.5), _body(0.96)],
           stops: const [0, 0.5, 1],
         ).createShader(body),
     );
     final line = Paint()
       ..strokeWidth = 1.5
-      ..color = Colors.white.withValues(alpha: 0.92);
+      ..color = Colors.white.withValues(alpha: 0.92 * bodyOpacity);
     canvas.drawLine(Offset(-reach, -half), Offset(reach, -half), line);
     canvas.drawLine(Offset(-reach, half), Offset(reach, half), line);
     final inner = Paint()
@@ -168,7 +172,7 @@ class AsmrStraightEdgePainter extends CustomPainter {
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2
-        ..color = Colors.white.withValues(alpha: 0.9),
+        ..color = Colors.white.withValues(alpha: 0.9 * bodyOpacity),
     );
     canvas.drawArc(
       Rect.fromCircle(center: center, radius: 6),
@@ -179,7 +183,7 @@ class AsmrStraightEdgePainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.8
         ..strokeCap = StrokeCap.round
-        ..color = Colors.white.withValues(alpha: 0.9),
+        ..color = Colors.white.withValues(alpha: 0.9 * bodyOpacity),
     );
   }
 
@@ -188,5 +192,7 @@ class AsmrStraightEdgePainter extends CustomPainter {
       old.edge != edge ||
       old.fly != fly ||
       old.handle != handle ||
-      old.pressed != pressed;
+      old.pressed != pressed ||
+      old.body != body ||
+      old.bodyOpacity != bodyOpacity;
 }

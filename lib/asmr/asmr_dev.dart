@@ -5,7 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 /// Which page of the ASMR DevTools sheet is showing.
-enum AsmrDevTab { curves, shadow }
+enum AsmrDevTab { curves, shadow, lens }
 
 /// Colors offered for the blueprint-edge shadow.
 const List<Color> kAsmrShadowColors = [
@@ -26,13 +26,25 @@ class AsmrDevSettings extends ChangeNotifier {
     Color shadowColor = const Color(0xFF000000),
     double shadowOpacity = 0.45,
     double darkOverlay = 0.22,
+    double lensMm = 35,
+    double perspectiveness = 0.35,
+    bool dialCruise = false,
+    bool blueprintReticle = false,
+    bool debugOutput = true,
+    int scissorCuts = 5,
   }) : _file = file ?? _defaultFile(),
+       _dialCruise = dialCruise,
+       _blueprintReticle = blueprintReticle,
+       _debugOutput = debugOutput,
+       _scissorCuts = scissorCuts < 0 ? 0 : scissorCuts,
        _curveSmoothing = curveSmoothing.clamp(0.0, 1.0),
        _shadowThrow = shadowThrow.clamp(0.0, 40.0),
        _shadowSpread = shadowSpread.clamp(0.0, 40.0),
        _shadowColor = shadowColor.withValues(alpha: 1),
        _shadowOpacity = shadowOpacity.clamp(0.0, 1.0),
-       _darkOverlay = darkOverlay.clamp(0.0, 1.0);
+       _darkOverlay = darkOverlay.clamp(0.0, 1.0),
+       _lensMm = lensMm.clamp(18.0, 85.0),
+       _perspectiveness = perspectiveness.clamp(0.0, 1.0);
 
   /// `~/.flatmates/asmr_devtools.json`, or a temp file under tests so a
   /// developer's saved slider does not change them.
@@ -56,6 +68,55 @@ class AsmrDevSettings extends ChangeNotifier {
   Color _shadowColor;
   double _shadowOpacity;
   double _darkOverlay;
+  double _lensMm;
+  double _perspectiveness;
+  bool _dialCruise;
+  bool _blueprintReticle;
+  bool _debugOutput;
+
+  /// Live camera and workspace values at the top of the view.
+  bool get debugOutput => _debugOutput;
+
+  set debugOutput(bool value) {
+    if (value == _debugOutput) return;
+    _debugOutput = value;
+    notifyListeners();
+    _save();
+  }
+
+  int _scissorCuts;
+
+  /// The scissors allowance for each selection group.
+  int get scissorCuts => _scissorCuts;
+
+  set scissorCuts(int value) {
+    final next = value < 0 ? 0 : value;
+    if (next == _scissorCuts) return;
+    _scissorCuts = next;
+    notifyListeners();
+    _save();
+  }
+
+  /// Replaces the 3D circle with the hovered group’s unfolded blueprint.
+  bool get blueprintReticle => _blueprintReticle;
+
+  set blueprintReticle(bool value) {
+    if (value == _blueprintReticle) return;
+    _blueprintReticle = value;
+    notifyListeners();
+    _save();
+  }
+
+  /// Whether holding the scissors' turn dial at either end of its bar keeps
+  /// the paper turning. Off, the whole bar turns the paper with the drag.
+  bool get dialCruise => _dialCruise;
+
+  set dialCruise(bool value) {
+    if (value == _dialCruise) return;
+    _dialCruise = value;
+    notifyListeners();
+    _save();
+  }
 
   /// 0 leaves a tool curve as drawn. 1 smooths it as far as it goes.
   double get curveSmoothing => _curveSmoothing;
@@ -127,6 +188,30 @@ class AsmrDevSettings extends ChangeNotifier {
     _save();
   }
 
+  /// Focal length of the cut-mode lens, in millimetres on a full-frame sensor.
+  /// Shorter is a wider view.
+  double get lensMm => _lensMm;
+
+  set lensMm(double value) {
+    final next = value.clamp(18.0, 85.0);
+    if ((next - _lensMm).abs() < 1e-6) return;
+    _lensMm = next;
+    notifyListeners();
+    _save();
+  }
+
+  /// 0 is straight down on the paper. 1 looks along the cut, just above the
+  /// horizon, the way a map looks while it follows a route.
+  double get perspectiveness => _perspectiveness;
+
+  set perspectiveness(double value) {
+    final next = value.clamp(0.0, 1.0);
+    if ((next - _perspectiveness).abs() < 1e-6) return;
+    _perspectiveness = next;
+    notifyListeners();
+    _save();
+  }
+
   /// Reads the saved file. Missing or unreadable files leave the defaults.
   Future<void> load() async {
     try {
@@ -182,6 +267,42 @@ class AsmrDevSettings extends ChangeNotifier {
           changed = true;
         }
       }
+      final lens = json['lensMm'];
+      if (lens is num) {
+        final next = lens.toDouble().clamp(18.0, 85.0);
+        if ((next - _lensMm).abs() >= 1e-6) {
+          _lensMm = next;
+          changed = true;
+        }
+      }
+      final pitch = json['perspectiveness'];
+      if (pitch is num) {
+        final next = pitch.toDouble().clamp(0.0, 1.0);
+        if ((next - _perspectiveness).abs() >= 1e-6) {
+          _perspectiveness = next;
+          changed = true;
+        }
+      }
+      final cuts = json['scissorCuts'];
+      if (cuts is int && cuts >= 0 && cuts != _scissorCuts) {
+        _scissorCuts = cuts;
+        changed = true;
+      }
+      final debug = json['debugOutput'];
+      if (debug is bool && debug != _debugOutput) {
+        _debugOutput = debug;
+        changed = true;
+      }
+      final reticle = json['blueprintReticle'];
+      if (reticle is bool && reticle != _blueprintReticle) {
+        _blueprintReticle = reticle;
+        changed = true;
+      }
+      final cruise = json['dialCruise'];
+      if (cruise is bool && cruise != _dialCruise) {
+        _dialCruise = cruise;
+        changed = true;
+      }
       if (changed) notifyListeners();
     } catch (_) {}
   }
@@ -197,6 +318,12 @@ class AsmrDevSettings extends ChangeNotifier {
           'shadowColor': _shadowColor.toARGB32(),
           'shadowOpacity': _shadowOpacity,
           'darkOverlay': _darkOverlay,
+          'lensMm': _lensMm,
+          'perspectiveness': _perspectiveness,
+          'dialCruise': _dialCruise,
+          'blueprintReticle': _blueprintReticle,
+          'debugOutput': _debugOutput,
+          'scissorCuts': _scissorCuts,
         }),
       );
     } catch (_) {}
@@ -288,6 +415,15 @@ class _AsmrDevPanelState extends State<AsmrDevPanel> {
                       _page = null;
                     }),
                   ),
+                  _Tab(
+                    label: 'Lens',
+                    tabKey: const Key('asmr-dev-tab-lens'),
+                    selected: _page == null && _tab == AsmrDevTab.lens,
+                    onTap: () => setState(() {
+                      _tab = AsmrDevTab.lens;
+                      _page = null;
+                    }),
+                  ),
                   for (var i = 0; i < widget.pages.length; i++)
                     _Tab(
                       label: widget.pages[i].label,
@@ -298,19 +434,20 @@ class _AsmrDevPanelState extends State<AsmrDevPanel> {
                 ],
               ),
               const SizedBox(height: 8),
-              if (_page case final page? when page < widget.pages.length)
-                Flexible(
-                  child: SingleChildScrollView(
-                    child: widget.pages[page].builder(context),
-                  ),
-                )
-              else if (_tab == AsmrDevTab.curves)
-                _CurvesPage(
-                  amount: settings.curveSmoothing,
-                  onChanged: (value) => settings.curveSmoothing = value,
-                )
-              else
-                _ShadowPage(settings: settings),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: switch ((_page, _tab)) {
+                    (final int page, _) when page < widget.pages.length =>
+                      widget.pages[page].builder(context),
+                    (_, AsmrDevTab.curves) => _CurvesPage(
+                      amount: settings.curveSmoothing,
+                      onChanged: (value) => settings.curveSmoothing = value,
+                    ),
+                    (_, AsmrDevTab.shadow) => _ShadowPage(settings: settings),
+                    _ => _LensPage(settings: settings),
+                  },
+                ),
+              ),
             ],
           ),
         ),
@@ -372,14 +509,6 @@ class _CurvesPage extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'How far a tool curve is smoothed. 0 keeps the stroke as drawn. 1 pulls it toward a smooth curve. The ends stay where the blade started and stopped.',
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.45),
-            fontSize: 10,
-            height: 1.3,
-          ),
-        ),
         _SliderRow(
           label: 'Curve smoothing',
           sliderKey: const Key('asmr-curve-smoothing'),
@@ -404,14 +533,6 @@ class _ShadowPage extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Pieces on the blueprint edge cast this shadow onto pieces that are not touching it. Throw is how far it is offset. Spread is how soft it gets. Dark overlay is how much those other pieces are darkened.',
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.45),
-            fontSize: 10,
-            height: 1.3,
-          ),
-        ),
         _SliderRow(
           label: 'Throw',
           sliderKey: const Key('asmr-shadow-throw'),
@@ -486,6 +607,60 @@ class _ShadowPage extends StatelessWidget {
   }
 }
 
+class _LensPage extends StatelessWidget {
+  const _LensPage({required this.settings});
+
+  final AsmrDevSettings settings;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SliderRow(
+          label: 'Lens',
+          sliderKey: const Key('asmr-lens-mm'),
+          value: settings.lensMm,
+          min: 18,
+          max: 85,
+          divisions: 67,
+          readout: '${settings.lensMm.round()} mm',
+          readoutWidth: 52,
+          onChanged: (value) => settings.lensMm = value,
+        ),
+        _SliderRow(
+          label: 'Perspective',
+          sliderKey: const Key('asmr-lens-perspective'),
+          value: settings.perspectiveness,
+          max: 1,
+          divisions: 20,
+          readout: '${(settings.perspectiveness * 100).round()}%',
+          labelWidth: 92,
+          readoutWidth: 40,
+          onChanged: (value) => settings.perspectiveness = value,
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Hold to keep turning',
+                style: TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+            ),
+            Switch(
+              key: const Key('asmr-dial-cruise'),
+              value: settings.dialCruise,
+              activeThumbColor: Colors.white,
+              onChanged: (value) => settings.dialCruise = value,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
 class _SliderRow extends StatelessWidget {
   const _SliderRow({
     required this.label,
@@ -495,22 +670,28 @@ class _SliderRow extends StatelessWidget {
     required this.divisions,
     required this.readout,
     required this.onChanged,
+    this.min = 0,
+    this.labelWidth = 78,
+    this.readoutWidth = 34,
   });
 
   final String label;
   final Key sliderKey;
   final double value;
+  final double min;
   final double max;
   final int divisions;
   final String readout;
   final ValueChanged<double> onChanged;
+  final double labelWidth;
+  final double readoutWidth;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
         SizedBox(
-          width: 78,
+          width: labelWidth,
           child: Text(
             label,
             style: const TextStyle(color: Colors.white70, fontSize: 12),
@@ -519,7 +700,8 @@ class _SliderRow extends StatelessWidget {
         Expanded(
           child: Slider(
             key: sliderKey,
-            value: value.clamp(0.0, max),
+            value: value.clamp(min, max),
+            min: min,
             max: max,
             divisions: divisions,
             activeColor: Colors.white70,
@@ -528,7 +710,7 @@ class _SliderRow extends StatelessWidget {
           ),
         ),
         SizedBox(
-          width: 34,
+          width: readoutWidth,
           child: Text(
             readout,
             textAlign: TextAlign.right,

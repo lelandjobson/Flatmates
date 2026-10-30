@@ -1,4 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+
+import 'asmr_lens.dart';
 
 /// One edge of the hologram as drawn, fading in or out.
 class HologramEdgeView {
@@ -7,16 +11,21 @@ class HologramEdgeView {
     required this.b,
     required this.fold,
     required this.opacity,
+    this.color,
   });
 
   final Offset a;
   final Offset b;
   final bool fold;
   final double opacity;
+
+  /// How well the cut along this edge was judged. Null draws the edge in
+  /// the painter's own colors.
+  final Color? color;
 }
 
 /// The hologram: the unfolded blueprint of the selected faces. Desk point
-/// `p` lands on screen at `origin + p * scale`. Edges stay [line] and [glow],
+/// `p` lands on screen at `origin + p * scale`, turned clockwise by [angle]. Edges stay [line] and [glow],
 /// white by default. A craft group colors [vertex] circles on the corners.
 class HologramPainter extends CustomPainter {
   const HologramPainter({
@@ -24,11 +33,14 @@ class HologramPainter extends CustomPainter {
     required this.faces,
     required this.origin,
     required this.scale,
+    this.angle = 0,
+    this.lens,
     this.faceOpacity = 1,
     this.contrast = 0,
     this.line = const Color(0xFFFFFFFF),
     this.glow = const Color(0xFFFFFFFF),
     this.vertex = const Color(0x00000000),
+    this.inkOpacity = 1,
   });
 
   final List<HologramEdgeView> edges;
@@ -37,6 +49,10 @@ class HologramPainter extends CustomPainter {
   final List<List<Offset>> faces;
   final Offset origin;
   final double scale;
+  final double angle;
+
+  /// Pitched cut-mode view. Null leaves the net flat on the desk.
+  final AsmrCutLens? lens;
   final double faceOpacity;
 
   /// 0–1: how much darker the shadow under each line is, so the lines still
@@ -50,13 +66,29 @@ class HologramPainter extends CustomPainter {
   /// Filled circles on the blueprint's corners. Nothing is drawn at alpha 0.
   final Color vertex;
 
-  Offset _screen(Offset p) => origin + p * scale;
+  /// Fades the lines and the face wash together.
+  final double inkOpacity;
+
+  Offset _screen(Offset p) {
+    final flat = angle == 0
+        ? origin + p * scale
+        : origin +
+              Offset(
+                    math.cos(angle) * p.dx - math.sin(angle) * p.dy,
+                    math.sin(angle) * p.dx + math.cos(angle) * p.dy,
+                  ) *
+                  scale;
+    final view = lens;
+    if (view == null || view.isOverhead) return flat;
+    return view.project(flat);
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (inkOpacity <= 0) return;
     if (faceOpacity > 0) {
       final wash = Paint()
-        ..color = Colors.white.withValues(alpha: 0.05 * faceOpacity);
+        ..color = line.withValues(alpha: 0.05 * faceOpacity * inkOpacity);
       for (final ring in faces) {
         if (ring.length < 3) continue;
         final path = Path()
@@ -83,19 +115,22 @@ class HologramPainter extends CustomPainter {
       if (edge.fold) {
         core
           ..strokeWidth = 1.2
-          ..color = line.withValues(alpha: 0.38 * t);
+          ..color = line.withValues(alpha: 0.38 * t * inkOpacity);
         _dashed(canvas, a, b, core);
         continue;
       }
+      final judged = edge.color;
       halo
         ..strokeWidth = 9
-        ..color = glow.withValues(alpha: 0.45 * t);
+        ..color = (judged ?? glow).withValues(
+          alpha: (judged == null ? 0.45 : 0.6) * t * inkOpacity,
+        );
       canvas.drawLine(a, b, halo);
       shade.color = Colors.black.withValues(alpha: (0.22 + 0.3 * contrast) * t);
       canvas.drawLine(a, b, shade);
       core
         ..strokeWidth = 1.8
-        ..color = line.withValues(alpha: 0.95 * t);
+        ..color = (judged ?? line).withValues(alpha: 0.95 * t * inkOpacity);
       canvas.drawLine(a, b, core);
     }
     _paintVertices(canvas);
@@ -141,9 +176,12 @@ class HologramPainter extends CustomPainter {
       old.faces != faces ||
       old.origin != origin ||
       old.scale != scale ||
+      old.angle != angle ||
+      old.lens != lens ||
       old.faceOpacity != faceOpacity ||
       old.contrast != contrast ||
       old.line != line ||
       old.glow != glow ||
-      old.vertex != vertex;
+      old.vertex != vertex ||
+      old.inkOpacity != inkOpacity;
 }

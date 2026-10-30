@@ -14,20 +14,49 @@ void main() {
       if (file.existsSync()) file.deleteSync();
     });
     final saved = AsmrDevSettings(file: file)
+      ..debugOutput = false
       ..curveSmoothing = 0.4
       ..shadowThrow = 16
       ..shadowSpread = 3
       ..shadowColor = const Color(0xFF3A2418)
       ..shadowOpacity = 0.7
-      ..darkOverlay = 0.35;
+      ..darkOverlay = 0.35
+      ..lensMm = 28
+      ..perspectiveness = 0.6;
     final loaded = AsmrDevSettings(file: file);
+    expect(loaded.debugOutput, isTrue);
     await loaded.load();
+    expect(loaded.debugOutput, isFalse);
     expect(loaded.curveSmoothing, closeTo(0.4, 1e-9));
     expect(loaded.shadowThrow, closeTo(16, 1e-9));
     expect(loaded.shadowSpread, closeTo(3, 1e-9));
     expect(loaded.shadowColor.toARGB32(), const Color(0xFF3A2418).toARGB32());
     expect(loaded.shadowOpacity, closeTo(0.7, 1e-9));
     expect(loaded.darkOverlay, closeTo(0.35, 1e-9));
+    expect(loaded.lensMm, closeTo(28, 1e-9));
+    expect(loaded.perspectiveness, closeTo(0.6, 1e-9));
+    saved.dispose();
+    loaded.dispose();
+  });
+
+  test('dial cruise is off until turned on, and is saved', () async {
+    final file = File(
+      '${Directory.systemTemp.path}/asmr_dev_cruise_${DateTime.now().microsecondsSinceEpoch}.json',
+    );
+    addTearDown(() {
+      if (file.existsSync()) file.deleteSync();
+    });
+    final saved = AsmrDevSettings(file: file);
+    expect(saved.scissorCuts, 5);
+    saved.scissorCuts = -1;
+    expect(saved.scissorCuts, 0);
+    saved.scissorCuts = 7;
+    expect(saved.dialCruise, isFalse);
+    saved.dialCruise = true;
+    final loaded = AsmrDevSettings(file: file);
+    await loaded.load();
+    expect(loaded.dialCruise, isTrue);
+    expect(loaded.scissorCuts, 7);
     saved.dispose();
     loaded.dispose();
   });
@@ -84,7 +113,9 @@ void main() {
     tester
         .widget<Slider>(find.byKey(const Key('asmr-dark-overlay')))
         .onChanged!(0.4);
-    await tester.tap(find.byKey(const Key('asmr-shadow-color-2')));
+    final color = find.byKey(const Key('asmr-shadow-color-2'));
+    await tester.ensureVisible(color);
+    await tester.tap(color);
     await tester.pump();
     expect(settings.shadowThrow, closeTo(22, 1e-9));
     expect(settings.shadowSpread, closeTo(4, 1e-9));

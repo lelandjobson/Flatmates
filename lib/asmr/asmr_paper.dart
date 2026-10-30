@@ -21,12 +21,37 @@ class AsmrPaper {
     required this.name,
     required this.color,
     required this.pattern,
+    this.bright,
   });
 
   final String id;
   final String name;
   final Color color;
   final AsmrPattern pattern;
+
+  /// A continuous three-stop family of luminous neighbors of this paper.
+  Color cutEdgeColor(double parameter) {
+    final base = HSLColor.fromColor(Color.lerp(color, markingColor, 0.45)!);
+    Color stop(double hue, double light) => base
+        .withHue((base.hue + hue) % 360)
+        .withSaturation(
+          base.saturation < 0.05
+              ? base.saturation
+              : (base.saturation + 0.08).clamp(0.0, 0.65),
+        )
+        .withLightness((base.lightness + light).clamp(0.58, 0.88))
+        .toColor();
+    final stops = [stop(-18, 0.04), stop(0, 0.17), stop(18, 0.07)];
+    final t = parameter.clamp(0.0, 1.0);
+    return t <= 0.5
+        ? Color.lerp(stops[0], stops[1], t * 2)!
+        : Color.lerp(stops[1], stops[2], (t - 0.5) * 2)!;
+  }
+
+  /// A deliberately chosen luminous neighbor, rather than a white overlay.
+  final Color? bright;
+  Color get markingColor =>
+      bright ?? Color.lerp(color, const Color(0xFFFFFFFF), 0.65)!;
 }
 
 const List<AsmrPaper> kAsmrPapers = [
@@ -61,6 +86,68 @@ const List<AsmrPaper> kAsmrPapers = [
     pattern: AsmrPattern.octagons,
   ),
 ];
+
+/// The one plain sheet a whole ASMR craft is cut from.
+const AsmrPaper kAsmrCraftPaper = AsmrPaper(
+  id: 'white',
+  name: 'Iris',
+  color: Color(0xFF5A527D),
+  bright: Color(0xFFE3C8FF),
+  pattern: AsmrPattern.plain,
+);
+
+/// Muted grounds and luminous partners, drawn from the desk's violet theme
+/// with warm and cool Albers-inspired color relationships.
+const List<AsmrPaper> kAsmrCraftPalette = [
+  kAsmrCraftPaper,
+  AsmrPaper(
+    id: 'craft-rose',
+    name: 'Rose clay',
+    color: Color(0xFF985D70),
+    bright: Color(0xFFFFD29E),
+    pattern: AsmrPattern.plain,
+  ),
+  AsmrPaper(
+    id: 'craft-teal',
+    name: 'Lagoon',
+    color: Color(0xFF426F72),
+    bright: Color(0xFFC7F2CD),
+    pattern: AsmrPattern.plain,
+  ),
+  AsmrPaper(
+    id: 'craft-ochre',
+    name: 'Ochre',
+    color: Color(0xFFA67943),
+    bright: Color(0xFFFFE8A9),
+    pattern: AsmrPattern.plain,
+  ),
+  AsmrPaper(
+    id: 'craft-slate',
+    name: 'Dusk blue',
+    color: Color(0xFF506C91),
+    bright: Color(0xFFCADCFF),
+    pattern: AsmrPattern.plain,
+  ),
+];
+
+AsmrPaper asmrPaletteForColor(Color color) {
+  return kAsmrCraftPalette.reduce((a, b) {
+    double distance(Color c) =>
+        (c.r - color.r) * (c.r - color.r) +
+        (c.g - color.g) * (c.g - color.g) +
+        (c.b - color.b) * (c.b - color.b);
+    return distance(a.color) <= distance(b.color) ? a : b;
+  });
+}
+
+/// The drawer paper or craft paper with [id], or null.
+AsmrPaper? asmrPaperById(String id) {
+  if (id == kAsmrCraftPaper.id) return kAsmrCraftPaper;
+  for (final paper in [...kAsmrCraftPalette, ...kAsmrPapers]) {
+    if (paper.id == id) return paper;
+  }
+  return null;
+}
 
 /// Tile pixels per desk unit.
 const double _kTileResolution = 12;
