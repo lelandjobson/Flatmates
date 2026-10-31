@@ -978,29 +978,72 @@ void main() {
     await frames(tester, 200);
   }
 
+  testWidgets('scissors count cuts with the limit disabled, including undo', (
+    tester,
+  ) async {
+    await openScissors(tester);
+    final settings = tester.widget<AsmrView>(find.byType(AsmrView)).settings!;
+    expect(settings.scissorCutLimit, isFalse);
+    settings.scissorCuts = 0;
+    await tester.pump();
+    await drag(tester, knob, knob + const Offset(0, -30));
+    await frames(tester, 300);
+    expect(find.textContaining('Scissor cuts used: 1'), findsOneWidget);
+    await drag(tester, knob, knob + const Offset(0, -30));
+    await frames(tester, 300);
+    expect(find.textContaining('Scissor cuts used: 2'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('asmr-undo')));
+    await tester.pump();
+    expect(find.textContaining('Scissor cuts used: 1'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('asmr-redo')));
+    await tester.pump();
+    expect(find.textContaining('Scissor cuts used: 2'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('scissor allowance blocks cuts at zero and undo restores it', (
     tester,
   ) async {
     await openScissors(tester);
     final settings = tester.widget<AsmrView>(find.byType(AsmrView)).settings!;
     settings.scissorCuts = 1;
+    settings.scissorCutLimit = true;
     await tester.pump();
-    expect(find.textContaining('Scissor cuts left: 1'), findsOneWidget);
+    expect(
+      find.textContaining('Scissor cuts used: 0 · Left: 1'),
+      findsOneWidget,
+    );
     await drag(tester, knob, knob + const Offset(0, -5));
-    expect(find.textContaining('Scissor cuts left: 1'), findsOneWidget);
+    expect(
+      find.textContaining('Scissor cuts used: 0 · Left: 1'),
+      findsOneWidget,
+    );
     await drag(tester, knob, knob + const Offset(0, -30));
     await frames(tester, 300);
-    expect(find.textContaining('Scissor cuts left: 0'), findsOneWidget);
+    expect(
+      find.textContaining('Scissor cuts used: 1 · Left: 0'),
+      findsOneWidget,
+    );
     final before = desk(tester).pieces.single;
     await drag(tester, knob, knob + const Offset(0, -30));
     expect(desk(tester).pieces.single, same(before));
-    expect(find.textContaining('Scissor cuts left: 0'), findsOneWidget);
+    expect(
+      find.textContaining('Scissor cuts used: 1 · Left: 0'),
+      findsOneWidget,
+    );
     await tester.tap(find.byKey(const Key('asmr-undo')));
     await tester.pump();
-    expect(find.textContaining('Scissor cuts left: 1'), findsOneWidget);
+    expect(
+      find.textContaining('Scissor cuts used: 0 · Left: 1'),
+      findsOneWidget,
+    );
     await tester.tap(find.byKey(const Key('asmr-redo')));
     await tester.pump();
-    expect(find.textContaining('Scissor cuts left: 0'), findsOneWidget);
+    expect(
+      find.textContaining('Scissor cuts used: 1 · Left: 0'),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
@@ -1239,7 +1282,7 @@ void main() {
             expect(stuck(tester), isTrue);
             expect(desk(tester).pieces.single.scores, isNotEmpty);
             expect(
-              find.textContaining('Scissor cuts left: ${5 - cut}'),
+              find.textContaining('Scissor cuts used: $cut'),
               findsOneWidget,
             );
           }
@@ -1253,7 +1296,7 @@ void main() {
           await horizontal.up();
           await tester.pump();
           expect(desk(tester).pieces.single, same(before));
-          expect(find.textContaining('Scissor cuts left: 3'), findsOneWidget);
+          expect(find.textContaining('Scissor cuts used: 2'), findsOneWidget);
           expect(tester.takeException(), isNull);
           await tester.pumpWidget(const SizedBox());
         },
@@ -1343,7 +1386,7 @@ void main() {
     await frames(tester, 200);
     expect(desk(tester).pieces.single.scores, isEmpty);
     expect(scissors(tester).mark, isNull);
-    expect(find.textContaining('Scissor cuts left: 5'), findsOneWidget);
+    expect(find.textContaining('Scissor cuts used: 0'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -1366,11 +1409,11 @@ void main() {
         scissors(tester).mark,
         offsetMoreOrLessEquals(knob - const Offset(0, 100)),
       );
-      expect(find.textContaining('Scissor cuts left: 5'), findsOneWidget);
+      expect(find.textContaining('Scissor cuts used: 0'), findsOneWidget);
       await g.up(timeStamp: Duration(milliseconds: ms + 16));
       await frames(tester, 200);
       expect(desk(tester).pieces.single.scores, hasLength(1));
-      expect(find.textContaining('Scissor cuts left: 4'), findsOneWidget);
+      expect(find.textContaining('Scissor cuts used: 1'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
     },
   );
@@ -1410,7 +1453,7 @@ void main() {
       await frames(tester, 200);
       final piece = desk(tester).pieces.single;
       expect(piece.toDesk(piece.scores.last.last).dy, lessThan(endpoint.dy));
-      expect(find.textContaining('Scissor cuts left: 3'), findsOneWidget);
+      expect(find.textContaining('Scissor cuts used: 2'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
     },
   );
@@ -1452,7 +1495,7 @@ void main() {
       expect(onDesk(), isTrue);
       expect(desk(tester).pieces.single.scores, isEmpty);
       expect(scissors(tester).mark, isNull);
-      expect(find.textContaining('Scissor cuts left: 5'), findsOneWidget);
+      expect(find.textContaining('Scissor cuts used: 0'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
     },
   );

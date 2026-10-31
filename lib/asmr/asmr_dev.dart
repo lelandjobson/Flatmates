@@ -31,11 +31,13 @@ class AsmrDevSettings extends ChangeNotifier {
     bool dialCruise = false,
     bool blueprintReticle = false,
     bool debugOutput = true,
+    bool scissorCutLimit = false,
     int scissorCuts = 5,
   }) : _file = file ?? _defaultFile(),
        _dialCruise = dialCruise,
        _blueprintReticle = blueprintReticle,
        _debugOutput = debugOutput,
+       _scissorCutLimit = scissorCutLimit,
        _scissorCuts = scissorCuts < 0 ? 0 : scissorCuts,
        _curveSmoothing = curveSmoothing.clamp(0.0, 1.0),
        _shadowThrow = shadowThrow.clamp(0.0, 40.0),
@@ -80,6 +82,17 @@ class AsmrDevSettings extends ChangeNotifier {
   set debugOutput(bool value) {
     if (value == _debugOutput) return;
     _debugOutput = value;
+    notifyListeners();
+    _save();
+  }
+
+  bool _scissorCutLimit;
+
+  bool get scissorCutLimit => _scissorCutLimit;
+
+  set scissorCutLimit(bool value) {
+    if (value == _scissorCutLimit) return;
+    _scissorCutLimit = value;
     notifyListeners();
     _save();
   }
@@ -283,6 +296,11 @@ class AsmrDevSettings extends ChangeNotifier {
           changed = true;
         }
       }
+      final limit = json['scissorCutLimit'];
+      if (limit is bool && limit != _scissorCutLimit) {
+        _scissorCutLimit = limit;
+        changed = true;
+      }
       final cuts = json['scissorCuts'];
       if (cuts is int && cuts >= 0 && cuts != _scissorCuts) {
         _scissorCuts = cuts;
@@ -323,6 +341,7 @@ class AsmrDevSettings extends ChangeNotifier {
           'dialCruise': _dialCruise,
           'blueprintReticle': _blueprintReticle,
           'debugOutput': _debugOutput,
+          'scissorCutLimit': _scissorCutLimit,
           'scissorCuts': _scissorCuts,
         }),
       );

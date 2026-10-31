@@ -2035,6 +2035,9 @@ class _AsmrViewState extends State<AsmrView>
   int get _cutsRemaining =>
       math.max(0, _settings.scissorCuts - (_group?.cutsUsed ?? 0));
 
+  bool get _scissorLimitReached =>
+      _settings.scissorCutLimit && _cutsRemaining == 0;
+
   void _beginScissors() {
     _scissorDrag = 0;
   }
@@ -2055,7 +2058,7 @@ class _AsmrViewState extends State<AsmrView>
       return;
     }
     if (vertical > _kScissorMinDrag && vertical > side * 1.15) {
-      if (_cutsRemaining == 0) return;
+      if (_scissorLimitReached) return;
       _beginScissors();
       _drag = _Drag.scissors;
       _circleCut = true;
@@ -2082,7 +2085,9 @@ class _AsmrViewState extends State<AsmrView>
     final span = _scissorSpan;
     final drag = _scissorDrag ?? 0;
     _scissorDrag = null;
-    if (span == null || drag <= _kScissorMinDrag || _cutsRemaining == 0) return;
+    if (span == null || drag <= _kScissorMinDrag || _scissorLimitReached) {
+      return;
+    }
     final (from, to) = span;
     final cut = cutPieces(_pieces, [from, to], exact: true);
     if (cut == null) return;
@@ -3426,7 +3431,7 @@ class _AsmrViewState extends State<AsmrView>
       'DEBUG · ${_object.name} · ${_in3d ? '3D' : '2D'} · $tool · drag ${_drag.name}',
       'Camera zoom ${number(cameraZoom)}× · half-height ${number(_camera.framedHalfHeightMm)} · lens ${number(_camera.focalLengthMm)}mm',
       'Orbit ${degrees(_camera.azimuth)}° / ${degrees(_camera.elevation)}° · target ${number(_camera.lookAt.dx)}, ${number(_camera.lookAt.dy)}, ${number(_camera.lookAtZ)}',
-      'Desk zoom ${number(_deskScale)}px/u · turn ${degrees(_deskAngle)}° · group ${_group?.name ?? '—'} · cuts $_cutsRemaining',
+      'Desk zoom ${number(_deskScale)}px/u · turn ${degrees(_deskAngle)}° · group ${_group?.name ?? '—'} · cuts used ${_group?.cutsUsed ?? 0}',
       'Pieces ${_pieces.length} · bound ${_boundPieces.length} · drafts ${_groups.fold<int>(0, (n, g) => n + g.draft.length)} · flights ${_flights.length} · hover ${_hoverFace ?? '—'}',
     ].join('\n');
   }
@@ -3457,7 +3462,8 @@ class _AsmrViewState extends State<AsmrView>
                   ),
                   if (!_in3d && _group != null)
                     Text(
-                      'Group ${_group!.name} · Scissor cuts left: $_cutsRemaining',
+                      'Group ${_group!.name} · Scissor cuts used: ${_group!.cutsUsed}'
+                      '${_settings.scissorCutLimit ? ' · Left: $_cutsRemaining' : ''}',
                       style: const TextStyle(
                         color: Colors.white70,
                         fontSize: 12,
@@ -3618,6 +3624,17 @@ class _AsmrViewState extends State<AsmrView>
                           AsmrObjectMenu(
                             objectId: _object.id,
                             onSelected: _loadObject,
+                          ),
+                          Row(
+                            children: [
+                              const Expanded(child: Text('Limit scissor cuts')),
+                              Switch(
+                                key: const Key('asmr-scissor-limit-toggle'),
+                                value: _settings.scissorCutLimit,
+                                onChanged: (value) =>
+                                    _settings.scissorCutLimit = value,
+                              ),
+                            ],
                           ),
                           Row(
                             children: [

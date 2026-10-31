@@ -47,6 +47,8 @@ void main() {
       if (file.existsSync()) file.deleteSync();
     });
     final saved = AsmrDevSettings(file: file);
+    expect(saved.scissorCutLimit, isFalse);
+    saved.scissorCutLimit = true;
     expect(saved.scissorCuts, 5);
     saved.scissorCuts = -1;
     expect(saved.scissorCuts, 0);
@@ -57,6 +59,7 @@ void main() {
     await loaded.load();
     expect(loaded.dialCruise, isTrue);
     expect(loaded.scissorCuts, 7);
+    expect(loaded.scissorCutLimit, isTrue);
     saved.dispose();
     loaded.dispose();
   });
