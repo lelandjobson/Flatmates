@@ -5,18 +5,8 @@ import '../router/app_router.dart';
 import '../ui/fm_screen.dart';
 
 /// Route names listed in the dev menu. Every other [GoRoute] stays registered.
-/// This branch is the grid puzzle play view, plus the screens that author,
-/// inspect, and animate it.
-const kDevMenuRouteNames = {
-  'blueprint_examination',
-  'grid_puzzles',
-  'dynamic_grid_puzzles',
-  'puzzle_editor',
-  'tool_animations',
-  'asmr',
-  'asmr_split',
-  'craft_room',
-};
+/// Keep the menu focused on the protoplane prototype.
+const kDevMenuRouteNames = {'protoplane_concept'};
 
 class DevRoutesScreen extends StatelessWidget {
   const DevRoutesScreen({super.key});

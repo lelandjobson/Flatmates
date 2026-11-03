@@ -18,6 +18,7 @@ import '../screens/craft_assembly_view.dart';
 import '../screens/craft_model_preview_view.dart';
 import '../screens/landscape_tiles_debug_view.dart';
 import '../screens/game_view.dart';
+import '../screens/protoplane_concept_view.dart';
 import '../screens/expression_lab_view.dart';
 import '../screens/movement_lab_view.dart';
 import '../screens/craft_editor_view.dart';
@@ -39,6 +40,11 @@ const kInitialLocation = '/dev-routes';
 final router = GoRouter(
   initialLocation: kInitialLocation,
   routes: [
+    GoRoute(
+      path: '/protoplane-concept',
+      name: 'protoplane_concept',
+      builder: (context, state) => const ProtoplaneConceptView(),
+    ),
     GoRoute(
       path: '/dev-routes',
       name: 'dev_routes',

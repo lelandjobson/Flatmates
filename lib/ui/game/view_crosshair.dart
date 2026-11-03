@@ -21,7 +21,7 @@ void paintReticleCircle(Canvas canvas, Offset at, Color color) {
   canvas.restore();
 }
 
-/// Center-fixed pointer: a thick-stroke circle that morphs into an X
+/// A thick-stroke circle, centered by default or placed at [position], that morphs into an X
 /// when nothing under the cursor can be selected.
 class ViewCrosshair extends StatelessWidget {
   const ViewCrosshair({
@@ -31,6 +31,7 @@ class ViewCrosshair extends StatelessWidget {
     this.strokeWidth = kReticleStroke,
     this.color = const Color(0xF2FFFFFF),
     this.duration = const Duration(milliseconds: 220),
+    this.position,
   });
 
   final bool selectable;
@@ -38,28 +39,36 @@ class ViewCrosshair extends StatelessWidget {
   final double strokeWidth;
   final Color color;
   final Duration duration;
+  final Offset? position;
 
   @override
   Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: Center(
-        child: TweenAnimationBuilder<double>(
-          tween: Tween<double>(end: selectable ? 0 : 1),
-          duration: duration,
-          curve: Curves.easeInOutCubic,
-          builder: (context, morph, _) {
-            return CustomPaint(
-              size: Size.square(diameter + strokeWidth),
-              painter: CrosshairPainter(
-                diameter: diameter,
-                strokeWidth: strokeWidth,
-                color: color,
-                morph: morph,
-              ),
-            );
-          },
+    final indicator = TweenAnimationBuilder<double>(
+      tween: Tween<double>(end: selectable ? 0 : 1),
+      duration: duration,
+      curve: Curves.easeInOutCubic,
+      builder: (context, morph, _) => CustomPaint(
+        size: Size.square(diameter + strokeWidth),
+        painter: CrosshairPainter(
+          diameter: diameter,
+          strokeWidth: strokeWidth,
+          color: color,
+          morph: morph,
         ),
       ),
+    );
+    return IgnorePointer(
+      child: position == null
+          ? Center(child: indicator)
+          : Stack(
+              children: [
+                Positioned(
+                  left: position!.dx - (diameter + strokeWidth) / 2,
+                  top: position!.dy - (diameter + strokeWidth) / 2,
+                  child: indicator,
+                ),
+              ],
+            ),
     );
   }
 }
