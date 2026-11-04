@@ -668,3 +668,22 @@ and dirty slots overwrite old pixels with source blending (including alpha).
 Fallback mesh geometry also omits harvested regions. Thus the current
 background gradient shows through after removal, including existing saved
 cuts. A render-cache version forces older opaque slots to refresh.
+
+## Applying landscape style edits
+
+Landscape texture and fill/pattern sliders now edit an isolated
+`LandscapeStyleDraft`. They update their labels without mutating active settings
+or invalidating the atlas. Update applies all pending landscape edits in one
+rebuild; Save also applies pending edits before writing settings. Reload resets
+the draft to the saved values. Closing without Update/Save discards only those
+pending landscape edits. Background and crafted-object controls remain live.
+
+The baked atlas remains the gameplay path: camera movement samples existing
+tile sprites rather than regenerating paper. The prior slider path rebuilt all
+64 slots on every value event. A local CPU/raster benchmark measured 16 updates
+at 1,711,556 µs and 1,024 rasterized tiles before staging; with staging it measured
+9,490 µs and zero new tiles, followed by one explicit 64-tile Update at 150,380 µs.
+These are test-environment CPU timings, not device GPU frame-rate measurements.
+Regression tests assert atlas identity and rasterization counts rather than
+fragile wall-clock limits. Fully continuous live style changes would favor a
+runtime shader, but explicit application keeps normal gameplay inexpensive.

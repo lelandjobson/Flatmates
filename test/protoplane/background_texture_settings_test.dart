@@ -50,6 +50,53 @@ void main() {
       );
     },
   );
+  testWidgets('landscape texture controls stage changes until Update', (
+    tester,
+  ) async {
+    final settings = ProtoplaneSettings();
+    var updates = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () => showProtoplaneDevTools(
+                context,
+                settings,
+                ProtoplaneStorage(),
+                () => updates++,
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Style'));
+    await tester.pumpAndSettle();
+    final slider = find.byKey(const ValueKey('Texture strength'));
+    await tester.ensureVisible(slider);
+    await tester.pumpAndSettle();
+    await tester.drag(slider, const Offset(-60, 0));
+    await tester.pumpAndSettle();
+    expect(settings.paperTextureStrength, .6);
+    expect(updates, 0);
+    await tester.tap(find.text('Update'));
+    await tester.pumpAndSettle();
+    final applied = settings.paperTextureStrength;
+    expect(applied, lessThan(.6));
+    expect(updates, 1);
+    await tester.drag(slider, const Offset(40, 0));
+    await tester.pumpAndSettle();
+    expect(settings.paperTextureStrength, applied);
+    expect(updates, 1);
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pumpAndSettle();
+    expect(settings.paperTextureStrength, applied);
+    expect(tester.takeException(), isNull);
+  });
   testWidgets('gradient stop picker updates only selected stop', (
     tester,
   ) async {

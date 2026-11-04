@@ -157,6 +157,28 @@ class ProtoplaneSettings {
   }
 }
 
+/// Landscape adjustments stay separate from active settings until Update.
+/// Copy on apply so subsequent slider drags cannot mutate the live appearance.
+class LandscapeStyleDraft {
+  LandscapeStyleDraft(ProtoplaneSettings settings)
+    : fill = SurfaceAppearance.fromJson(settings.landscapeAppearance.toJson()),
+      grain = SurfaceAppearance.fromJson(
+        settings.paperTextureAppearance.toJson(),
+      ),
+      strength = settings.paperTextureStrength,
+      repeat = settings.paperTextureRepeat;
+  final SurfaceAppearance fill, grain;
+  double strength, repeat;
+  void applyTo(ProtoplaneSettings settings) {
+    settings.landscapeAppearance = SurfaceAppearance.fromJson(fill.toJson());
+    settings.paperTextureAppearance = SurfaceAppearance.fromJson(
+      grain.toJson(),
+    );
+    settings.paperTextureStrength = strength;
+    settings.paperTextureRepeat = repeat;
+  }
+}
+
 Future<void> showProtoplaneDevTools(
   BuildContext context,
   ProtoplaneSettings settings,
@@ -168,6 +190,8 @@ Future<void> showProtoplaneDevTools(
 }) async {
   String? error = initialError;
   bool switching = false;
+  var landscapeDraft = LandscapeStyleDraft(settings);
+  bool landscapeDirty = false;
   await showDialog<void>(
     context: context,
     builder: (context) => StatefulBuilder(
@@ -177,8 +201,9 @@ Future<void> showProtoplaneDevTools(
           double value,
           double min,
           double max,
-          ValueChanged<double> set,
-        ) => Column(
+          ValueChanged<double> set, {
+          bool deferred = false,
+        }) => Column(
           children: [
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -193,12 +218,16 @@ Future<void> showProtoplaneDevTools(
               ),
             ),
             Slider(
+              key: ValueKey(label),
               value: value.clamp(min, max),
               min: min,
               max: max,
               onChanged: (v) {
-                update(() => set(v));
-                changed();
+                update(() {
+                  set(v);
+                  if (deferred) landscapeDirty = true;
+                });
+                if (!deferred) changed();
               },
             ),
           ],
@@ -585,46 +614,41 @@ Future<void> showProtoplaneDevTools(
                                     const Text('Paper texture'),
                                     slider(
                                       'Texture strength',
-                                      settings.paperTextureStrength,
+                                      landscapeDraft.strength,
                                       0,
                                       1,
-                                      (v) => settings.paperTextureStrength = v,
+                                      (v) => landscapeDraft.strength = v,
+                                      deferred: true,
                                     ),
                                     slider(
                                       'Texture scale',
-                                      settings.paperTextureRepeat,
+                                      landscapeDraft.repeat,
                                       .25,
                                       8,
-                                      (v) => settings.paperTextureRepeat = v,
+                                      (v) => landscapeDraft.repeat = v,
+                                      deferred: true,
                                     ),
                                     slider(
                                       'Texture brightness',
-                                      settings
-                                          .paperTextureAppearance
-                                          .brightness,
+                                      landscapeDraft.grain.brightness,
                                       -1,
                                       1,
                                       (v) =>
-                                          settings
-                                                  .paperTextureAppearance
-                                                  .brightness =
-                                              v,
+                                          landscapeDraft.grain.brightness = v,
+                                      deferred: true,
                                     ),
                                     slider(
                                       'Texture contrast',
-                                      settings.paperTextureAppearance.contrast,
+                                      landscapeDraft.grain.contrast,
                                       0,
                                       2,
-                                      (v) =>
-                                          settings
-                                                  .paperTextureAppearance
-                                                  .contrast =
-                                              v,
+                                      (v) => landscapeDraft.grain.contrast = v,
+                                      deferred: true,
                                     ),
                                     const Divider(height: 24),
                                     for (final entry in {
                                       'Landscape fills / patterns':
-                                          settings.landscapeAppearance,
+                                          landscapeDraft.fill,
                                       'Crafted geometry':
                                           settings.craftedAppearance,
                                     }.entries) ...[
@@ -635,6 +659,9 @@ Future<void> showProtoplaneDevTools(
                                         -1,
                                         1,
                                         (v) => entry.value.brightness = v,
+                                        deferred:
+                                            entry.key ==
+                                            'Landscape fills / patterns',
                                       ),
                                       slider(
                                         'Contrast',
@@ -642,6 +669,9 @@ Future<void> showProtoplaneDevTools(
                                         0,
                                         2,
                                         (v) => entry.value.contrast = v,
+                                        deferred:
+                                            entry.key ==
+                                            'Landscape fills / patterns',
                                       ),
                                       slider(
                                         'Saturation',
@@ -649,6 +679,9 @@ Future<void> showProtoplaneDevTools(
                                         0,
                                         2,
                                         (v) => entry.value.saturation = v,
+                                        deferred:
+                                            entry.key ==
+                                            'Landscape fills / patterns',
                                       ),
                                       slider(
                                         'Hue',
@@ -656,6 +689,9 @@ Future<void> showProtoplaneDevTools(
                                         -180,
                                         180,
                                         (v) => entry.value.hue = v,
+                                        deferred:
+                                            entry.key ==
+                                            'Landscape fills / patterns',
                                       ),
                                     ],
                                   ],
@@ -672,6 +708,16 @@ Future<void> showProtoplaneDevTools(
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: [
                               TextButton(
+                                onPressed: landscapeDirty
+                                    ? () {
+                                        landscapeDraft.applyTo(settings);
+                                        update(() => landscapeDirty = false);
+                                        changed();
+                                      }
+                                    : null,
+                                child: const Text('Update'),
+                              ),
+                              TextButton(
                                 onPressed: () async {
                                   try {
                                     final json = await store.load(
@@ -680,6 +726,10 @@ Future<void> showProtoplaneDevTools(
                                     final activePreset = settings.worldPreset;
                                     if (json != null) settings.load(json);
                                     settings.worldPreset = activePreset;
+                                    landscapeDraft = LandscapeStyleDraft(
+                                      settings,
+                                    );
+                                    landscapeDirty = false;
                                     changed();
                                     update(() => error = null);
                                   } catch (_) {
@@ -693,6 +743,11 @@ Future<void> showProtoplaneDevTools(
                               TextButton(
                                 onPressed: () async {
                                   try {
+                                    if (landscapeDirty) {
+                                      landscapeDraft.applyTo(settings);
+                                      landscapeDirty = false;
+                                      changed();
+                                    }
                                     await store.save(settings.toJson());
                                     update(() => error = 'Saved');
                                   } catch (_) {
