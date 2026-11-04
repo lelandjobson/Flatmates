@@ -11,6 +11,8 @@ import '../geometry/geometry.dart';
 import '../gestures/game_controls.dart';
 import '../gestures/point_scrub.dart';
 import '../protoplane/controller.dart';
+import '../protoplane/world_sessions.dart';
+import '../protoplane/paper_patterns.dart';
 import '../protoplane/geometry.dart';
 import '../protoplane/meshes.dart';
 import '../protoplane/harvest_meshes.dart';
@@ -70,8 +72,9 @@ class _Hit {
 
 class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     with TickerProviderStateMixin {
-  late final ProtoplaneController model;
-  late final ProtoplaneStorage storage;
+  late ProtoplaneController model;
+  final worldSessions = WorldSessions();
+  late ProtoplaneStorage storage;
   final devSettings = ProtoplaneSettings();
   int appliedProtoplaneCells = 3;
   final settingsStore = ProtoplaneStorage(fileName: 'settings.json');
@@ -141,12 +144,11 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   void initState() {
     super.initState();
     controls = loadGameControls();
-    if (widget.controller == null) unawaited(_loadDevSettings());
-    model = widget.controller ?? ProtoplaneController();
+    model = widget.controller ?? worldSessions.controller(WorldPreset.ink);
     if (widget.controller == null) {
       model.setProtoplaneCells(devSettings.protoplaneCells);
     }
-    storage = widget.storage ?? ProtoplaneStorage();
+    storage = widget.storage ?? worldSessions.storage(model.preset);
     camera = Camera(
       name: 'Protoplane',
       position: Vector3(7, 9, 7),
@@ -259,7 +261,71 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       loading = false;
       model.onCommitted = null;
     } else {
-      unawaited(_load());
+      unawaited(_initializeWorld());
+    }
+  }
+
+  Future<void> _initializeWorld() async {
+    if (widget.controller == null) {
+      await _loadDevSettings();
+      if (!mounted) return;
+      _attachWorld(worldSessions.controller(devSettings.worldPreset));
+    }
+    await _load();
+  }
+
+  void _attachWorld(ProtoplaneController next) {
+    model.removeListener(_modelChanged);
+    model.onCommitted = null;
+    model = next;
+    if (model.protoplaneCells == null) {
+      model.setProtoplaneCells(devSettings.protoplaneCells);
+    }
+    storage = widget.storage ?? worldSessions.storage(model.preset);
+    model.addListener(_modelChanged);
+    model.onCommitted = _save;
+    harvestAtlas.dispose();
+    harvestAtlas = HarvestMeshCache();
+    _lastPlane = '__switch__';
+    contextPlane = null;
+    selectedObject = null;
+    hover = null;
+    harvestNotice = null;
+    contextOpacity.clear();
+    baseOpacity.clear();
+    _refreshScene();
+    _modelChanged();
+  }
+
+  Future<void> _switchWorld(WorldPreset preset) async {
+    if (preset == model.preset) return;
+    if (loading || loadFailed) {
+      throw StateError('Reload world before switching');
+    }
+    _resetPointGestures();
+    drawing = pulling = false;
+    livePointer = null;
+    pointers.clear();
+    transition.stop();
+    focusZoom.stop();
+    extrusion.stop();
+    setState(() => loading = true);
+    try {
+      final next = await worldSessions.switchFrom(model.preset, preset);
+      if (!mounted) return;
+      await settingsStore.save({
+        ...devSettings.toJson(),
+        'worldPreset': preset.name,
+      });
+      if (!mounted) return;
+      devSettings.worldPreset = preset;
+      _attachWorld(next);
+      saveError = null;
+    } catch (_) {
+      saveError = 'Could not switch world. Retry saving or reload.';
+      rethrow;
+    } finally {
+      if (mounted) setState(() => loading = false);
     }
   }
 
@@ -302,16 +368,20 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       saveError = null;
     });
     try {
-      final json = await storage.load((j) {
-        final validator = ProtoplaneController();
-        try {
-          validator.load(j);
-        } finally {
-          validator.dispose();
-        }
-      });
-      if (!mounted) return;
-      if (json != null) model.load(json);
+      if (widget.controller == null && widget.storage == null) {
+        await worldSessions.load(model.preset, reload: true);
+      } else {
+        final json = await storage.load((j) {
+          final validator = ProtoplaneController();
+          try {
+            validator.load(j);
+          } finally {
+            validator.dispose();
+          }
+        });
+        if (!mounted) return;
+        if (json != null) model.load(json);
+      }
       loadFailed = false;
       saveError = storage.recoveryMessage;
     } catch (_) {
@@ -468,7 +538,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
 
   Mesh _planeMesh(CraftPlane plane) => plane.id.startsWith('ground-')
       ? harvestAtlas.mesh(plane, model.landscape)
-      : planeMesh(plane);
+      : planeMesh(plane, ink: model.preset == WorldPreset.ink);
 
   void _refreshScene() {
     harvestAtlas.synchronize(model.planes.values, model.landscape);
@@ -606,7 +676,19 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       model.objects,
       model.planes,
     );
+    final craftedIds = meshes.map((m) => m.id).toSet();
     for (final m in scene.meshes) {
+      if (model.preset == WorldPreset.ink && !craftedIds.contains(m.id)) {
+        final source = m.material;
+        final color = source.color;
+        final gray = (.2126 * color.r + .7152 * color.g + .0722 * color.b);
+        m.material = MaterialModel(
+          color: Color.from(alpha: color.a, red: gray, green: gray, blue: gray),
+          doubleSided: source.doubleSided,
+          strokeEdges: source.strokeEdges,
+          opacity: source.opacity,
+        );
+      }
       baseColors.putIfAbsent(m.id, () => m.material.color);
     }
     _applyHighlight();
@@ -645,7 +727,9 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       mesh.material = MaterialModel(
         color: Color.lerp(
           baseColors[mesh.id] ?? original.color,
-          isPlane ? const Color(0xff9a8eec) : Colors.white,
+          isPlane && model.preset == WorldPreset.pastel
+              ? const Color(0xff9a8eec)
+              : Colors.white,
           strength * .72,
         )!,
         perFaceColors: mesh.geometry.faceColors,
@@ -1342,8 +1426,39 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Theme(
+      data: model.preset == WorldPreset.ink
+          ? theme.copyWith(
+              colorScheme: theme.colorScheme.copyWith(
+                primary: const Color(0xffeeeeee),
+                secondary: const Color(0xffcccccc),
+                onPrimary: const Color(0xff202020),
+                onSecondary: const Color(0xff202020),
+                primaryContainer: const Color(0xff444444),
+                secondaryContainer: const Color(0xff444444),
+                onPrimaryContainer: Colors.white,
+                onSecondaryContainer: Colors.white,
+                surface: const Color(0xff242424),
+                surfaceContainerLow: const Color(0xff292929),
+                surfaceContainer: const Color(0xff303030),
+                surfaceContainerHigh: const Color(0xff363636),
+                surfaceContainerHighest: const Color(0xff404040),
+                surfaceTint: Colors.transparent,
+                outline: const Color(0xff888888),
+                outlineVariant: const Color(0xff555555),
+              ),
+            )
+          : theme,
+      child: Builder(builder: _buildWorld),
+    );
+  }
+
+  Widget _buildWorld(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xff0c1018),
+      backgroundColor: model.preset == WorldPreset.ink
+          ? const Color(0xff141414)
+          : const Color(0xff0c1018),
       body: LayoutBuilder(
         builder: (context, constraints) {
           final newSize = constraints.biggest;
@@ -1386,7 +1501,13 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
-                        SceneView(scene: scene),
+                        SceneView(
+                          scene: scene,
+                          debugOptions: SceneDebugOptions(
+                            showWorldXyPlane:
+                                model.preset == WorldPreset.pastel,
+                          ),
+                        ),
                         FriendEyeOverlay(
                           friends: residents.friends,
                           camera: camera,
@@ -1446,6 +1567,11 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                               settingsStore,
                               _applyDevSettings,
                               initialError: settingsError,
+                              switchWorld:
+                                  widget.controller == null &&
+                                      widget.storage == null
+                                  ? _switchWorld
+                                  : null,
                               clearWorld: loading || loadFailed
                                   ? null
                                   : () {
@@ -1586,8 +1712,12 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     onPressed: action,
     style: IconButton.styleFrom(
       backgroundColor: active
-          ? const Color(0xff675b92)
-          : const Color(0xdd252c39),
+          ? (model.preset == WorldPreset.ink
+                ? const Color(0xff555555)
+                : const Color(0xff675b92))
+          : (model.preset == WorldPreset.ink
+                ? const Color(0xdd292929)
+                : const Color(0xdd252c39)),
       foregroundColor: Colors.white,
       minimumSize: const Size(44, 44),
     ),
@@ -1709,8 +1839,8 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     onVerticalDragEnd: (details) {
       final direction = (details.primaryVelocity ?? 0) < 0 ? 1 : -1;
       model.selectPaper(
-        PaperColor.values[(model.paper.index + direction) %
-            PaperColor.values.length],
+        model.materials[(model.materials.indexOf(model.paper) + direction) %
+            model.materials.length],
       );
     },
     child: Column(
@@ -1720,8 +1850,9 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
           Builder(
             builder: (context) {
               final color =
-                  PaperColor.values[(model.paper.index + offset) %
-                      PaperColor.values.length];
+                  model.materials[(model.materials.indexOf(model.paper) +
+                          offset) %
+                      model.materials.length];
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 child: GestureDetector(
@@ -1740,16 +1871,33 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                           : null,
                     ),
                     alignment: Alignment.center,
-                    child: offset == 0
-                        ? Text(
-                            '${model.balances[color]}',
-                            style: const TextStyle(
-                              fontSize: 10,
-                              color: Color(0xff30303a),
-                              fontWeight: FontWeight.bold,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          PaperSwatch(material: color),
+                          if (offset == 0)
+                            Center(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 3,
+                                  vertical: 2,
+                                ),
+                                color: const Color(0xcc202020),
+                                child: Text(
+                                  '${model.balances[color]}',
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
                             ),
-                          )
-                        : null,
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               );
@@ -1772,18 +1920,25 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
             key: const ValueKey('harvest-yield'),
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: const Color(0xe61b2230),
+              color: model.preset == WorldPreset.ink
+                  ? const Color(0xe6222222)
+                  : const Color(0xe61b2230),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Wrap(
               spacing: 12,
               runSpacing: 4,
               children: [
-                for (final color in PaperColor.values)
+                for (final color in model.materials)
                   if ((yields?[color] ?? harvestNotice?[color] ?? 0) > 0)
                     Text(
                       '${color.label} +${yields != null ? ((yields[color] ?? 0) + model.landscape.remainders[color]! + 1e-9).floor() : harvestNotice![color]}',
-                      style: TextStyle(color: paperColors[color], fontSize: 12),
+                      style: TextStyle(
+                        color: color == PaperMaterial.black
+                            ? Colors.white70
+                            : paperColors[color],
+                        fontSize: 12,
+                      ),
                     ),
               ],
             ),
@@ -1792,7 +1947,9 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: const Color(0xe61b2230),
+              color: model.preset == WorldPreset.ink
+                  ? const Color(0xe6222222)
+                  : const Color(0xe61b2230),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Column(
@@ -1883,8 +2040,12 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: model.gridIndex == i
-                      ? const Color(0xcc55506f)
-                      : const Color(0x99252c39),
+                      ? (model.preset == WorldPreset.ink
+                            ? const Color(0xcc555555)
+                            : const Color(0xcc55506f))
+                      : (model.preset == WorldPreset.ink
+                            ? const Color(0x99292929)
+                            : const Color(0x99252c39)),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Colors.white12),
                 ),
@@ -1903,6 +2064,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   @override
   void reassemble() {
     super.reassemble();
+    PaperPatternAtlas.shared.dispose();
     harvestAtlas.dispose();
     harvestAtlas = HarvestMeshCache();
     _refreshScene();
@@ -1915,7 +2077,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     _disposed = true;
     model.removeListener(_modelChanged);
     model.onCommitted = null;
-    if (widget.controller == null) model.dispose();
+    worldSessions.dispose();
     mapCamera.dispose();
     transition.dispose();
     focusZoom.dispose();
@@ -2066,8 +2228,12 @@ class _GridPainter extends CustomPainter {
           projected(p, p.region.outer, close: true),
           Paint()
             ..color = p.id == hover
-                ? const Color(0xffa39aed)
-                : const Color(0x664a586f)
+                ? (model.preset == WorldPreset.ink
+                      ? Colors.white
+                      : const Color(0xffa39aed))
+                : (model.preset == WorldPreset.ink
+                      ? const Color(0x66666666)
+                      : const Color(0x664a586f))
             ..style = PaintingStyle.stroke
             ..strokeWidth = p.id == hover ? 2 : 1,
         );
@@ -2085,7 +2251,11 @@ class _GridPainter extends CustomPainter {
             point,
             6,
             Paint()
-              ..color = const Color(0xffb8adff).withValues(alpha: .22 * opacity)
+              ..color =
+                  (model.preset == WorldPreset.ink
+                          ? Colors.white
+                          : const Color(0xffb8adff))
+                      .withValues(alpha: .22 * opacity)
               ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
           );
           drawDot(
@@ -2095,7 +2265,10 @@ class _GridPainter extends CustomPainter {
             size,
             .008,
             3.5,
-            Paint()..color = Color.fromRGBO(186, 199, 221, opacity),
+            Paint()
+              ..color = (model.preset == WorldPreset.ink
+                  ? Color.fromRGBO(210, 210, 210, opacity)
+                  : Color.fromRGBO(186, 199, 221, opacity)),
             hoverGrid.dotStyle(nodeIndex),
           );
         }
@@ -2172,7 +2345,10 @@ class _GridPainter extends CustomPainter {
         size,
         lift,
         7,
-        Paint()..color = const Color(0xff121824),
+        Paint()
+          ..color = model.preset == WorldPreset.ink
+              ? const Color(0xff181818)
+              : const Color(0xff121824),
         grid.dotStyle(nodeIndex),
       );
       drawDot(
@@ -2182,7 +2358,10 @@ class _GridPainter extends CustomPainter {
         size,
         lift,
         3.5,
-        Paint()..color = Color.fromRGBO(186, 199, 221, progress),
+        Paint()
+          ..color = (model.preset == WorldPreset.ink
+              ? Color.fromRGBO(210, 210, 210, progress)
+              : Color.fromRGBO(186, 199, 221, progress)),
         grid.dotStyle(nodeIndex),
       );
     }
@@ -2192,7 +2371,7 @@ class _GridPainter extends CustomPainter {
     if (trace.length > 1) {
       final valid =
           completion || model.matches.isNotEmpty || model.cutObjects != null;
-      final color = valid
+      final color = valid || model.preset == WorldPreset.ink
           ? Colors.white
           : Color.lerp(paperColors[model.paper], Colors.white, .3)!;
       final path = projected(plane, trace, lift: lift + .001);
@@ -2244,7 +2423,9 @@ class _GridPainter extends CustomPainter {
       );
       if (partial.length > 1) {
         final path = projected(plane, partial, lift: lift + .001);
-        final color = paperColors[model.paper]!;
+        final color = model.preset == WorldPreset.ink
+            ? Colors.white
+            : paperColors[model.paper]!;
         canvas.drawPath(
           path,
           Paint()

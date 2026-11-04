@@ -6,13 +6,10 @@ import '../geometry/geometry.dart';
 import '../rendering/mesh.dart';
 import 'geometry.dart';
 import 'models.dart';
+import 'paper_patterns.dart';
 
-const paperColors = <PaperColor, Color>{
-  PaperColor.red: Color(0xffe8a19b),
-  PaperColor.yellow: Color(0xffe9d88d),
-  PaperColor.green: Color(0xffa4c8ac),
-  PaperColor.blue: Color(0xffa4c5d4),
-  PaperColor.sand: Color(0xffcfbfa5),
+final paperColors = <PaperMaterial, Color>{
+  for (final material in PaperMaterial.values) material: material.base,
 };
 
 Geometry regionGeometry(
@@ -61,22 +58,23 @@ Geometry regionGeometry(
   );
 }
 
-Mesh planeMesh(CraftPlane plane, {double highlight = 0}) => Mesh(
-  id: plane.id,
-  name: 'Protoplane',
-  groundPlane: plane.id.startsWith('ground-'),
-  geometry: regionGeometry(plane.id, plane, plane.region, 0),
-  material: MaterialModel(
-    color: Color.lerp(
-      const Color(0xff1a222e),
-      const Color(0xff8a83db),
-      highlight,
-    )!,
-    doubleSided: true,
-    opacity: plane.id.startsWith('ground-') ? 1 : .23,
-    strokeEdges: false,
-  ),
-);
+Mesh planeMesh(CraftPlane plane, {double highlight = 0, bool ink = false}) =>
+    Mesh(
+      id: plane.id,
+      name: 'Protoplane',
+      groundPlane: plane.id.startsWith('ground-'),
+      geometry: regionGeometry(plane.id, plane, plane.region, 0),
+      material: MaterialModel(
+        color: Color.lerp(
+          ink ? const Color(0xff222222) : const Color(0xff1a222e),
+          ink ? const Color(0xffbbbbbb) : const Color(0xff8a83db),
+          highlight,
+        )!,
+        doubleSided: true,
+        opacity: plane.id.startsWith('ground-') ? 1 : .23,
+        strokeEdges: false,
+      ),
+    );
 
 List<Mesh> objectMeshes(
   CraftObject object,
@@ -94,6 +92,10 @@ List<Mesh> objectMeshes(
     id: '${object.id}$suffix',
     name: object.kind.label,
     geometry: geometry,
+    surfaceTexture: object.material.patterned
+        ? PaperPatternAtlas.shared.texture(object.material)
+        : null,
+    textureUp: plane.u,
     material: MaterialModel(
       color: color,
       doubleSided: true,

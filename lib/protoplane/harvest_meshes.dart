@@ -8,6 +8,7 @@ import 'harvest.dart';
 import 'geometry.dart';
 import 'meshes.dart';
 import 'models.dart';
+import 'paper_patterns.dart';
 
 /// Like GameView's LandscapeGenerator/landscape painter, bake material into an
 /// atlas and submit textured ground. Only changed slots rasterize again; camera,
@@ -30,7 +31,7 @@ class HarvestMeshCache {
     final temporary = <Image>[];
     for (final plane in planes.where((p) => p.id.startsWith('ground-'))) {
       final key =
-          '${PaperLandscape.generationVersion}/${landscape.seed}/${jsonEncode(plane.region.toJson())}/${jsonEncode(landscape.depleted(plane.id).map((r) => r.toJson()).toList())}/${plane.origin}/${plane.u}/${plane.v}';
+          '${PaperLandscape.generationVersion}/${landscape.preset.name}/${landscape.preset.materials.map((m) => '${m.id}:${m.base.toARGB32()}:${m.ink.toARGB32()}:${m.pattern.name}').join(',')}/${landscape.seed}/${jsonEncode(plane.region.toJson())}/${jsonEncode(landscape.depleted(plane.id).map((r) => r.toJson()).toList())}/${plane.origin}/${plane.u}/${plane.v}';
       final cached = _tiles[plane.id];
       if (cached != null && cached.$1 == key) continue;
       if (recorder == null) {
@@ -58,15 +59,36 @@ class HarvestMeshCache {
       final box = plane.region.bounds;
       tileCanvas.scale(tilePixels / box.width, tilePixels / box.height);
       tileCanvas.translate(-box.left, -box.top);
+      final backing = landscape.preset == WorldPreset.ink
+          ? const Color(0xff777777)
+          : const Color(0xff777a72);
       // Fully opaque backing also overwrites any previous contents of the slot.
-      tileCanvas.drawRect(box, Paint()..color = const Color(0xff777a72));
-      void face(List<Offset> points, Color color, double depth) {
+      tileCanvas.drawRect(box, Paint()..color = backing);
+      void face(
+        List<Offset> points,
+        Color color,
+        double depth, [
+        PaperMaterial? material,
+      ]) {
         final start = vertices.length;
         vertices.addAll(points.map((p) => plane.point(p, depth)));
         faces.add(List.generate(points.length, (i) => start + i));
         colors.add(color);
+        final path = Path()..addPolygon(points, true);
+        if (material != null && material.patterned) {
+          final origin = Offset(plane.origin.x, -plane.origin.z);
+          tileCanvas.save();
+          tileCanvas.clipPath(path, doAntiAlias: false);
+          tileCanvas.translate(-origin.dx, -origin.dy);
+          tileCanvas.drawRect(
+            box.shift(origin),
+            Paint()..shader = PaperPatternAtlas.shared.texture(material).shader,
+          );
+          tileCanvas.restore();
+          return;
+        }
         tileCanvas.drawPath(
-          Path()..addPolygon(points, true),
+          path,
           Paint()
             ..color = color
             ..isAntiAlias = false,
@@ -80,7 +102,7 @@ class HarvestMeshCache {
           plane.region,
           ...cuts,
         ], (p) => plane.region.contains(p) && cuts.any((r) => r.contains(p)))) {
-          face(cell, const Color(0xff777a72), 0);
+          face(cell, backing, 0);
         }
       }
       for (final patch in landscape.remaining(plane)) {
@@ -90,7 +112,7 @@ class HarvestMeshCache {
           patch.grain < 0 ? const Color(0xff384539) : const Color(0xfffffff0),
           patch.grain.abs(),
         )!;
-        face(patch.region.outer, tint, .001);
+        face(patch.region.outer, tint, .001, patch.color);
       }
       final picture = tileRecorder.endRecording();
       final image = picture.toImageSync(tilePixels, tilePixels);

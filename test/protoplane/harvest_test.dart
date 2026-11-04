@@ -23,9 +23,9 @@ void main() {
   test(
     'field is deterministic, continuous at seams, and all five papers occur',
     () {
-      final c = ProtoplaneController();
+      final c = ProtoplaneController(preset: WorldPreset.pastel);
       addTearDown(c.dispose);
-      final other = PaperLandscape();
+      final other = PaperLandscape(preset: WorldPreset.pastel);
       final colors = <PaperColor>{};
       for (final plane in c.planes.values) {
         final patches = c.landscape.generated(plane);
@@ -35,7 +35,7 @@ void main() {
           closeTo(1, 1e-6),
         );
       }
-      expect(colors, PaperColor.values.toSet());
+      expect(colors, pastelMaterials.toSet());
       final a = c.planes['ground-4-4']!, b = c.planes['ground-5-4']!;
       for (var i = 0; i <= 16; i++) {
         final left = a.point(Offset(1, i / 16));
@@ -53,7 +53,7 @@ void main() {
   );
 
   test('harvest credits visible mix, undo restores it, second cut builds', () {
-    final c = ProtoplaneController();
+    final c = ProtoplaneController(preset: WorldPreset.pastel);
     addTearDown(c.dispose);
     expect(c.balances.values, everyElement(256));
     c.enter('ground-4-4');
@@ -93,7 +93,7 @@ void main() {
   });
 
   test('open and cancelled drawings never credit or persist a harvest', () {
-    final c = ProtoplaneController();
+    final c = ProtoplaneController(preset: WorldPreset.pastel);
     addTearDown(c.dispose);
     c.enter('ground-4-4');
     final initial = c.toJson();
@@ -117,10 +117,11 @@ void main() {
   test(
     'partial overlap collects only untouched portions and fractional yield is conserved',
     () {
-      final c = ProtoplaneController();
+      final c = ProtoplaneController(preset: WorldPreset.pastel);
       addTearDown(c.dispose);
       final plane = c.planes['ground-4-4']!;
-      final whole = PaperLandscape(), split = PaperLandscape();
+      final whole = PaperLandscape(preset: WorldPreset.pastel),
+          split = PaperLandscape(preset: WorldPreset.pastel);
       final fullCredits = whole.collect(whole.preview(plane, plane.region)!);
       final totals = <PaperColor, int>{};
       for (var x = 0; x < 4; x++) {
@@ -136,7 +137,7 @@ void main() {
         }
         expect(split.preview(plane, cut), isNull);
       }
-      for (final color in PaperColor.values) {
+      for (final color in pastelMaterials) {
         expect(
           (totals[color] ?? 0) + split.remainders[color]!,
           closeTo((fullCredits[color] ?? 0) + whole.remainders[color]!, 1e-6),
@@ -162,7 +163,7 @@ void main() {
   test(
     'save migration, large balances, malformed depletion, and clear world',
     () {
-      final c = ProtoplaneController();
+      final c = ProtoplaneController(preset: WorldPreset.pastel);
       addTearDown(c.dispose);
       c.enter('ground-4-4');
       c.beginGesture();
@@ -175,11 +176,18 @@ void main() {
       c.finishGesture();
       c.balances[PaperColor.red] = 20000;
       final saved = jsonDecode(jsonEncode(c.toJson())) as Map<String, dynamic>;
-      final restored = ProtoplaneController()..load(saved);
+      final restored = ProtoplaneController(preset: WorldPreset.pastel)
+        ..load(saved);
       addTearDown(restored.dispose);
       expect(restored.toJson(), saved);
       final old = jsonDecode(jsonEncode(saved)) as Map<String, dynamic>;
       old['version'] = 1;
+      old['balances'] = {
+        for (final m in pastelMaterials) m.name: old['balances'][m.id],
+      };
+      for (final object in old['objects']) {
+        object['color'] = PaperMaterial.decode(object.remove('material')).name;
+      }
       old.remove('landscape');
       (old['balances'] as Map).remove('blue');
       (old['balances'] as Map).remove('sand');
@@ -199,9 +207,9 @@ void main() {
         isEmpty,
       );
       final invalid = jsonDecode(jsonEncode(saved)) as Map<String, dynamic>;
-      invalid['landscape']['remainders']['red'] = 1;
+      invalid['landscape']['remainders']['pastel.red'] = 1;
       expect(() => restored.load(invalid), throwsFormatException);
-      invalid['landscape']['remainders']['red'] = 0;
+      invalid['landscape']['remainders']['pastel.red'] = 0;
       invalid['landscape']['depleted']['missing'] = [rectangle(1, 1).toJson()];
       expect(() => restored.load(invalid), throwsFormatException);
       c.clearWorld();
@@ -215,7 +223,7 @@ void main() {
   test(
     'single-color patch yields only its color and placed paper blocks mixed cuts',
     () {
-      final c = ProtoplaneController();
+      final c = ProtoplaneController(preset: WorldPreset.pastel);
       addTearDown(c.dispose);
       final plane = c.planes['ground-4-4']!;
       final patch = c.landscape
@@ -248,7 +256,7 @@ void main() {
   );
 
   test('mesh cache reuses unaffected tiles and exact polygon colors', () {
-    final c = ProtoplaneController();
+    final c = ProtoplaneController(preset: WorldPreset.pastel);
     addTearDown(c.dispose);
     final cache = HarvestMeshCache(),
         a = c.planes['ground-4-4']!,
@@ -274,7 +282,8 @@ void main() {
     );
   });
   test('atlas rasterizes only dirty slots and submits one sprite per tile', () {
-    final c = ProtoplaneController(), cache = HarvestMeshCache();
+    final c = ProtoplaneController(preset: WorldPreset.pastel),
+        cache = HarvestMeshCache();
     final scene = Scene(globalIllumination: 1)
       ..camera = Camera(name: 'Atlas test', position: Vector3(8, 12, 8));
     addTearDown(() {

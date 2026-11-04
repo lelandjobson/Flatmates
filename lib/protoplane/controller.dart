@@ -16,11 +16,18 @@ import 'bedroom_items.dart';
 import 'bedrooms.dart';
 
 class ProtoplaneController extends ChangeNotifier {
-  ProtoplaneController() {
+  ProtoplaneController({this.preset = WorldPreset.ink}) {
+    landscape = PaperLandscape(preset: preset);
+    paper = preset.materials.first;
+    balances.addEntries(
+      preset.materials.map((m) => MapEntry(m, m.starterUnits)),
+    );
     _ground();
   }
   final Map<String, CraftPlane> planes = {};
-  PaperLandscape landscape = PaperLandscape();
+  WorldPreset preset;
+  List<PaperMaterial> get materials => preset.materials;
+  late PaperLandscape landscape;
   Map<PaperColor, int>? lastHarvest;
   bool harvestPending = false;
   String? _harvestPreviewKey;
@@ -93,14 +100,12 @@ class ProtoplaneController extends ChangeNotifier {
     return bedrooms.where((b) => b.floorId == floorId).firstOrNull;
   }
 
-  final Map<PaperColor, int> balances = {
-    for (final c in PaperColor.values) c: 256,
-  };
+  final Map<PaperMaterial, int> balances = {};
   final List<String> _undo = [], _redo = [];
   int nextId = 1;
   String? activePlaneId, editId, error;
   int gridIndex = 0;
-  PaperColor paper = PaperColor.red;
+  late PaperMaterial paper;
   CraftTool tool = CraftTool.scissors;
   String? _gestureBefore;
   void Function(Map<String, dynamic>)? onCommitted;
@@ -183,14 +188,14 @@ class ProtoplaneController extends ChangeNotifier {
     final before = _snapshot();
     _gestureBefore = null;
     objects.clear();
-    landscape = PaperLandscape();
+    landscape = PaperLandscape(preset: preset);
     harvestPending = false;
     lastHarvest = null;
     planes.clear();
     drafts.clear();
     bedrooms = [];
-    for (final color in PaperColor.values) {
-      balances[color] = 256;
+    for (final color in materials) {
+      balances[color] = color.starterUnits;
     }
     nextId = 1;
     activePlaneId = editId = error = null;
@@ -223,7 +228,8 @@ class ProtoplaneController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void selectPaper(PaperColor color) {
+  void selectPaper(PaperMaterial color) {
+    if (!materials.contains(color)) return;
     paper = color;
     notifyListeners();
   }
@@ -1049,12 +1055,14 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   Map<String, dynamic> toJson() => {
-    'version': 2,
+    'version': 3,
+    'preset': preset.name,
+    'paper': paper.id,
     'landscape': landscape.toJson(),
     'nextId': nextId,
     'planes': planes.values.map((p) => p.toJson()).toList(),
     'objects': objects.values.map((o) => o.toJson()).toList(),
-    'balances': {for (final e in balances.entries) e.key.name: e.value},
+    'balances': {for (final e in balances.entries) e.key.id: e.value},
   };
   void load(Map<String, dynamic> json) {
     final validated = ProtoplaneController();
@@ -1074,9 +1082,19 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   void _load(Map<String, dynamic> j) {
-    if (j['version'] != 1 && j['version'] != 2) {
+    if (j['version'] != 1 && j['version'] != 2 && j['version'] != 3) {
       throw const FormatException('Unsupported world version');
     }
+    preset = j['version'] == 3
+        ? WorldPreset.values.byName(j['preset'])
+        : WorldPreset.pastel;
+    paper = j['version'] == 3 && j['paper'] != null
+        ? PaperMaterial.decode(j['paper'])
+        : materials.first;
+    if (!materials.contains(paper)) {
+      throw const FormatException('Invalid selected material');
+    }
+    balances.clear();
     planes
       ..clear()
       ..addEntries(
@@ -1094,9 +1112,9 @@ class ProtoplaneController extends ChangeNotifier {
         }),
       );
     nextId = j['nextId'];
-    for (final color in PaperColor.values) {
+    for (final color in materials) {
       final value =
-          j['balances'][color.name] ??
+          j['balances'][j['version'] == 3 ? color.id : color.name] ??
           (j['version'] == 1 &&
                   (color == PaperColor.blue || color == PaperColor.sand)
               ? 256
@@ -1116,9 +1134,9 @@ class ProtoplaneController extends ChangeNotifier {
       }
     }
     _resizeProtoplaneGrids();
-    landscape = j['version'] == 2
-        ? PaperLandscape.fromJson(j['landscape'], planes)
-        : PaperLandscape();
+    landscape = j['version'] != 1
+        ? PaperLandscape.fromJson(j['landscape'], planes, preset: preset)
+        : PaperLandscape(preset: preset);
     if (j['version'] == 1) {
       for (final object in objects.values) {
         if (object.planeId.startsWith('ground-')) {
@@ -1168,7 +1186,8 @@ class ProtoplaneController extends ChangeNotifier {
       }
     }
     for (final o in objects.values) {
-      if (!planes.containsKey(o.planeId) ||
+      if (!materials.contains(o.material) ||
+          !planes.containsKey(o.planeId) ||
           !o.region.valid ||
           !o.depth.isFinite ||
           o.depth < 0 ||

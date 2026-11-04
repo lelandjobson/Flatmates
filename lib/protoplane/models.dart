@@ -1,3 +1,5 @@
+import 'materials.dart';
+export 'materials.dart';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -22,18 +24,6 @@ enum CraftKind {
   blanket,
   lamp,
   storage,
-}
-
-enum PaperColor { red, yellow, green, blue, sand }
-
-extension PaperColorName on PaperColor {
-  String get label => switch (this) {
-    PaperColor.red => 'Coral',
-    PaperColor.yellow => 'Butter',
-    PaperColor.green => 'Sage',
-    PaperColor.blue => 'Mist',
-    PaperColor.sand => 'Sand',
-  };
 }
 
 enum CraftTool { scissors, volume }
@@ -263,15 +253,17 @@ class CraftObject {
     required this.planeId,
     required this.kind,
     required this.region,
-    required this.color,
+    PaperMaterial? material,
+    PaperColor? color,
     this.depth = 0,
     this.path = const [],
     this.attachmentIds = const [],
-  });
+  }) : material = material ?? color ?? PaperMaterial.white;
   final String id, planeId;
   final CraftKind kind;
   final Region region;
-  final PaperColor color;
+  final PaperMaterial material;
+  PaperMaterial get color => material;
   final double depth;
   final List<Offset> path;
   final List<String> attachmentIds;
@@ -300,7 +292,7 @@ class CraftObject {
     'planeId': planeId,
     'kind': kind.name,
     'region': region.toJson(),
-    'color': color.name,
+    'material': material.id,
     'depth': depth,
     'path': encodePoints(path),
     'attachments': attachmentIds,
@@ -310,7 +302,7 @@ class CraftObject {
     planeId: j['planeId'],
     kind: CraftKind.values.byName(j['kind']),
     region: Region.fromJson(j['region']),
-    color: PaperColor.values.byName(j['color']),
+    material: PaperMaterial.decode(j['material'] ?? j['color']),
     depth: (j['depth'] as num).toDouble(),
     path: decodePoints(j['path']),
     attachmentIds: (j['attachments'] as List).cast<String>(),

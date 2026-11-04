@@ -17,6 +17,7 @@ import 'scene/camera.dart';
 import 'scene/grid_motif.dart';
 import 'scene/planar_texture.dart';
 import 'scene/scene.dart';
+import 'scene/surface_texture.dart';
 
 class SceneView extends StatelessWidget {
   const SceneView({
@@ -298,7 +299,29 @@ class ScenePainter extends CustomPainter {
                 ..style = PaintingStyle.fill
                 ..color = face.color,
             );
-        canvas.drawPath(path, fillPaint);
+        if (face.texture case final texture?) {
+          canvas.save();
+          canvas.clipPath(path, doAntiAlias: false);
+          canvas.transform(face.textureTransform!.storage);
+          canvas.drawRect(
+            face.textureBounds!,
+            Paint()
+              ..shader = texture.shader
+              ..color = Color.fromRGBO(255, 255, 255, face.opacity)
+              ..colorFilter = ColorFilter.mode(
+                Color.fromRGBO(
+                  face.textureShade,
+                  face.textureShade,
+                  face.textureShade,
+                  1,
+                ),
+                BlendMode.modulate,
+              ),
+          );
+          canvas.restore();
+        } else {
+          canvas.drawPath(path, fillPaint);
+        }
         drawCalls++;
 
         // Edge stroke.
@@ -558,8 +581,42 @@ class ScenePainter extends CustomPainter {
         }
         if (shouldDiscard || points.length < 3) continue;
 
+        Matrix4? textureTransform;
+        Rect? textureBounds;
+        if (mesh.surfaceTexture != null) {
+          var u = Vector3.copy(mesh.textureUp ?? Vector3(1, 0, 0));
+          u -= normal * normal.dot(u);
+          if (u.length2 < 1e-8) {
+            u = normal.x.abs() < .9 ? Vector3(1, 0, 0) : Vector3(0, 1, 0);
+            u -= normal * normal.dot(u);
+          }
+          u.normalize();
+          final v = normal.cross(u)..normalize();
+          final origin = normal * normal.dot(faceCenter);
+          final basis = Matrix4.identity()
+            ..setColumn(0, Vector4(u.x, u.y, u.z, 0))
+            ..setColumn(1, Vector4(v.x, v.y, v.z, 0))
+            ..setColumn(3, Vector4(origin.x, origin.y, origin.z, 1));
+          final viewport = Matrix4.identity()
+            ..setEntry(0, 0, size.width / 2)
+            ..setEntry(1, 1, -size.height / 2)
+            ..setEntry(0, 3, size.width / 2)
+            ..setEntry(1, 3, size.height / 2);
+          textureTransform = viewport * viewProjection * basis;
+          for (final point in clipped) {
+            final uv = Offset(point.dot(u), point.dot(v));
+            final r = Rect.fromPoints(uv, uv);
+            textureBounds = textureBounds == null
+                ? r
+                : textureBounds.expandToInclude(r);
+          }
+        }
         facesToDraw.add(
           _ProjectedFace(
+            texture: mesh.surfaceTexture,
+            textureTransform: textureTransform,
+            textureBounds: textureBounds,
+            textureShade: (shade * 255).round().clamp(0, 255),
             points: points,
             color: faceColor,
             depth: depths.reduce((a, b) => a + b) / depths.length,
@@ -716,6 +773,10 @@ Matrix4? _planarTransform(
 
 class _ProjectedFace {
   _ProjectedFace({
+    this.texture,
+    this.textureTransform,
+    this.textureBounds,
+    this.textureShade = 255,
     required this.points,
     required this.color,
     required this.depth,
@@ -730,6 +791,10 @@ class _ProjectedFace {
     this.seamless = false,
   });
 
+  final SurfaceTexture? texture;
+  final Matrix4? textureTransform;
+  final Rect? textureBounds;
+  final int textureShade;
   final bool seamless;
   final List<Offset> points;
   final Color color;

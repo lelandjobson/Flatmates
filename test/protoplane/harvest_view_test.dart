@@ -1,3 +1,4 @@
+import 'package:flatmates/protoplane/models.dart';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/gestures.dart';
@@ -86,11 +87,19 @@ void main() {
       expect(find.byKey(const ValueKey('harvest-yield')), findsOneWidget);
       await capture('cut');
       await tester.pumpAndSettle();
+      model.selectPaper(PaperMaterial.dots);
       final build = await cut();
       await build.up();
       await tester.pumpAndSettle();
       expect(model.objects, hasLength(1));
       await capture('built');
+      final object = model.objects.values.single;
+      model.enter(object.planeId, editObject: object.id);
+      model.setDepth(.1);
+      expect(model.applyEdit(), isTrue);
+      model.leave();
+      await tester.pumpAndSettle();
+      await capture('pattern-3d');
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
     });

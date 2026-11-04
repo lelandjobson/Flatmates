@@ -1,7 +1,9 @@
+import 'materials.dart';
 import 'package:flutter/material.dart';
 import 'storage.dart';
 
 class ProtoplaneSettings {
+  WorldPreset worldPreset = WorldPreset.ink;
   bool gridLines = false;
   int protoplaneCells = 3;
   bool resetDrawingOnRelease = true;
@@ -10,6 +12,7 @@ class ProtoplaneSettings {
   double ambient = .7, sun = .25, wallNear = 4, wallFar = 8;
   Map<String, dynamic> toJson() => {
     'version': 1,
+    'worldPreset': worldPreset.name,
     'protoplaneCells': protoplaneCells,
     'entryFocusLevel': entryFocusLevel,
     'disableFocusZoom': disableFocusZoom,
@@ -52,6 +55,7 @@ class ProtoplaneSettings {
     if (cells is! int || cells < 1 || cells > 5) {
       throw const FormatException('Invalid grid resolution');
     }
+    worldPreset = WorldPreset.values.byName(json['worldPreset'] ?? 'ink');
     protoplaneCells = cells;
     resetDrawingOnRelease = reset;
     disableFocusZoom = disabled;
@@ -71,8 +75,10 @@ Future<void> showProtoplaneDevTools(
   VoidCallback changed, {
   String? initialError,
   VoidCallback? clearWorld,
+  Future<void> Function(WorldPreset)? switchWorld,
 }) async {
   String? error = initialError;
+  bool switching = false;
   await showDialog<void>(
     context: context,
     builder: (context) => StatefulBuilder(
@@ -132,6 +138,42 @@ Future<void> showProtoplaneDevTools(
                       children: [
                         ListView(
                           children: [
+                            if (switchWorld != null)
+                              Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: SegmentedButton<WorldPreset>(
+                                  segments: [
+                                    for (final preset in WorldPreset.values)
+                                      ButtonSegment(
+                                        value: preset,
+                                        label: Text(preset.label),
+                                      ),
+                                  ],
+                                  selected: {settings.worldPreset},
+                                  onSelectionChanged: switching
+                                      ? null
+                                      : (selection) async {
+                                          update(() => switching = true);
+                                          try {
+                                            await switchWorld(selection.single);
+                                            if (context.mounted) {
+                                              update(() => error = null);
+                                            }
+                                          } catch (_) {
+                                            if (context.mounted) {
+                                              update(
+                                                () => error =
+                                                    'Could not switch world. Retry saving or reload.',
+                                              );
+                                            }
+                                          } finally {
+                                            if (context.mounted) {
+                                              update(() => switching = false);
+                                            }
+                                          }
+                                        },
+                                ),
+                              ),
                             if (clearWorld != null)
                               ListTile(
                                 title: const Text('Clear world'),
@@ -262,7 +304,9 @@ Future<void> showProtoplaneDevTools(
                             final json = await store.load(
                               (j) => ProtoplaneSettings()..load(j),
                             );
+                            final activePreset = settings.worldPreset;
                             if (json != null) settings.load(json);
+                            settings.worldPreset = activePreset;
                             changed();
                             update(() => error = null);
                           } catch (_) {

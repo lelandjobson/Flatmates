@@ -32,7 +32,8 @@ class HarvestResult {
 /// Versioned, world-locked paper field. Its polygons are the single source for
 /// both visible coverage and inventory yield. Depletion never edits CraftPlane.
 class PaperLandscape {
-  PaperLandscape({this.seed = 42});
+  PaperLandscape({this.seed = 42, this.preset = WorldPreset.ink});
+  final WorldPreset preset;
   final int seed;
   static const generationVersion = 1;
   static const subdivisions = 16;
@@ -40,8 +41,8 @@ class PaperLandscape {
   final Map<String, List<Region>> _depleted = {};
   final Map<String, List<NaturalPaperPatch>> _generated = {}, _remaining = {};
   final Map<String, int> _revisions = {};
-  final Map<PaperColor, double> remainders = {
-    for (final color in PaperColor.values) color: 0,
+  late final Map<PaperMaterial, double> remainders = {
+    for (final material in preset.materials) material: 0,
   };
 
   int revision(String id) => _revisions[id] ?? 0;
@@ -54,18 +55,39 @@ class PaperLandscape {
     persistence: .25,
   );
 
+  late final List<double> inkThresholds = () {
+    final values = <double>[];
+    // Sample the actual 8×8 starter domain, independent of tile access order.
+    for (var y = 0; y < 256; y++) {
+      for (var x = 0; x < 256; x++) {
+        values.add(sample(-4 + (x + .5) / 32, -4 + (y + .5) / 32));
+      }
+    }
+    values.sort();
+    return [
+      -double.infinity,
+      for (final q in [.40, .60, .75, .90, .98])
+        values[(q * values.length).floor()],
+      double.infinity,
+    ];
+  }();
+
   List<NaturalPaperPatch> generated(CraftPlane plane) => _generated.putIfAbsent(
     plane.id,
     () {
       final result = <NaturalPaperPatch>[];
-      const bands = [-double.infinity, -.21, -.065, .065, .21, double.infinity];
-      const colors = [
-        PaperColor.blue,
-        PaperColor.green,
-        PaperColor.sand,
-        PaperColor.yellow,
-        PaperColor.red,
-      ];
+      final bands = preset == WorldPreset.ink
+          ? inkThresholds
+          : [-double.infinity, -.21, -.065, .065, .21, double.infinity];
+      final colors = preset == WorldPreset.ink
+          ? inkMaterials
+          : [
+              PaperColor.blue,
+              PaperColor.green,
+              PaperColor.sand,
+              PaperColor.yellow,
+              PaperColor.red,
+            ];
       final box = plane.region.bounds;
       for (var y = 0; y < subdivisions; y++) {
         for (var x = 0; x < subdivisions; x++) {
@@ -101,8 +123,13 @@ class PaperLandscape {
                 NaturalPaperPatch(
                   region,
                   colors[band],
-                  _noise.noise2(world.x * 23.1 + 4.7, world.z * 23.1 - 2.3) *
-                      .045,
+                  preset == WorldPreset.ink
+                      ? 0
+                      : _noise.noise2(
+                              world.x * 23.1 + 4.7,
+                              world.z * 23.1 - 2.3,
+                            ) *
+                            .045,
                 ),
               );
             }
@@ -175,25 +202,31 @@ class PaperLandscape {
 
   Map<String, dynamic> toJson() => {
     'seed': seed,
+    'preset': preset.name,
     'generationVersion': generationVersion,
     'depleted': {
       for (final e in _depleted.entries)
         e.key: e.value.map((r) => r.toJson()).toList(),
     },
-    'remainders': {for (final e in remainders.entries) e.key.name: e.value},
+    'remainders': {for (final e in remainders.entries) e.key.id: e.value},
   };
 
   factory PaperLandscape.fromJson(
     Map<String, dynamic> json,
-    Map<String, CraftPlane> planes,
-  ) {
+    Map<String, CraftPlane> planes, {
+    WorldPreset preset = WorldPreset.pastel,
+  }) {
     if (json['seed'] is! int ||
         json['generationVersion'] != generationVersion) {
       throw const FormatException('Invalid paper landscape version or seed');
     }
-    final result = PaperLandscape(seed: json['seed']);
-    for (final color in PaperColor.values) {
-      final value = json['remainders'][color.name];
+    if (json['preset'] != null && json['preset'] != preset.name) {
+      throw const FormatException('Landscape preset mismatch');
+    }
+    final result = PaperLandscape(seed: json['seed'], preset: preset);
+    for (final color in preset.materials) {
+      final value =
+          (json['remainders'][color.id] ?? json['remainders'][color.name]);
       if (value is! num || !value.isFinite || value < 0 || value >= 1) {
         throw const FormatException('Invalid paper remainder');
       }

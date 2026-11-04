@@ -5,6 +5,7 @@ import '../geometry/geometry.dart';
 import '../geometry/transformable.dart';
 import 'ground_occlusion.dart';
 import 'scene/planar_texture.dart';
+import 'scene/surface_texture.dart';
 
 class Mesh extends Transformable {
   Mesh({
@@ -22,6 +23,8 @@ class Mesh extends Transformable {
     this.groundPlane = false,
     this.groundOcclusion,
     this.planarTexture,
+    this.surfaceTexture,
+    this.textureUp,
   }) : _geometry = geometry,
        _material = material,
        _highlightColor = null,
@@ -46,6 +49,8 @@ class Mesh extends Transformable {
 
   /// Optional atlas sprite for flat ground surfaces.
   final PlanarTexture? planarTexture;
+  final SurfaceTexture? surfaceTexture;
+  final Vector3? textureUp;
 
   Geometry _geometry;
   Geometry get geometry => _geometry;

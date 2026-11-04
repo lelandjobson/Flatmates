@@ -316,7 +316,7 @@ mode. This separates automatic open crafting from the draft-reset preference.
 
 ## Harvestable paper landscape
 
-Ground begins covered in five natural paper colors: Coral, Butter, Sage, Mist,
+The preserved Pastel preset begins covered in five natural paper colors: Coral, Butter, Sage, Mist,
 and Sand. A seeded world-space Perlin field creates continuous, softly grained
 patches across tile boundaries. Placed paper remains solid-colored with crisp
 edges. The natural layer uses a cached 16-subdivision polygon field per tile;
@@ -345,7 +345,7 @@ Loop closure immediately previews the harvest and inventory update. Pointer
 release commits both as one saved undo transaction; pointer cancellation or a
 second finger restores the pre-drag world without awarding material. API harvests
 outside an active drag commit immediately. Undo/redo restore material, depletion,
-and drafts together. New worlds and Clear world start at 256 units per color.
+and drafts together. Pastel worlds and Clear world start at 256 units per color.
 
 Version 2 saves record the generation version, seed, harvested regions, and
 fractional remainders. Old saves retain their original balances, receive 256
@@ -354,6 +354,37 @@ without awarding material. Balances can exceed the former 12,800-unit ceiling.
 Tile geometry caches survive ordinary scene refreshes, and unchanged tiles
 reuse their geometry when history or loading replaces the world state.
 
+
+### Ink worlds and collectible patterns
+
+Ink is the default preset; the developer Crafting tab switches between Ink and
+Pastel. Pastel keeps `world.json`; Ink uses `world-ink.json`, with independent
+atomic backups. Switching cancels the current gesture, retries and flushes saves,
+and refuses to switch on failure. Loaded controllers remain in memory, retaining
+each world's history, selected material, and drafts. Clear world affects only the
+selected world. Settings remember the selected preset.
+
+Stable material IDs replace serialized colors in version 3. Versions 1 and 2
+migrate as Pastel; objects, balances, and depletion are preserved. Ink starts with
+256 White, Black, Dots, and Lines units and no Red or Blue. Its seeded field is
+calibrated over the starter domain for approximately 40/20/15/15/8/2 percent area
+coverage respectively. Both accents occur in the starter world; Blue is rarer.
+Harvest accounting uses material area, including patterns, at the same 128 units
+per square world unit with material-keyed fractional remainders.
+
+Ink has no pastel grain. Dots occupy about 20% of white paper and diagonal lines
+25%, with 16 repeats per world unit. Ground bakes these into its existing atlas;
+crafted faces use cached repeating GPU textures with stable planar coordinates,
+including extrusion sides. Cuts preserve the original material and texture phase.
+Inventory uses cached pattern swatches. Lighting remains grayscale, backing is
+mid-gray, and controls/highlights are neutral. Material definitions and preset
+identity participate in ground atlas cache keys; replaced atlas images are disposed.
+
+Validation includes representative-seed coverage, pattern collection and crafting,
+cuts, save migration/recovery/isolation, switch failure, retained history/drafts,
+and dirty-slot atlas reuse. The same live debug camera-pan check measured median
+ScenePainter 0.29 ms (p95 0.74 ms), GPU raster 0.45 ms (p95 0.71 ms), across 63
+frames. No per-pattern geometry is generated during camera movement.
 
 ### Profiling landscape rendering
 
