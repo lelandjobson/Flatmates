@@ -34,8 +34,8 @@ void main() {
     await tester.pumpAndSettle();
     final a = await tester.startGesture(const Offset(300, 310), pointer: 1);
     final b = await tester.startGesture(const Offset(300, 410), pointer: 2);
-    await a.moveBy(const Offset(180, 0));
-    await b.moveBy(const Offset(180, 0));
+    await a.moveBy(const Offset(40, 0));
+    await b.moveBy(const Offset(40, 0));
     expect(model.activePlaneId, 'ground-4-4');
     await a.moveBy(const Offset(70, 0));
     await b.moveBy(const Offset(70, 0));
@@ -450,7 +450,7 @@ void main() {
   });
 
   testWidgets(
-    'release toggle preserves open crafts across drags when disabled',
+    'release commits valid open crafts but preserves incomplete drafts when disabled',
     (tester) async {
       final model = constructionWorld();
       addTearDown(() {
@@ -495,30 +495,168 @@ void main() {
       }
 
       await draw(6, 7);
-      expect(model.draft.path, [6, 7]);
-      expect(model.objects.length, 1);
-      await draw(7, 8);
-      expect(model.draft.path, [6, 7, 8]);
-      expect(model.objects.length, 1);
-      expect(find.text('Finish'), findsOneWidget);
-      await tester.tap(find.text('Finish'));
-      await tester.pumpAndSettle();
-      expect(model.objects.values.last.kind, CraftKind.screen);
       expect(model.draft.path, isEmpty);
-      model.selectGrid(0);
+      expect(model.objects.values.last.kind, CraftKind.screen);
+      expect(model.objects.length, 2);
+      model.enter('ground-5-4');
       await tester.pumpAndSettle();
+      await draw(0, 1);
+      expect(model.draft.path, isNotEmpty);
+      expect(model.objects.length, 2);
       await tester.tap(find.text('devtools'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Reset drawing on release'));
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Close'));
       await tester.pumpAndSettle();
-      await draw(11, 12);
+      await draw(1, 2);
       expect(model.draft.path, isEmpty);
       expect(model.objects.length, 2);
       await tester.pumpWidget(const SizedBox());
     },
   );
+
+  for (final kind in [PointerDeviceKind.mouse, PointerDeviceKind.touch]) {
+    testWidgets('loop closure can be withdrawn before release with $kind', (
+      tester,
+    ) async {
+      final model = constructionWorld();
+      addTearDown(() {
+        resetView(tester);
+        model.dispose();
+      });
+      await mount(tester, model, const Size(900, 700));
+      model.setProtoplaneCells(3);
+      model.enter('ground-4-4');
+      await tester.pumpAndSettle();
+      final camera = tester
+          .widget<SceneView>(find.byType(SceneView).first)
+          .scene
+          .camera!;
+      Offset node(int n) => camera.projectToScreen(
+        model.activePlane!.point(model.grid!.nodes[n], .008),
+        const Size(900, 700),
+      )!;
+      final drag = await tester.startGesture(node(5), kind: kind);
+      for (final n in [6, 10, 9, 5]) {
+        await drag.moveTo(node(n));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(model.closed, isTrue);
+      expect(model.objects, isEmpty);
+      // Small motion within the closing snap zone retains closure.
+      await drag.moveTo(node(5) + const Offset(2, 0));
+      expect(model.closed, isTrue);
+      await drag.moveTo(node(8));
+      await tester.pump();
+      expect(model.draft.path, [5, 6, 10, 9, 8]);
+      expect(model.closed, isFalse);
+      for (final n in [4, 5]) {
+        await drag.moveTo(node(n));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(model.closed, isTrue);
+      expect(model.objects, isEmpty);
+      await drag.up();
+      await tester.pumpAndSettle();
+      expect(model.objects.values.single.kind, CraftKind.floor);
+      model.undo();
+      expect(model.objects, isEmpty);
+      expect(model.draft.path, isEmpty);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+
+  for (final valid in [true, false]) {
+    testWidgets(
+      'closed stroke whites only when valid and fades for 750ms ($valid)',
+      (tester) async {
+        final model = constructionWorld();
+        addTearDown(() {
+          resetView(tester);
+          model.dispose();
+        });
+        if (!valid) {
+          model.enter('ground-4-4');
+          model.beginGesture();
+          for (final n in [0, 1, 4, 3, 0]) {
+            model.appendNode(n);
+          }
+          model.finishGesture();
+          model.create();
+          model.leave();
+        }
+        await mount(tester, model, const Size(900, 700));
+        model.enter('ground-4-4');
+        await tester.pumpAndSettle();
+        final camera = tester
+            .widget<SceneView>(find.byType(SceneView).first)
+            .scene
+            .camera!;
+        Offset node(int n) => camera.projectToScreen(
+          model.activePlane!.point(model.grid!.nodes[n], .008),
+          const Size(900, 700),
+        )!;
+        final mid = node(0) * .7 + node(1) * .3, delta = node(1) - node(0);
+        final sample = mid + Offset(-delta.dy, delta.dx) / delta.distance * 2;
+        Future<List<int>> pixel() async {
+          final paint = tester
+              .widget<CustomPaint>(
+                find.byKey(const ValueKey('craft-grid-overlay')),
+              )
+              .painter!;
+          final recorder = ui.PictureRecorder();
+          paint.paint(Canvas(recorder), const Size(900, 700));
+          final picture = recorder.endRecording();
+          final result = await tester.runAsync(() async {
+            final image = await picture.toImage(900, 700);
+            final bytes = await image.toByteData(
+              format: ui.ImageByteFormat.rawRgba,
+            );
+            final offset = (sample.dy.round() * 900 + sample.dx.round()) * 4;
+            final result = bytes!.buffer.asUint8List().sublist(
+              offset,
+              offset + 4,
+            );
+            image.dispose();
+            return result;
+          });
+          picture.dispose();
+          return result!;
+        }
+
+        final drag = await tester.startGesture(
+          node(0),
+          kind: PointerDeviceKind.mouse,
+        );
+        for (final n in [1, 4, 3, 0]) {
+          await drag.moveTo(node(n));
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        await tester.pump(const Duration(milliseconds: 120));
+        final before = await pixel();
+        if (valid) {
+          expect(before[0], greaterThan(240));
+          expect(before[2], greaterThan(240));
+        } else {
+          expect(before[1], greaterThan(before[0]));
+          expect(before[2], lessThan(50));
+        }
+        await drag.up();
+        await tester.pump();
+        final released = await pixel();
+        await tester.pump(const Duration(milliseconds: 375));
+        final fading = await pixel();
+        expect(fading[3], lessThan(released[3]));
+        expect(fading[3], greaterThan(0));
+        await tester.pump(const Duration(milliseconds: 375));
+        expect((await pixel())[3], 0);
+        await tester.pumpAndSettle();
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
 
   testWidgets('mouse drawing keeps plane camera and creates a floor', (
     tester,
@@ -553,7 +691,10 @@ void main() {
       await gesture.moveTo(node(i));
       await tester.pump(const Duration(milliseconds: 16));
     }
-    expect(model.objects.values.single.kind, CraftKind.floor);
+    expect(model.objects, isEmpty);
+    expect(model.drawingReady, isTrue);
+    await tester.pump(const Duration(seconds: 1));
+    expect(model.objects, isEmpty);
     await gesture.up();
     await tester.pumpAndSettle();
     expect(model.draft.path, isEmpty);

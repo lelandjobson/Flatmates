@@ -1,4 +1,9 @@
 import 'dart:async';
+import 'dart:ui' as ui;
+import '../landscape/color_texture_catalog.dart';
+import 'package:flutter/services.dart';
+import '../protoplane/completion.dart';
+import '../protoplane/paper_effects.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
@@ -18,6 +23,7 @@ import '../protoplane/meshes.dart';
 import '../protoplane/harvest_meshes.dart';
 import '../protoplane/models.dart';
 import '../protoplane/plane_navigation.dart';
+import '../rendering/surface_edge_shading.dart';
 import '../protoplane/storage.dart';
 import '../protoplane/stroke_preview.dart';
 import '../protoplane/focus_view.dart';
@@ -77,6 +83,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   late ProtoplaneStorage storage;
   final devSettings = ProtoplaneSettings();
   int appliedProtoplaneCells = 3;
+  late GridConnections appliedGridConnections = GridConnections.orthogonal;
   final settingsStore = ProtoplaneStorage(fileName: 'settings.json');
   String? settingsError;
   late final Scene scene;
@@ -89,24 +96,37 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       glow,
       extrusion,
       segmentGlow,
+      closureWhite,
+      releaseFade,
       pointGlow,
       contextFade,
       focusZoom;
   CraftPlane? contextPlane;
   final Map<String, double> contextOpacity = {}, baseOpacity = {};
   Set<String> focusedMeshIds = {};
-  bool autoCreating = false;
+  late final PaperEffects paperEffects = PaperEffects(this)
+    ..addListener(_effectsChanged);
+  int _effectEpoch = 0;
+  bool _drawingReady = false;
   List<Offset> completedTrace = [];
+  List<Offset> releasedTrace = [];
+  double releasedWhite = 0;
   Offset? livePointer;
   int _lastStrokeLength = 0;
   final pointScrub = PointScrub();
   Timer? backtrackHold;
   int? heldNode, blockedNode;
   String? gestureDraftKey;
-  Offset? flashPoint;
-  bool flashRemoved = false;
-  List<int> lastFlashPath = [];
-  String? lastFlashKey;
+  late Map<int, double> dotFrom = {}, dotTo = {};
+  String? dotGridKey;
+  Map<int, double> get dotSelection {
+    final t = Curves.easeOutCubic.transform(pointGlow.value);
+    return {
+      for (final i in {...dotFrom.keys, ...dotTo.keys})
+        i: (dotFrom[i] ?? 0) + ((dotTo[i] ?? 0) - (dotFrom[i] ?? 0)) * t,
+    };
+  }
+
   double _depthFrom = 0, _depthTo = 0;
   CraftGrid? outgoingGrid;
   late final PageController gridPager;
@@ -118,7 +138,9 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   bool preview = false, loading = true, saving = false, loadFailed = false;
   bool _disposed = false;
   String? saveError, selectedObject;
+  ui.Image? landscapePaperTexture;
   var harvestAtlas = HarvestMeshCache();
+  final edgeShading = SurfaceEdgeShadingCache();
   Timer? harvestNoticeTimer;
   Map<PaperColor, int>? harvestNotice;
   final Map<int, Offset> pointers = {};
@@ -132,6 +154,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       multi = false;
   double lastSpan = 0, pinch = 1, pullStartDepth = 0;
   double trackpadScale = 1;
+  bool trackpadActive = false;
   Vector3? pullPlane, pullHit;
   _Hit? hover;
   String? previousHover;
@@ -144,6 +167,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   void initState() {
     super.initState();
     controls = loadGameControls();
+    unawaited(_loadLandscapePaper());
     model = widget.controller ?? worldSessions.controller(WorldPreset.ink);
     if (widget.controller == null) {
       model.setProtoplaneCells(devSettings.protoplaneCells);
@@ -232,7 +256,16 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     model.addListener(_modelChanged);
     pointGlow = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 280),
+      duration: const Duration(milliseconds: 140),
+      value: 1,
+    )..addListener(_paintChanged);
+    closureWhite = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 100),
+    )..addListener(_paintChanged);
+    releaseFade = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 750),
       value: 1,
     )..addListener(_paintChanged);
     segmentGlow = AnimationController(
@@ -275,9 +308,12 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   }
 
   void _attachWorld(ProtoplaneController next) {
+    paperEffects.clear();
     model.removeListener(_modelChanged);
     model.onCommitted = null;
     model = next;
+    model.setProtoplaneConnections(devSettings.gridConnections);
+    appliedGridConnections = devSettings.gridConnections;
     if (model.protoplaneCells == null) {
       model.setProtoplaneCells(devSettings.protoplaneCells);
     }
@@ -285,7 +321,8 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     model.addListener(_modelChanged);
     model.onCommitted = _save;
     harvestAtlas.dispose();
-    harvestAtlas = HarvestMeshCache();
+    harvestAtlas = HarvestMeshCache()..setPaperTexture(landscapePaperTexture);
+    edgeShading.clear();
     _lastPlane = '__switch__';
     contextPlane = null;
     selectedObject = null;
@@ -329,6 +366,18 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     }
   }
 
+  Future<void> _loadLandscapePaper() async {
+    final image = await ColorTextureCatalog.load(ColorTextureCatalog.white);
+    if (!mounted) {
+      image?.dispose();
+      return;
+    }
+    landscapePaperTexture = image;
+    harvestAtlas.setPaperTexture(image);
+    _refreshScene();
+    setState(() {});
+  }
+
   Future<void> _loadDevSettings() async {
     try {
       final json = await settingsStore.load(
@@ -344,6 +393,13 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   }
 
   void _applyDevSettings() {
+    if (appliedGridConnections != devSettings.gridConnections) {
+      appliedGridConnections = devSettings.gridConnections;
+      _resetPointGestures();
+      drawing = pulling = false;
+      livePointer = null;
+      model.setProtoplaneConnections(devSettings.gridConnections);
+    }
     if (appliedProtoplaneCells != devSettings.protoplaneCells) {
       appliedProtoplaneCells = devSettings.protoplaneCells;
       _resetPointGestures();
@@ -358,7 +414,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     );
     scene.globalIllumination = lighting.globalIllumination;
     scene.setLights(lighting.lights);
-    _applyHighlight();
+    _refreshScene();
     setState(() {});
   }
 
@@ -432,30 +488,47 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     );
   }
 
+  void _effectsChanged() {
+    if (_disposed) return;
+    final hidden = paperEffects.hiddenIds;
+    for (final mesh in scene.meshes) {
+      mesh.visible = !hidden.any(
+        (id) => mesh.id == id || mesh.id.startsWith('$id-'),
+      );
+    }
+    scene.markNeedsPaint();
+    if (mounted) setState(() {});
+  }
+
   void _modelChanged() {
     if (_disposed) return;
+    if (_effectEpoch != model.presentationEpoch ||
+        _lastPlane != model.activePlaneId) {
+      paperEffects.clear();
+      _effectEpoch = model.presentationEpoch;
+    }
+    _drawingReady = model.drawingReady;
+    if (drawing) {
+      closureWhite.animateTo(
+        model.closed && _drawingReady ? 1 : 0,
+        curve: Curves.easeOut,
+      );
+    }
     if (model.lastHarvest == null) harvestNotice = null;
     final path = model.draft.path;
-    if (lastFlashKey == model.draftKey &&
-        model.grid != null &&
-        path.length != lastFlashPath.length) {
-      final removed = !autoCreating && path.length < lastFlashPath.length;
-      final node = path.isEmpty
-          ? lastFlashPath.last
-          : removed
-          ? lastFlashPath.last
-          : path.last;
-      if (node < model.grid!.nodes.length) {
-        flashPoint = model.grid!.nodes[node];
-        flashRemoved = removed;
-        pointGlow.forward(from: 0);
-      }
-    } else if (lastFlashKey != model.draftKey) {
-      flashPoint = null;
+    final selected = path.toSet();
+    if (dotGridKey != model.draftKey) {
+      dotFrom = {};
+      dotTo = {for (final i in selected) i: 1};
+      dotGridKey = model.draftKey;
+      pointGlow.value = 1;
       _resetPointGestures();
+    } else if (selected.length != dotTo.length ||
+        selected.any((i) => !dotTo.containsKey(i))) {
+      dotFrom = dotSelection;
+      dotTo = {for (final i in selected) i: 1};
+      pointGlow.forward(from: 0);
     }
-    lastFlashKey = model.draftKey;
-    lastFlashPath = List.of(path);
     final length = path.length;
     if (drawing && length > _lastStrokeLength && length > 1) {
       segmentGlow.forward(from: 0);
@@ -473,6 +546,9 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     }
     if (_lastPlane != model.activePlaneId) {
       completedTrace = [];
+      releasedTrace = [];
+      releaseFade.value = 1;
+      closureWhite.value = 0;
       focusZoom.stop();
       focusScale = displayedFocusScale =
           1 +
@@ -540,7 +616,28 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       ? harvestAtlas.mesh(plane, model.landscape)
       : planeMesh(plane, ink: model.preset == WorldPreset.ink);
 
+  List<Mesh> _objectMeshes(
+    CraftObject object,
+    CraftPlane plane, {
+    double opacity = 1,
+  }) {
+    final surfaceId = 'surface-${object.id}';
+    final canonical = model.surfaceFusion.canonical[surfaceId];
+    // Editing a constituent still displays its original support geometry.
+    if (canonical != null && model.editId == null) {
+      if (canonical != surfaceId) return [];
+      object = object.copyWith(region: model.planes[surfaceId]!.region);
+    }
+    return objectMeshes(object, plane, opacity: opacity);
+  }
+
   void _refreshScene() {
+    harvestAtlas.configureStyle(
+      fill: devSettings.landscapeAppearance,
+      grain: devSettings.paperTextureAppearance,
+      strength: devSettings.paperTextureStrength,
+      repeat: devSettings.paperTextureRepeat,
+    );
     harvestAtlas.synchronize(model.planes.values, model.landscape);
     final meshes = <Mesh>[];
     contextOpacity.clear();
@@ -548,7 +645,13 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     if (active == null) {
       meshes.addAll(
         model.planes.values
-            .where((p) => !p.id.startsWith('surface-') && !model.isPlane(p.id))
+            .where(
+              (p) =>
+                  !p.id.startsWith('surface-') &&
+                  !model.isPlane(p.id) &&
+                  !model.surfaceFusion.retired.contains(p.id) &&
+                  (model.surfaceFusion.canonical[p.id] ?? p.id) == p.id,
+            )
             .map(_planeMesh),
       );
       // Ground tiles remain visible in their unoccupied portions.
@@ -559,23 +662,27 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       }
       for (final o in model.objects.values) {
         final p = model.planes[o.planeId];
-        if (p != null) meshes.addAll(objectMeshes(o, p));
+        if (p != null) meshes.addAll(_objectMeshes(o, p));
       }
     } else {
       meshes.add(_planeMesh(active)..groundPlane = true);
       final edit = model.editId;
       for (final o in model.objects.values) {
-        if (o.id == edit) continue;
+        if (o.id == edit && !drawing) continue;
         final belongsToFloor =
             model.objects[active.owner]?.kind == CraftKind.floor &&
-            supportingFloor(o.id, model.objects, model.planes) == active.owner;
+            (supportingFloor(o.id, model.objects, model.planes) ==
+                    active.owner ||
+                active.supports.contains(
+                  supportingFloor(o.id, model.objects, model.planes),
+                ));
         if (o.planeId == active.id ||
             o.id == active.owner ||
             (belongsToFloor &&
                 o.kind != CraftKind.wall &&
                 o.kind != CraftKind.window &&
                 o.kind != CraftKind.door)) {
-          final existing = objectMeshes(
+          final existing = _objectMeshes(
             o,
             model.planes[o.planeId]!,
             opacity: o.id == active.owner ? .4 : 1,
@@ -597,17 +704,21 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                   Curves.easeOutBack.transform(extrusion.value),
         );
       }
-      if (candidate != null) {
+      if (candidate != null && !(drawing && model.tool == CraftTool.scissors)) {
         final cuts = model.cutObjects;
         if (cuts != null && edit != null) {
           for (var i = 0; i < cuts.length; i++) {
             meshes.addAll(
-              objectMeshes(cuts[i].copyWith(id: 'cut-$i'), active, opacity: .9),
+              _objectMeshes(
+                cuts[i].copyWith(id: 'cut-$i'),
+                active,
+                opacity: .9,
+              ),
             );
           }
         } else {
           meshes.addAll(
-            objectMeshes(candidate, active, opacity: preview ? 1 : .75),
+            _objectMeshes(candidate, active, opacity: preview ? 1 : .75),
           );
         }
       }
@@ -628,14 +739,17 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       }
 
       for (final p in model.planes.values.where(
-        (p) => !p.id.startsWith('surface-'),
+        (p) =>
+            !p.id.startsWith('surface-') &&
+            !model.surfaceFusion.retired.contains(p.id) &&
+            (model.surfaceFusion.canonical[p.id] ?? p.id) == p.id,
       )) {
         if (!focusedMeshIds.contains(p.id)) addContext([_planeMesh(p)], p);
       }
       for (final object in model.objects.values) {
         if (object.id != model.editId && !focusedMeshIds.contains(object.id)) {
           addContext(
-            objectMeshes(object, model.planes[object.planeId]!),
+            _objectMeshes(object, model.planes[object.planeId]!),
             model.planes[object.planeId]!,
           );
         }
@@ -665,6 +779,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     baseColors
       ..clear()
       ..addEntries(meshes.map((m) => MapEntry(m.id, m.material.color)));
+    edgeShading.synchronize(meshes);
     scene.setMeshes(meshes);
     residents.sync(
       scene,
@@ -691,6 +806,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       }
       baseColors.putIfAbsent(m.id, () => m.material.color);
     }
+    _effectsChanged();
     _applyHighlight();
   }
 
@@ -705,6 +821,19 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
           : old
           ? 1 - glow.value
           : 0.0;
+      final isLandscape = mesh.id.startsWith('ground-');
+      final isCrafted =
+          model.objects.keys.any(
+            (id) => mesh.id == id || mesh.id.startsWith('$id-'),
+          ) ||
+          mesh.id == 'preview' ||
+          mesh.id.startsWith('cut-') ||
+          (!isLandscape && model.planes.containsKey(mesh.id));
+      mesh.appearanceFilter = isLandscape
+          ? null
+          : isCrafted
+          ? devSettings.craftedAppearance.filter
+          : null;
       final original = mesh.material;
       var opacity = baseOpacity[mesh.id] ?? original.opacity;
       if (model.activePlane == null) {
@@ -846,7 +975,8 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     preview = false;
     _setHover(null);
     final surface = hit.object == null ? hit.plane : 'surface-${hit.object}';
-    model.enter(model.planes.containsKey(surface) ? surface : hit.plane);
+    final destination = model.planes.containsKey(surface) ? surface : hit.plane;
+    model.enter(model.surfaceFusion.canonical[destination] ?? destination);
   }
 
   void _restoreWorld() {
@@ -937,7 +1067,9 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       }
     }
     for (final plane in model.planes.values) {
-      if (!plane.id.startsWith('surface-')) {
+      if (!plane.id.startsWith('surface-') &&
+          !model.surfaceFusion.retired.contains(plane.id) &&
+          (model.surfaceFusion.canonical[plane.id] ?? plane.id) == plane.id) {
         consider(plane, plane.region, null, 0);
       }
     }
@@ -975,6 +1107,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   );
 
   bool _pointGesture(Offset at, Duration time) {
+    if (drawing && model.closed) return true;
     if (preview ||
         transition.isAnimating ||
         model.tool != CraftTool.scissors ||
@@ -1129,6 +1262,10 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       if (node != null) {
         model.beginGesture();
         drawing = true;
+        releaseFade.stop();
+        releaseFade.value = 0;
+        releasedTrace = [];
+        closureWhite.value = model.closed && _drawingReady ? 1 : 0;
         livePointer = controls.craftingAim(e.localPosition);
         if (!_pointGesture(e.localPosition, e.timeStamp) &&
             !model.draft.path.contains(node)) {
@@ -1160,16 +1297,18 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
               .dx;
       final swipe = planeSwipe.update(
         pointers.values,
-        MediaQuery.sizeOf(context).shortestSide / 3,
+        PlaneSwipe.threshold(viewport),
       );
       if (swipe != null && model.activePlane != null) {
         _navigatePlane(swipe);
-      } else if (!planeSwipe.consumed && !transition.isAnimating) {
+      } else if (!planeSwipe.consumed &&
+          !transition.isAnimating &&
+          (model.activePlane == null || planeSwipe.zooming)) {
         _navigateMulti(dx, ratio);
       } else if (model.activePlane == null && !transition.isAnimating) {
         _navigateMulti(dx, ratio);
       }
-      lastSpan = span;
+      if (model.activePlane == null || planeSwipe.zooming) lastSpan = span;
     } else if (!multi && model.activePlane == null) {
       if (controls.profile.worldDrag(pointers: 1, buttons: e.buttons) ==
           WorldDrag.rotate) {
@@ -1182,6 +1321,21 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
         mapCamera.pan(delta);
       }
     } else if (drawing) {
+      if (model.closed) {
+        final closingPoint = _nodeScreen(model.draft.path.first);
+        if (closingPoint == null ||
+            (closingPoint - e.localPosition).distance <= 24) {
+          livePointer = null;
+          previous = e.localPosition;
+          return;
+        }
+        // Closure is provisional until release. Pulling away removes only
+        // the duplicate start node, without a dwell or re-snapping to it
+        // along the movement segment that just left the closing point.
+        model.removeLastDraftNode(continuous: true);
+        _resetPointGestures();
+        previous = e.localPosition;
+      }
       livePointer = controls.craftingAim(e.localPosition);
       if (_pointGesture(e.localPosition, e.timeStamp)) {
         previous = e.localPosition;
@@ -1218,7 +1372,11 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
         }
         if (model.appendNode(node)) {
           pointScrub.reset();
-          if (_completeDrawing()) break;
+          if (model.closed) {
+            livePointer = null;
+            _resetPointGestures();
+            break;
+          }
         }
       }
       setState(() {});
@@ -1240,10 +1398,26 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
 
   bool _completeDrawing({bool allowOpen = false}) {
     final trace = List<Offset>.of(model.trace);
-    autoCreating = true;
-    final created = model.completeCraft(allowOpen: allowOpen);
-    autoCreating = false;
+    final result = model.commitDrawing(allowOpen: allowOpen);
+    final created = result != null;
     if (created) {
+      final reduced = MediaQuery.disableAnimationsOf(context);
+      unawaited(
+        paperEffects.play(
+          result,
+          duration: Duration(milliseconds: devSettings.effectDurationMs),
+          shake: devSettings.screenShake,
+          reducedMotion: reduced,
+        ),
+      );
+      if (devSettings.haptics) {
+        unawaited(
+          (result.action == PaperAction.removal
+                  ? HapticFeedback.mediumImpact()
+                  : HapticFeedback.lightImpact())
+              .catchError((Object _) {}),
+        );
+      }
       if (model.lastHarvest != null) {
         harvestNotice = Map.of(model.lastHarvest!);
         harvestNoticeTimer?.cancel();
@@ -1260,6 +1434,22 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     return created;
   }
 
+  void _fadeReleasedLine() {
+    releasedTrace = List.of(model.trace);
+    if (!model.closed && livePointer != null && model.grid != null) {
+      final partial = liveStrokePreview(
+        grid: model.grid!,
+        path: model.draft.path,
+        pointer: livePointer!,
+        project: (p) =>
+            camera.projectToScreen(model.activePlane!.point(p, .008), viewport),
+      );
+      if (partial.length > 1) releasedTrace.addAll(partial.skip(1));
+    }
+    releasedWhite = model.closed && _drawingReady ? 1 : closureWhite.value;
+    releaseFade.forward(from: 0);
+  }
+
   void _up(PointerUpEvent e) {
     _resetPointGestures();
     if (!pointers.containsKey(e.pointer)) return;
@@ -1267,8 +1457,13 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     controls.end();
     pointers.remove(e.pointer);
     if (pointers.isNotEmpty) return;
-    if (drawing && model.editId == null && devSettings.resetDrawingOnRelease) {
-      _completeDrawing(allowOpen: true);
+    if (drawing && !multi) _fadeReleasedLine();
+    if (drawing && !multi && !secondary && model.draft.path.length > 1) {
+      // Incomplete retained drafts stay editable; completed invalid outlines
+      // report their actionable error without firing success feedback.
+      if (_drawingReady || model.closed || model.cutObjects != null) {
+        _completeDrawing(allowOpen: true);
+      }
     }
     if (drawing || pulling || model.harvestPending) {
       model.finishGesture(
@@ -1335,6 +1530,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   }
 
   void _trackpadStart(PointerPanZoomStartEvent event) {
+    trackpadActive = false;
     _resetPointGestures();
     if (loading || loadFailed || transition.isAnimating) return;
     if (drawing || pulling || model.harvestPending) model.cancelGesture();
@@ -1342,17 +1538,38 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     livePointer = null;
     controls.begin(event.kind, event.localPosition);
     trackpadScale = 1;
+    trackpadActive = true;
+    planeSwipe.startTrackpad();
     pinch = 1;
   }
 
   void _trackpadUpdate(PointerPanZoomUpdateEvent event) {
-    if (loading || loadFailed || transition.isAnimating) return;
+    if (!trackpadActive || loading || loadFailed || transition.isAnimating) {
+      return;
+    }
     controls.move(event.kind, event.localPosition);
-    _navigateMulti(event.panDelta.dx, event.scale / trackpadScale);
-    trackpadScale = event.scale;
+    if (model.activePlane == null) {
+      _navigateMulti(event.panDelta.dx, event.scale / trackpadScale);
+    } else {
+      final swipe = planeSwipe.updateTrackpad(
+        event.pan,
+        event.scale,
+        event.rotation,
+        PlaneSwipe.threshold(viewport),
+      );
+      if (swipe != null) {
+        _navigatePlane(swipe);
+      } else if (planeSwipe.zooming) {
+        _navigateMulti(0, event.scale / trackpadScale);
+      }
+    }
+    if (model.activePlane == null || planeSwipe.zooming) {
+      trackpadScale = event.scale;
+    }
   }
 
   void _trackpadEnd(PointerPanZoomEndEvent event) {
+    trackpadActive = false;
     controls.end();
     if (model.activePlane == null && !transition.isAnimating) {
       mapCamera.endZoom();
@@ -1474,6 +1691,16 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
           return Stack(
             children: [
               Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    key: const ValueKey('protoplane-background'),
+                    decoration: BoxDecoration(
+                      gradient: devSettings.backgroundGradient,
+                    ),
+                  ),
+                ),
+              ),
+              Positioned.fill(
                 child: Listener(
                   onPointerDown: _down,
                   onPointerMove: _move,
@@ -1498,49 +1725,77 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                       controls.hover(e.kind, e.localPosition);
                       _pointGesture(e.localPosition, e.timeStamp);
                     },
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        SceneView(
-                          scene: scene,
-                          debugOptions: SceneDebugOptions(
-                            showWorldXyPlane:
-                                model.preset == WorldPreset.pastel,
+                    child: Transform.translate(
+                      offset: paperEffects.shake,
+                      transformHitTests: false,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          SceneView(
+                            scene: scene,
+                            debugOptions: SceneDebugOptions(
+                              showWorldXyPlane:
+                                  model.preset == WorldPreset.pastel,
+                            ),
                           ),
-                        ),
-                        FriendEyeOverlay(
-                          friends: residents.friends,
-                          camera: camera,
-                          viewport: viewport,
-                          tileSize: 1,
-                          subtilesPerTile: BedroomResidents.subtiles,
-                          listenable: scene,
-                        ),
-                        IgnorePointer(
-                          child: CustomPaint(
-                            painter: _GridPainter(
-                              model,
-                              camera,
-                              preview: preview,
-                              acetate: acetate.value,
-                              outgoingGrid: outgoingGrid,
-                              livePointer: drawing ? livePointer : null,
-                              segmentPulse: 1 - segmentGlow.value,
-                              completedTrace: completedTrace,
-                              flashPoint: flashPoint,
-                              pointPulse: 1 - pointGlow.value,
-                              flashRemoved: flashRemoved,
-                              showGridLines: devSettings.gridLines,
-                              hover: hover?.id,
-                              previousHover: previousHover,
-                              hoverFade: glow.value,
-                              focusFade: Curves.easeInOutSine.transform(
-                                contextFade.value,
+                          FriendEyeOverlay(
+                            friends: residents.friends,
+                            camera: camera,
+                            viewport: viewport,
+                            tileSize: 1,
+                            subtilesPerTile: BedroomResidents.subtiles,
+                            listenable: scene,
+                          ),
+                          IgnorePointer(
+                            child: CustomPaint(
+                              key: const ValueKey('craft-grid-overlay'),
+                              painter: _GridPainter(
+                                model,
+                                camera,
+                                preview: preview,
+                                acetate: acetate.value,
+                                outgoingGrid: outgoingGrid,
+                                livePointer: drawing ? livePointer : null,
+                                ready: _drawingReady,
+                                segmentPulse: 1 - segmentGlow.value,
+                                completedTrace: completedTrace,
+                                traceOverride: drawing ? null : releasedTrace,
+                                lineOpacity: drawing
+                                    ? 1
+                                    : 1 -
+                                          Curves.easeOut.transform(
+                                            releaseFade.value,
+                                          ),
+                                whiteMix: drawing
+                                    ? closureWhite.value
+                                    : releasedWhite,
+                                lineColor: devSettings.lineColor,
+                                dotSelection: dotSelection,
+                                showGridLines: devSettings.gridLines,
+                                hover: hover?.id,
+                                previousHover: previousHover,
+                                hoverFade: glow.value,
+                                focusFade: Curves.easeInOutSine.transform(
+                                  contextFade.value,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
+                          IgnorePointer(
+                            child: CustomPaint(
+                              painter: PaperEffectsPainter(
+                                paperEffects,
+                                scene,
+                                lineColor: devSettings.lineColor,
+                                landscapeFilter:
+                                    devSettings.landscapeAppearance.filter,
+                                craftedFilter:
+                                    devSettings.craftedAppearance.filter,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -2009,7 +2264,13 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                       ),
                     if (model.editId != null)
                       FilledButton(
-                        onPressed: model.applyEdit,
+                        onPressed: () {
+                          if (model.draft.path.isNotEmpty) {
+                            _completeDrawing(allowOpen: true);
+                          } else {
+                            model.applyEdit();
+                          }
+                        },
                         child: const Text('Apply'),
                       ),
                   ],
@@ -2066,7 +2327,8 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     super.reassemble();
     PaperPatternAtlas.shared.dispose();
     harvestAtlas.dispose();
-    harvestAtlas = HarvestMeshCache();
+    harvestAtlas = HarvestMeshCache()..setPaperTexture(landscapePaperTexture);
+    edgeShading.clear();
     _refreshScene();
   }
 
@@ -2074,7 +2336,10 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   void dispose() {
     harvestNoticeTimer?.cancel();
     harvestAtlas.dispose();
+    landscapePaperTexture?.dispose();
+    edgeShading.dispose();
     _disposed = true;
+    paperEffects.dispose();
     model.removeListener(_modelChanged);
     model.onCommitted = null;
     worldSessions.dispose();
@@ -2085,6 +2350,8 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     glow.dispose();
     extrusion.dispose();
     segmentGlow.dispose();
+    closureWhite.dispose();
+    releaseFade.dispose();
     pointGlow.dispose();
     _resetPointGestures();
     controls.dispose();
@@ -2113,27 +2380,35 @@ class _GridPainter extends CustomPainter {
     required this.acetate,
     this.livePointer,
     this.segmentPulse = 0,
+    this.ready = false,
     this.completedTrace = const [],
-    this.flashPoint,
-    this.pointPulse = 0,
-    this.flashRemoved = false,
+    this.traceOverride,
+    this.lineOpacity = 1,
+    this.whiteMix = 0,
+    Color? lineColor,
+    Map<int, double>? dotSelection,
     this.outgoingGrid,
     this.hover,
     this.previousHover,
     this.showGridLines = false,
     this.hoverFade = 1,
     this.focusFade = 1,
-  });
+  }) : _lineColor = lineColor,
+       _dotSelection = dotSelection;
   final ProtoplaneController model;
   final Camera camera;
   final bool preview;
   final double acetate;
   final Offset? livePointer;
   final double segmentPulse;
+  final bool ready;
   final List<Offset> completedTrace;
-  final Offset? flashPoint;
-  final double pointPulse;
-  final bool flashRemoved;
+  final List<Offset>? traceOverride;
+  final double lineOpacity, whiteMix;
+  final Color? _lineColor;
+  Color get lineColor => _lineColor ?? const Color(0xff7fff00);
+  final Map<int, double>? _dotSelection;
+  Map<int, double> get dotSelection => _dotSelection ?? const {};
   final CraftGrid? outgoingGrid;
   final String? hover, previousHover;
   final double hoverFade, focusFade;
@@ -2336,19 +2611,28 @@ class _GridPainter extends CustomPainter {
     }
     for (final (nodeIndex, p) in grid.nodes.indexed) {
       if (!plane.region.contains(p)) continue;
+      final selection = dotSelection[nodeIndex] ?? 0;
+      final radius = 3.5 + 3.5 * selection;
+      final fillRadius = 1.75 + 3.75 * selection;
       final screen = camera.projectToScreen(plane.point(p, lift), size);
       if (screen == null) continue;
+      if (selection > .001) {
+        canvas.drawCircle(
+          screen,
+          radius + 2,
+          Paint()
+            ..color = lineColor.withValues(alpha: .45 * selection * progress)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+        );
+      }
       drawDot(
         canvas,
         plane,
         p,
         size,
         lift,
-        7,
-        Paint()
-          ..color = model.preset == WorldPreset.ink
-              ? const Color(0xff181818)
-              : const Color(0xff121824),
+        radius,
+        Paint()..color = const Color(0xff181818),
         grid.dotStyle(nodeIndex),
       );
       drawDot(
@@ -2357,28 +2641,32 @@ class _GridPainter extends CustomPainter {
         p,
         size,
         lift,
-        3.5,
+        fillRadius,
         Paint()
-          ..color = (model.preset == WorldPreset.ink
-              ? Color.fromRGBO(210, 210, 210, progress)
-              : Color.fromRGBO(186, 199, 221, progress)),
+          ..color = Color.lerp(
+            const Color(0xffd2d2d2),
+            lineColor,
+            selection,
+          )!.withValues(alpha: progress),
         grid.dotStyle(nodeIndex),
       );
     }
     final completion =
         model.trace.isEmpty && segmentPulse > 0 && completedTrace.isNotEmpty;
-    final trace = completion ? completedTrace : model.trace;
+    final trace = traceOverride ?? (completion ? completedTrace : model.trace);
+    final strokeColor = Color.lerp(lineColor, Colors.white, whiteMix)!;
+    canvas.saveLayer(
+      null,
+      Paint()..color = Colors.white.withValues(alpha: lineOpacity),
+    );
     if (trace.length > 1) {
-      final valid =
-          completion || model.matches.isNotEmpty || model.cutObjects != null;
-      final color = valid || model.preset == WorldPreset.ink
-          ? Colors.white
-          : Color.lerp(paperColors[model.paper], Colors.white, .3)!;
+      final valid = completion || ready;
+      final color = strokeColor;
       final path = projected(plane, trace, lift: lift + .001);
       canvas.drawPath(
         path,
         Paint()
-          ..color = Colors.white.withValues(alpha: valid ? .65 : .18)
+          ..color = strokeColor.withValues(alpha: valid ? .65 : .18)
           ..style = PaintingStyle.stroke
           ..strokeWidth = valid ? 19 : 11
           ..strokeCap = StrokeCap.round
@@ -2405,7 +2693,7 @@ class _GridPainter extends CustomPainter {
         canvas.drawPath(
           latest,
           Paint()
-            ..color = Colors.white.withValues(alpha: .4 * segmentPulse)
+            ..color = strokeColor.withValues(alpha: .4 * segmentPulse)
             ..style = PaintingStyle.stroke
             ..strokeWidth = 12
             ..strokeCap = StrokeCap.round
@@ -2423,9 +2711,7 @@ class _GridPainter extends CustomPainter {
       );
       if (partial.length > 1) {
         final path = projected(plane, partial, lift: lift + .001);
-        final color = model.preset == WorldPreset.ink
-            ? Colors.white
-            : paperColors[model.paper]!;
+        final color = strokeColor;
         canvas.drawPath(
           path,
           Paint()
@@ -2452,27 +2738,7 @@ class _GridPainter extends CustomPainter {
         if (tip != null) canvas.drawCircle(tip, 4, Paint()..color = color);
       }
     }
-    if (flashPoint != null && pointPulse > 0) {
-      final point = camera.projectToScreen(
-        plane.point(flashPoint!, lift + .003),
-        size,
-      );
-      if (point != null) {
-        final color = flashRemoved ? const Color(0xffff525e) : Colors.white;
-        canvas.drawCircle(
-          point,
-          13,
-          Paint()
-            ..color = color.withValues(alpha: .8 * pointPulse)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
-        );
-        canvas.drawCircle(
-          point,
-          5,
-          Paint()..color = color.withValues(alpha: pointPulse),
-        );
-      }
-    }
+    canvas.restore();
     canvas.restore();
   }
 

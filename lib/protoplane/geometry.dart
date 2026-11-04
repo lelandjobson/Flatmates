@@ -152,6 +152,16 @@ class Region {
 
   List<Region> subtract(Region cut) {
     final cells = slabs([this, cut], (p) => contains(p) && !cut.contains(p));
+    return _regionsFromCells(cells);
+  }
+
+  /// Material union: retain every cell covered by either input and cancel
+  /// shared internal boundaries, preserving holes and disconnected results.
+  List<Region> union(Region other) => _regionsFromCells(
+    slabs([this, other], (p) => contains(p) || other.contains(p)),
+  );
+
+  static List<Region> _regionsFromCells(List<List<Offset>> cells) {
     if (cells.isEmpty) return [];
     final loops = _cellBoundaries(cells).map(simplifyRing).toList();
     final outers = loops
@@ -350,8 +360,9 @@ List<Offset> flattenCurve(Offset a, Offset control, Offset b) {
 List<List<Offset>>? cutPolyline(
   List<Offset> path,
   List<Offset> blade,
-  bool closed,
-) {
+  bool closed, {
+  bool keepInside = false,
+}) {
   if (path.length < 2 || blade.length < 2) return null;
   final result = <List<Offset>>[];
   var current = <Offset>[];
@@ -378,7 +389,7 @@ List<List<Offset>>? cutPolyline(
     }
     for (var j = 1; j < unique.length; j++) {
       final start = a + d * unique[j - 1], end = a + d * unique[j];
-      if (closed && inRing((start + end) / 2, blade)) {
+      if (closed && inRing((start + end) / 2, blade) != keepInside) {
         changed = true;
         flush();
         continue;

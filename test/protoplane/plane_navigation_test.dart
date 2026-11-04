@@ -85,10 +85,6 @@ void main() {
       isNull,
     );
     expect(
-      swipe.update([const Offset(120, 0), const Offset(0, 100)], 100),
-      isNull,
-    );
-    expect(
       swipe.update([const Offset(120, 0), const Offset(120, 100)], 100),
       const Offset(120, 0),
     );

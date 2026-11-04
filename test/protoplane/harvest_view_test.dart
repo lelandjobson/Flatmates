@@ -1,5 +1,6 @@
 import 'package:flatmates/protoplane/models.dart';
 import 'dart:io';
+import 'package:flutter/services.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -14,6 +15,22 @@ void main() {
     testWidgets('landscape harvesting, cancellation and building at $size', (
       tester,
     ) async {
+      final feedback = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'HapticFeedback.vibrate') {
+            feedback.add(call.arguments as String);
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
       final model = ProtoplaneController();
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
@@ -73,15 +90,22 @@ void main() {
 
       final initial = model.toJson();
       final cancelled = await cut();
-      expect(model.harvestPending, isTrue);
+      expect(model.harvestPending, isFalse);
+      expect(model.drawingReady, isTrue);
+      expect(feedback, isEmpty);
       await cancelled.cancel();
       await tester.pumpAndSettle();
       expect(model.toJson(), initial);
       final drag = await cut();
-      expect(model.harvestPending, isTrue);
+      expect(model.harvestPending, isFalse);
+      expect(model.drawingReady, isTrue);
+      await tester.pump(const Duration(seconds: 1));
+      expect(model.toJson(), initial);
+      expect(feedback, isEmpty);
       await drag.up();
       await tester.pump(const Duration(milliseconds: 300));
       expect(model.harvestPending, isFalse);
+      expect(feedback, ['HapticFeedbackType.mediumImpact']);
       expect(model.objects, isEmpty);
       expect(model.landscape.depleted('ground-4-4'), hasLength(1));
       expect(find.byKey(const ValueKey('harvest-yield')), findsOneWidget);
@@ -92,6 +116,10 @@ void main() {
       await build.up();
       await tester.pumpAndSettle();
       expect(model.objects, hasLength(1));
+      expect(feedback, [
+        'HapticFeedbackType.mediumImpact',
+        'HapticFeedbackType.lightImpact',
+      ]);
       await capture('built');
       final object = model.objects.values.single;
       model.enter(object.planeId, editObject: object.id);

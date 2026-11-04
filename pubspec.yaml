@@ -28,6 +28,9 @@ flutter:
   generate: true
   uses-material-design: true
 
+  shaders:
+    - shaders/paper_reveal.frag
+
   assets:
     - lib/geometry/prefabs/Cableclamp.obj
     - assets/crafts/
@@ -45,7 +48,6 @@ flutter:
     - assets/gameplay/movement_profiles/
     - assets/gameplay/eye_profiles/
     - assets/textures/paper/
-    - assets/gridcraft/
     - levels/puzzles/
     - levels/sharp-turns/
     - levels/side-table/

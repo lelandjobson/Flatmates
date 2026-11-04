@@ -281,6 +281,7 @@ CraftGrid harvestGrid(CraftGrid old, Region region) {
     old.id,
     region,
     count: 5,
+    connections: old.connectionStyle ?? GridConnections.orthogonal,
     recipes: old.recipes,
     name: old.name,
   );
@@ -297,6 +298,7 @@ CraftGrid harvestGrid(CraftGrid old, Region region) {
   return CraftGrid(
     id: old.id,
     name: old.name,
+    connectionStyle: fine.connectionStyle,
     nodes: nodes,
     edges: fine.edges.map((e) => GridEdge(remap[e.a], remap[e.b])).toList(),
     recipes: old.recipes,

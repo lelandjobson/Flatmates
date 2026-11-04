@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'package:flatmates/protoplane/appearance.dart';
+import 'package:flatmates/landscape/color_texture_catalog.dart';
 import 'dart:ui' as ui;
 import 'package:vector_math/vector_math_64.dart';
 import 'package:flatmates/rendering/scene_view.dart';
@@ -20,6 +22,89 @@ void outline(ProtoplaneController c, [List<int> path = const [0, 2, 8, 6, 0]]) {
 }
 
 void main() {
+  testWidgets(
+    'existing paper asset textures atlas once and retains exact geometry',
+    (tester) async {
+      await tester.runAsync(() async {
+        final texture = await ColorTextureCatalog.load(
+          ColorTextureCatalog.white,
+        );
+        expect(texture, isNotNull);
+        final c = ProtoplaneController(), cache = HarvestMeshCache();
+        try {
+          final p = c.planes['ground-4-4']!;
+          final original = cache.mesh(p, c.landscape).geometry;
+          final untextured = cache.atlas.image;
+          cache.setPaperTexture(texture);
+          final textured = cache.mesh(p, c.landscape);
+          expect(identical(cache.atlas.image, untextured), isFalse);
+          expect(textured.geometry.faceColors, original.faceColors);
+          expect(textured.geometry.vertices, original.vertices);
+          final count = cache.rasterizedTiles;
+          cache.setPaperTexture(texture);
+          cache.mesh(p, c.landscape);
+          expect(cache.rasterizedTiles, count);
+          final fill = SurfaceAppearance()..brightness = .1;
+          final grain = SurfaceAppearance()..contrast = .8;
+          cache.configureStyle(
+            fill: fill,
+            grain: grain,
+            strength: .4,
+            repeat: 3,
+          );
+          cache.mesh(p, c.landscape);
+          expect(cache.rasterizedTiles, count + 1);
+          cache.configureStyle(
+            fill: fill,
+            grain: grain,
+            strength: .4,
+            repeat: 3,
+          );
+          cache.mesh(p, c.landscape);
+          expect(cache.rasterizedTiles, count + 1);
+          expect(fill.brightness, .1);
+          expect(grain.brightness, 0);
+          Future<int> alphaAt(double x, double y) async {
+            final mesh = cache.mesh(p, c.landscape),
+                source = cache.mesh(p, c.landscape).planarTexture!.source;
+            final image = cache.atlas.image!;
+            final bytes = (await image.toByteData(
+              format: ui.ImageByteFormat.rawRgba,
+            ))!.buffer.asUint8List();
+            final px = (source.left + x * source.width).floor(),
+                py = (source.top + y * source.height).floor();
+            expect(mesh.geometry.faces.isNotEmpty, isTrue);
+            return bytes[(py * image.width + px) * 4 + 3];
+          }
+
+          expect(await alphaAt(.5, .5), 255);
+          c.landscape.deplete(
+            p.id,
+            rectangle(.4, .4, origin: const ui.Offset(.3, .3)),
+          );
+          // This updates an occupied atlas slot: transparency must overwrite its old pixels.
+          expect(await alphaAt(.5, .5), 0);
+          expect(await alphaAt(.1, .1), 255);
+          final cuts = c.landscape.depleted(p.id);
+          for (final face in cache.mesh(p, c.landscape).geometry.faces) {
+            final vertices = cache.mesh(p, c.landscape).geometry.vertices;
+            final center =
+                face.map((i) => p.local(vertices[i])).reduce((a, b) => a + b) /
+                face.length.toDouble();
+            expect(
+              cuts.any((cut) => cut.contains(center, boundary: false)),
+              isFalse,
+            );
+          }
+        } finally {
+          cache.dispose();
+          texture?.dispose();
+          c.dispose();
+        }
+      });
+    },
+  );
+
   test(
     'field is deterministic, continuous at seams, and all five papers occur',
     () {

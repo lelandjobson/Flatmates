@@ -28,6 +28,8 @@ enum CraftKind {
 
 enum CraftTool { scissors, volume }
 
+enum GridConnections { orthogonal, diagonal, arbitrary }
+
 extension CraftKindName on CraftKind {
   String get label => this == CraftKind.bedFrame
       ? 'Bed frame'
@@ -68,7 +70,9 @@ class CraftGrid {
     required this.recipes,
     this.examples = const {},
     this.tiled = false,
+    this.connectionStyle,
   });
+  final GridConnections? connectionStyle;
   final bool tiled;
   final String id, name;
   final List<Offset> nodes;
@@ -86,6 +90,13 @@ class CraftGrid {
 
   /// Dot shapes advertise permitted connection geometry, not draw history.
   String dotStyle(int node) {
+    if (connectionStyle != null) {
+      return switch (connectionStyle!) {
+        GridConnections.orthogonal => 'square',
+        GridConnections.diagonal => 'circle',
+        GridConnections.arbitrary => 'star',
+      };
+    }
     final neighbors = edges.where((e) => e.a == node || e.b == node).toList();
     if (nodes.length > 2 &&
         neighbors.map((e) => e.a == node ? e.b : e.a).toSet().length ==
@@ -165,6 +176,7 @@ class CraftGrid {
   Map<String, dynamic> toJson() => {
     'id': id,
     'tiled': tiled,
+    if (connectionStyle != null) 'connections': connectionStyle!.name,
     'name': name,
     'nodes': encodePoints(nodes),
     'edges': edges.map((e) => e.toJson()).toList(),
@@ -172,6 +184,9 @@ class CraftGrid {
     'examples': {for (final e in examples.entries) e.key.name: e.value},
   };
   factory CraftGrid.fromJson(Map<String, dynamic> j) => CraftGrid(
+    connectionStyle: j['connections'] == null
+        ? null
+        : GridConnections.values.byName(j['connections']),
     tiled: j['tiled'] == true,
     id: j['id'],
     name: j['name'],
@@ -360,27 +375,42 @@ CraftGrid lattice(
   int count = 3,
   List<CraftKind> recipes = const [CraftKind.floor],
   String name = 'Ground',
+  GridConnections connections = GridConnections.orthogonal,
+  List<Offset>? existingNodes,
 }) {
   final box = bounds.bounds;
-  final nodes = [
-    for (var y = 0; y < count; y++)
-      for (var x = 0; x < count; x++)
-        Offset(
-          box.left + box.width * x / (count - 1),
-          box.top + box.height * y / (count - 1),
-        ),
-  ];
+  final nodes =
+      existingNodes ??
+      [
+        for (var y = 0; y < count; y++)
+          for (var x = 0; x < count; x++)
+            Offset(
+              box.left + box.width * x / (count - 1),
+              box.top + box.height * y / (count - 1),
+            ),
+      ];
+  final xs = nodes.map((p) => p.dx).toSet().toList()..sort();
+  final ys = nodes.map((p) => p.dy).toSet().toList()..sort();
+  double step(List<double> values) => values.length < 2
+      ? double.infinity
+      : List.generate(values.length - 1, (i) => values[i + 1] - values[i])
+            .where((d) => d > geometryEpsilon)
+            .fold<double>(double.infinity, math.min);
+  final stepX = step(xs), stepY = step(ys);
   final edges = <GridEdge>[];
   for (var a = 0; a < nodes.length; a++) {
     for (var b = a + 1; b < nodes.length; b++) {
-      if ((nodes[a].dx - nodes[b].dx).abs() > geometryEpsilon &&
-          (nodes[a].dy - nodes[b].dy).abs() > geometryEpsilon) {
-        continue;
-      }
-      if (nodes.indexed.any(
-        (p) => p.$1 != a && p.$1 != b && onSegment(p.$2, nodes[a], nodes[b]),
-      )) {
-        continue;
+      final dx = (nodes[a].dx - nodes[b].dx).abs(),
+          dy = (nodes[a].dy - nodes[b].dy).abs();
+      if (connections != GridConnections.arbitrary) {
+        if (dx > stepX + geometryEpsilon || dy > stepY + geometryEpsilon) {
+          continue;
+        }
+        if (connections == GridConnections.orthogonal &&
+            dx > geometryEpsilon &&
+            dy > geometryEpsilon) {
+          continue;
+        }
       }
       // Verify the entire edge lies inside a potentially concave support.
       final cuts = <double>[0, 1];
@@ -409,6 +439,7 @@ CraftGrid lattice(
     }
   }
   return CraftGrid(
+    connectionStyle: connections,
     id: id,
     name: name,
     nodes: nodes,

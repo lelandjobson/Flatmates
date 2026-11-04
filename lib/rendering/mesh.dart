@@ -6,6 +6,7 @@ import '../geometry/transformable.dart';
 import 'ground_occlusion.dart';
 import 'scene/planar_texture.dart';
 import 'scene/surface_texture.dart';
+import 'surface_edge_shading.dart';
 
 class Mesh extends Transformable {
   Mesh({
@@ -25,6 +26,7 @@ class Mesh extends Transformable {
     this.planarTexture,
     this.surfaceTexture,
     this.textureUp,
+    this.shadeEdges = false,
   }) : _geometry = geometry,
        _material = material,
        _highlightColor = null,
@@ -36,6 +38,7 @@ class Mesh extends Transformable {
          travelYaw: travelYaw,
        );
 
+  ColorFilter? appearanceFilter;
   final String id;
   final String name;
   final bool highlightOnClick;
@@ -51,6 +54,10 @@ class Mesh extends Transformable {
   final PlanarTexture? planarTexture;
   final SurfaceTexture? surfaceTexture;
   final Vector3? textureUp;
+
+  /// Opt-in shading prepared outside the renderer's paint loop.
+  final bool shadeEdges;
+  Map<int, SurfaceEdgeShade> edgeShades = const {};
 
   Geometry _geometry;
   Geometry get geometry => _geometry;

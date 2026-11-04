@@ -1,26 +1,75 @@
 import 'dart:convert';
 import 'dart:ui';
+import '../landscape/color_texture_catalog.dart';
 import 'package:vector_math/vector_math_64.dart';
 import '../geometry/geometry.dart';
 import '../rendering/mesh.dart';
 import '../rendering/scene/planar_texture.dart';
 import 'harvest.dart';
-import 'geometry.dart';
 import 'meshes.dart';
 import 'models.dart';
 import 'paper_patterns.dart';
+import 'appearance.dart';
 
 /// Like GameView's LandscapeGenerator/landscape painter, bake material into an
 /// atlas and submit textured ground. Only changed slots rasterize again; camera,
 /// hover and draft changes reuse the image. Polygons remain the harvest truth.
 class HarvestMeshCache {
+  static const renderVersion = 2;
   static const tilePixels = 256, gutter = 1, columns = 8;
   static const slotPixels = tilePixels + gutter * 2;
   final atlas = PlanarTextureAtlas();
   final Map<String, (String, Geometry, PlanarTexture)> _tiles = {};
   int rasterizedTiles = 0;
+  String _styleKey = '';
+  ColorFilter? _fillFilter, _textureFilter;
+  double _grainStrength = .6,
+      _grainRepeat = ColorTextureCatalog.whiteRepeatWorld;
+  void configureStyle({
+    required SurfaceAppearance fill,
+    required SurfaceAppearance grain,
+    required double strength,
+    required double repeat,
+  }) {
+    final key = jsonEncode([fill.toJson(), grain.toJson(), strength, repeat]);
+    if (key == _styleKey) return;
+    _styleKey = key;
+    _fillFilter = fill.filter;
+    _textureFilter = grain.filter;
+    _grainStrength = strength;
+    if (repeat != _grainRepeat) {
+      final image = _paperImage;
+      setPaperTexture(null);
+      _grainRepeat = repeat;
+      setPaperTexture(image);
+    }
+    _tiles.clear();
+  }
+
+  ImageShader? _paperGrain;
+  Image? _paperImage;
+  void setPaperTexture(Image? image) {
+    if (identical(image, _paperImage)) return;
+    _paperGrain?.dispose();
+    _paperImage = image;
+    _paperGrain = image == null
+        ? null
+        : ImageShader(
+            image,
+            TileMode.repeated,
+            TileMode.repeated,
+            (Matrix4.identity()
+                  ..setEntry(0, 0, _grainRepeat / image.width)
+                  ..setEntry(1, 1, _grainRepeat / image.height))
+                .storage,
+          );
+    _tiles.clear();
+  }
 
   void dispose() {
+    _paperGrain?.dispose();
+    _paperGrain = null;
+    _paperImage = null;
     atlas.dispose();
     _tiles.clear();
   }
@@ -31,7 +80,7 @@ class HarvestMeshCache {
     final temporary = <Image>[];
     for (final plane in planes.where((p) => p.id.startsWith('ground-'))) {
       final key =
-          '${PaperLandscape.generationVersion}/${landscape.preset.name}/${landscape.preset.materials.map((m) => '${m.id}:${m.base.toARGB32()}:${m.ink.toARGB32()}:${m.pattern.name}').join(',')}/${landscape.seed}/${jsonEncode(plane.region.toJson())}/${jsonEncode(landscape.depleted(plane.id).map((r) => r.toJson()).toList())}/${plane.origin}/${plane.u}/${plane.v}';
+          '$renderVersion/${PaperLandscape.generationVersion}/${landscape.preset.name}/${landscape.preset.materials.map((m) => '${m.id}:${m.base.toARGB32()}:${m.ink.toARGB32()}:${m.pattern.name}').join(',')}/${landscape.seed}/${jsonEncode(plane.region.toJson())}/${jsonEncode(landscape.depleted(plane.id).map((r) => r.toJson()).toList())}/${plane.origin}/${plane.u}/${plane.v}';
       final cached = _tiles[plane.id];
       if (cached != null && cached.$1 == key) continue;
       if (recorder == null) {
@@ -59,11 +108,10 @@ class HarvestMeshCache {
       final box = plane.region.bounds;
       tileCanvas.scale(tilePixels / box.width, tilePixels / box.height);
       tileCanvas.translate(-box.left, -box.top);
-      final backing = landscape.preset == WorldPreset.ink
-          ? const Color(0xff777777)
-          : const Color(0xff777a72);
-      // Fully opaque backing also overwrites any previous contents of the slot.
-      tileCanvas.drawRect(box, Paint()..color = backing);
+      if (_fillFilter != null) {
+        tileCanvas.saveLayer(box, Paint()..colorFilter = _fillFilter);
+      }
+      final visiblePaper = Path();
       void face(
         List<Offset> points,
         Color color,
@@ -75,6 +123,7 @@ class HarvestMeshCache {
         faces.add(List.generate(points.length, (i) => start + i));
         colors.add(color);
         final path = Path()..addPolygon(points, true);
+        visiblePaper.addPath(path, Offset.zero);
         if (material != null && material.patterned) {
           final origin = Offset(plane.origin.x, -plane.origin.z);
           tileCanvas.save();
@@ -96,15 +145,6 @@ class HarvestMeshCache {
       }
 
       // Retain exact fallback geometry for near-plane clipping and debug views.
-      final cuts = landscape.depleted(plane.id);
-      if (cuts.isNotEmpty) {
-        for (final cell in slabs([
-          plane.region,
-          ...cuts,
-        ], (p) => plane.region.contains(p) && cuts.any((r) => r.contains(p)))) {
-          face(cell, backing, 0);
-        }
-      }
       for (final patch in landscape.remaining(plane)) {
         final base = paperColors[patch.color]!;
         final tint = Color.lerp(
@@ -114,12 +154,31 @@ class HarvestMeshCache {
         )!;
         face(patch.region.outer, tint, .001, patch.color);
       }
+      if (_fillFilter != null) tileCanvas.restore();
+      final grain = _paperGrain;
+      if (grain != null && _grainStrength > 0) {
+        // World-aligned coordinates keep grain continuous across tile seams.
+        final origin = Offset(plane.origin.x, -plane.origin.z);
+        tileCanvas.save();
+        tileCanvas.clipPath(visiblePaper, doAntiAlias: false);
+        tileCanvas.translate(-origin.dx, -origin.dy);
+        tileCanvas.drawRect(
+          box.shift(origin),
+          Paint()
+            ..shader = grain
+            ..blendMode = BlendMode.multiply
+            ..colorFilter = _textureFilter
+            ..color = Color.fromRGBO(255, 255, 255, _grainStrength),
+        );
+        tileCanvas.restore();
+      }
       final picture = tileRecorder.endRecording();
       final image = picture.toImageSync(tilePixels, tilePixels);
       picture.dispose();
       temporary.add(image);
       rasterizedTiles++;
       final paint = Paint()
+        ..blendMode = BlendMode.src
         ..filterQuality = FilterQuality.none
         ..isAntiAlias = false;
       final full = Rect.fromLTWH(

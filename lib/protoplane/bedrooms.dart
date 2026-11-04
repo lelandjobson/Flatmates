@@ -72,22 +72,43 @@ List<Bedroom> evaluateBedrooms(
               supportingFloor(o.id, objects, planes) == floor.id,
         )
         .toList();
-    final walls = contents.where((o) => o.kind == CraftKind.wall).toList();
+    final walls = objects.values
+        .where((o) => o.kind == CraftKind.wall)
+        .toList();
     final candidates = planes.values
-        .where((p) => p.owner == floor.id && p.wallCandidate)
+        .where(
+          (p) =>
+              p.owner == floor.id &&
+              p.wallCandidate &&
+              !p.id.startsWith('fused-wall-'),
+        )
         .toList();
     final enclosed =
         candidates.isNotEmpty &&
         candidates.every((p) {
           final covers = <Region>[];
-          for (final wall in walls.where((o) => o.planeId == p.id)) {
-            covers.add(wall.region);
-            for (final opening in contents.where(
+          for (final wall in walls) {
+            final frame = planes[wall.planeId];
+            if (frame == null ||
+                frame.normal.dot(p.normal).abs() < .999999 ||
+                (frame.origin - p.origin).dot(p.normal).abs() > 1e-6) {
+              continue;
+            }
+            Region mapped(Region r) => Region(
+              r.outer.map((v) => p.local(frame.point(v))).toList(),
+              r.holes
+                  .map(
+                    (ring) => ring.map((v) => p.local(frame.point(v))).toList(),
+                  )
+                  .toList(),
+            );
+            covers.add(mapped(wall.region));
+            for (final opening in objects.values.where(
               (o) =>
                   (o.kind == CraftKind.door || o.kind == CraftKind.window) &&
                   planes[o.planeId]?.owner == wall.id,
             )) {
-              covers.add(Region(opening.region.outer));
+              covers.add(mapped(Region(opening.region.outer)));
             }
           }
           final band = rectangle(

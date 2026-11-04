@@ -18,6 +18,7 @@ import 'scene/grid_motif.dart';
 import 'scene/planar_texture.dart';
 import 'scene/scene.dart';
 import 'scene/surface_texture.dart';
+import 'surface_edge_shading.dart';
 
 class SceneView extends StatelessWidget {
   const SceneView({
@@ -116,7 +117,7 @@ class ScenePainter extends CustomPainter {
     // visible without the tessellation subdivision lines.
     final wireframeEdges = <_ProjectedLine>[];
 
-    final planarBatches = <(PlanarTexture, Matrix4, Color)>[];
+    final planarBatches = <(PlanarTexture, Matrix4, Color, ColorFilter?)>[];
     var batchedFaces = 0;
     final allMeshes = _scene.meshes;
     var visibleMeshes = 0;
@@ -165,6 +166,7 @@ class ScenePainter extends CustomPainter {
                 (255 * shade).round(),
                 mesh.material.opacity.clamp(0.0, 1.0),
               ),
+              mesh.appearanceFilter,
             ));
             batchedFaces += 2;
           }
@@ -302,12 +304,27 @@ class ScenePainter extends CustomPainter {
         if (face.texture case final texture?) {
           canvas.save();
           canvas.clipPath(path, doAntiAlias: false);
+          if (face.appearanceFilter != null) {
+            canvas.saveLayer(
+              path.getBounds(),
+              Paint()..color = Colors.white.withValues(alpha: face.opacity),
+            );
+            canvas.saveLayer(
+              path.getBounds(),
+              Paint()..colorFilter = face.appearanceFilter,
+            );
+          }
           canvas.transform(face.textureTransform!.storage);
           canvas.drawRect(
             face.textureBounds!,
             Paint()
               ..shader = texture.shader
-              ..color = Color.fromRGBO(255, 255, 255, face.opacity)
+              ..color = Color.fromRGBO(
+                255,
+                255,
+                255,
+                face.appearanceFilter == null ? face.opacity : 1,
+              )
               ..colorFilter = ColorFilter.mode(
                 Color.fromRGBO(
                   face.textureShade,
@@ -318,11 +335,40 @@ class ScenePainter extends CustomPainter {
                 BlendMode.modulate,
               ),
           );
+          if (face.appearanceFilter != null) {
+            canvas.restore();
+            canvas.restore();
+          }
           canvas.restore();
         } else {
-          canvas.drawPath(path, fillPaint);
+          if (face.appearanceFilter != null)
+            canvas.saveLayer(
+              path.getBounds(),
+              Paint()..color = Colors.white.withValues(alpha: face.color.a),
+            );
+          canvas.drawPath(
+            path,
+            face.appearanceFilter == null
+                ? fillPaint
+                : (Paint()
+                    ..color = face.color.withValues(alpha: 1)
+                    ..isAntiAlias = !face.seamless
+                    ..colorFilter = face.appearanceFilter),
+          );
+          if (face.appearanceFilter != null) canvas.restore();
         }
         drawCalls++;
+
+        if (!debugOptions.wireframeOnly && face.edgeShade != null) {
+          canvas.save();
+          // Share the face's depth ordering and near-plane clip, so shading
+          // cannot leak onto an unrelated surface, a cutout or foreground mesh.
+          canvas.clipPath(path, doAntiAlias: false);
+          canvas.transform(face.edgeShadeTransform!.storage);
+          face.edgeShade!.paint(canvas, face.opacity);
+          canvas.restore();
+          drawCalls++;
+        }
 
         // Edge stroke.
         if (face.edgeColor != null) {
@@ -334,7 +380,16 @@ class ScenePainter extends CustomPainter {
               ..strokeWidth = 1.0
               ..color = face.edgeColor!.withOpacity(0.8),
           );
-          canvas.drawPath(path, coloredStroke);
+          canvas.drawPath(
+            path,
+            face.appearanceFilter == null
+                ? coloredStroke
+                : (Paint()
+                    ..style = PaintingStyle.stroke
+                    ..strokeWidth = 1
+                    ..color = face.edgeColor!.withValues(alpha: .8)
+                    ..colorFilter = face.appearanceFilter),
+          );
           drawCalls++;
         } else if (!face.strokeEdges) {
           // Fill only.
@@ -366,15 +421,24 @@ class ScenePainter extends CustomPainter {
     }
 
     Timeline.startSync('GroundTextureAtlas');
-    for (final (batch, transform, tint) in planarBatches) {
+    for (final (batch, transform, tint, appearance) in planarBatches) {
       canvas.save();
+      if (appearance != null) {
+        canvas.saveLayer(
+          null,
+          Paint()..color = Colors.white.withValues(alpha: tint.a),
+        );
+        canvas.saveLayer(null, Paint()..colorFilter = appearance);
+      }
       canvas.transform(transform.storage);
       canvas.drawImageRect(
         batch.atlas.image!,
         batch.source,
         batch.bounds,
         Paint()
-          ..color = Colors.white.withValues(alpha: tint.a)
+          ..color = Colors.white.withValues(
+            alpha: appearance == null ? tint.a : 1,
+          )
           ..colorFilter = ColorFilter.mode(
             tint.withValues(alpha: 1),
             BlendMode.modulate,
@@ -382,6 +446,10 @@ class ScenePainter extends CustomPainter {
           ..filterQuality = FilterQuality.low
           ..isAntiAlias = false,
       );
+      if (appearance != null) {
+        canvas.restore();
+        canvas.restore();
+      }
       canvas.restore();
       drawCalls++;
     }
@@ -611,8 +679,24 @@ class ScenePainter extends CustomPainter {
                 : textureBounds.expandToInclude(r);
           }
         }
+        final edgeShade = identical(geometry, mesh.geometry)
+            ? mesh.edgeShades[faceIndex]
+            : null;
+        Matrix4? edgeShadeTransform;
+        if (edgeShade != null) {
+          final viewport = Matrix4.identity()
+            ..setEntry(0, 0, size.width / 2)
+            ..setEntry(1, 1, -size.height / 2)
+            ..setEntry(0, 3, size.width / 2)
+            ..setEntry(1, 3, size.height / 2);
+          edgeShadeTransform =
+              viewport * viewProjection * world * edgeShade.basis;
+        }
         facesToDraw.add(
           _ProjectedFace(
+            edgeShade: edgeShade,
+            edgeShadeTransform: edgeShadeTransform,
+            appearanceFilter: mesh.appearanceFilter,
             texture: mesh.surfaceTexture,
             textureTransform: textureTransform,
             textureBounds: textureBounds,
@@ -773,6 +857,9 @@ Matrix4? _planarTransform(
 
 class _ProjectedFace {
   _ProjectedFace({
+    this.edgeShade,
+    this.edgeShadeTransform,
+    this.appearanceFilter,
     this.texture,
     this.textureTransform,
     this.textureBounds,
@@ -791,6 +878,9 @@ class _ProjectedFace {
     this.seamless = false,
   });
 
+  final ColorFilter? appearanceFilter;
+  final SurfaceEdgeShade? edgeShade;
+  final Matrix4? edgeShadeTransform;
   final SurfaceTexture? texture;
   final Matrix4? textureTransform;
   final Rect? textureBounds;

@@ -92,6 +92,7 @@ List<Mesh> objectMeshes(
     id: '${object.id}$suffix',
     name: object.kind.label,
     geometry: geometry,
+    shadeEdges: true,
     surfaceTexture: object.material.patterned
         ? PaperPatternAtlas.shared.texture(object.material)
         : null,
