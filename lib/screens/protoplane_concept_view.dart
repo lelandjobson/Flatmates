@@ -13,6 +13,7 @@ import '../gestures/point_scrub.dart';
 import '../protoplane/controller.dart';
 import '../protoplane/geometry.dart';
 import '../protoplane/meshes.dart';
+import '../protoplane/harvest_meshes.dart';
 import '../protoplane/models.dart';
 import '../protoplane/plane_navigation.dart';
 import '../protoplane/storage.dart';
@@ -72,6 +73,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   late final ProtoplaneController model;
   late final ProtoplaneStorage storage;
   final devSettings = ProtoplaneSettings();
+  int appliedProtoplaneCells = 3;
   final settingsStore = ProtoplaneStorage(fileName: 'settings.json');
   String? settingsError;
   late final Scene scene;
@@ -113,6 +115,9 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   bool preview = false, loading = true, saving = false, loadFailed = false;
   bool _disposed = false;
   String? saveError, selectedObject;
+  var harvestAtlas = HarvestMeshCache();
+  Timer? harvestNoticeTimer;
+  Map<PaperColor, int>? harvestNotice;
   final Map<int, Offset> pointers = {};
   final planeSwipe = PlaneSwipe();
   final Set<int> multiMoved = {};
@@ -138,6 +143,9 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     controls = loadGameControls();
     if (widget.controller == null) unawaited(_loadDevSettings());
     model = widget.controller ?? ProtoplaneController();
+    if (widget.controller == null) {
+      model.setProtoplaneCells(devSettings.protoplaneCells);
+    }
     storage = widget.storage ?? ProtoplaneStorage();
     camera = Camera(
       name: 'Protoplane',
@@ -270,6 +278,14 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   }
 
   void _applyDevSettings() {
+    if (appliedProtoplaneCells != devSettings.protoplaneCells) {
+      appliedProtoplaneCells = devSettings.protoplaneCells;
+      _resetPointGestures();
+      drawing = pulling = false;
+      livePointer = null;
+      model.setProtoplaneCells(devSettings.protoplaneCells);
+      _refreshScene();
+    }
     final lighting = DayNightLighting.day().copyWith(
       globalIllumination: devSettings.ambient,
       keyIntensity: devSettings.sun,
@@ -348,6 +364,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
 
   void _modelChanged() {
     if (_disposed) return;
+    if (model.lastHarvest == null) harvestNotice = null;
     final path = model.draft.path;
     if (lastFlashKey == model.draftKey &&
         model.grid != null &&
@@ -449,7 +466,12 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     if (mounted) setState(() {});
   }
 
+  Mesh _planeMesh(CraftPlane plane) => plane.id.startsWith('ground-')
+      ? harvestAtlas.mesh(plane, model.landscape)
+      : planeMesh(plane);
+
   void _refreshScene() {
+    harvestAtlas.synchronize(model.planes.values, model.landscape);
     final meshes = <Mesh>[];
     contextOpacity.clear();
     final active = model.activePlane;
@@ -457,20 +479,20 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       meshes.addAll(
         model.planes.values
             .where((p) => !p.id.startsWith('surface-') && !model.isPlane(p.id))
-            .map(planeMesh),
+            .map(_planeMesh),
       );
       // Ground tiles remain visible in their unoccupied portions.
       for (final p in model.planes.values.where(
         (p) => p.id.startsWith('ground-') && model.isPlane(p.id),
       )) {
-        meshes.add(planeMesh(p));
+        meshes.add(_planeMesh(p));
       }
       for (final o in model.objects.values) {
         final p = model.planes[o.planeId];
         if (p != null) meshes.addAll(objectMeshes(o, p));
       }
     } else {
-      meshes.add(planeMesh(active)..groundPlane = true);
+      meshes.add(_planeMesh(active)..groundPlane = true);
       final edit = model.editId;
       for (final o in model.objects.values) {
         if (o.id == edit) continue;
@@ -538,7 +560,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       for (final p in model.planes.values.where(
         (p) => !p.id.startsWith('surface-'),
       )) {
-        if (!focusedMeshIds.contains(p.id)) addContext([planeMesh(p)], p);
+        if (!focusedMeshIds.contains(p.id)) addContext([_planeMesh(p)], p);
       }
       for (final object in model.objects.values) {
         if (object.id != model.editId && !focusedMeshIds.contains(object.id)) {
@@ -626,9 +648,14 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
           isPlane ? const Color(0xff9a8eec) : Colors.white,
           strength * .72,
         )!,
+        perFaceColors: mesh.geometry.faceColors,
+        exactPerFaceColors: mesh.geometry.faceColors != null,
         opacity: opacity,
         doubleSided: true,
-        strokeEdges: isPlane && contextTarget != null,
+        strokeEdges:
+            isPlane &&
+            contextTarget != null &&
+            mesh.geometry.faceColors == null,
       );
     }
     scene.markNeedsPaint();
@@ -966,7 +993,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     pointers[e.pointer] = e.localPosition;
     if (pointers.length > 1) {
       _resetPointGestures();
-      if (drawing || pulling) model.cancelGesture();
+      if (drawing || pulling || model.harvestPending) model.cancelGesture();
       drawing = false;
       livePointer = null;
       pulling = false;
@@ -1133,6 +1160,13 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     final created = model.completeCraft(allowOpen: allowOpen);
     autoCreating = false;
     if (created) {
+      if (model.lastHarvest != null) {
+        harvestNotice = Map.of(model.lastHarvest!);
+        harvestNoticeTimer?.cancel();
+        harvestNoticeTimer = Timer(const Duration(seconds: 2), () {
+          if (mounted) setState(() => harvestNotice = null);
+        });
+      }
       completedTrace = trace;
       segmentGlow.forward(from: 0);
       drawing = false;
@@ -1152,7 +1186,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     if (drawing && model.editId == null && devSettings.resetDrawingOnRelease) {
       _completeDrawing(allowOpen: true);
     }
-    if (drawing || pulling) {
+    if (drawing || pulling || model.harvestPending) {
       model.finishGesture(
         resetDrawing:
             drawing && devSettings.resetDrawingOnRelease && model.error == null,
@@ -1175,7 +1209,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     _resetPointGestures();
     pointers.clear();
     controls.cancel();
-    if (drawing || pulling) model.cancelGesture();
+    if (drawing || pulling || model.harvestPending) model.cancelGesture();
     drawing = pulling = false;
     multi = secondary = false;
     setState(() {
@@ -1219,7 +1253,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   void _trackpadStart(PointerPanZoomStartEvent event) {
     _resetPointGestures();
     if (loading || loadFailed || transition.isAnimating) return;
-    if (drawing || pulling) model.cancelGesture();
+    if (drawing || pulling || model.harvestPending) model.cancelGesture();
     drawing = pulling = false;
     livePointer = null;
     controls.begin(event.kind, event.localPosition);
@@ -1674,7 +1708,10 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   Widget _paperSelector() => GestureDetector(
     onVerticalDragEnd: (details) {
       final direction = (details.primaryVelocity ?? 0) < 0 ? 1 : -1;
-      model.selectPaper(PaperColor.values[(model.paper.index + direction) % 3]);
+      model.selectPaper(
+        PaperColor.values[(model.paper.index + direction) %
+            PaperColor.values.length],
+      );
     },
     child: Column(
       mainAxisSize: MainAxisSize.min,
@@ -1682,7 +1719,9 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
         for (final offset in [-1, 0, 1])
           Builder(
             builder: (context) {
-              final color = PaperColor.values[(model.paper.index + offset) % 3];
+              final color =
+                  PaperColor.values[(model.paper.index + offset) %
+                      PaperColor.values.length];
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 child: GestureDetector(
@@ -1722,10 +1761,33 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
 
   Widget _bottomControls() {
     final candidate = model.previewObject;
+    final harvest = model.harvestPreview;
+    final yields = harvest?.units;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (yields != null || harvestNotice != null)
+          Container(
+            key: const ValueKey('harvest-yield'),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xe61b2230),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              children: [
+                for (final color in PaperColor.values)
+                  if ((yields?[color] ?? harvestNotice?[color] ?? 0) > 0)
+                    Text(
+                      '${color.label} +${yields != null ? ((yields[color] ?? 0) + model.landscape.remainders[color]! + 1e-9).floor() : harvestNotice![color]}',
+                      style: TextStyle(color: paperColors[color], fontSize: 12),
+                    ),
+              ],
+            ),
+          ),
         if (candidate != null)
           Container(
             padding: const EdgeInsets.all(8),
@@ -1839,7 +1901,17 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   }
 
   @override
+  void reassemble() {
+    super.reassemble();
+    harvestAtlas.dispose();
+    harvestAtlas = HarvestMeshCache();
+    _refreshScene();
+  }
+
+  @override
   void dispose() {
+    harvestNoticeTimer?.cancel();
+    harvestAtlas.dispose();
     _disposed = true;
     model.removeListener(_modelChanged);
     model.onCommitted = null;

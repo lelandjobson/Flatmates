@@ -26,7 +26,7 @@ not change GameView or the grid-puzzle rules.
 
 ## Construction and recipes
 
-Each ground tile has a 3×3 dot grid. Any simple closed outline can become a
+Each ground tile has a 5×5 dot grid. Any simple closed outline can become a
 floor. Sibling pieces may share boundaries but not material area. Floor
 surfaces receive three deterministic generated grids; generated node/edge
 definitions are saved, so they never reroll on reopen. Templates guarantee
@@ -53,8 +53,8 @@ separating axes, including differently oriented planes.
 
 ## Material and history
 
-A tile is one square world unit and 128 material units. Each pastel color
-starts with 12,800 units. Closed crafts cost
+A tile is one square world unit and 128 material units. Each of the five pastel colors
+starts with 256 units. Closed crafts cost
 `ceil(128 × (net planar area + perimeter including holes × depth))`.
 Screen sheets cost `ceil(128 × path length × height)`. Bench geometry is a
 stylized seat and supports; its material quote uses its drawn extrusion
@@ -78,9 +78,10 @@ concavity and holes; seam cancellation preserves disconnected cut results.
 No Boost runtime dependency is introduced.
 
 Native saves live in the application-support directory under
-`protoplane_concept/world.json`, through `path_provider`. Version 1 stores
+`protoplane_concept/world.json`, through `path_provider`. Version 2 stores
 planes and their grid definitions, objects and dependencies, stable IDs,
-and paper balances. Writes are serialized and atomically renamed, with a
+paper balances, and the seeded landscape with depletion and fractional yields.
+Version 1 saves migrate automatically, retaining existing balances and objects. Writes are serialized and atomically renamed, with a
 previous valid backup. A damaged primary is retained separately when recovery
 uses the backup. If neither save validates, writes remain blocked and Retry
 reloads; an empty world never silently overwrites the damaged data.
@@ -311,3 +312,62 @@ the draft on lift. Its nodes persist across drags and Finish commits the open
 craft explicitly. With reset on, open crafts still complete on release and
 other unfinished strokes clear. Closed outlines craft immediately in either
 mode. This separates automatic open crafting from the draft-reset preference.
+
+
+## Harvestable paper landscape
+
+Ground begins covered in five natural paper colors: Coral, Butter, Sage, Mist,
+and Sand. A seeded world-space Perlin field creates continuous, softly grained
+patches across tile boundaries. Placed paper remains solid-colored with crisp
+edges. The natural layer uses a cached 16-subdivision polygon field per tile;
+interpolated band boundaries avoid square pixel edges. These exact polygons
+supply the cached texture bake and material accounting. Following GameView's
+Perlin landscape approach, normal rendering uses a shared GPU texture atlas:
+256 pixels per tile, one-pixel gutters, and one perspective-correct sprite per
+tile. Harvesting rerasterizes only changed slots; camera movement, hover, and
+drawing reuse the atlas. The original polygon renderer remains a fallback for
+near-plane clipping and explicit geometry debug views.
+
+A closed ground drawing harvests any remaining natural paper inside it. Mixed
+cutouts collect only untouched portions. A drawing entirely on cleared backing
+uses the existing floor recipe instead. Cuts overlapping placed objects are
+rejected. Harvesting never consumes inventory, removes the ground plane, or
+changes adjacent-plane navigation. There is no regrowth or cross-tile cutting.
+
+Collected material totals 128 units per square world unit, divided among the
+actual colors inside the cutout. Fractional yields accumulate per color across
+cuts and saves. The existing paper carousel cycles through all five colors;
+a compact color/yield display appears on completion. Ground dots use a 5×5
+orthogonal lattice; old nine-node indices survive migration, with new nodes
+appended and legacy long steps expanded through intermediate dots.
+
+Loop closure immediately previews the harvest and inventory update. Pointer
+release commits both as one saved undo transaction; pointer cancellation or a
+second finger restores the pre-drag world without awarding material. API harvests
+outside an active drag commit immediately. Undo/redo restore material, depletion,
+and drafts together. New worlds and Clear world start at 256 units per color.
+
+Version 2 saves record the generation version, seed, harvested regions, and
+fractional remainders. Old saves retain their original balances, receive 256
+Mist and Sand units, and mark existing ground-object footprints harvested
+without awarding material. Balances can exceed the former 12,800-unit ceiling.
+Tile geometry caches survive ordinary scene refreshes, and unchanged tiles
+reuse their geometry when history or loading replaces the world state.
+
+
+### Profiling landscape rendering
+
+The ScenePainter and GroundTextureAtlas timeline events are available in Flutter
+DevTools. PaintStatsProbe records submitted faces, draw calls, and paint time.
+A fresh 64-tile landscape normally submits 64 sprites (128 triangles), rather
+than tens of thousands of colored polygons. Atlas images are replaced only on
+content changes and disposed when replaced or when the view closes. Hot reload
+rebuilds the GPU cache while retaining the model and camera.
+
+Protoplane resolution defaults to three cells per side (four points per side).
+Devtools → Crafting → Protoplane cells selects integers 1–5 and persists as
+`protoplaneCells` in settings.json. The live view applies this to ground,
+wall-candidate and upper-floor grids, including loaded candidates and newly
+derived ones. Crafted surfaces retain their contextual motif grids. Resolution
+changes preserve object geometry and paper/landscape state, but discard drafts
+and session history whose node indices refer to the previous lattice.

@@ -1,10 +1,10 @@
+import 'construction_fixture.dart';
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math_64.dart';
 import 'package:flatmates/gestures/game_controls.dart';
-import 'package:flatmates/protoplane/controller.dart';
 import 'package:flatmates/protoplane/focus_view.dart';
 import 'package:flatmates/protoplane/models.dart';
 import 'package:flatmates/protoplane/stroke_preview.dart';
@@ -14,7 +14,7 @@ void main() {
   test(
     'full focus fits long pieces to viewport and picks nearest half-turn',
     () {
-      final model = ProtoplaneController();
+      final model = constructionWorld();
       addTearDown(model.dispose);
       final ground = model.planes['ground-4-4']!;
       final plane = CraftPlane(
@@ -65,7 +65,7 @@ void main() {
   test(
     'full focus chooses nearest quarter-turn for each incoming quadrant',
     () {
-      final model = ProtoplaneController();
+      final model = constructionWorld();
       addTearDown(model.dispose);
       final plane = model.planes['ground-4-4']!;
       for (final x in [-6.0, 6.0]) {
@@ -153,7 +153,7 @@ void main() {
     expect(c.showReticle, isTrue);
   });
   test('focus retains azimuth and lens and tips gently toward ground', () {
-    final c = ProtoplaneController();
+    final c = constructionWorld();
     addTearDown(c.dispose);
     final camera = Camera(
       name: 'world',
@@ -175,7 +175,7 @@ void main() {
     expect(pose.position.distanceTo(pose.target), greaterThanOrEqualTo(2.5));
   });
   test('focus context keeps only neighboring tiles on the same level', () {
-    final c = ProtoplaneController();
+    final c = constructionWorld();
     addTearDown(c.dispose);
     final active = c.planes['ground-4-4']!;
     expect(
@@ -209,7 +209,7 @@ void main() {
   test(
     'live stroke draws a partial permitted edge without committing a node',
     () {
-      final c = ProtoplaneController();
+      final c = constructionWorld();
       addTearDown(c.dispose);
       final grid = c.planes['ground-4-4']!.grids.single;
       final path = [0];

@@ -1,3 +1,4 @@
+import 'construction_fixture.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -222,7 +223,7 @@ void main() {
   });
   group('world and history', () {
     test('screen cuts retain separate panel runs without refunding paper', () {
-      final c = ProtoplaneController();
+      final c = constructionWorld();
       final f = floor(c);
       c.enter('surface-${f.id}');
       c.selectGrid(2);
@@ -259,7 +260,7 @@ void main() {
       CraftKind.screen,
     ]) {
       test('${kind.label} has a drawable recipe, mesh and material quote', () {
-        final c = ProtoplaneController();
+        final c = constructionWorld();
         final f = floor(c);
         c.enter('surface-${f.id}');
         c.selectGrid(2);
@@ -298,7 +299,7 @@ void main() {
       });
     }
     test('depth edits charge only growth; reduction and cuts never refund', () {
-      final c = ProtoplaneController();
+      final c = constructionWorld();
       final f = floor(c);
       c.enter(f.planeId, editObject: f.id);
       c.setDepth(.1);
@@ -316,7 +317,7 @@ void main() {
       expect(c.balances[PaperColor.red], afterGrowth);
     });
     test('acetates preserve independent drafts and a new edit clears redo', () {
-      final c = ProtoplaneController();
+      final c = constructionWorld();
       final f = floor(c);
       c.enter('surface-${f.id}');
       draw(c, [0, 1, 2]);
@@ -386,7 +387,7 @@ void main() {
     test(
       'door cuts a bottom notch and cannot be placed in an existing opening',
       () {
-        final c = ProtoplaneController();
+        final c = constructionWorld();
         final f = floor(c);
         c.enter('wall-${f.id}-0');
         draw(c, [0, 1, 2, 5, 8, 7, 6, 3, 0]);
@@ -407,7 +408,7 @@ void main() {
       },
     );
     test('complete build, openings, upper floor, save round trip and undo', () {
-      final c = ProtoplaneController();
+      final c = constructionWorld();
       final f = floor(c);
       expect(c.balances[PaperColor.red], 12672);
       expect(c.planes.keys.where((id) => id.startsWith('wall-')), hasLength(4));
@@ -434,7 +435,7 @@ void main() {
         hasLength(2),
       );
       final saved = jsonEncode(c.toJson());
-      final restored = ProtoplaneController()..load(jsonDecode(saved));
+      final restored = constructionWorld()..load(jsonDecode(saved));
       expect(jsonEncode(restored.toJson()), saved);
       expect(restored.objects.containsKey(rug.id), isTrue);
       final wallet = Map.of(c.balances);
@@ -448,7 +449,7 @@ void main() {
       expect(jsonEncode(c.toJson()), saved);
     });
     test('multiple adjacent floors, overlap rejection, insufficient paper', () {
-      final c = ProtoplaneController()..enter('ground-4-4');
+      final c = constructionWorld()..enter('ground-4-4');
       draw(c, [0, 1, 4, 3, 0]);
       expect(c.create(), isTrue, reason: c.error);
       draw(c, [1, 2, 5, 4, 1]);
@@ -463,12 +464,12 @@ void main() {
       expect(c.draft.path, isNotEmpty);
     });
     test('stroke undo, draft isolation, exact accounting and redo branch', () {
-      final c = ProtoplaneController()..enter('ground-4-4');
+      final c = constructionWorld()..enter('ground-4-4');
       draw(c, [0, 1, 2]);
       c.undo();
       expect(c.draft.path, isEmpty);
       c.redo();
-      expect(c.draft.path, [0, 1, 2]);
+      expect(c.draft.path, [0, 9, 1, 10, 2]);
       draw(c, [5, 8, 7, 6, 3, 0]);
       c.setDepth(.1);
       expect(c.quote, 180);
@@ -482,7 +483,7 @@ void main() {
     test(
       'splits keep pieces and cuts do not refund; undo restores geometry',
       () {
-        final c = ProtoplaneController();
+        final c = constructionWorld();
         final f = floor(c);
         c.enter(f.planeId, editObject: f.id);
         draw(c, [1, 4, 7]);
@@ -497,7 +498,7 @@ void main() {
       },
     );
     test('support edits cannot strand attachments', () {
-      final c = ProtoplaneController();
+      final c = constructionWorld();
       final f = floor(c);
       c.enter('surface-${f.id}');
       draw(c, c.grid!.examples[CraftKind.rug]!);
@@ -508,7 +509,7 @@ void main() {
       expect(c.error, contains('support'));
     });
     test('hole mesh has no cap triangles over hole', () {
-      final c = ProtoplaneController();
+      final c = constructionWorld();
       final p = c.planes['ground-4-4']!;
       final r = rectangle(
         1,
@@ -531,7 +532,7 @@ void main() {
       await temp.delete(recursive: true);
     });
     void validate(Map<String, dynamic> j) {
-      final c = ProtoplaneController();
+      final c = constructionWorld();
       try {
         c.load(j);
       } finally {
@@ -542,7 +543,7 @@ void main() {
     test('serialized writes and recovery preserve last valid save', () async {
       final s = ProtoplaneStorage(directory: () async => temp);
       expect(await s.load(validate), isNull);
-      final c = ProtoplaneController();
+      final c = constructionWorld();
       final empty = c.toJson();
       final first = s.save(empty);
       floor(c);
@@ -570,10 +571,7 @@ void main() {
       await file.writeAsString('broken');
       final s = ProtoplaneStorage(directory: () async => temp);
       await expectLater(s.load(validate), throwsFormatException);
-      await expectLater(
-        s.save(ProtoplaneController().toJson()),
-        throwsStateError,
-      );
+      await expectLater(s.save(constructionWorld().toJson()), throwsStateError);
       expect(await file.readAsString(), 'broken');
     });
   });

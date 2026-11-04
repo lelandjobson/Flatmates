@@ -11,6 +11,8 @@ const paperColors = <PaperColor, Color>{
   PaperColor.red: Color(0xffe8a19b),
   PaperColor.yellow: Color(0xffe9d88d),
   PaperColor.green: Color(0xffa4c8ac),
+  PaperColor.blue: Color(0xffa4c5d4),
+  PaperColor.sand: Color(0xffcfbfa5),
 };
 
 Geometry regionGeometry(

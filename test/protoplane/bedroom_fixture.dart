@@ -1,3 +1,4 @@
+import 'construction_fixture.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flatmates/protoplane/controller.dart';
 import 'package:flatmates/protoplane/models.dart';
@@ -35,7 +36,7 @@ class BedroomFixture {
     bool walls = true,
     bool door = true,
     bool mattress = true,
-  }) : c = controller ?? ProtoplaneController() {
+  }) : c = controller ?? constructionWorld() {
     floor = craft(c, tile, rectanglePath(3, 0, 0, 2, 2));
     if (walls) {
       for (var i = 0; i < 4; i++) {

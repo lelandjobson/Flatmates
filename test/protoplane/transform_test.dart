@@ -1,5 +1,5 @@
+import 'construction_fixture.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flatmates/protoplane/controller.dart';
 import 'package:flatmates/protoplane/models.dart';
 import 'package:flatmates/protoplane/recipes.dart';
 
@@ -7,7 +7,7 @@ void main() {
   test(
     'completed craft commits once, preserves failed draft and undoes whole drag',
     () {
-      final c = ProtoplaneController();
+      final c = constructionWorld();
       addTearDown(c.dispose);
       c.enter('ground-4-4');
       c.beginGesture();
@@ -38,7 +38,7 @@ void main() {
   );
 
   test('automatic first match follows recipe priority', () {
-    final c = ProtoplaneController();
+    final c = constructionWorld();
     addTearDown(c.dispose);
     c.enter('ground-4-4');
     c.beginGesture();

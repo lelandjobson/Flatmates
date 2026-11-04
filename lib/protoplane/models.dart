@@ -24,7 +24,17 @@ enum CraftKind {
   storage,
 }
 
-enum PaperColor { red, yellow, green }
+enum PaperColor { red, yellow, green, blue, sand }
+
+extension PaperColorName on PaperColor {
+  String get label => switch (this) {
+    PaperColor.red => 'Coral',
+    PaperColor.yellow => 'Butter',
+    PaperColor.green => 'Sage',
+    PaperColor.blue => 'Mist',
+    PaperColor.sand => 'Sand',
+  };
+}
 
 enum CraftTool { scissors, volume }
 

@@ -1,9 +1,9 @@
+import 'construction_fixture.dart';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flatmates/protoplane/bedroom_items.dart';
 import 'package:flatmates/protoplane/bedrooms.dart';
-import 'package:flatmates/protoplane/controller.dart';
 import 'package:flatmates/protoplane/models.dart';
 import 'package:flatmates/protoplane/geometry.dart';
 import 'package:flatmates/protoplane/residents.dart';
@@ -162,7 +162,7 @@ void main() {
       c.redo();
       expect(c.bedrooms.single.residentId, id);
       expect(c.bedrooms.single.resident, kind);
-      final restored = ProtoplaneController()
+      final restored = constructionWorld()
         ..load(jsonDecode(jsonEncode(c.toJson())));
       addTearDown(restored.dispose);
       expect(restored.bedrooms.single.residentId, id);
@@ -194,7 +194,7 @@ void main() {
   test(
     'old saved floors gain Bedroom acetate without changing existing grids',
     () {
-      final c = ProtoplaneController();
+      final c = constructionWorld();
       addTearDown(c.dispose);
       final floor = craft(c, 'ground-4-4', rectanglePath(3, 0, 0, 2, 2));
       final p = c.planes['surface-${floor.id}']!;
@@ -215,7 +215,7 @@ void main() {
     },
   );
   test('bedroom recipes enforce contextual supports', () {
-    final c = ProtoplaneController();
+    final c = constructionWorld();
     addTearDown(c.dispose);
     final invalid = CraftObject(
       id: 'invalid',

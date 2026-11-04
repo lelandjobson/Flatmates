@@ -15,6 +15,7 @@ import 'lights.dart';
 import 'mesh.dart';
 import 'scene/camera.dart';
 import 'scene/grid_motif.dart';
+import 'scene/planar_texture.dart';
 import 'scene/scene.dart';
 
 class SceneView extends StatelessWidget {
@@ -114,6 +115,8 @@ class ScenePainter extends CustomPainter {
     // visible without the tessellation subdivision lines.
     final wireframeEdges = <_ProjectedLine>[];
 
+    final planarBatches = <(PlanarTexture, Matrix4, Color)>[];
+    var batchedFaces = 0;
     final allMeshes = _scene.meshes;
     var visibleMeshes = 0;
     var drawCalls = 0;
@@ -123,6 +126,51 @@ class ScenePainter extends CustomPainter {
       visibleMeshes++;
       final isDoubleSided = mesh.material.doubleSided;
       final world = mesh.transformMatrix;
+      final batch = mesh.planarTexture;
+      if (mesh.material.opacity <= 0) continue;
+      if (batch != null &&
+          batch.atlas.image != null &&
+          mesh.groundPlane &&
+          mesh.groundOcclusion == null &&
+          !debugOptions.wireframeOnly &&
+          !debugOptions.showNormals &&
+          !debugOptions.showTessellationWireframe) {
+        final transform = _planarTransform(
+          batch,
+          world,
+          view,
+          viewProjection,
+          camera.near,
+          size,
+        );
+        if (transform != null) {
+          final origin = world.transformed3(batch.origin);
+          final normal =
+              world.transformed3(batch.origin + batch.u.cross(batch.v)) -
+              origin;
+          final facing = normal.dot(camera.position - origin) >= 0;
+          if (facing || mesh.material.doubleSided) {
+            final shade = _shadeForFace(
+              facing ? normal : -normal,
+              _scene.lights,
+              _scene.globalIllumination,
+            );
+            planarBatches.add((
+              batch,
+              transform,
+              Color.fromRGBO(
+                (255 * shade).round(),
+                (255 * shade).round(),
+                (255 * shade).round(),
+                mesh.material.opacity.clamp(0.0, 1.0),
+              ),
+            ));
+            batchedFaces += 2;
+          }
+          continue;
+        }
+        // A plane crossing the near clip needs the existing polygon clipper.
+      }
 
       // Check if this mesh belongs to a render group.
       final group = _scene.renderGroupForMesh(mesh.id);
@@ -178,6 +226,7 @@ class ScenePainter extends CustomPainter {
 
     // Paint pools: reuse Paint objects by color to reduce allocation.
     final fillPool = <Color, Paint>{};
+    final seamlessFillPool = <Color, Paint>{};
     final seamPool = <Color, Paint>{};
     final strokePaint = Paint()
       ..style = PaintingStyle.stroke
@@ -187,7 +236,8 @@ class ScenePainter extends CustomPainter {
     // Pool for colored edge strokes (wireframe & non-opaque materials).
     final edgePool = <Color, Paint>{};
     final motif = gridMotif;
-    final gridPaint = motif?.samplingPaint() ??
+    final gridPaint =
+        motif?.samplingPaint() ??
         (Paint()
           ..isAntiAlias = false
           ..filterQuality = FilterQuality.low);
@@ -238,12 +288,16 @@ class ScenePainter extends CustomPainter {
         }
 
         // Fill (respects opacity already baked into face.color alpha).
-        final fillPaint = fillPool.putIfAbsent(
-          face.color,
-          () => Paint()
-            ..style = PaintingStyle.fill
-            ..color = face.color,
-        );
+        // Independently antialiasing a tiled color field exposes hairline
+        // background gaps. Rasterize its shared edges without partial coverage.
+        final fillPaint = (face.seamless ? seamlessFillPool : fillPool)
+            .putIfAbsent(
+              face.color,
+              () => Paint()
+                ..isAntiAlias = !face.seamless
+                ..style = PaintingStyle.fill
+                ..color = face.color,
+            );
         canvas.drawPath(path, fillPaint);
         drawCalls++;
 
@@ -288,6 +342,27 @@ class ScenePainter extends CustomPainter {
       flushGrid();
     }
 
+    Timeline.startSync('GroundTextureAtlas');
+    for (final (batch, transform, tint) in planarBatches) {
+      canvas.save();
+      canvas.transform(transform.storage);
+      canvas.drawImageRect(
+        batch.atlas.image!,
+        batch.source,
+        batch.bounds,
+        Paint()
+          ..color = Colors.white.withValues(alpha: tint.a)
+          ..colorFilter = ColorFilter.mode(
+            tint.withValues(alpha: 1),
+            BlendMode.modulate,
+          )
+          ..filterQuality = FilterQuality.low
+          ..isAntiAlias = false,
+      );
+      canvas.restore();
+      drawCalls++;
+    }
+    Timeline.finishSync();
     paintFaces(passes.ground);
     final groundOutlines = this.groundOutlines;
     if (groundOutlines != null) {
@@ -324,7 +399,12 @@ class ScenePainter extends CustomPainter {
       }
     }
 
-    return (allMeshes.length, visibleMeshes, facesToDraw.length, drawCalls);
+    return (
+      allMeshes.length,
+      visibleMeshes,
+      facesToDraw.length + batchedFaces,
+      drawCalls,
+    );
   }
 
   /// Collect projected faces from a geometry into [facesToDraw].
@@ -416,7 +496,9 @@ class ScenePainter extends CustomPainter {
       List<Offset>? motifPositions;
       List<Offset>? motifUvs;
       final motif = gridMotif;
-      if (mesh.material.surfaceGrid && motif != null && worldVertices.isNotEmpty) {
+      if (mesh.material.surfaceGrid &&
+          motif != null &&
+          worldVertices.isNotEmpty) {
         var minX = worldVertices.first.x;
         var maxX = minX;
         var minZ = worldVertices.first.z;
@@ -452,8 +534,11 @@ class ScenePainter extends CustomPainter {
 
       for (final worldForProject in faceParts) {
         if (worldForProject.length < 3) continue;
-        final clipped =
-            _clipFaceToNearPlane(worldForProject, view, camera.near);
+        final clipped = _clipFaceToNearPlane(
+          worldForProject,
+          view,
+          camera.near,
+        );
         if (clipped.length < 3) continue;
 
         final points = <Offset>[];
@@ -488,6 +573,10 @@ class ScenePainter extends CustomPainter {
             gridPositions: motifPositions,
             gridUvs: motifUvs,
             groundPlane: mesh.groundPlane,
+            seamless:
+                mesh.groundPlane &&
+                mesh.material.exactPerFaceColors &&
+                !mesh.material.strokeEdges,
           ),
         );
       }
@@ -592,6 +681,39 @@ class ScenePainter extends CustomPainter {
   }
 }
 
+/// Compose the local plane basis, camera perspective, and viewport into a
+/// Canvas homography. Only four corners are checked, not every field polygon.
+Matrix4? _planarTransform(
+  PlanarTexture batch,
+  Matrix4 world,
+  Matrix4 view,
+  Matrix4 viewProjection,
+  double near,
+  Size size,
+) {
+  final basis = Matrix4.identity()
+    ..setColumn(0, Vector4(batch.u.x, batch.u.y, batch.u.z, 0))
+    ..setColumn(1, Vector4(batch.v.x, batch.v.y, batch.v.z, 0))
+    ..setColumn(3, Vector4(batch.origin.x, batch.origin.y, batch.origin.z, 1));
+  final localWorld = world * basis;
+  final localView = view * localWorld;
+  for (final p in [
+    batch.bounds.topLeft,
+    batch.bounds.topRight,
+    batch.bounds.bottomRight,
+    batch.bounds.bottomLeft,
+  ]) {
+    final cameraPoint = localView.transformed3(Vector3(p.dx, p.dy, 0));
+    if (!cameraPoint.z.isFinite || cameraPoint.z > -near) return null;
+  }
+  final viewport = Matrix4.identity()
+    ..setEntry(0, 0, size.width / 2)
+    ..setEntry(1, 1, -size.height / 2)
+    ..setEntry(0, 3, size.width / 2)
+    ..setEntry(1, 3, size.height / 2);
+  return viewport * viewProjection * localWorld;
+}
+
 class _ProjectedFace {
   _ProjectedFace({
     required this.points,
@@ -605,8 +727,10 @@ class _ProjectedFace {
     this.gridPositions,
     this.gridUvs,
     this.groundPlane = false,
+    this.seamless = false,
   });
 
+  final bool seamless;
   final List<Offset> points;
   final Color color;
   final double depth;

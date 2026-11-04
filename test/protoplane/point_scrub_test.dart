@@ -1,12 +1,12 @@
+import 'construction_fixture.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flatmates/gestures/point_scrub.dart';
-import 'package:flatmates/protoplane/controller.dart';
 
 void main() {
   test(
     'release reset clears an uncommitted trace without spending material',
     () {
-      final c = ProtoplaneController();
+      final c = constructionWorld();
       addTearDown(c.dispose);
       c.enter('ground-4-4');
       final balances = Map.of(c.balances);
@@ -24,14 +24,14 @@ void main() {
       c.appendNode(0);
       c.appendNode(1);
       c.finishGesture();
-      expect(c.draft.path, [0, 1]);
+      expect(c.draft.path, [0, 9, 1]);
     },
   );
 
   test(
     'clear world resets construction and balances, saves and supports undo',
     () {
-      final c = ProtoplaneController();
+      final c = constructionWorld();
       addTearDown(c.dispose);
       c.enter('ground-4-4');
       c.beginGesture();
@@ -48,7 +48,7 @@ void main() {
       expect(c.planes.length, 64);
       expect(c.activePlane, isNull);
       expect(c.drafts, isEmpty);
-      expect(c.balances.values.every((v) => v == 12800), isTrue);
+      expect(c.balances.values.every((v) => v == 256), isTrue);
       expect(saved, c.toJson());
       c.undo();
       expect(c.toJson(), original);
@@ -60,7 +60,7 @@ void main() {
   test(
     'rewind keeps selected past point, protects start and restores suffix on undo',
     () {
-      final c = ProtoplaneController();
+      final c = constructionWorld();
       addTearDown(c.dispose);
       c.enter('ground-4-4');
       c.beginGesture();
@@ -71,29 +71,29 @@ void main() {
       expect(c.rewindDraftTo(0), isFalse);
       expect(c.rewindDraftTo(8), isFalse);
       expect(c.rewindDraftTo(1), isTrue);
-      expect(c.draft.path, [0, 1]);
+      expect(c.draft.path, [0, 9, 1]);
       c.undo();
-      expect(c.draft.path, [0, 1, 2, 5, 8]);
+      expect(c.draft.path, [0, 9, 1, 10, 2, 15, 5, 22, 8]);
       c.redo();
-      expect(c.draft.path, [0, 1]);
+      expect(c.draft.path, [0, 9, 1]);
     },
   );
 
   test(
     'far collinear node fills intermediate nodes in one drag transaction',
     () {
-      final c = ProtoplaneController();
+      final c = constructionWorld();
       addTearDown(c.dispose);
       c.enter('ground-4-4');
       c.beginGesture();
       expect(c.appendNode(0), isTrue);
       expect(c.appendNode(2), isTrue);
-      expect(c.draft.path, [0, 1, 2]);
+      expect(c.draft.path, [0, 9, 1, 10, 2]);
       c.finishGesture();
       c.undo();
       expect(c.draft.path, isEmpty);
       c.redo();
-      expect(c.draft.path, [0, 1, 2]);
+      expect(c.draft.path, [0, 9, 1, 10, 2]);
     },
   );
 
@@ -132,34 +132,34 @@ void main() {
   test(
     'step back reopens a loop, preserves balance and participates in drag history',
     () {
-      final c = ProtoplaneController();
+      final c = constructionWorld();
       addTearDown(c.dispose);
       c.enter('ground-4-4');
       final balances = Map.of(c.balances);
       c.beginGesture();
-      for (final n in [0, 1, 4, 3, 0]) {
+      for (final n in [0, 9, 12, 11, 0]) {
         c.appendNode(n);
       }
       c.finishGesture();
       expect(c.closed, isTrue);
       c.removeLastDraftNode();
       expect(c.closed, isFalse);
-      expect(c.draft.path, [0, 1, 4, 3]);
+      expect(c.draft.path, [0, 9, 12, 11]);
       c.undo();
       expect(c.closed, isTrue);
       c.redo();
-      expect(c.draft.path, [0, 1, 4, 3]);
+      expect(c.draft.path, [0, 9, 12, 11]);
       c.beginGesture();
       c.removeLastDraftNode(continuous: true);
       c.removeLastDraftNode(continuous: true);
       c.finishGesture();
-      expect(c.draft.path, [0, 1]);
+      expect(c.draft.path, [0, 9]);
       c.undo();
-      expect(c.draft.path, [0, 1, 4, 3]);
+      expect(c.draft.path, [0, 9, 12, 11]);
       c.beginGesture();
       c.removeLastDraftNode(continuous: true);
       c.cancelGesture();
-      expect(c.draft.path, [0, 1, 4, 3]);
+      expect(c.draft.path, [0, 9, 12, 11]);
       expect(c.balances, balances);
     },
   );

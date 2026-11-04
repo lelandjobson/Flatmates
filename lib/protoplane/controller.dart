@@ -9,6 +9,7 @@ import '../crafting/paper_splitting.dart';
 import 'geometry.dart';
 import 'collision.dart';
 import 'models.dart';
+import 'harvest.dart';
 import 'plane_navigation.dart';
 import 'recipes.dart';
 import 'bedroom_items.dart';
@@ -19,6 +20,53 @@ class ProtoplaneController extends ChangeNotifier {
     _ground();
   }
   final Map<String, CraftPlane> planes = {};
+  PaperLandscape landscape = PaperLandscape();
+  Map<PaperColor, int>? lastHarvest;
+  bool harvestPending = false;
+  String? _harvestPreviewKey;
+  HarvestResult? _harvestPreview;
+  HarvestResult? get harvestPreview {
+    final plane = activePlane;
+    if (plane == null ||
+        !plane.id.startsWith('ground-') ||
+        editId != null ||
+        !closed) {
+      return null;
+    }
+    final key =
+        '${identityHashCode(landscape)}/${plane.id}/${landscape.revision(plane.id)}/${draft.path.join(',')}';
+    if (_harvestPreviewKey == key) return _harvestPreview;
+    _harvestPreviewKey = key;
+    final outline = Region(trace.sublist(0, trace.length - 1));
+    _harvestPreview = outline.valid && plane.region.containsRegion(outline)
+        ? landscape.preview(plane, outline)
+        : null;
+    return _harvestPreview;
+  }
+
+  bool _harvest(HarvestResult result) {
+    if (objects.values.any(
+      (o) => o.planeId == result.planeId && o.region.overlaps(result.outline),
+    )) {
+      report('Cutout overlaps placed paper');
+      return false;
+    }
+    final before = _gestureBefore ?? _snapshot();
+    final credits = landscape.collect(result);
+    for (final entry in credits.entries) {
+      balances[entry.key] = balances[entry.key]! + entry.value;
+    }
+    drafts.remove(draftKey);
+    lastHarvest = credits;
+    if (_gestureBefore != null) {
+      harvestPending = true;
+    } else {
+      _record(before, committed: true);
+    }
+    notifyListeners();
+    return true;
+  }
+
   final Map<String, CraftObject> objects = {};
   PlaneNavigationGraph? _navigationGraph;
   Map<String, CraftPlane> _navigationPlanes = {};
@@ -46,7 +94,7 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   final Map<PaperColor, int> balances = {
-    for (final c in PaperColor.values) c: 12800,
+    for (final c in PaperColor.values) c: 256,
   };
   final List<String> _undo = [], _redo = [];
   int nextId = 1;
@@ -71,6 +119,45 @@ class ProtoplaneController extends ChangeNotifier {
       draft.path.length >= 4 && draft.path.first == draft.path.last;
   bool isPlane(String id) => objects.values.any((o) => o.planeId == id);
 
+  int? protoplaneCells;
+
+  void setProtoplaneCells(int cells) {
+    if (cells < 1 || cells > 5) throw RangeError.range(cells, 1, 5);
+    if (protoplaneCells == cells) return;
+    if (_gestureBefore != null) cancelGesture();
+    protoplaneCells = cells;
+    _resizeProtoplaneGrids();
+    // Draft node IDs refer to the old lattice, so discard them on resolution changes.
+    drafts.clear();
+    _undo.clear();
+    _redo.clear();
+    notifyListeners();
+  }
+
+  void _resizeProtoplaneGrids() {
+    final cells = protoplaneCells;
+    if (cells == null) return;
+    for (final p in planes.values.toList()) {
+      if (p.id.startsWith('ground-') ||
+          p.wallCandidate ||
+          p.id.startsWith('upper-')) {
+        planes[p.id] = p.withGrids(
+          p.grids
+              .map(
+                (g) => lattice(
+                  g.id,
+                  p.region,
+                  count: cells + 1,
+                  recipes: g.recipes,
+                  name: g.name,
+                ),
+              )
+              .toList(),
+        );
+      }
+    }
+  }
+
   void _ground() {
     for (var y = 0; y < 8; y++) {
       for (var x = 0; x < 8; x++) {
@@ -82,7 +169,11 @@ class ProtoplaneController extends ChangeNotifier {
           u: Vector3(1, 0, 0),
           v: Vector3(0, 0, -1),
           region: region,
-          grids: [lattice(id, region)],
+          grids: [
+            protoplaneCells == null
+                ? harvestGrid(lattice(id, region), region)
+                : lattice(id, region, count: protoplaneCells! + 1),
+          ],
         );
       }
     }
@@ -92,11 +183,14 @@ class ProtoplaneController extends ChangeNotifier {
     final before = _snapshot();
     _gestureBefore = null;
     objects.clear();
+    landscape = PaperLandscape();
+    harvestPending = false;
+    lastHarvest = null;
     planes.clear();
     drafts.clear();
     bedrooms = [];
     for (final color in PaperColor.values) {
-      balances[color] = 12800;
+      balances[color] = 256;
     }
     nextId = 1;
     activePlaneId = editId = error = null;
@@ -108,6 +202,7 @@ class ProtoplaneController extends ChangeNotifier {
 
   void enter(String planeId, {String? editObject}) {
     if (!planes.containsKey(planeId)) return;
+    lastHarvest = null;
     activePlaneId = planeId;
     editId = editObject;
     gridIndex = 0;
@@ -149,6 +244,7 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   void beginGesture() {
+    lastHarvest = null;
     _gestureBefore = _snapshot();
     error = null;
   }
@@ -160,11 +256,15 @@ class ProtoplaneController extends ChangeNotifier {
     }
     final before = _gestureBefore;
     _gestureBefore = null;
-    if (before != null && before != _snapshot()) _record(before);
+    if (before != null && before != _snapshot()) {
+      _record(before, committed: harvestPending);
+    }
+    harvestPending = false;
     notifyListeners();
   }
 
   void cancelGesture() {
+    harvestPending = false;
     final before = _gestureBefore;
     _gestureBefore = null;
     if (before != null) _restore(before);
@@ -326,6 +426,7 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   CraftObject? get previewObject {
+    if (harvestPreview != null) return null;
     if (editId != null) return objects[editId]?.copyWith(depth: previewDepth);
     final kind = chosen;
     if (kind == null || trace.length < 2) return null;
@@ -507,6 +608,8 @@ class ProtoplaneController extends ChangeNotifier {
 
   /// Closed drawings complete at the closing node; open recipes complete on lift.
   bool completeCraft({bool allowOpen = false}) {
+    final harvest = harvestPreview;
+    if (harvest != null) return _harvest(harvest);
     if (editId != null || (!closed && !allowOpen) || matches.isEmpty) {
       return false;
     }
@@ -514,6 +617,9 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   bool create() {
+    lastHarvest = null;
+    final harvest = harvestPreview;
+    if (harvest != null) return _harvest(harvest);
     final candidate = previewObject;
     if (candidate == null || editId != null) return false;
     final message = validateObject(candidate);
@@ -823,6 +929,7 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   void _upgradeBedroomGrids() {
+    _resizeProtoplaneGrids();
     for (final p in List<CraftPlane>.of(planes.values)) {
       if (p.id.startsWith('ground-') ||
           p.wallCandidate ||
@@ -942,7 +1049,8 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   Map<String, dynamic> toJson() => {
-    'version': 1,
+    'version': 2,
+    'landscape': landscape.toJson(),
     'nextId': nextId,
     'planes': planes.values.map((p) => p.toJson()).toList(),
     'objects': objects.values.map((o) => o.toJson()).toList(),
@@ -950,10 +1058,13 @@ class ProtoplaneController extends ChangeNotifier {
   };
   void load(Map<String, dynamic> json) {
     final validated = ProtoplaneController();
-    validated._load(json);
-    validated._validateLoaded();
-    _load(validated.toJson());
-    validated.dispose();
+    try {
+      validated._load(json);
+      validated._validateLoaded();
+      _load(validated.toJson());
+    } finally {
+      validated.dispose();
+    }
     _undo.clear();
     _redo.clear();
     drafts.clear();
@@ -963,7 +1074,7 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   void _load(Map<String, dynamic> j) {
-    if (j['version'] != 1) {
+    if (j['version'] != 1 && j['version'] != 2) {
       throw const FormatException('Unsupported world version');
     }
     planes
@@ -984,16 +1095,46 @@ class ProtoplaneController extends ChangeNotifier {
       );
     nextId = j['nextId'];
     for (final color in PaperColor.values) {
-      balances[color] = j['balances'][color.name];
+      final value =
+          j['balances'][color.name] ??
+          (j['version'] == 1 &&
+                  (color == PaperColor.blue || color == PaperColor.sand)
+              ? 256
+              : null);
+      if (value is! int || value < 0) {
+        throw const FormatException('Invalid paper balance');
+      }
+      balances[color] = value;
     }
+    for (final plane in planes.values.toList()) {
+      if (plane.id.startsWith('ground-') &&
+          plane.grids.first.nodes.length < 25) {
+        planes[plane.id] = plane.withGrids([
+          harvestGrid(plane.grids.first, plane.region),
+          ...plane.grids.skip(1),
+        ]);
+      }
+    }
+    _resizeProtoplaneGrids();
+    landscape = j['version'] == 2
+        ? PaperLandscape.fromJson(j['landscape'], planes)
+        : PaperLandscape();
+    if (j['version'] == 1) {
+      for (final object in objects.values) {
+        if (object.planeId.startsWith('ground-')) {
+          landscape.deplete(object.planeId, object.region);
+        }
+      }
+    }
+    lastHarvest = null;
+    harvestPending = false;
+    _harvestPreviewKey = null;
     _upgradeBedroomGrids();
     bedrooms = evaluateBedrooms(objects, planes);
   }
 
   void _validateLoaded() {
-    if (nextId < 1 ||
-        balances.values.any((b) => b < 0 || b > 12800) ||
-        planes.length < 64) {
+    if (nextId < 1 || balances.values.any((b) => b < 0) || planes.length < 64) {
       throw const FormatException('Invalid world data');
     }
     for (final p in planes.values) {

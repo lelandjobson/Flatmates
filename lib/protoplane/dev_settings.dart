@@ -3,12 +3,14 @@ import 'storage.dart';
 
 class ProtoplaneSettings {
   bool gridLines = false;
+  int protoplaneCells = 3;
   bool resetDrawingOnRelease = true;
   bool disableFocusZoom = true;
   double entryFocusLevel = 1;
   double ambient = .7, sun = .25, wallNear = 4, wallFar = 8;
   Map<String, dynamic> toJson() => {
     'version': 1,
+    'protoplaneCells': protoplaneCells,
     'entryFocusLevel': entryFocusLevel,
     'disableFocusZoom': disableFocusZoom,
     'gridLines': gridLines,
@@ -46,6 +48,11 @@ class ProtoplaneSettings {
     if (reset is! bool) {
       throw const FormatException('Invalid drawing reset setting');
     }
+    final cells = json['protoplaneCells'] ?? 3;
+    if (cells is! int || cells < 1 || cells > 5) {
+      throw const FormatException('Invalid grid resolution');
+    }
+    protoplaneCells = cells;
     resetDrawingOnRelease = reset;
     disableFocusZoom = disabled;
     entryFocusLevel = focus;
@@ -134,6 +141,32 @@ Future<void> showProtoplaneDevTools(
                                   Navigator.pop(context);
                                 },
                               ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              child: Column(
+                                children: [
+                                  Text(
+                                    'Protoplane cells ${settings.protoplaneCells} × ${settings.protoplaneCells}',
+                                  ),
+                                  Slider(
+                                    value: settings.protoplaneCells.toDouble(),
+                                    min: 1,
+                                    max: 5,
+                                    divisions: 4,
+                                    label: '${settings.protoplaneCells}',
+                                    onChanged: (v) {
+                                      update(
+                                        () => settings.protoplaneCells = v
+                                            .round(),
+                                      );
+                                      changed();
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
                             SwitchListTile(
                               title: const Text('Reset drawing on release'),
                               value: settings.resetDrawingOnRelease,

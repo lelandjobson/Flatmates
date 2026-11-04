@@ -1,3 +1,4 @@
+import 'construction_fixture.dart';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -15,7 +16,7 @@ void main() {
   testWidgets('two finger swipe moves one adjacent plane and retains drafts', (
     tester,
   ) async {
-    final model = ProtoplaneController();
+    final model = constructionWorld();
     tester.view.physicalSize = const Size(900, 700);
     tester.view.devicePixelRatio = 1;
     addTearDown(() {
@@ -52,7 +53,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
   testWidgets('volume tap and 3D cap drag are undoable', (tester) async {
-    final model = ProtoplaneController();
+    final model = constructionWorld();
     tester.view.physicalSize = const Size(900, 700);
     tester.view.devicePixelRatio = 1;
     addTearDown(() {
@@ -137,7 +138,7 @@ void main() {
   testWidgets(
     'cursor aim focuses smoothly with dim non-interactive neighbors',
     (tester) async {
-      final model = ProtoplaneController();
+      final model = constructionWorld();
       addTearDown(() {
         resetView(tester);
         model.dispose();
@@ -201,7 +202,7 @@ void main() {
   testWidgets(
     'hold previous point steps back once and hover removal is undoable',
     (tester) async {
-      final model = ProtoplaneController();
+      final model = constructionWorld();
       addTearDown(() {
         resetView(tester);
         model.dispose();
@@ -210,7 +211,7 @@ void main() {
       await mount(tester, model, size);
       model.enter('ground-4-4');
       model.beginGesture();
-      for (final n in [0, 1, 4]) {
+      for (final n in [0, 9, 12]) {
         model.appendNode(n);
       }
       model.finishGesture();
@@ -224,21 +225,21 @@ void main() {
         size,
       )!;
       final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-      await mouse.addPointer(location: node(4));
-      await mouse.moveTo(node(1));
+      await mouse.addPointer(location: node(12));
+      await mouse.moveTo(node(9));
       await tester.pump(const Duration(milliseconds: 499));
-      expect(model.draft.path, [0, 1, 4]);
+      expect(model.draft.path, [0, 9, 12]);
       await tester.pump(const Duration(milliseconds: 1));
-      expect(model.draft.path, [0, 1]);
+      expect(model.draft.path, [0, 9]);
       await tester.pump(const Duration(milliseconds: 800));
-      expect(model.draft.path, [0, 1]);
+      expect(model.draft.path, [0, 9]);
       model.undo();
-      expect(model.draft.path, [0, 1, 4]);
-      await mouse.moveTo(node(1) + const Offset(1, 0));
+      expect(model.draft.path, [0, 9, 12]);
+      await mouse.moveTo(node(9) + const Offset(1, 0));
       await tester.pump(const Duration(milliseconds: 250));
-      await mouse.moveTo(node(4));
+      await mouse.moveTo(node(12));
       await tester.pump(const Duration(milliseconds: 600));
-      expect(model.draft.path, [0, 1, 4]);
+      expect(model.draft.path, [0, 9, 12]);
       await mouse.removePointer();
       await tester.pumpWidget(const SizedBox());
     },
@@ -247,7 +248,7 @@ void main() {
   testWidgets(
     'scrubbing newest point erases it without immediately redrawing',
     (tester) async {
-      final model = ProtoplaneController();
+      final model = constructionWorld();
       addTearDown(() {
         resetView(tester);
         model.dispose();
@@ -256,7 +257,7 @@ void main() {
       await mount(tester, model, size);
       model.enter('ground-4-4');
       model.beginGesture();
-      for (final n in [0, 1, 4]) {
+      for (final n in [0, 9, 12]) {
         model.appendNode(n);
       }
       model.finishGesture();
@@ -266,7 +267,7 @@ void main() {
           .scene
           .camera!;
       final at = camera.projectToScreen(
-        model.activePlane!.point(model.grid!.nodes[4], .008),
+        model.activePlane!.point(model.grid!.nodes[12], .008),
         size,
       )!;
       final drag = await tester.startGesture(at, kind: PointerDeviceKind.mouse);
@@ -274,10 +275,10 @@ void main() {
         await drag.moveTo(at + Offset(dx, 0));
         await tester.pump(const Duration(milliseconds: 40));
       }
-      expect(model.draft.path, [0, 1]);
+      expect(model.draft.path, [0, 9]);
       await drag.up();
       model.undo();
-      expect(model.draft.path, [0, 1, 4]);
+      expect(model.draft.path, [0, 9, 12]);
       await tester.pumpAndSettle();
       await tester.pumpWidget(const SizedBox());
     },
@@ -286,7 +287,7 @@ void main() {
   testWidgets(
     'touch backtrack can continue drawing in the same undo transaction',
     (tester) async {
-      final model = ProtoplaneController();
+      final model = constructionWorld();
       addTearDown(() {
         resetView(tester);
         model.dispose();
@@ -310,19 +311,19 @@ void main() {
         size,
       )!;
       final drag = await tester.startGesture(node(0));
-      await drag.moveTo(node(1));
-      await drag.moveTo(node(4));
-      expect(model.draft.path, [0, 1, 4]);
-      await drag.moveTo(node(1));
+      await drag.moveTo(node(9));
+      await drag.moveTo(node(12));
+      expect(model.draft.path, [0, 9, 12]);
+      await drag.moveTo(node(9));
       await tester.pump(const Duration(milliseconds: 500));
-      expect(model.draft.path, [0, 1]);
-      await drag.moveTo(node(2));
-      expect(model.draft.path, [0, 1, 2]);
+      expect(model.draft.path, [0, 9]);
+      await drag.moveTo(node(1));
+      expect(model.draft.path, [0, 9, 1]);
       await drag.up();
       model.undo();
       expect(model.draft.path, isEmpty);
       model.redo();
-      expect(model.draft.path, [0, 1, 2]);
+      expect(model.draft.path, [0, 9, 1]);
       await tester.pumpAndSettle();
       await tester.pumpWidget(const SizedBox());
     },
@@ -331,7 +332,7 @@ void main() {
   testWidgets('devtools tabs fit mobile and grid lines toggle live', (
     tester,
   ) async {
-    final model = ProtoplaneController();
+    final model = constructionWorld();
     addTearDown(() {
       resetView(tester);
       model.dispose();
@@ -340,6 +341,12 @@ void main() {
     await tester.tap(find.text('devtools'));
     await tester.pumpAndSettle();
     expect(find.text('Grid connection lines'), findsOneWidget);
+    final resolution = find.byType(Slider).first;
+    final bounds = tester.getRect(resolution);
+    await tester.tapAt(Offset(bounds.right - 24, bounds.center.dy));
+    await tester.pumpAndSettle();
+    expect(model.planes['ground-4-4']!.grids.first.nodes.length, 36);
+
     await tester.tap(find.text('Grid connection lines'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Lighting'));
@@ -357,7 +364,7 @@ void main() {
   testWidgets(
     'craft zoom reaches plane normal and exits only beyond entry pose',
     (tester) async {
-      final model = ProtoplaneController();
+      final model = constructionWorld();
       addTearDown(() {
         resetView(tester);
         model.dispose();
@@ -408,7 +415,7 @@ void main() {
   testWidgets('focus zoom is disabled by default but outward zoom dismisses', (
     tester,
   ) async {
-    final model = ProtoplaneController();
+    final model = constructionWorld();
     addTearDown(() {
       resetView(tester);
       model.dispose();
@@ -445,7 +452,7 @@ void main() {
   testWidgets(
     'release toggle preserves open crafts across drags when disabled',
     (tester) async {
-      final model = ProtoplaneController();
+      final model = constructionWorld();
       addTearDown(() {
         resetView(tester);
         model.dispose();
@@ -516,7 +523,7 @@ void main() {
   testWidgets('mouse drawing keeps plane camera and creates a floor', (
     tester,
   ) async {
-    final model = ProtoplaneController();
+    final model = constructionWorld();
     addTearDown(() {
       resetView(tester);
       model.dispose();
@@ -557,7 +564,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
   testWidgets('touch pinch exits and restores world pose', (tester) async {
-    final model = ProtoplaneController();
+    final model = constructionWorld();
     addTearDown(() {
       resetView(tester);
       model.dispose();
@@ -587,7 +594,7 @@ void main() {
     const Size(1100, 800),
   ]) {
     testWidgets('craft controls fit $size and render preview', (tester) async {
-      final model = ProtoplaneController();
+      final model = constructionWorld();
       addTearDown(() {
         resetView(tester);
         model.dispose();

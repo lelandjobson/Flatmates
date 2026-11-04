@@ -1,5 +1,5 @@
+import 'construction_fixture.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flatmates/protoplane/controller.dart';
 import 'protoplane_test.dart' as fixtures;
 import 'package:flatmates/protoplane/plane_navigation.dart';
 
@@ -7,7 +7,7 @@ void main() {
   test(
     'floor to wall to upper floor follows the volume and refreshes on undo',
     () {
-      final model = ProtoplaneController();
+      final model = constructionWorld();
       addTearDown(model.dispose);
       final floor = fixtures.floor(model);
       final surface = 'surface-${floor.id}', wall = 'wall-${floor.id}-0';
@@ -50,7 +50,7 @@ void main() {
     },
   );
   test('ground has edge neighbors only and graph survives draft changes', () {
-    final model = ProtoplaneController();
+    final model = constructionWorld();
     addTearDown(model.dispose);
     final graph = model.navigationGraph;
     expect(graph.neighbors['ground-4-4']!.map((e) => e.planeId).toSet(), {

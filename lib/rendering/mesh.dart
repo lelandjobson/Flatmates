@@ -4,6 +4,7 @@ import 'package:vector_math/vector_math_64.dart';
 import '../geometry/geometry.dart';
 import '../geometry/transformable.dart';
 import 'ground_occlusion.dart';
+import 'scene/planar_texture.dart';
 
 class Mesh extends Transformable {
   Mesh({
@@ -20,16 +21,17 @@ class Mesh extends Transformable {
     this.visible = true,
     this.groundPlane = false,
     this.groundOcclusion,
-  })  : _geometry = geometry,
-        _material = material,
-        _highlightColor = null,
-        super(
-          position: position,
-          rotation: rotation,
-          scale: scale,
-          yawThenPitch: yawThenPitch,
-          travelYaw: travelYaw,
-        );
+    this.planarTexture,
+  }) : _geometry = geometry,
+       _material = material,
+       _highlightColor = null,
+       super(
+         position: position,
+         rotation: rotation,
+         scale: scale,
+         yawThenPitch: yawThenPitch,
+         travelYaw: travelYaw,
+       );
 
   final String id;
   final String name;
@@ -41,6 +43,9 @@ class Mesh extends Transformable {
 
   /// When set, faces are clipped so solid ground hides underground parts.
   GroundOcclusion? groundOcclusion;
+
+  /// Optional atlas sprite for flat ground surfaces.
+  final PlanarTexture? planarTexture;
 
   Geometry _geometry;
   Geometry get geometry => _geometry;
