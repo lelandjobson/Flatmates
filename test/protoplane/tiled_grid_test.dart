@@ -1,3 +1,4 @@
+import 'recipe_fixture.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flatmates/protoplane/models.dart';
 import 'package:flatmates/protoplane/geometry.dart';

@@ -53,8 +53,8 @@ separating axes, including differently oriented planes.
 
 ## Material and history
 
-A tile is one square world unit and 128 material units. Each of the five pastel colors
-starts with 256 units. Closed crafts cost
+A tile is one square world unit and 128 material units. Paper starts with 256
+white-paper units and zero graphite or cork. Closed crafts cost
 `ceil(128 × (net planar area + perimeter including holes × depth))`.
 Screen sheets cost `ceil(128 × path length × height)`. Bench geometry is a
 stylized seat and supports; its material quote uses its drawn extrusion
@@ -492,81 +492,44 @@ paths persist across drags; invalid completed actions retain actionable errors.
 
 ## Harvestable paper landscape
 
-The preserved Pastel preset begins covered in five natural paper colors: Coral, Butter, Sage, Mist,
-and Sand. A seeded world-space Perlin field creates continuous, softly grained
-patches across tile boundaries. Placed paper remains solid-colored with crisp
-edges. The natural layer uses a cached 16-subdivision polygon field per tile;
-interpolated band boundaries avoid square pixel edges. These exact polygons
-supply the cached texture bake and material accounting. Following GameView's
-Perlin landscape approach, normal rendering uses a shared GPU texture atlas:
-256 pixels per tile, one-pixel gutters, and one perspective-correct sprite per
-tile. Harvesting rerasterizes only changed slots; camera movement, hover, and
-drawing reuse the atlas. The original polygon renderer remains a fallback for
-near-plane clipping and explicit geometry debug views.
+Paper is the only world. Its layered terrain exposes white paper, graphite, and
+cork; scissors harvest paper/cork and the eraser scrubs graphite. Yield is 128
+units per square world unit, with fractional remainders persisted per material.
+Harvesting clips to exposed material and updates affected atlas columns and
+navigation. Placed paper remains smooth. Camera movement reuses the terrain
+atlas (128 pixels per tile with one-pixel gutters).
 
-A closed ground drawing harvests any remaining natural paper inside it. Mixed
-cutouts collect only untouched portions. A drawing entirely on cleared backing
-uses the existing floor recipe instead. Cuts overlapping placed objects are
-rejected. Harvesting never consumes inventory, removes the ground plane, or
-changes adjacent-plane navigation. There is no regrowth or cross-tile cutting.
+Release commits geometry and inventory as one undo transaction. Cancellation
+restores the unfinished gesture. Paper uses its fixed half-tile base grid plus
+committed pencil paths; quarter-tile pencil marks supply additional cut paths.
 
-Collected material totals 128 units per square world unit, divided among the
-actual colors inside the cutout. Fractional yields accumulate per color across
-cuts and saves. The existing paper carousel cycles through all five colors;
-a compact color/yield display appears on completion. Ground dots use a 5×5
-orthogonal lattice; old nine-node indices survive migration, with new nodes
-appended and legacy long steps expanded through intermediate dots.
+### Paper-only runtime and persistence
 
-Loop closure previews the harvest yield without changing inventory or depletion.
-Pointer release commits both as one saved undo transaction; pointer cancellation or a
-second finger restores the pre-drag world without awarding material. API harvests
-outside an active drag commit immediately. Undo/redo restore material, depletion,
-and drafts together. Pastel worlds and Clear world start at 256 units per color.
+Ink and Pastel have been retired. Their world selector, session manager, colored
+noise terrain, collectible pattern atlas, and runtime recipe-grid generators
+have been removed. The controller always creates layered Paper terrain, and
+terrain is non-null throughout the Paper runtime. Surface recipes come from
+support context; one paper drawing graph is regenerated from constituent marks.
+Authored legacy recipe examples remain in test fixtures for geometry coverage.
 
-Version 2 saves record the generation version, seed, harvested regions, and
-fractional remainders. Old saves retain their original balances, receive 256
-Mist and Sand units, and mark existing ground-object footprints harvested
-without awarding material. Balances can exceed the former 12,800-unit ceiling.
-Tile geometry caches survive ordinary scene refreshes, and unchanged tiles
-reuse their geometry when history or loading replaces the world state.
+Paper continues to use `world-paper.json` and its atomic backup. Existing Paper
+save versions 3–9 with layered terrain load through the same validator, retaining
+objects, inventory, marks, discovery, and attachments. Serialized `preset: paper`
+is kept as a compatibility discriminator, not a runtime switch. Retired presets
+are rejected before mutating the current world. Existing `world.json` and
+`world-ink.json` files are neither read nor deleted. Obsolete world preferences
+are ignored when loading settings and omitted from newly saved settings.
 
-
-### Ink worlds and collectible patterns
-
-Ink remains available alongside Paper (the new default) and Pastel in the developer Crafting tab. Pastel keeps `world.json`; Ink uses `world-ink.json`, with independent
-atomic backups. Switching cancels the current gesture, retries and flushes saves,
-and refuses to switch on failure. Loaded controllers remain in memory, retaining
-each world's history, selected material, and drafts. Clear world affects only the
-selected world. Settings remember the selected preset.
-
-Stable material IDs replace serialized colors in version 3. Versions 1 and 2
-migrate as Pastel; objects, balances, and depletion are preserved. Ink starts with
-256 White, Black, Dots, and Lines units and no Red or Blue. Its seeded field is
-calibrated over the starter domain for approximately 40/20/15/15/8/2 percent area
-coverage respectively. Both accents occur in the starter world; Blue is rarer.
-Harvest accounting uses material area, including patterns, at the same 128 units
-per square world unit with material-keyed fractional remainders.
-
-Ink has no pastel grain. Dots occupy about 20% of white paper and diagonal lines
-25%, with 16 repeats per world unit. Ground bakes these into its existing atlas;
-crafted faces use cached repeating GPU textures with stable planar coordinates,
-including extrusion sides. Cuts preserve the original material and texture phase.
-Inventory uses cached pattern swatches. Lighting remains grayscale, backing is
-mid-gray, and controls/highlights are neutral. Material definitions and preset
-identity participate in ground atlas cache keys; replaced atlas images are disposed.
-
-Validation includes representative-seed coverage, pattern collection and crafting,
-cuts, save migration/recovery/isolation, switch failure, retained history/drafts,
-and dirty-slot atlas reuse. The same live debug camera-pan check measured median
-ScenePainter 0.29 ms (p95 0.74 ms), GPU raster 0.45 ms (p95 0.71 ms), across 63
-frames. No per-pattern geometry is generated during camera movement.
+This cleanup also fixes scissors incorrectly rejecting placed paper supported
+by a graphite terrain plane, and clears cached terrain-edge crop boxes when
+leaving focus. Paper save recovery, undo, scene transitions, crafting, and
+material isolation are covered by the protoplane suite.
 
 ### Profiling landscape rendering
 
 The ScenePainter and GroundTextureAtlas timeline events are available in Flutter
 DevTools. PaintStatsProbe records submitted faces, draw calls, and paint time.
-A fresh 64-tile landscape normally submits 64 sprites (128 triangles), rather
-than tens of thousands of colored polygons. Atlas images are replaced only on
+Visible terrain submits atlas sprites rather than per-fold geometry. Atlas images are replaced only on
 content changes and disposed when replaced or when the view closes. Hot reload
 rebuilds the GPU cache while retaining the model and camera.
 
@@ -828,9 +791,7 @@ geometry, ledger and knowledge persistence, migration, fused support frames,
 splitting and extrusion, pointer cancellation, narrow layouts, and rendered
 pixels through holes.
 
-Separate follow-up: retire Ink and Pastel worlds and consolidate their production
-code paths around Paper. Legacy world files should not be deleted as part of
-that cleanup.
+Ink and Pastel retirement is complete; see Paper-only runtime and persistence.
 
 Focused context is adjustable in the Crafting dev-tools tab with **Context tiles**
 (0–4, default 1) and **Context opacity** (0–100%, default 35%). These settings
@@ -967,13 +928,22 @@ iPhone performance claim.
 
 ## Pencil presentation
 
-The pencil now uses a six-pixel grey live stroke with a soft halo, following the
-pointer between quarter-grid snap points. A successful release commits the
-same exact pencil geometry/accounting as before, while a presentation-only
-360 ms melt thins, fades and gently drops small sections of the live stroke to
-reveal the textured graphite underneath. Rapid strokes retain independent
-bounded trails; reduced-motion mode fades without dropping/fragmenting them.
-Cancellation removes the live stroke; undo and plane/world changes clear transient trails.
+Freehand pointer sampling is replaced by a 300 ms endpoint dwell. Press near a
+quarter-grid dot to anchor; dragging over another dot shows a cyan segment and
+enlarges both endpoints with a 140 ms eased scale animation. Sustaining that
+target for 300 ms commits the segment and starts a separate 75 ms glowing swipe
+that replaces the cyan preview with graphite from tail to tip. The swipe finishes
+even if the pointer releases or moves to another dot. The old anchor shrinks,
+and the target becomes the new anchor for another leg in the same drag.
+Passing dots does not create intermediate bends. Dot selection uses a 24 logical
+pixel screen radius, including positions just outside paper edges.
+
+Leaving a target resets only its pending timer. Release, second-finger input,
+pointer cancellation, tool/focus/world changes and opening devtools discard the
+unfinished leg. Completed legs remain placed, each with its own undo transaction
+and existing exact coverage/graphite accounting. Stationary completed endpoints
+cannot repeatedly charge graphite. Motif stamping retains its existing flow.
+Dwell progress is presentation only: no texture is rebaked until a leg commits.
 
 Persistent graphite replaces sine-wave jitter with coordinate-hashed irregular
 knots: alternating straight runs and small linear kinks, plus variable ink
@@ -982,3 +952,191 @@ its orientation when segment order reverses. Camera changes never reroll or
 rebake it. Logical pencil segments remain straight and retain existing cutting,
 recognition, persistence and paper/graphite costs. A texture-cache render version
 invalidates old periodic appearances without migrating stored pencil marks.
+
+
+### Linear structural placement
+
+Open Place paths on paper floors create walls; paths on walls create floors or
+ramps. Paths follow the same half-tile lattice and committed pencil connections
+as Scissors. Quarter-tile points on a mark are available without unlocking any
+unmarked connections. Closed outlines retain existing recipe recognition.
+Consecutive straight segments collapse into one sheet. All sheets in a polyline
+validate and commit atomically, with one paper charge and undo entry.
+
+`LinearAttachment` stores support identities, an edge in the original support
+frame, extent and side in version 9 worlds. Each sheet has its own stable
+construction frame and visible `surface-` plane. Height/Reach starts at one tile
+and changes in quarter-tile steps; Flip changes which side of a wall supports a
+floor/ramp. Shrinking does not refund paper. Existing dependency restrictions
+protect attached objects; extent changes require an uncut rectangle. Fused
+sheets resize together, and cuts on their shared work surface distribute retained
+geometry and pencil marks back to their original members.
+
+Implied protoplanes is a persisted devtools setting, off by default. Hidden
+candidates remain as internal frames for legacy attachments and room evaluation,
+but cannot render, receive picks, or become swipe destinations. Explicit linear
+attachments add bidirectional navigation portals even through a floor's interior;
+fusion canonicalizes those portals and removes internal constituent navigation.
+
+Reverse traversal immediately removes the active stroke's tail for Place,
+Scissors and Pencil. It never erases committed marks or jumps across a bend.
+Three compact pointer reversals cancel an active Place stroke (650 ms window,
+12 px minimum legs, 64 px envelope); cancellation consumes the rest of that
+pointer contact and creates neither objects, charges, nor an undo record.
+Physical device motion is not used. Legacy screen objects remain loadable and
+editable, while new open structural placement produces actual walls/floors.
+
+Regression coverage: `linear_placement_test.dart`,
+`linear_placement_view_test.dart`, and `stroke_reversal_test.dart`.
+
+## Unified eraser
+
+The crafting toolbar now shows one Eraser whenever either pencil-mark erasing or
+exposed graphite is available. Both former icons already selected the same tool;
+their gesture paths are now consolidated as well. `beginErasing` starts one
+transaction, `eraseStroke` batches pencil marks and exposed graphite together,
+and `finishErasing` records/saves once. Marks use separately projected samples
+on the active paper plane, while graphite samples use the graphite plane.
+Moving between paper and exposed graphite no longer cancels mark erasure.
+Graphite collection retains its masks, covered-material protections, credits
+and pop feedback; clearing pencil marks still does not refund graphite. Undo,
+redo and cancellation restore both targets and exact balances together.
+
+Devtools → Camera → Safe zone fill controls focused framing from 0.5 to 1.0,
+persisted as `safeZoneFill` (default 1.0 for new and older settings). It scales
+both usable width and height around the measured safe-zone center. At full
+focus, 1.0 fits the plane to the safe-zone boundary on its limiting axis; 0.5
+shows it at half that width and height, without changing orientation or
+stretching the geometry. Changes retarget the existing smooth focus transition
+immediately and remain effective across resizing, panel docking and plane
+changes. Semi-focus retains its context/distance constraints, scaled by the
+same factor. Camera framing does not enter gameplay history or change geometry.
+
+### Focus context volume
+
+Devtools → Focus context groups the context radius and opacity with a six-plane
+crop box and Hide orthogonal geometry. New settings default to two surrounding
+tile rings, 35% context opacity, two tile widths of X/Z crop padding, 1.25 tile
+widths above the focused surface, and 0.25 below. Crop is enabled and orientation
+filtering is disabled. Existing explicitly saved radius/opacity choices survive.
+All controls update live and use the normal settings Save/Reload adapter.
+
+The crop box follows the focused surface's world-space bounds. X/Z padding
+expands its horizontal footprint; Above/Below extend its vertical range. A wall's
+full vertical extent is included before padding. Cropping is presentation-only:
+faces crossing any of the six planes are clipped without deleting objects,
+changing collision/support geometry, creating history entries, or charging paper.
+The active surface and its aligned owner remain intact. Cropped sections do not
+add cap geometry. Atlas sprites are clipped in screen space after the world-space
+polygon has been clipped, preserving paper grain, transparent cutouts, and pencil
+marks without rebaking the atlas. Fully contained sprites retain their existing
+unclipped batching path. Other meshes and debug wireframes share the world-space
+face clipper.
+
+A surface is classified as a floor if its normal is within 15° of vertical in
+either direction; every other orientation is classified as a wall, including
+slopes. The orientation filter keeps the focused category and hides the other
+category, including a supporting floor when focusing a wall protoplane. Upright
+screen panels are classified as walls even though their source drawing plane is
+horizontal. Classification follows surface orientation rather than object names
+or individual side faces of a solid. At exact overhead focus, vertical wall faces
+are edge-on; their physical thickness/top edges remain visible. Orbiting toward
+semi-focus reveals their faces.
+
+Freestanding walls drawn on landscape paper use the base of their world-space
+outline as their context level, rather than their face midpoint. This keeps them
+visible from their ground surface and keeps the ground visible from the wall,
+subject to crop/opacity/orientation controls. Context remains non-interactive;
+exiting focus restores ordinary world rendering and wall cutaway behavior.
+
+Validation includes six-plane crossings and boundary contact, inclination
+classification, crop bounds for horizontal/vertical planes, settings migration
+and invalid values, constructed and landscape-anchored walls, orientation
+filtering in both directions, wall protoplanes, live crop changes, world-state
+preservation, exit restoration, and raster checks that ordinary faces and atlas
+sprites are cropped while atlas holes remain transparent.
+
+### Floor swipe destinations
+
+Two-finger and trackpad swipes from floor-oriented planes select only adjacent
+floor-oriented surfaces, using the same 15° inclination classification as focus
+context. Wall and sloped-surface folds remain in the topology/dependency graph
+and retain their existing navigation when starting on those surfaces; they are
+excluded from floor swipe destinations.
+
+Landscape traversal uses four neighboring tile columns in the horizontal map,
+independent of elevation. Each destination is the highest exposed layer with
+remaining geometry in that column. Partial paper, including an isolated interior
+scrap, is reachable; fully depleted columns, diagonals, and tiles beyond a gap
+are not. The direction portal is projected at the source tile's height, so a
+large height difference does not distort the intended screen direction. One
+swipe still makes one step, retains per-plane drafts, and uses the normal focus
+camera transition. There is no fallback through unrelated source layers.
+
+Swipe exits are cached separately from structural adjacency during navigation
+graph construction. The per-gesture direction query remains local to the active
+surface's exits. Harvesting, construction, undo, and redo rebuild these derived
+exits through the existing invalidation path. Regression tests cover height
+changes in either direction, exposed-layer fallback after depletion, partial
+geometry, empty gaps, floor/wall/slope filtering, and touch/trackpad integration.
+
+
+### Baked landscape-paper folds
+
+Natural white-paper terrain uses a seamless faceted-fold height study with broad
+waves. `tool/generate_crumpled_paper.py` deterministically creates a 512×512
+RGBA fold map containing two signed slopes and an eight-direction horizon
+occlusion approximation. Its four-world-unit period is seamless, including the
+height derivatives; it costs 1 MiB decoded and is shared across worlds. Python,
+NumPy, SciPy and Pillow are offline authoring tools only.
+
+A small fragment shader evaluates fixed diffuse lighting and cavity shading
+when `HarvestMeshCache` bakes white-paper atlas slots. Camera rendering keeps
+using the ordinary atlas image: no procedural noise, lighting, or shadow shader
+runs during camera movement. World coordinates and a stable seed phase preserve
+the fold pattern across tile boundaries, cuts and saves. Retained-paper masks
+clip folds from holes. Graphite, cork, and placed/crafted paper do not receive
+this texture. This is cosmetic bump relief with fixed baked lighting; geometry,
+cut paths, marks, and navigation remain planar.
+
+Devtools → Style → Landscape folds exposes Fold strength (0–2), Fold scale
+(.25–4, larger values mean larger folds), and Baked shadow intensity (0–2).
+All default to 1, including migration of old settings. Like existing texture
+controls, these are staged until Update; fold-only updates invalidate white
+terrain slots only. Strength 0 restores the previous smooth terrain appearance.
+The existing surface appearance/fade filters apply after baking. Shadows are
+intrinsic fold cavities, not dynamic object shadows; cut-edge and placed-paper
+edge shading remain separate.
+
+Tests cover pixel differences, shadow and scale controls, transparent cutouts,
+material isolation, settings migration, narrow Devtools layouts, and unchanged
+atlas identity/bake counters during repeated camera-style cache access.
+
+
+Fold density (0–1, default .65) controls how much of natural paper receives fold
+relief. Broad pockets uses a smooth world-space coverage field at .7 cycles per
+world unit; Scattered patches uses 2.4. Both blend two deterministic noise scales
+and soften transitions, reducing normals and cavity shading together. Density 0
+is smooth and 1 reproduces the full uniform folds. Fold scale changes individual
+fold size independently of pocket coverage. The two distribution choices and
+slider are staged until Update and persisted with the other landscape settings.
+The mask is evaluated only during atlas baking, adds no texture allocations,
+and remains fixed through camera motion, cuts, and reloads. Tests compare pixel
+coverage at multiple densities, both styles, exact repeat bakes, material masks,
+and unchanged cache counters across 120 camera-style refreshes.
+
+### Adjacent grid indicators
+
+Floor and landscape crafting focus shows the first grid of each floor-swipe
+destination as small, subdued dots. These are navigation context only: they do
+not receive input, draw connection paths, or display another plane's draft.
+The active crafting grid retains its existing larger dots and line effects.
+
+Indicators follow the neighboring surface's height and are limited to the
+navigation graph's available regions, excluding holes, depleted paper, and
+areas covered by floor/wall geometry. Duplicate target planes and coincident
+screen dots are drawn once. They use the visible mesh's context opacity and crop
+box, fade in with focus, and are omitted in world mode, wall focus, and 3D preview.
+The same passive overlay remains available while erasing. Geometry and navigation
+snapshots remain independent of presentation; indicators do not change state,
+accounting, drafts, or history.

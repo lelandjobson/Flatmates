@@ -66,14 +66,17 @@ void main() {
       }
 
       await capture('world');
-      model.enter('ground-4-4');
+      model.enter('ground-starter-paperWhite-0-0');
       await tester.pumpAndSettle();
       final camera = tester
           .widget<SceneView>(find.byType(SceneView).first)
           .scene
           .camera!;
       Offset node(int n) => camera.projectToScreen(
-        model.activePlane!.point(model.grid!.nodes[n], .008),
+        model.activePlane!.point(
+          lattice('test', rectangle(1, 1)).nodes[n],
+          .008,
+        ),
         size,
       )!;
       Future<TestGesture> cut() async {
@@ -109,12 +112,20 @@ void main() {
       expect(model.harvestPending, isFalse);
       expect(feedback, ['HapticFeedbackType.mediumImpact']);
       expect(model.objects, isEmpty);
-      expect(model.landscape.depleted('ground-4-4'), hasLength(1));
+      expect(
+        model
+            .landscape
+            .terrain
+            .tiles['ground-starter-paperWhite-0-0']!
+            .sheet
+            .cuts,
+        isNotEmpty,
+      );
       expect(find.byKey(const ValueKey('harvest-yield')), findsOneWidget);
       await capture('cut');
       await tester.pumpAndSettle();
       model.selectTool(CraftTool.place);
-      model.selectPaper(PaperMaterial.dots);
+      model.selectPaper(PaperMaterial.paperWhite);
       final build = await cut();
       await build.up();
       await tester.pumpAndSettle();

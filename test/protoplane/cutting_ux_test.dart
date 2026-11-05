@@ -11,7 +11,7 @@ void main() {
   test('scissors never fall through to placement on cleared ground', () {
     final c = constructionWorld();
     addTearDown(c.dispose);
-    c.enter('ground-4-4');
+    c.enter('ground-starter-paperWhite-0-0');
     c.selectTool(CraftTool.scissors);
     c.beginGesture();
     loop(c);
@@ -53,7 +53,7 @@ void main() {
       (tester) async {
         final c = constructionWorld();
         addTearDown(c.dispose);
-        c.enter('ground-4-4');
+        c.enter('ground-starter-paperWhite-0-0');
         c.beginGesture();
         loop(c);
         c.commitDrawing();
@@ -64,7 +64,7 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        c.enter('ground-4-4');
+        c.enter('ground-starter-paperWhite-0-0');
         c.selectTool(scissors ? CraftTool.scissors : CraftTool.place);
         await tester.pumpAndSettle();
         final scene = tester

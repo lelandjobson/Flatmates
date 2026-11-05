@@ -26,12 +26,12 @@ void main() {
       });
       final model = ProtoplaneController();
       addTearDown(model.dispose);
-      final plane = model.planes['ground-4-4']!;
+      final plane = model.planes['ground-starter-paperWhite-0-0']!;
       final paper = CraftObject(
         id: 'effect-paper',
         planeId: plane.id,
         kind: CraftKind.floor,
-        material: PaperMaterial.lines,
+        material: PaperMaterial.paperWhite,
         depth: .12,
         region: Region(
           const [Offset(0, 0), Offset(1, 0), Offset(1, 1), Offset(0, 1)],

@@ -5,17 +5,22 @@ import 'fog_settings.dart';
 import 'package:flutter/material.dart';
 import 'storage.dart';
 import 'appearance.dart';
+import 'crumpled_paper.dart';
 import 'stroke_color_picker.dart';
 
 class ProtoplaneSettings {
   FogSettings fog = FogSettings();
   double nearestDistance = 2, farthestDistance = 25;
-  WorldPreset worldPreset = WorldPreset.paper;
   double tileGridOpacity = .12;
-  int focusContextTiles = 1;
+  int focusContextTiles = 2;
+  bool impliedProtoplanes = false;
   bool showSafeZone = false;
+  double safeZoneFill = 1;
   bool showGestureDebug = false;
   double focusContextOpacity = .35;
+  bool focusCropEnabled = true, hideOrthogonalContext = false;
+  double focusCropX = 2, focusCropZ = 2;
+  double focusCropAbove = 1.25, focusCropBelow = .25;
   static const defaultBackgroundColors = [
     Color(0xff263b70),
     Color(0xff765184),
@@ -31,6 +36,9 @@ class ProtoplaneSettings {
 
   SurfaceAppearance paperTextureAppearance = SurfaceAppearance();
   double paperTextureStrength = .6, paperTextureRepeat = 2;
+  double foldStrength = 1, foldScale = 1, bakedShadowIntensity = 1;
+  double foldDensity = .65;
+  FoldDistribution foldDistribution = FoldDistribution.pockets;
   Color cutLineColor = const Color(0xffff4040);
   Color? _lineColor;
   Color get lineColor => _lineColor ?? const Color(0xff7fff00);
@@ -54,15 +62,27 @@ class ProtoplaneSettings {
     'fog': fog.toJson(),
     'nearestDistance': nearestDistance,
     'farthestDistance': farthestDistance,
-    'paperWorldDefault': true,
     'tileGridOpacity': tileGridOpacity,
     'focusContextTiles': focusContextTiles,
     'showSafeZone': showSafeZone,
+    'safeZoneFill': safeZoneFill,
+    'impliedProtoplanes': impliedProtoplanes,
     'showGestureDebug': showGestureDebug,
     'focusContextOpacity': focusContextOpacity,
+    'focusCropEnabled': focusCropEnabled,
+    'hideOrthogonalContext': hideOrthogonalContext,
+    'focusCropX': focusCropX,
+    'focusCropZ': focusCropZ,
+    'focusCropAbove': focusCropAbove,
+    'focusCropBelow': focusCropBelow,
     'paperTextureAppearance': paperTextureAppearance.toJson(),
     'paperTextureStrength': paperTextureStrength,
     'paperTextureRepeat': paperTextureRepeat,
+    'foldStrength': foldStrength,
+    'foldScale': foldScale,
+    'bakedShadowIntensity': bakedShadowIntensity,
+    'foldDensity': foldDensity,
+    'foldDistribution': foldDistribution.name,
     'backgroundColors': backgroundColors
         .map((color) => color.toARGB32())
         .toList(),
@@ -73,7 +93,6 @@ class ProtoplaneSettings {
     'effectDurationMs': effectDurationMs,
     'haptics': haptics,
     'screenShake': screenShake,
-    'worldPreset': worldPreset.name,
     'protoplaneCells': protoplaneCells,
     'gridConnections': gridConnections.name,
     'entryFocusLevel': entryFocusLevel,
@@ -86,6 +105,7 @@ class ProtoplaneSettings {
     'wallFar': wallFar,
   };
   void load(Map<String, dynamic> json) {
+    impliedProtoplanes = json['impliedProtoplanes'] == true;
     if (json['version'] != 1 || json['gridLines'] is! bool) {
       throw const FormatException('Invalid settings');
     }
@@ -117,6 +137,21 @@ class ProtoplaneSettings {
     paperTextureAppearance = texture;
     paperTextureStrength = strength;
     paperTextureRepeat = repeat;
+    foldStrength = json.containsKey('foldStrength')
+        ? number('foldStrength', 0, 2)
+        : 1;
+    foldScale = json.containsKey('foldScale') ? number('foldScale', .25, 4) : 1;
+    foldDensity = json.containsKey('foldDensity')
+        ? number('foldDensity', 0, 1)
+        : .65;
+    final distribution = json['foldDistribution'] ?? 'pockets';
+    if (!FoldDistribution.values.any((d) => d.name == distribution)) {
+      throw const FormatException('Invalid fold distribution');
+    }
+    foldDistribution = FoldDistribution.values.byName(distribution);
+    bakedShadowIntensity = json.containsKey('bakedShadowIntensity')
+        ? number('bakedShadowIntensity', 0, 2)
+        : 1;
     final a = number('ambient', 0, 1),
         s = number('sun', 0, 1),
         n = number('wallNear', 1, 8),
@@ -137,9 +172,6 @@ class ProtoplaneSettings {
     if (cells is! int || cells < 1 || cells > 5) {
       throw const FormatException('Invalid grid resolution');
     }
-    worldPreset = json['paperWorldDefault'] == true
-        ? WorldPreset.values.byName(json['worldPreset'] ?? 'paper')
-        : WorldPreset.paper;
     tileGridOpacity = json.containsKey('tileGridOpacity')
         ? number('tileGridOpacity', 0, 1)
         : .12;
@@ -152,8 +184,11 @@ class ProtoplaneSettings {
       throw const FormatException('Invalid gesture debug setting');
     }
     showGestureDebug = gestures;
+    safeZoneFill = json.containsKey('safeZoneFill')
+        ? number('safeZoneFill', .5, 1)
+        : 1;
     showSafeZone = safeZone;
-    final contextTiles = json['focusContextTiles'] ?? 1;
+    final contextTiles = json['focusContextTiles'] ?? 2;
     if (contextTiles is! int || contextTiles < 0 || contextTiles > 4) {
       throw const FormatException('Invalid context distance');
     }
@@ -161,6 +196,26 @@ class ProtoplaneSettings {
     focusContextOpacity = json.containsKey('focusContextOpacity')
         ? number('focusContextOpacity', 0, 1)
         : .35;
+    bool flag(String key, bool fallback) {
+      final value = json[key] ?? fallback;
+      if (value is! bool) throw FormatException('Invalid $key');
+      return value;
+    }
+
+    focusCropEnabled = flag('focusCropEnabled', true);
+    hideOrthogonalContext = flag('hideOrthogonalContext', false);
+    focusCropX = json.containsKey('focusCropX')
+        ? number('focusCropX', 0, 4)
+        : 2;
+    focusCropZ = json.containsKey('focusCropZ')
+        ? number('focusCropZ', 0, 4)
+        : 2;
+    focusCropAbove = json.containsKey('focusCropAbove')
+        ? number('focusCropAbove', 0, 4)
+        : 1.25;
+    focusCropBelow = json.containsKey('focusCropBelow')
+        ? number('focusCropBelow', 0, 4)
+        : .25;
     final rgb = json['lineColor'] ?? 0xff7fff00;
     if (rgb is! int || rgb < 0xff000000 || rgb > 0xffffffff) {
       throw const FormatException('Invalid line color');
@@ -225,9 +280,16 @@ class LandscapeStyleDraft {
         settings.paperTextureAppearance.toJson(),
       ),
       strength = settings.paperTextureStrength,
-      repeat = settings.paperTextureRepeat;
+      repeat = settings.paperTextureRepeat,
+      foldStrength = settings.foldStrength,
+      foldScale = settings.foldScale,
+      bakedShadowIntensity = settings.bakedShadowIntensity,
+      foldDensity = settings.foldDensity,
+      foldDistribution = settings.foldDistribution;
   final SurfaceAppearance fill, grain;
-  double strength, repeat;
+  double strength, repeat, foldStrength, foldScale, bakedShadowIntensity;
+  double foldDensity;
+  FoldDistribution foldDistribution;
   void applyTo(ProtoplaneSettings settings) {
     settings.landscapeAppearance = SurfaceAppearance.fromJson(fill.toJson());
     settings.paperTextureAppearance = SurfaceAppearance.fromJson(
@@ -235,6 +297,11 @@ class LandscapeStyleDraft {
     );
     settings.paperTextureStrength = strength;
     settings.paperTextureRepeat = repeat;
+    settings.foldStrength = foldStrength;
+    settings.foldScale = foldScale;
+    settings.bakedShadowIntensity = bakedShadowIntensity;
+    settings.foldDensity = foldDensity;
+    settings.foldDistribution = foldDistribution;
   }
 }
 
@@ -246,7 +313,6 @@ Future<void> showProtoplaneDevTools(
   String? initialError,
   VoidCallback? clearWorld,
   VoidCallback? revealAllAreas,
-  Future<void> Function(WorldPreset)? switchWorld,
 }) {
   final done = Completer<void>();
   final size = MediaQuery.sizeOf(context),
@@ -275,7 +341,6 @@ Future<void> showProtoplaneDevTools(
         initialError: initialError,
         clearWorld: clearWorld,
         revealAllAreas: revealAllAreas,
-        switchWorld: switchWorld,
       ),
     ),
   );
@@ -293,14 +358,12 @@ class ProtoplaneDevToolsPanel extends StatefulWidget {
     this.initialError,
     this.clearWorld,
     this.revealAllAreas,
-    this.switchWorld,
   });
   final ProtoplaneSettings settings;
   final ProtoplaneStorage store;
   final VoidCallback changed, onClose;
   final String? initialError;
   final VoidCallback? clearWorld, revealAllAreas;
-  final Future<void> Function(WorldPreset)? switchWorld;
   @override
   State<ProtoplaneDevToolsPanel> createState() =>
       _ProtoplaneDevToolsPanelState();
@@ -312,9 +375,8 @@ class _ProtoplaneDevToolsPanelState extends State<ProtoplaneDevToolsPanel> {
   VoidCallback get changed => widget.changed;
   VoidCallback? get clearWorld => widget.clearWorld;
   VoidCallback? get revealAllAreas => widget.revealAllAreas;
-  Future<void> Function(WorldPreset)? get switchWorld => widget.switchWorld;
   late String? error = widget.initialError;
-  bool switching = false, landscapeDirty = false;
+  bool landscapeDirty = false;
   late LandscapeStyleDraft landscapeDraft = LandscapeStyleDraft(settings);
   void update(VoidCallback change) {
     if (mounted) setState(change);
@@ -372,7 +434,7 @@ class _ProtoplaneDevToolsPanelState extends State<ProtoplaneDevToolsPanel> {
               width: constraints.maxWidth / .75,
               height: constraints.maxHeight / .75,
               child: DefaultTabController(
-                length: 5,
+                length: 6,
                 child: Column(
                   children: [
                     Row(
@@ -401,6 +463,7 @@ class _ProtoplaneDevToolsPanelState extends State<ProtoplaneDevToolsPanel> {
                         Tab(text: 'Camera'),
                         Tab(text: 'Style'),
                         Tab(text: 'Fog'),
+                        Tab(text: 'Focus context'),
                       ],
                     ),
                     Expanded(
@@ -408,49 +471,14 @@ class _ProtoplaneDevToolsPanelState extends State<ProtoplaneDevToolsPanel> {
                         children: [
                           ListView(
                             children: [
-                              if (switchWorld != null)
-                                Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: SingleChildScrollView(
-                                    scrollDirection: Axis.horizontal,
-                                    child: SegmentedButton<WorldPreset>(
-                                      segments: [
-                                        for (final preset in WorldPreset.values)
-                                          ButtonSegment(
-                                            value: preset,
-                                            label: Text(preset.label),
-                                          ),
-                                      ],
-                                      selected: {settings.worldPreset},
-                                      onSelectionChanged: switching
-                                          ? null
-                                          : (selection) async {
-                                              update(() => switching = true);
-                                              try {
-                                                await switchWorld!(
-                                                  selection.single,
-                                                );
-                                                if (context.mounted) {
-                                                  update(() => error = null);
-                                                }
-                                              } catch (_) {
-                                                if (context.mounted) {
-                                                  update(
-                                                    () => error =
-                                                        'Could not switch world. Retry saving or reload.',
-                                                  );
-                                                }
-                                              } finally {
-                                                if (context.mounted) {
-                                                  update(
-                                                    () => switching = false,
-                                                  );
-                                                }
-                                              }
-                                            },
-                                    ),
-                                  ),
-                                ),
+                              SwitchListTile(
+                                title: const Text('Implied protoplanes'),
+                                value: settings.impliedProtoplanes,
+                                onChanged: (v) {
+                                  update(() => settings.impliedProtoplanes = v);
+                                  changed();
+                                },
+                              ),
                               if (clearWorld != null)
                                 ListTile(
                                   title: const Text('Clear world'),
@@ -497,43 +525,6 @@ class _ProtoplaneDevToolsPanelState extends State<ProtoplaneDevToolsPanel> {
                                   );
                                   changed();
                                 },
-                              ),
-                              ListTile(
-                                title: const Text('Context tiles'),
-                                trailing: Text('${settings.focusContextTiles}'),
-                                subtitle: Slider(
-                                  key: const ValueKey('Context tiles'),
-                                  value: settings.focusContextTiles.toDouble(),
-                                  min: 0,
-                                  max: 4,
-                                  divisions: 4,
-                                  label: '${settings.focusContextTiles}',
-                                  onChanged: (v) {
-                                    update(
-                                      () => settings.focusContextTiles = v
-                                          .round(),
-                                    );
-                                    changed();
-                                  },
-                                ),
-                              ),
-                              ListTile(
-                                title: const Text('Context opacity'),
-                                trailing: Text(
-                                  '${(settings.focusContextOpacity * 100).round()}%',
-                                ),
-                                subtitle: Slider(
-                                  key: const ValueKey('Context opacity'),
-                                  value: settings.focusContextOpacity,
-                                  min: 0,
-                                  max: 1,
-                                  onChanged: (v) {
-                                    update(
-                                      () => settings.focusContextOpacity = v,
-                                    );
-                                    changed();
-                                  },
-                                ),
                               ),
                               ListTile(
                                 title: const Text('Tile grid opacity'),
@@ -710,6 +701,13 @@ class _ProtoplaneDevToolsPanelState extends State<ProtoplaneDevToolsPanel> {
                                 },
                               ),
                               slider(
+                                'Safe zone fill',
+                                settings.safeZoneFill,
+                                .5,
+                                1,
+                                (v) => settings.safeZoneFill = v,
+                              ),
+                              slider(
                                 'Entry focus level',
                                 settings.entryFocusLevel,
                                 0,
@@ -836,6 +834,61 @@ class _ProtoplaneDevToolsPanelState extends State<ProtoplaneDevToolsPanel> {
                                 deferred: true,
                               ),
                               const Divider(height: 24),
+                              const Text('Landscape folds'),
+                              slider(
+                                'Fold density',
+                                landscapeDraft.foldDensity,
+                                0,
+                                1,
+                                (v) => landscapeDraft.foldDensity = v,
+                                deferred: true,
+                              ),
+                              const Text('Fold distribution'),
+                              Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    for (final d in FoldDistribution.values)
+                                      ChoiceChip(
+                                        label: Text(d.label),
+                                        selected:
+                                            landscapeDraft.foldDistribution ==
+                                            d,
+                                        onSelected: (_) => update(() {
+                                          landscapeDraft.foldDistribution = d;
+                                          landscapeDirty = true;
+                                        }),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              slider(
+                                'Fold strength',
+                                landscapeDraft.foldStrength,
+                                0,
+                                2,
+                                (v) => landscapeDraft.foldStrength = v,
+                                deferred: true,
+                              ),
+                              slider(
+                                'Fold scale',
+                                landscapeDraft.foldScale,
+                                .25,
+                                4,
+                                (v) => landscapeDraft.foldScale = v,
+                                deferred: true,
+                              ),
+                              slider(
+                                'Baked shadow intensity',
+                                landscapeDraft.bakedShadowIntensity,
+                                0,
+                                2,
+                                (v) => landscapeDraft.bakedShadowIntensity = v,
+                                deferred: true,
+                              ),
+                              const Divider(height: 24),
                               for (final entry in {
                                 'Landscape fills / patterns':
                                     landscapeDraft.fill,
@@ -889,6 +942,96 @@ class _ProtoplaneDevToolsPanelState extends State<ProtoplaneDevToolsPanel> {
                             },
                             revealAll: revealAllAreas,
                           ),
+                          ListView(
+                            children: [
+                              ListTile(
+                                title: const Text('Context tiles'),
+                                trailing: Text('${settings.focusContextTiles}'),
+                                subtitle: Slider(
+                                  key: const ValueKey('Context tiles'),
+                                  value: settings.focusContextTiles.toDouble(),
+                                  min: 0,
+                                  max: 4,
+                                  divisions: 4,
+                                  label: '${settings.focusContextTiles}',
+                                  onChanged: (v) {
+                                    update(
+                                      () => settings.focusContextTiles = v
+                                          .round(),
+                                    );
+                                    changed();
+                                  },
+                                ),
+                              ),
+                              ListTile(
+                                title: const Text('Context opacity'),
+                                trailing: Text(
+                                  '${(settings.focusContextOpacity * 100).round()}%',
+                                ),
+                                subtitle: Slider(
+                                  key: const ValueKey('Context opacity'),
+                                  value: settings.focusContextOpacity,
+                                  min: 0,
+                                  max: 1,
+                                  onChanged: (v) {
+                                    update(
+                                      () => settings.focusContextOpacity = v,
+                                    );
+                                    changed();
+                                  },
+                                ),
+                              ),
+
+                              SwitchListTile(
+                                title: const Text('Hide orthogonal geometry'),
+                                value: settings.hideOrthogonalContext,
+                                onChanged: (v) {
+                                  update(
+                                    () => settings.hideOrthogonalContext = v,
+                                  );
+                                  changed();
+                                },
+                              ),
+                              SwitchListTile(
+                                title: const Text('Crop box'),
+                                value: settings.focusCropEnabled,
+                                onChanged: (v) {
+                                  update(() => settings.focusCropEnabled = v);
+                                  changed();
+                                },
+                              ),
+                              if (settings.focusCropEnabled) ...[
+                                slider(
+                                  'Crop X padding',
+                                  settings.focusCropX,
+                                  0,
+                                  4,
+                                  (v) => settings.focusCropX = v,
+                                ),
+                                slider(
+                                  'Crop Z padding',
+                                  settings.focusCropZ,
+                                  0,
+                                  4,
+                                  (v) => settings.focusCropZ = v,
+                                ),
+                                slider(
+                                  'Crop above',
+                                  settings.focusCropAbove,
+                                  0,
+                                  4,
+                                  (v) => settings.focusCropAbove = v,
+                                ),
+                                slider(
+                                  'Crop below',
+                                  settings.focusCropBelow,
+                                  0,
+                                  4,
+                                  (v) => settings.focusCropBelow = v,
+                                ),
+                              ],
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -916,9 +1059,7 @@ class _ProtoplaneDevToolsPanelState extends State<ProtoplaneDevToolsPanel> {
                               final json = await store.load(
                                 (j) => ProtoplaneSettings()..load(j),
                               );
-                              final activePreset = settings.worldPreset;
                               if (json != null) settings.load(json);
-                              settings.worldPreset = activePreset;
                               landscapeDraft = LandscapeStyleDraft(settings);
                               landscapeDirty = false;
                               changed();

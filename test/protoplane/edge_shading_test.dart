@@ -28,7 +28,7 @@ CraftObject paper(CraftPlane p, {Region? region, double depth = .08}) =>
       planeId: p.id,
       kind: CraftKind.floor,
       region: region ?? rectangle(1, 1),
-      material: PaperMaterial.white,
+      material: PaperMaterial.paperWhite,
       depth: depth,
     );
 

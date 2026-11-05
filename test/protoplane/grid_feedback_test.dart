@@ -44,9 +44,10 @@ void main() {
     () {
       final c = ProtoplaneController();
       addTearDown(c.dispose);
-      final points = c.planes['ground-4-4']!.grids.first.nodes.toList();
+      c.enter('ground-starter-paperWhite-0-0');
+      final points = c.grid!.nodes.toList();
       final balances = Map.of(c.balances);
-      c.enter('ground-4-4');
+      c.enter('ground-starter-paperWhite-0-0');
       c.beginGesture();
       c.appendNode(0);
       c.appendNode(1);
@@ -54,13 +55,13 @@ void main() {
       expect(c.draft.path, isEmpty);
       expect(c.balances, balances);
       expect(c.grid!.nodes, points);
-      expect(c.grid!.dotStyle(4), 'circle');
+      expect(c.grid!.dotStyle(4), 'square');
       expect(
         c.grid!.edges.any((e) {
           final d = c.grid!.nodes[e.a] - c.grid!.nodes[e.b];
           return d.dx.abs() > .01 && d.dy.abs() > .01;
         }),
-        isTrue,
+        isFalse,
       );
       c.beginGesture();
       for (final i in [0, 2, 8, 6, 0]) {
@@ -68,25 +69,39 @@ void main() {
       }
       c.commitDrawing();
       c.undo();
-      expect(c.grid!.dotStyle(4), 'circle');
+      expect(c.grid!.dotStyle(4), 'square');
       c.redo();
       final saved = c.toJson();
       final loaded = ProtoplaneController()..load(saved);
       addTearDown(loaded.dispose);
       expect(loaded.toJson(), saved);
-      expect(loaded.planes['ground-4-4']!.grids.first.dotStyle(4), 'circle');
       expect(
-        loaded.planes['ground-4-4']!.grids.first.edges.length,
+        loaded.planes['ground-starter-paperWhite-0-0']!.grids.first.dotStyle(4),
+        'circle',
+      );
+      expect(
+        loaded
+            .planes['ground-starter-paperWhite-0-0']!
+            .grids
+            .first
+            .edges
+            .length,
         c.grid!.edges.length,
       );
       c.setProtoplaneConnections(GridConnections.arbitrary);
       expect(c.canUndo, isTrue);
       c.undo();
-      expect(c.grid!.dotStyle(4), 'star');
-      expect(c.landscape.depleted('ground-4-4'), isEmpty);
+      expect(c.grid!.dotStyle(4), 'square');
+      expect(
+        c.landscape.terrain.tiles['ground-starter-paperWhite-0-0']!.sheet.cuts,
+        isEmpty,
+      );
       c.redo();
       expect(c.grid!.dotStyle(4), 'star');
-      expect(c.landscape.depleted('ground-4-4'), isNotEmpty);
+      expect(
+        c.landscape.terrain.tiles['ground-starter-paperWhite-0-0']!.sheet.cuts,
+        isNotEmpty,
+      );
     },
   );
   test('color and connection preferences migrate and persist', () {
@@ -125,7 +140,7 @@ void main() {
           ),
         ),
       );
-      c.enter('ground-4-4');
+      c.enter('ground-starter-paperWhite-0-0');
       await tester.pumpAndSettle();
       Future<void> capture(String stage) async {
         final boundary = tester.renderObject<RenderRepaintBoundary>(

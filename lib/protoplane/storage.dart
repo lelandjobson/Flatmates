@@ -11,7 +11,7 @@ typedef WorldValidator = void Function(Map<String, dynamic>);
 class ProtoplaneStorage {
   ProtoplaneStorage({
     Future<Directory> Function()? directory,
-    this.fileName = 'world.json',
+    this.fileName = 'world-paper.json',
   }) : _directory = directory ?? getApplicationSupportDirectory;
   final String fileName;
   final Future<Directory> Function() _directory;

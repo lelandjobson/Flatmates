@@ -1,3 +1,4 @@
+import 'recipe_fixture.dart';
 import 'construction_fixture.dart';
 import 'dart:convert';
 import 'dart:io';
@@ -14,6 +15,12 @@ import 'package:flatmates/protoplane/meshes.dart';
 import 'package:flatmates/protoplane/collision.dart';
 
 void draw(ProtoplaneController c, List<int> path) {
+  if (c.paperSurface) {
+    final n = path.any((i) => i >= 9) ? 5 : 3;
+    final grid = lattice('fixture', c.activePlane!.region, count: n);
+    drawPoints(c, path.map((i) => grid.nodes[i]).toList());
+    return;
+  }
   c.beginGesture();
   for (final node in path) {
     expect(c.appendNode(node), isTrue, reason: '$node in $path: ${c.error}');
@@ -21,7 +28,11 @@ void draw(ProtoplaneController c, List<int> path) {
   c.finishGesture();
 }
 
-CraftObject floor(ProtoplaneController c, {String tile = 'ground-4-4'}) {
+CraftObject floor(
+  ProtoplaneController c, {
+  String tile = 'ground-starter-paperWhite-0-0',
+}) {
+  c.landscape.deplete(tile, c.planes[tile]!.region);
   c.enter(tile);
   draw(c, [0, 1, 2, 5, 8, 7, 6, 3, 0]);
   expect(c.create(), isTrue, reason: c.error);
@@ -227,14 +238,30 @@ void main() {
       final f = floor(c);
       c.enter('surface-${f.id}');
       c.selectGrid(2);
-      draw(c, c.grid!.examples[CraftKind.screen]!);
-      c.choose(CraftKind.screen);
-      expect(c.create(), isTrue, reason: c.error);
+      // A legacy screen remains editable even though open Place now makes walls.
+      final path = [const Offset(.1, .5), const Offset(.9, .5)];
+      final d = path[1] - path[0], n = Offset(-d.dy, d.dx) / d.distance * .004;
+      final id = 'object-${c.nextId++}';
+      c.objects[id] = CraftObject(
+        id: id,
+        planeId: c.activePlaneId!,
+        kind: CraftKind.screen,
+        region: Region([path[0] + n, path[1] + n, path[1] - n, path[0] - n]),
+        material: c.paper,
+        path: path,
+        depth: .65,
+      );
+      final saved = c.toJson()..['version'] = 8;
+      c.load(saved);
       final screen = c.objects.values.last,
-          balance = c.balances[PaperColor.red];
+          balance = c.balances[PaperColor.paperWhite];
       c.enter(screen.planeId, editObject: screen.id);
       c.selectGrid(2);
-      draw(c, [2, 7, 12, 17, 22]);
+      drawPoints(c, [
+        const Offset(.5, 0),
+        const Offset(.5, .5),
+        const Offset(.5, 1),
+      ]);
       expect(c.screenCutPreview, hasLength(2));
       expect(c.applyEdit(), isTrue, reason: c.error);
       final screens = c.objects.values
@@ -245,26 +272,20 @@ void main() {
         screens.fold(0.0, (s, o) => s + pathLength(o.path)),
         closeTo(pathLength(screen.path), 1e-7),
       );
-      expect(c.balances[PaperColor.red], balance);
+      expect(c.balances[PaperColor.paperWhite], balance);
       c.undo();
       expect(
         c.objects.values.where((o) => o.kind == CraftKind.screen),
         hasLength(1),
       );
     });
-    for (final kind in [
-      CraftKind.rug,
-      CraftKind.tabletop,
-      CraftKind.bench,
-      CraftKind.planter,
-      CraftKind.screen,
-    ]) {
+    for (final kind in [CraftKind.rug, CraftKind.tabletop, CraftKind.bench]) {
       test('${kind.label} has a drawable recipe, mesh and material quote', () {
         final c = constructionWorld();
         final f = floor(c);
         c.enter('surface-${f.id}');
         c.selectGrid(2);
-        draw(c, c.grid!.examples[kind]!);
+        drawPoints(c, recipePoints(c, kind));
         c.choose(kind);
         final candidate = c.previewObject!;
         expect(candidate.kind, kind);
@@ -305,29 +326,28 @@ void main() {
       c.setDepth(.1);
       expect(c.quote, 52);
       expect(c.applyEdit(), isTrue, reason: c.error);
-      final afterGrowth = c.balances[PaperColor.red];
+      final afterGrowth = c.balances[PaperColor.paperWhite];
       c.setDepth(.05);
       expect(c.quote, 0);
       expect(c.applyEdit(), isTrue, reason: c.error);
-      expect(c.balances[PaperColor.red], afterGrowth);
+      expect(c.balances[PaperColor.paperWhite], afterGrowth);
       draw(c, [1, 4, 7]);
       expect(c.previewDepth, .05);
       expect(c.applyEdit(), isTrue, reason: c.error);
       expect(c.objects.values.every((o) => o.depth == .05), isTrue);
-      expect(c.balances[PaperColor.red], afterGrowth);
+      expect(c.balances[PaperColor.paperWhite], afterGrowth);
     });
-    test('acetates preserve independent drafts and a new edit clears redo', () {
+    test('Paper has one drawing graph and a new edit clears redo', () {
       final c = constructionWorld();
       final f = floor(c);
       c.enter('surface-${f.id}');
       draw(c, [0, 1, 2]);
+      final path = List<int>.of(c.draft.path);
       c.selectGrid(1);
-      expect(c.draft.path, isEmpty);
-      draw(c, [5, 6, 7]);
-      c.selectGrid(0);
-      expect(c.draft.path, [0, 1, 2]);
+      expect(c.draft.path, path);
+      expect(c.activePlane!.grids, hasLength(1));
       c.undo();
-      c.selectGrid(0);
+      draw(c, [0, 1]);
       c.clearDraft();
       expect(c.canRedo, isFalse);
     });
@@ -360,7 +380,7 @@ void main() {
           planeId: p,
           kind: CraftKind.tabletop,
           region: rectangle(1, 1),
-          color: PaperColor.red,
+          color: PaperColor.paperWhite,
           depth: .2,
         );
         expect(
@@ -402,18 +422,20 @@ void main() {
           c.objects[wall.id]!.region.contains(const Offset(.5, .1)),
           isFalse,
         );
-        draw(c, [1, 2, 3, 8, 13, 12, 11, 6, 1]);
+        expect(
+          c.grid!.nodes.any((p) => (p - const Offset(.5, .25)).distance < 1e-6),
+          isFalse,
+        );
         expect(c.create(), isFalse);
-        expect(c.error, contains('remaining wall'));
       },
     );
     test('complete build, openings, upper floor, save round trip and undo', () {
       final c = constructionWorld();
       final f = floor(c);
-      expect(c.balances[PaperColor.red], 12672);
+      expect(c.balances[PaperColor.paperWhite], 12672);
       expect(c.planes.keys.where((id) => id.startsWith('wall-')), hasLength(4));
       c.enter('surface-${f.id}');
-      draw(c, c.grid!.examples[CraftKind.rug]!);
+      drawPoints(c, recipePoints(c, CraftKind.rug));
       c.choose(CraftKind.rug);
       expect(c.create(), isTrue, reason: c.error);
       final rug = c.objects.values.last;
@@ -449,7 +471,7 @@ void main() {
       expect(jsonEncode(c.toJson()), saved);
     });
     test('multiple adjacent floors, overlap rejection, insufficient paper', () {
-      final c = constructionWorld()..enter('ground-4-4');
+      final c = constructionWorld()..enter('ground-starter-paperWhite-0-0');
       draw(c, [0, 1, 4, 3, 0]);
       expect(c.create(), isTrue, reason: c.error);
       draw(c, [1, 2, 5, 4, 1]);
@@ -458,13 +480,13 @@ void main() {
       expect(c.create(), isFalse);
       expect(c.error, contains('Overlaps'));
       c.clearDraft();
-      c.balances[PaperColor.red] = 0;
+      c.balances[PaperColor.paperWhite] = 0;
       draw(c, [3, 4, 7, 6, 3]);
       expect(c.create(), isFalse);
       expect(c.draft.path, isNotEmpty);
     });
     test('stroke undo, draft isolation, exact accounting and redo branch', () {
-      final c = constructionWorld()..enter('ground-4-4');
+      final c = constructionWorld()..enter('ground-starter-paperWhite-0-0');
       draw(c, [0, 1, 2]);
       c.undo();
       expect(c.draft.path, isEmpty);
@@ -474,9 +496,9 @@ void main() {
       c.setDepth(.1);
       expect(c.quote, 180);
       expect(c.create(), isTrue, reason: c.error);
-      expect(c.balances[PaperColor.red], 12620);
+      expect(c.balances[PaperColor.paperWhite], 12620);
       c.undo();
-      expect(c.balances[PaperColor.red], 12800);
+      expect(c.balances[PaperColor.paperWhite], 12800);
       c.clearDraft();
       expect(c.canRedo, isFalse);
     });
@@ -488,10 +510,10 @@ void main() {
         c.enter(f.planeId, editObject: f.id);
         draw(c, [1, 4, 7]);
         expect(c.cutPreview, hasLength(2));
-        final balance = c.balances[PaperColor.red];
+        final balance = c.balances[PaperColor.paperWhite];
         expect(c.applyEdit(), isTrue, reason: c.error);
         expect(c.objects, hasLength(2));
-        expect(c.balances[PaperColor.red], balance);
+        expect(c.balances[PaperColor.paperWhite], balance);
         c.undo();
         expect(c.objects, hasLength(1));
         expect(c.objects[f.id]!.region.area, 1);
@@ -501,7 +523,7 @@ void main() {
       final c = constructionWorld();
       final f = floor(c);
       c.enter('surface-${f.id}');
-      draw(c, c.grid!.examples[CraftKind.rug]!);
+      drawPoints(c, recipePoints(c, CraftKind.rug));
       expect(c.create(), isTrue, reason: c.error);
       c.enter(f.planeId, editObject: f.id);
       c.setDepth(.1);
@@ -510,7 +532,7 @@ void main() {
     });
     test('hole mesh has no cap triangles over hole', () {
       final c = constructionWorld();
-      final p = c.planes['ground-4-4']!;
+      final p = c.planes['ground-starter-paperWhite-0-0']!;
       final r = rectangle(
         1,
         1,
@@ -552,7 +574,7 @@ void main() {
       await Future.wait([first, second]);
       expect((await s.load(validate))!['objects'], hasLength(1));
       await File(
-        '${temp.path}/protoplane_concept/world.json',
+        '${temp.path}/protoplane_concept/world-paper.json',
       ).writeAsString('{broken');
       final recovered = await s.load(validate);
       expect(recovered!['objects'], isEmpty);
@@ -567,7 +589,7 @@ void main() {
     test('corrupt primary and backup cannot be silently overwritten', () async {
       final dir = Directory('${temp.path}/protoplane_concept');
       await dir.create();
-      final file = File('${dir.path}/world.json');
+      final file = File('${dir.path}/world-paper.json');
       await file.writeAsString('broken');
       final s = ProtoplaneStorage(directory: () async => temp);
       await expectLater(s.load(validate), throwsFormatException);

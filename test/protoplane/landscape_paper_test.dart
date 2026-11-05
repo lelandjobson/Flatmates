@@ -8,7 +8,7 @@ void main() {
   test(
     'landscape paper shares pencil lattice, cost, discovery and history',
     () {
-      final c = ProtoplaneController(preset: WorldPreset.paper);
+      final c = ProtoplaneController();
       addTearDown(c.dispose);
       final id = centerId(c, PaperMaterial.paperWhite);
       c.enter(id);
@@ -37,7 +37,7 @@ void main() {
   );
 
   test('landscape paper is floor support without a duplicate floor', () {
-    final c = ProtoplaneController(preset: WorldPreset.paper);
+    final c = ProtoplaneController();
     addTearDown(c.dispose);
     final id = centerId(c, PaperMaterial.paperWhite);
     c.enter(id);
@@ -62,7 +62,7 @@ void main() {
   });
 
   test('harvesting removes landscape marks and undo restores them', () {
-    final c = ProtoplaneController(preset: WorldPreset.paper);
+    final c = ProtoplaneController();
     addTearDown(c.dispose);
     final id = centerId(c, PaperMaterial.paperWhite);
     c.enter(id);
@@ -93,7 +93,7 @@ void main() {
   test(
     'partial landscape clips marks and cannot discover incomplete motifs',
     () {
-      final c = ProtoplaneController(preset: WorldPreset.paper);
+      final c = ProtoplaneController();
       addTearDown(c.dispose);
       final id = centerId(c, PaperMaterial.paperWhite);
       c.landscape.deplete(id, rectangle(.5, 1));

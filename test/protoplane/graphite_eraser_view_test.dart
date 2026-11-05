@@ -20,7 +20,7 @@ void main() {
     final cache = HarvestMeshCache();
     addTearDown(cache.dispose);
     cache.synchronize(c.planes.values, c.landscape);
-    cache.walls(c.landscape.terrain!).toList();
+    cache.walls(c.landscape.terrain).toList();
     final slots = cache.rasterizedTiles, walls = cache.rebuiltWalls;
     c.beginErasing();
     final times = <int>[];
@@ -30,7 +30,7 @@ void main() {
         (Offset(0, (row + .5) / 16), Offset(1, (row + .5) / 16)),
       ]);
       cache.synchronize(c.planes.values, c.landscape);
-      cache.walls(c.landscape.terrain!).toList();
+      cache.walls(c.landscape.terrain).toList();
       watch.stop();
       times.add(watch.elapsedMicroseconds);
     }

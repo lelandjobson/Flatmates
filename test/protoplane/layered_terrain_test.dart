@@ -25,7 +25,7 @@ void drawTile(ProtoplaneController c) {
 
 String centerId(ProtoplaneController c, PaperMaterial m) => c
     .landscape
-    .terrain!
+    .terrain
     .tiles
     .values
     .firstWhere(
@@ -69,7 +69,7 @@ void main() {
   test(
     'release harvests one layer, focus stays stable, empty holes never craft, exact history and saves',
     () {
-      final c = ProtoplaneController(preset: WorldPreset.paper);
+      final c = ProtoplaneController();
       addTearDown(c.dispose);
       expect(c.balances, {
         PaperMaterial.paperWhite: 256,
@@ -102,7 +102,7 @@ void main() {
           final result = c.commitDrawing();
           expect(
             result?.harvest?.layerId,
-            c.landscape.terrain!.tiles[id]!.sheet.id,
+            c.landscape.terrain.tiles[id]!.sheet.id,
           );
         }
         expect(c.landscape.remaining(c.planes[id]!), isEmpty);
@@ -138,7 +138,7 @@ void main() {
   test(
     'selected layer masks, clipped slivers, partial overlap and fractional conservation',
     () {
-      final c = ProtoplaneController(preset: WorldPreset.paper);
+      final c = ProtoplaneController();
       addTearDown(c.dispose);
       final landscape = c.landscape;
       final w = c.planes[centerId(c, PaperMaterial.paperWhite)]!;
@@ -154,14 +154,14 @@ void main() {
       expect(landscape.preview(w, cut), isNull);
       landscape.collect(landscape.preview(w, rectangle(1, 1))!);
       expect(landscape.remainders[PaperMaterial.paperWhite], closeTo(0, 1e-7));
-      final tile = landscape.terrain!.tiles.values.firstWhere(
+      final tile = landscape.terrain.tiles.values.firstWhere(
         (t) =>
             t.sheet.material == PaperMaterial.paperWhite &&
-            landscape.terrain!
+            landscape.terrain
                     .exposed(t.id)
                     .fold<double>(0, (a, r) => a + r.area) >
                 0 &&
-            landscape.terrain!
+            landscape.terrain
                     .exposed(t.id)
                     .fold<double>(0, (a, r) => a + r.area) <
                 .1,
@@ -175,7 +175,7 @@ void main() {
   test(
     'place mode spends paper on support; resources and unsupported placements rejected',
     () {
-      final c = ProtoplaneController(preset: WorldPreset.paper);
+      final c = ProtoplaneController();
       addTearDown(c.dispose);
       final id = centerId(c, PaperMaterial.paperWhite);
       c.enter(id);
@@ -212,13 +212,12 @@ void main() {
         ..remove('tileGridOpacity')
         ..['worldPreset'] = 'ink';
       settings.load(old);
-      expect(settings.worldPreset, WorldPreset.paper);
+      expect(settings.toJson().containsKey('worldPreset'), isFalse);
       expect(settings.tileGridOpacity, .12);
-      settings.worldPreset = WorldPreset.pastel;
       settings.tileGridOpacity = .37;
       final restored = ProtoplaneSettings()..load(settings.toJson());
       expect(restored.toJson(), settings.toJson());
-      final c = ProtoplaneController(preset: WorldPreset.paper);
+      final c = ProtoplaneController();
       addTearDown(c.dispose);
       final before = snapshot(c);
       final bad = snapshot(c);

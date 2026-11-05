@@ -14,7 +14,7 @@ void main() {
     final model = constructionWorld();
     addTearDown(model.dispose);
     final a = fixtures.floor(model);
-    final b = fixtures.floor(model, tile: 'ground-5-4');
+    final b = fixtures.floor(model, tile: 'ground-starter-paperWhite-1-0');
     model.leave();
     await tester.pumpWidget(
       MaterialApp(
@@ -39,7 +39,7 @@ void main() {
       final model = constructionWorld();
       addTearDown(model.dispose);
       final a = fixtures.floor(model);
-      final b = fixtures.floor(model, tile: 'ground-5-4');
+      final b = fixtures.floor(model, tile: 'ground-starter-paperWhite-1-0');
       final root = 'surface-${a.id}', alias = 'surface-${b.id}';
       var graph = model.navigationGraph;
       expect(graph.neighbors.containsKey(alias), isFalse);
@@ -89,7 +89,7 @@ void main() {
       final a = fixtures.floor(model);
       final firstGrid = model.planes['surface-${a.id}']!.grids.first.nodes
           .toList();
-      final b = fixtures.floor(model, tile: 'ground-5-4');
+      final b = fixtures.floor(model, tile: 'ground-starter-paperWhite-1-0');
       final id = 'surface-${a.id}';
       expect(model.planes[id]!.region.area, closeTo(2, 1e-6));
       expect(model.objects.length, 2);
@@ -123,16 +123,13 @@ void main() {
       expect(model.activePlane!.region.area, closeTo(2, 1e-6));
     },
   );
-  test('different materials and corner contacts stay separate', () {
+  test('corner contacts stay separate', () {
     final model = constructionWorld();
     addTearDown(model.dispose);
     final a = fixtures.floor(model);
-    model.selectPaper(PaperMaterial.blue);
-    final b = fixtures.floor(model, tile: 'ground-5-4');
+    final b = fixtures.floor(model, tile: 'ground-starter-paperWhite-1-1');
     expect(model.surfaceFusion.canonical, isEmpty);
-    model.selectPaper(a.material);
-    fixtures.floor(model, tile: 'ground-5-5');
-    expect(model.surfaceFusion.canonical, isEmpty);
+    expect(model.planes['surface-${a.id}']!.region.area, 1);
     expect(model.planes['surface-${b.id}']!.region.area, 1);
   });
   test('union preserves holes and excludes disjoint pieces', () {

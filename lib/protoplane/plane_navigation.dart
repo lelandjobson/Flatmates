@@ -4,6 +4,9 @@ import 'dart:ui';
 import 'package:vector_math/vector_math_64.dart';
 
 import 'geometry.dart';
+import 'focus_context.dart';
+import 'layered_terrain.dart';
+import 'pencil.dart';
 import 'models.dart';
 import 'spatial_index.dart';
 import 'world_relations.dart';
@@ -11,7 +14,7 @@ import 'world_relations.dart';
 export 'world_relations.dart';
 
 /// The connection type is independent of ownership/support relationships.
-enum PlaneAdjacency { coplanar, fold }
+enum PlaneAdjacency { coplanar, fold, landscapeStep }
 
 /// A directed portal on the displayed source face. Keep the entire shared
 /// segment: a midpoint alone loses the direction of partial/asymmetric exits.
@@ -34,6 +37,7 @@ class PlaneNavigationGraph {
     Map<String, String> aliases = const {},
     Set<String> excluded = const {},
     List<Region> Function(CraftPlane)? surfaceRegions,
+    LayeredTerrain? terrain,
   }) : aliases = Map.unmodifiable(aliases),
        relations = CraftRelations(planes, objects) {
     final structural = <String, List<CraftObject>>{};
@@ -179,6 +183,48 @@ class PlaneNavigationGraph {
         connect(target, source);
       }
     }
+    // Authored seams can lie inside a support, not only on its outer boundary.
+    for (final object in objects.values) {
+      final attachment = object.linear;
+      if (attachment == null) continue;
+      final sourceId =
+          aliases[attachment.sourcePlaneId] ?? attachment.sourcePlaneId;
+      final targetId =
+          aliases['surface-${object.id}'] ?? 'surface-${object.id}';
+      final source = planes[sourceId], target = planes[targetId];
+      final anchor = planes[attachment.sourcePlaneId];
+      if (source == null ||
+          target == null ||
+          anchor == null ||
+          sourceId == targetId ||
+          excluded.contains(sourceId) ||
+          excluded.contains(targetId)) {
+        continue;
+      }
+      final frame = planes[object.planeId];
+      if (frame == null) continue;
+      final seams = clipPencil([
+        PencilSegment(
+          Offset.zero,
+          Offset((attachment.b - attachment.a).distance, 0),
+        ),
+      ], object.region);
+      for (final seam in seams) {
+        final a = frame.point(seam.a), b = frame.point(seam.b);
+        for (final pair in [(sourceId, targetId), (targetId, sourceId)]) {
+          final list = adjacent.putIfAbsent(pair.$1, () => []);
+          if (!list.any(
+            (n) =>
+                n.planeId == pair.$2 &&
+                n.start.distanceTo(a) < _epsilon &&
+                n.end.distanceTo(b) < _epsilon,
+          )) {
+            list.add(PlaneNeighbor(pair.$2, a, b, true, PlaneAdjacency.fold));
+          }
+        }
+      }
+    }
+
     // Creation deliberately keeps the original source active. Hidden sources
     // have outgoing exits, but other nodes always arrive at visible surfaces.
     for (final id in hidden) {
@@ -201,8 +247,76 @@ class PlaneNavigationGraph {
         }
       }
     }
+    availableRegions = Map.unmodifiable({
+      for (final entry in regions.entries)
+        entry.key: List<Region>.unmodifiable(entry.value),
+    });
     neighbors = Map.unmodifiable({
       for (final entry in adjacent.entries)
+        entry.key: List<PlaneNeighbor>.unmodifiable(entry.value),
+    });
+    // Swiping is a movement policy over topology, not a support relationship.
+    // Floors never fold onto walls. Wall navigation retains its existing exits.
+    final swipeEdges = <String, List<PlaneNeighbor>>{
+      for (final entry in neighbors.entries)
+        entry.key: [
+          for (final edge in entry.value)
+            if (!isFloorOrientation(planes[entry.key]!) ||
+                isFloorOrientation(planes[edge.planeId]!))
+              edge,
+        ],
+    };
+    if (terrain != null) {
+      // Index actual exposed geometry once per graph rebuild. Tile columns
+      // describe adjacency; elevation does not. A cut leaving an isolated scrap
+      // still permits entry, but an entirely empty column is never a target.
+      final columns = <(int, int), List<CraftPlane>>{};
+      for (final tile in terrain.tiles.values) {
+        final p = planes[tile.id];
+        if (p == null ||
+            excluded.contains(p.id) ||
+            (regions[p.id] ?? []).isEmpty) {
+          continue;
+        }
+        (columns[(tile.x, tile.y)] ??= []).add(p);
+      }
+      for (final list in columns.values) {
+        list.sort((a, b) {
+          final elevation = b.origin.y.compareTo(a.origin.y);
+          return elevation != 0 ? elevation : a.id.compareTo(b.id);
+        });
+      }
+      for (final tile in terrain.tiles.values) {
+        final source = planes[tile.id];
+        if (source == null || excluded.contains(source.id)) continue;
+        final list = swipeEdges.putIfAbsent(source.id, () => []);
+        // Replace landscape boundary exits with column exits. Partial exposed
+        // fragments at one height must not mask a complete neighboring layer.
+        list.removeWhere((edge) => terrain.tiles.containsKey(edge.planeId));
+        for (final step in [(1, 0), (-1, 0), (0, 1), (0, -1)]) {
+          final candidates = columns[(tile.x + step.$1, tile.y + step.$2)];
+          if (candidates == null || candidates.isEmpty) continue;
+          final target = candidates.first;
+          final a = step.$1 == 0
+              ? Offset(0, step.$2 > 0 ? 1 : 0)
+              : Offset(step.$1 > 0 ? 1 : 0, 0);
+          final b = step.$1 == 0
+              ? a + const Offset(1, 0)
+              : a + const Offset(0, 1);
+          list.add(
+            PlaneNeighbor(
+              target.id,
+              source.point(a),
+              source.point(b),
+              false,
+              PlaneAdjacency.landscapeStep,
+            ),
+          );
+        }
+      }
+    }
+    swipeNeighbors = Map.unmodifiable({
+      for (final entry in swipeEdges.entries)
         entry.key: List<PlaneNeighbor>.unmodifiable(entry.value),
     });
     // Render-space bounds must never use the flattened topology origins.
@@ -221,6 +335,12 @@ class PlaneNavigationGraph {
 
   static const _epsilon = 1e-6;
   late final Map<String, List<PlaneNeighbor>> neighbors;
+
+  /// Visible portions after occupied floor/wall footprints are removed.
+  late final Map<String, List<Region>> availableRegions;
+
+  /// Gesture destinations; the full adjacency graph remains available above.
+  late final Map<String, List<PlaneNeighbor>> swipeNeighbors;
   final CraftRelations relations;
   final Map<String, String> aliases;
   late final CraftSpatialIndex<CraftEntity> spatial;
@@ -240,7 +360,7 @@ class PlaneNavigationGraph {
     final direction = swipe / swipe.distance;
     String? best;
     var bestVolume = false, bestScore = .5, bestDistance = double.infinity;
-    for (final edge in neighbors[planeId] ?? <PlaneNeighbor>[]) {
+    for (final edge in swipeNeighbors[planeId] ?? <PlaneNeighbor>[]) {
       final a = project(edge.start), b = project(edge.end);
       if (a == null || b == null) continue;
       final segment = b - a, delta = a - center;
@@ -251,7 +371,7 @@ class PlaneNavigationGraph {
       if (denominator.abs() > 1e-9) {
         final t = cross(delta, segment) / denominator;
         final u = cross(delta, direction) / denominator;
-        if (t > 1e-6 && u >= -1e-9 && u <= 1 + 1e-9) {
+        if (t >= -1e-6 && u >= -1e-9 && u <= 1 + 1e-9) {
           score = 1;
           distance = t;
         }

@@ -28,6 +28,21 @@ void main() {
       isFalse,
     );
   });
+  test('safe zone fill persists, migrates to full and validates range', () {
+    final s = ProtoplaneSettings();
+    expect(s.safeZoneFill, 1);
+    s.safeZoneFill = .65;
+    final copy = ProtoplaneSettings()..load(s.toJson());
+    expect(copy.safeZoneFill, .65);
+    copy.load(s.toJson()..remove('safeZoneFill'));
+    expect(copy.safeZoneFill, 1);
+    for (final bad in [.49, 1.01, double.nan, 'half']) {
+      expect(
+        () => copy.load({...s.toJson(), 'safeZoneFill': bad}),
+        throwsFormatException,
+      );
+    }
+  });
   for (final size in [
     const Size(390, 844),
     const Size(844, 390),
@@ -78,6 +93,35 @@ void main() {
               (bounds.height - zone.height).abs() < 1e-5,
           isTrue,
         );
+        for (final fill in [.5, .75]) {
+          final fitted = focusPlanePose(
+            camera,
+            plane,
+            size,
+            fullFocus: true,
+            contextTiles: 4,
+            safeZone: zone,
+            safeZoneFill: fill,
+          );
+          final reduced = Camera(
+            name: 'reduced',
+            position: fitted.position,
+            target: fitted.target,
+            up: fitted.up,
+            fovDegrees: fitted.fov,
+          );
+          final projected = plane.region.outer
+              .map((p) => reduced.projectToScreen(plane.point(p), size)!)
+              .toList();
+          var smaller = Rect.fromPoints(projected.first, projected.first);
+          for (final p in projected) {
+            smaller = smaller.expandToInclude(Rect.fromPoints(p, p));
+          }
+          expect(smaller.width, closeTo(bounds.width * fill, 1e-5));
+          expect(smaller.height, closeTo(bounds.height * fill, 1e-5));
+          expect((smaller.center - zone.center).distance, lessThan(1e-5));
+          expect(fitted.up.dot(pose.up), closeTo(1, 1e-6));
+        }
       });
     }
   }

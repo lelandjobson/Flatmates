@@ -14,11 +14,37 @@ import 'package:vector_math/vector_math_64.dart' show Vector3;
 import 'layered_terrain_test.dart' show centerId, drawTile, snapshot;
 
 void main() {
+  test(
+    'loading current saves retains discovery independently of remote objects',
+    () {
+      final c = ProtoplaneController();
+      addTearDown(c.dispose);
+      final tile = c.landscape.terrain.tiles.values.firstWhere(
+        (t) =>
+            t.sheet.island == 'northeast' &&
+            t.sheet.material == PaperMaterial.paperWhite &&
+            c
+                    .surfaceRegions(c.planes[t.id]!)
+                    .fold<double>(0, (sum, r) => sum + r.area) >
+                .999,
+      );
+      c.enter(tile.id);
+      c.selectTool(CraftTool.place);
+      c.appendNode(0);
+      c.appendNode(1);
+      expect(c.commitDrawing(), isNotNull);
+      c.revealedAreas.remove('northeast');
+      final saved = c.toJson();
+      c.load(saved);
+      expect(c.revealedAreas, {'starter'});
+    },
+  );
+
   TestWidgetsFlutterBinding.ensureInitialized();
   test(
     'camera entry reveals whole island exactly once; loading replays no events',
     () {
-      final c = ProtoplaneController(preset: WorldPreset.paper);
+      final c = ProtoplaneController();
       addTearDown(c.dispose);
       final target = c.areas.values.firstWhere((a) => a.id != 'starter');
       expect(c.revealedAreas, {'starter'});
@@ -44,7 +70,7 @@ void main() {
   test(
     'discovery survives crafting undo and cancellation; clear undo restores it',
     () {
-      final c = ProtoplaneController(preset: WorldPreset.paper);
+      final c = ProtoplaneController();
       addTearDown(c.dispose);
       final other = c.areas.keys.firstWhere((id) => id != 'starter');
       c.enter(centerId(c, PaperMaterial.paperWhite));
@@ -69,10 +95,10 @@ void main() {
   test(
     'migration reveals worked islands and rejects malformed discovery atomically',
     () {
-      final c = ProtoplaneController(preset: WorldPreset.paper);
+      final c = ProtoplaneController();
       addTearDown(c.dispose);
       final other = c.areas.keys.firstWhere((id) => id != 'starter');
-      final tile = c.landscape.terrain!.tiles.values.firstWhere(
+      final tile = c.landscape.terrain.tiles.values.firstWhere(
         (t) => t.sheet.island == other,
       );
       c.landscape.collect(
@@ -96,20 +122,10 @@ void main() {
         );
         expect(snapshot(c), before);
       }
-      for (final preset in [WorldPreset.ink, WorldPreset.pastel]) {
-        final legacy = ProtoplaneController(preset: preset);
-        final data = snapshot(legacy)
-          ..['version'] = 6
-          ..remove('revealedAreas');
-        legacy.load(data);
-        expect(legacy.areas, isEmpty);
-        expect(legacy.revealedAreas, isEmpty);
-        legacy.dispose();
-      }
     },
   );
   test('area distances show northeast corner but hide its interior', () {
-    final c = ProtoplaneController(preset: WorldPreset.paper);
+    final c = ProtoplaneController();
     addTearDown(c.dispose);
     final island = c.areas.values.firstWhere((a) => a.id != 'starter');
     final corner = island.footprints
@@ -130,7 +146,7 @@ void main() {
       directory: () async => dir,
       fileName: 'world-paper.json',
     );
-    final c = ProtoplaneController(preset: WorldPreset.paper);
+    final c = ProtoplaneController();
     addTearDown(c.dispose);
     c.revealAllAreas();
     await store.load((_) {});

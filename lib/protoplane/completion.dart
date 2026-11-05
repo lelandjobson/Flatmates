@@ -11,6 +11,7 @@ class PaperCompletion {
     required this.plane,
     required List<Offset> trace,
     this.paper = const [],
+    this.paperFrames = const {},
     this.harvest,
     this.placedIds = const {},
     this.affectedIds = const {},
@@ -19,6 +20,8 @@ class PaperCompletion {
   final CraftPlane plane;
   final List<Offset> trace;
   final List<CraftObject> paper;
+  final Map<String, CraftPlane> paperFrames;
+  CraftPlane frameFor(CraftObject object) => paperFrames[object.id] ?? plane;
   final HarvestResult? harvest;
   final Set<String> placedIds, affectedIds;
 }

@@ -48,6 +48,16 @@ class CraftRelations {
         }
       }
     }
+    for (final object in objects.values) {
+      final source = object.linear?.sourcePlaneId;
+      if (source != null && planes.containsKey(source)) {
+        add(
+          planeEntity(source),
+          planeEntity(object.planeId),
+          CraftRelationKind.derivedFrom,
+        );
+      }
+    }
     for (final plane in planes.values) {
       if (objects.containsKey(plane.owner)) {
         add(

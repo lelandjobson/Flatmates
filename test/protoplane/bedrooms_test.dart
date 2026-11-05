@@ -1,3 +1,4 @@
+import 'recipe_fixture.dart';
 import 'construction_fixture.dart';
 import 'dart:convert';
 
@@ -15,7 +16,10 @@ void main() {
     final first = BedroomFixture();
     final c = first.c;
     addTearDown(c.dispose);
-    final second = BedroomFixture(controller: c, tile: 'ground-5-4');
+    final second = BedroomFixture(
+      controller: c,
+      tile: 'ground-starter-paperWhite--2-0',
+    );
     craft(
       c,
       'surface-${first.mattress!.id}',
@@ -83,9 +87,8 @@ void main() {
     expect(c.bedrooms.single.comfort, 52);
     craft(c, bedding, rectanglePath(5, 0, 1, 4, 4), kind: CraftKind.blanket);
     expect(c.bedrooms.single.comfort, 68);
-    final surface = 'surface-${f.floor.id}',
-        index = c.planes['surface-${f.floor.id}']!.grids.length - 1;
-    final examples = c.planes[surface]!.grids[index].examples;
+    final surface = 'surface-${f.floor.id}', index = 3;
+    final examples = bedroomGrid(surface, c.planes[surface]!.region).examples;
     craft(
       c,
       surface,
@@ -120,7 +123,7 @@ void main() {
       planeId: 'surface-${f.floor.id}',
       kind: CraftKind.storage,
       region: rectangle(.9, .14, origin: const Offset(.05, 0)),
-      color: PaperColor.green,
+      color: PaperColor.paperWhite,
       depth: .2,
     );
     final rooms = evaluateBedrooms(f.c.objects, f.c.planes);
@@ -191,38 +194,36 @@ void main() {
       expect(scene.meshes, isEmpty);
     },
   );
-  test(
-    'old saved floors gain Bedroom acetate without changing existing grids',
-    () {
-      final c = constructionWorld();
-      addTearDown(c.dispose);
-      final floor = craft(c, 'ground-4-4', rectanglePath(3, 0, 0, 2, 2));
-      final p = c.planes['surface-${floor.id}']!;
-      c.planes[p.id] = p.withGrids(p.grids.take(3).toList());
-      final old = jsonEncode(
-        c.planes[p.id]!.grids.map((g) => g.toJson()).toList(),
-      );
-      c.load(c.toJson());
-      final upgraded = c.planes[p.id]!;
-      expect(upgraded.grids.last.name, 'Bedroom');
-      expect(upgraded.grids, hasLength(4));
-      expect(
-        jsonEncode(upgraded.grids.take(3).map((g) => g.toJson()).toList()),
-        old,
-      );
-      c.load(c.toJson());
-      expect(c.planes[p.id]!.grids, hasLength(4));
-    },
-  );
+  test('saved Paper floors retain one grid and bedroom eligibility', () {
+    final c = constructionWorld();
+    addTearDown(c.dispose);
+    final floor = craft(
+      c,
+      'ground-starter-paperWhite-0-0',
+      rectanglePath(3, 0, 0, 2, 2),
+    );
+    final p = c.planes['surface-${floor.id}']!;
+    c.planes[p.id] = p.withGrids(p.grids.take(3).toList());
+    final old = jsonEncode(
+      c.planes[p.id]!.grids.map((g) => g.toJson()).toList(),
+    );
+    c.load(c.toJson());
+    final upgraded = c.planes[p.id]!;
+    expect(upgraded.grids.single.name, 'Paper');
+    expect(upgraded.grids.single.recipes, contains(CraftKind.bedFrame));
+    expect(jsonEncode(upgraded.grids.map((g) => g.toJson()).toList()), old);
+    c.load(c.toJson());
+    expect(c.planes[p.id]!.grids, hasLength(1));
+  });
   test('bedroom recipes enforce contextual supports', () {
     final c = constructionWorld();
     addTearDown(c.dispose);
     final invalid = CraftObject(
       id: 'invalid',
-      planeId: 'ground-4-4',
+      planeId: 'ground-starter-paperWhite-0-0',
       kind: CraftKind.mattress,
       region: rectangle(.5, .5),
-      color: PaperColor.red,
+      color: PaperColor.paperWhite,
       depth: .03,
     );
     expect(c.validateObject(invalid), contains('supporting furniture'));

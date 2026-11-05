@@ -1,3 +1,4 @@
+import 'recipe_fixture.dart';
 import 'construction_fixture.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flatmates/protoplane/controller.dart';
@@ -17,13 +18,25 @@ CraftObject craft(
   int grid = 0,
   CraftKind? kind,
 }) {
-  c.enter(plane);
-  c.selectGrid(grid);
-  c.beginGesture();
-  for (final node in path) {
-    expect(c.appendNode(node), isTrue, reason: '$node: ${c.error}');
+  if (plane.startsWith('ground-')) {
+    c.landscape.deplete(plane, c.planes[plane]!.region);
   }
-  c.finishGesture();
+  // Legacy room coverage deliberately authors each original boundary frame.
+  if (c.surfaceFusion.retired.contains(plane)) {
+    c.activePlaneId = plane;
+    c.editId = null;
+    c.clearDraft();
+  } else {
+    c.enter(plane);
+  }
+  final source = grid == 3
+      ? bedroomGrid(plane, c.activePlane!.region)
+      : lattice(
+          'fixture',
+          c.activePlane!.region,
+          count: c.paperSurface ? 5 : 3,
+        );
+  drawPoints(c, source.trace(path));
   if (kind != null) c.choose(kind);
   expect(c.create(), isTrue, reason: c.error);
   return c.objects.values.last;
@@ -31,7 +44,7 @@ CraftObject craft(
 
 class BedroomFixture {
   BedroomFixture({
-    this.tile = 'ground-4-4',
+    this.tile = 'ground-starter-paperWhite-0-0',
     ProtoplaneController? controller,
     bool walls = true,
     bool door = true,
@@ -52,14 +65,12 @@ class BedroomFixture {
       }
     }
     final surface = 'surface-${floor.id}';
-    final index = c.planes[surface]!.grids.indexWhere(
-      (g) => g.name == 'Bedroom',
-    );
+    final bedroom = bedroomGrid(surface, c.planes[surface]!.region);
     bed = craft(
       c,
       surface,
-      c.planes[surface]!.grids[index].examples[CraftKind.bedFrame]!,
-      grid: index,
+      bedroom.examples[CraftKind.bedFrame]!,
+      grid: 3,
       kind: CraftKind.bedFrame,
     );
     if (mattress) {

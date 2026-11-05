@@ -13,6 +13,24 @@ class PencilInkEffects extends ChangeNotifier {
   late final Ticker _ticker;
   Duration _time = Duration.zero;
   final _trails = <_PencilTrail>[];
+  final _fills = <_PencilTrail>[];
+  static const fillDuration = Duration(milliseconds: 75);
+  int get activeFillCount => _fills.length;
+  void playFill(
+    CraftPlane plane,
+    List<PencilSegment> segments, {
+    bool reducedMotion = false,
+  }) {
+    if (segments.isEmpty || reducedMotion) return;
+    if (!_ticker.isActive) {
+      _time = Duration.zero;
+      _ticker.start();
+    }
+    if (_fills.length >= 8) _fills.removeAt(0);
+    _fills.add(_PencilTrail(plane, List.of(segments), _time, false));
+    notifyListeners();
+  }
+
   static const duration = Duration(milliseconds: 360);
   int get activeCount => _trails.length;
   void play(
@@ -33,13 +51,15 @@ class PencilInkEffects extends ChangeNotifier {
   void _tick(Duration elapsed) {
     _time = elapsed;
     _trails.removeWhere((t) => elapsed - t.start >= duration);
-    if (_trails.isEmpty) _ticker.stop();
+    _fills.removeWhere((t) => elapsed - t.start >= fillDuration);
+    if (_trails.isEmpty && _fills.isEmpty) _ticker.stop();
     notifyListeners();
   }
 
   void clear() {
     _ticker.stop();
     _trails.clear();
+    _fills.clear();
     notifyListeners();
   }
 
@@ -65,12 +85,14 @@ class PencilInkPainter extends CustomPainter {
     this.plane,
     this.live = const [],
     this.enabled = true,
+    this.dwellProgress,
   }) : super(repaint: effects);
   final PencilInkEffects effects;
   final Camera camera;
   final CraftPlane? plane;
   final List<PencilSegment> live;
   final bool enabled;
+  final double? dwellProgress;
   @override
   void paint(Canvas canvas, Size size) {
     if (!enabled) return;
@@ -122,7 +144,80 @@ class PencilInkPainter extends CustomPainter {
               .clamp(0.0, 1.0);
       draw(trail.plane, trail.segments, t, trail.reduced);
     }
-    if (plane != null) draw(plane!, live, 0, false);
+    void fill(
+      CraftPlane plane,
+      List<PencilSegment> segments,
+      double progress, {
+      bool swipe = false,
+    }) {
+      final total = segments.fold<double>(0, (sum, s) => sum + s.length);
+      var remaining = total * progress;
+      for (final segment in segments) {
+        final a = camera.projectToScreen(plane.point(segment.a, .009), size);
+        final b = camera.projectToScreen(plane.point(segment.b, .009), size);
+        if (a == null || b == null) continue;
+        final t = segment.length == 0
+            ? 0.0
+            : (remaining / segment.length).clamp(0.0, 1.0);
+        remaining -= segment.length;
+        final tip = Offset.lerp(a, b, t)!;
+        canvas.drawLine(
+          tip,
+          b,
+          Paint()
+            ..color = const Color(0x5500cfee)
+            ..strokeWidth = 8
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3)
+            ..strokeCap = StrokeCap.round,
+        );
+        canvas.drawLine(
+          tip,
+          b,
+          Paint()
+            ..color = const Color(0xff00cfee)
+            ..strokeWidth = 3
+            ..strokeCap = StrokeCap.round,
+        );
+        if (swipe && t > 0 && t < 1) {
+          canvas.drawCircle(
+            tip,
+            7,
+            Paint()
+              ..color = const Color(0xaa00e5ff)
+              ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+          );
+          canvas.drawCircle(tip, 2.5, Paint()..color = const Color(0xffe7fcff));
+        }
+        if (t > 0) {
+          canvas.drawLine(
+            a,
+            tip,
+            Paint()
+              ..color = const Color(0xff383838)
+              ..strokeWidth = 2
+              ..strokeCap = StrokeCap.round,
+          );
+        }
+      }
+    }
+
+    for (final trail in effects._fills) {
+      final t =
+          ((effects._time - trail.start).inMicroseconds /
+                  PencilInkEffects.fillDuration.inMicroseconds)
+              .clamp(0.0, 1.0);
+      fill(
+        trail.plane,
+        trail.segments,
+        Curves.easeOutCubic.transform(t),
+        swipe: true,
+      );
+    }
+    if (plane != null && dwellProgress != null) {
+      fill(plane!, live, dwellProgress!);
+    } else if (plane != null) {
+      draw(plane!, live, 0, false);
+    }
   }
 
   @override

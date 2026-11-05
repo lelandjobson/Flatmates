@@ -2,15 +2,15 @@ part of 'controller.dart';
 
 extension PencilCrafting on ProtoplaneController {
   bool isLandscapePaper(String id) =>
-      landscape.terrain?.tiles[id]?.sheet.material == PaperMaterial.paperWhite;
+      landscape.terrain.tiles[id]?.sheet.material == PaperMaterial.paperWhite;
 
   List<CraftPlane> get landscapePaperPlanes => terrainColumn
       .where((p) => isLandscapePaper(p.id) && surfaceRegions(p).isNotEmpty)
       .toList();
 
   bool get paperSurface =>
-      preset == WorldPreset.paper &&
       activePlane != null &&
+      objects[editId]?.kind != CraftKind.screen &&
       (landscapePaperPlanes.isNotEmpty ||
           ((editId != null || activePlane!.id.startsWith('surface-')) &&
               objects[editId ?? activePlane!.owner]?.material ==
@@ -22,7 +22,7 @@ extension PencilCrafting on ProtoplaneController {
       return landscapePaperPlanes.map((p) => p.id).toList();
     }
     return editId != null && plane.id == activePlaneId
-        ? [editId!]
+        ? editingMembers
         : surfaceFusion.members[plane.id] ??
               [if (plane.owner != null) plane.owner!];
   }
@@ -78,13 +78,13 @@ extension PencilCrafting on ProtoplaneController {
   }
 
   Region get paperRegion =>
+      (editingMembers.length > 1 ? activePlane!.region : null) ??
       objects[editId]?.region ??
       (surfaceFusion.members.containsKey(activePlaneId)
           ? activePlane!.region
           : objects[activePlane!.owner]?.region ?? activePlane!.region);
 
   void _refreshPaperGrids() {
-    if (preset != WorldPreset.paper) return;
     pencilMarks.removeWhere(
       (id, _) => !objects.containsKey(id) && !isLandscapePaper(id),
     );
@@ -110,12 +110,7 @@ extension PencilCrafting on ProtoplaneController {
           ? p.region
           : object.region;
       planes[p.id] = p.withGrids([
-        paperDrawingGrid(
-          p.id,
-          region,
-          marksOn(p),
-          p.grids.expand((g) => g.recipes).toSet().toList(),
-        ),
+        paperDrawingGrid(p.id, region, marksOn(p), surfaceRecipes(object.kind)),
       ]);
     }
     _paperGrids.clear();
@@ -179,6 +174,12 @@ extension PencilCrafting on ProtoplaneController {
     if (selectedMotif != null) {
       motifTile = Offset(p.dx.floorToDouble(), p.dy.floorToDouble());
     } else if (pencilPreview.isEmpty || !near(pencilPreview.last, snapped)) {
+      final reverse = reversedTail(pencilPreview, snapped);
+      if (reverse != null) {
+        pencilPreview.removeRange(reverse + 1, pencilPreview.length);
+        _notifyPencil(previewOnly: true);
+        return;
+      }
       // Include every quarter-lattice dot lying on the chosen segment.
       if (pencilPreview.isNotEmpty) {
         final from = pencilPreview.last;
@@ -292,7 +293,12 @@ extension PencilCrafting on ProtoplaneController {
     return true;
   }
 
-  void eraseMarks(Offset a, Offset b, {double radius = .035}) {
+  void eraseMarks(
+    Offset a,
+    Offset b, {
+    double radius = .035,
+    bool notify = true,
+  }) {
     if (!paperSurface) return;
     final plane = activePlane!;
     double distance(Offset p, Offset a, Offset b) {
@@ -331,7 +337,7 @@ extension PencilCrafting on ProtoplaneController {
     if (changed) {
       _marksChanged(affected: paperMembers(plane).toSet());
       harvestPending = true;
-      _notifyPencil();
+      if (notify) _notifyPencil();
     }
   }
 

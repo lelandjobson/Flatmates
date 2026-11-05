@@ -262,6 +262,79 @@ class CraftPlane {
   );
 }
 
+/// Authored attachment, independent of generated/fused work-surface IDs.
+class LinearAttachment {
+  const LinearAttachment({
+    required this.sourcePlaneId,
+    required this.a,
+    required this.b,
+    required this.supports,
+    this.extent = 1,
+    this.side = 1,
+  });
+  final String sourcePlaneId;
+  final Offset a, b;
+  final List<String> supports;
+  final double extent;
+  final int side;
+  LinearAttachment copyWith({double? extent, int? side}) => LinearAttachment(
+    sourcePlaneId: sourcePlaneId,
+    a: a,
+    b: b,
+    supports: supports,
+    extent: extent ?? this.extent,
+    side: side ?? this.side,
+  );
+  Map<String, dynamic> toJson() => {
+    'source': sourcePlaneId,
+    'edge': encodePoints([a, b]),
+    'supports': supports,
+    'extent': extent,
+    'side': side,
+  };
+  factory LinearAttachment.fromJson(Map<String, dynamic> j) {
+    final edge = decodePoints(j['edge']);
+    final extent = (j['extent'] as num).toDouble(), side = j['side'];
+    if (edge.length != 2 ||
+        edge.any((p) => !p.dx.isFinite || !p.dy.isFinite) ||
+        (edge[1] - edge[0]).distance < geometryEpsilon ||
+        !extent.isFinite ||
+        extent < .25 ||
+        (side != 1 && side != -1)) {
+      throw const FormatException('Invalid linear attachment');
+    }
+    return LinearAttachment(
+      sourcePlaneId: j['source'],
+      a: edge[0],
+      b: edge[1],
+      supports: (j['supports'] as List).cast<String>(),
+      extent: extent,
+      side: side,
+    );
+  }
+  CraftPlane frame(String id, CraftPlane source) {
+    final edge = source.point(b) - source.point(a);
+    var u = edge.normalized();
+    final v = source.normal * side.toDouble();
+    var origin = source.point(a);
+    if (u.cross(v).y < -geometryEpsilon) {
+      u = -u;
+      origin = source.point(b);
+    }
+    final region = rectangle(edge.length, extent);
+    return CraftPlane(
+      id: id,
+      origin: origin,
+      u: u,
+      v: v,
+      region: region,
+      owner: source.owner,
+      supports: supports,
+      grids: [lattice(id, region)],
+    );
+  }
+}
+
 class CraftObject {
   CraftObject({
     required this.id,
@@ -273,7 +346,8 @@ class CraftObject {
     this.depth = 0,
     this.path = const [],
     this.attachmentIds = const [],
-  }) : material = material ?? color ?? PaperMaterial.white;
+    this.linear,
+  }) : material = material ?? color ?? PaperMaterial.paperWhite;
   final String id, planeId;
   final CraftKind kind;
   final Region region;
@@ -282,6 +356,7 @@ class CraftObject {
   final double depth;
   final List<Offset> path;
   final List<String> attachmentIds;
+  final LinearAttachment? linear;
   CraftObject copyWith({
     CraftKind? kind,
     Region? region,
@@ -289,9 +364,12 @@ class CraftObject {
     String? id,
     List<Offset>? path,
     List<String>? attachmentIds,
+    String? planeId,
+    LinearAttachment? linear,
   }) => CraftObject(
     id: id ?? this.id,
-    planeId: planeId,
+    planeId: planeId ?? this.planeId,
+    linear: linear ?? this.linear,
     kind: kind ?? this.kind,
     region: region ?? this.region,
     color: color,
@@ -311,6 +389,7 @@ class CraftObject {
     'depth': depth,
     'path': encodePoints(path),
     'attachments': attachmentIds,
+    if (linear != null) 'linear': linear!.toJson(),
   };
   factory CraftObject.fromJson(Map<String, dynamic> j) => CraftObject(
     id: j['id'],
@@ -321,6 +400,7 @@ class CraftObject {
     depth: (j['depth'] as num).toDouble(),
     path: decodePoints(j['path']),
     attachmentIds: (j['attachments'] as List).cast<String>(),
+    linear: j['linear'] == null ? null : LinearAttachment.fromJson(j['linear']),
   );
 }
 
@@ -485,156 +565,4 @@ Region hollowRegion(Region region) {
     inner = rectangle(box.width, box.height, origin: box.topLeft);
   }
   return Region(region.outer, [...region.holes, inner.outer]);
-}
-
-List<CraftGrid> floorGrids(String id, Region region, int seed) {
-  final box = interiorSquare(region);
-  final rng = math.Random(seed);
-  return [
-    for (var variant = 0; variant < 3; variant++)
-      _floorGrid('$id-$variant', box, variant, rng),
-  ];
-}
-
-CraftGrid _floorGrid(String id, Rect box, int variant, math.Random rng) {
-  final margin = 0.03 + rng.nextDouble() * 0.04;
-  final b = box.deflate(box.width * margin);
-  final nodes = [
-    for (var y = 0; y < 5; y++)
-      for (var x = 0; x < 5; x++)
-        Offset(b.left + b.width * x / 4, b.top + b.height * y / 4),
-  ];
-  final links = <GridEdge>[];
-  for (var y = 0; y < 5; y++) {
-    for (var x = 0; x < 5; x++) {
-      final a = y * 5 + x;
-      if (x < 4) {
-        links.add(
-          GridEdge(
-            a,
-            a + 1,
-            variant > 0 && y == 0
-                ? (nodes[a] + nodes[a + 1]) / 2 - Offset(0, b.height * 0.025)
-                : null,
-          ),
-        );
-      }
-      if (y < 4) links.add(GridEdge(a, a + 5));
-    }
-  }
-  const square = [6, 7, 8, 13, 18, 17, 16, 11, 6];
-  const elongated = [10, 11, 12, 13, 14, 19, 18, 17, 16, 15, 10];
-  const curved = [0, 1, 2, 7, 12, 11, 10, 5, 0];
-  final recipes = switch (variant) {
-    0 => [CraftKind.rug, CraftKind.tabletop, CraftKind.bench],
-    1 => [CraftKind.rug, CraftKind.tabletop, CraftKind.planter],
-    _ => [
-      CraftKind.rug,
-      CraftKind.tabletop,
-      CraftKind.bench,
-      CraftKind.planter,
-      CraftKind.screen,
-    ],
-  };
-  return CraftGrid(
-    id: id,
-    name: ['Angular', 'Curved', 'Mixed'][variant],
-    nodes: nodes,
-    edges: links,
-    recipes: recipes,
-    examples: {
-      for (final r in recipes)
-        r: switch (r) {
-          CraftKind.bench => elongated,
-          CraftKind.planter => curved,
-          CraftKind.screen => [20, 21, 22, 23, 24],
-          _ => square,
-        },
-    },
-  );
-}
-
-/// Repeat a stored recipe motif without rescaling its drawable examples.
-CraftGrid tileFloorGrid(CraftGrid motif, Region region) {
-  if (motif.tiled || motif.nodes.isEmpty) return motif;
-  final box = Rect.fromPoints(
-    Offset(
-      motif.nodes.map((p) => p.dx).reduce(math.min),
-      motif.nodes.map((p) => p.dy).reduce(math.min),
-    ),
-    Offset(
-      motif.nodes.map((p) => p.dx).reduce(math.max),
-      motif.nodes.map((p) => p.dy).reduce(math.max),
-    ),
-  );
-  if (box.width < geometryEpsilon || box.height < geometryEpsilon) return motif;
-  final nodes = List<Offset>.of(motif.nodes),
-      links = List<GridEdge>.of(motif.edges);
-  String key(Offset p) => '${(p.dx * 1e7).round()}:${(p.dy * 1e7).round()}';
-  final indices = {for (var i = 0; i < nodes.length; i++) key(nodes[i]): i};
-  final edgeKeys = <String>{};
-  String edgeKey(int a, int b, Offset? control) =>
-      '${math.min(a, b)}:${math.max(a, b)}:${control == null ? "straight" : key(control)}';
-  for (final e in links) {
-    edgeKeys.add(edgeKey(e.a, e.b, e.control));
-  }
-  bool inside(List<Offset> points) {
-    for (var i = 1; i < points.length; i++) {
-      final a = points[i - 1], b = points[i], delta = b - a;
-      if (!region.contains(a) || !region.contains(b)) return false;
-      final cuts = <double>[0, 1];
-      for (final ring in region.rings) {
-        for (final edge in edges(ring)) {
-          final hit = crossing(a, b, edge.$1, edge.$2);
-          if (hit != null) {
-            cuts.add(
-              ((hit - a).dx * delta.dx + (hit - a).dy * delta.dy) /
-                  delta.distanceSquared,
-            );
-          }
-        }
-      }
-      cuts.sort();
-      for (var j = 1; j < cuts.length; j++) {
-        if (!region.contains(a + delta * ((cuts[j - 1] + cuts[j]) / 2))) {
-          return false;
-        }
-      }
-    }
-    return true;
-  }
-
-  final minX = ((region.bounds.left - box.right) / box.width).ceil();
-  final maxX = ((region.bounds.right - box.left) / box.width).floor();
-  final minY = ((region.bounds.top - box.bottom) / box.height).ceil();
-  final maxY = ((region.bounds.bottom - box.top) / box.height).floor();
-  for (var y = minY; y <= maxY; y++) {
-    for (var x = minX; x <= maxX; x++) {
-      if (x == 0 && y == 0) continue;
-      final offset = Offset(x * box.width, y * box.height);
-      for (final edge in motif.edges) {
-        final points = edge.points(motif.nodes).map((p) => p + offset).toList();
-        if (!inside(points)) continue;
-        int index(Offset p) => indices.putIfAbsent(key(p), () {
-          nodes.add(p);
-          return nodes.length - 1;
-        });
-        final a = index(motif.nodes[edge.a] + offset),
-            b = index(motif.nodes[edge.b] + offset);
-        final control = edge.control == null ? null : edge.control! + offset;
-        if (edgeKeys.add(edgeKey(a, b, control))) {
-          links.add(GridEdge(a, b, control));
-        }
-      }
-    }
-  }
-  return CraftGrid(
-    id: motif.id,
-    name: motif.name,
-    nodes: nodes,
-    edges: links,
-    recipes: motif.recipes,
-    examples: motif.examples,
-    tiled: true,
-  );
 }

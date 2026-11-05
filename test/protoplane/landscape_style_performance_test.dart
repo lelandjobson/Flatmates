@@ -48,7 +48,7 @@ void main() {
         configure();
         cache.synchronize(model.planes.values, model.landscape);
         applyClock.stop();
-        expect(cache.rasterizedTiles - before, 64);
+        expect(cache.rasterizedTiles - before, model.planes.length);
         debugPrint(
           'Landscape Update CPU: ${applyClock.elapsedMicroseconds} us; ${cache.rasterizedTiles - before} tiles rasterized once',
         );

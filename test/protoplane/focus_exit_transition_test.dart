@@ -2,7 +2,6 @@ import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flatmates/protoplane/controller.dart';
-import 'package:flatmates/protoplane/models.dart';
 import 'package:flatmates/rendering/scene_view.dart';
 import 'package:flatmates/screens/protoplane_concept_view.dart';
 
@@ -11,7 +10,7 @@ void main() {
     testWidgets('Paper landscape $exit exit interpolates back to world', (
       tester,
     ) async {
-      final model = ProtoplaneController(preset: WorldPreset.paper);
+      final model = ProtoplaneController();
       addTearDown(model.dispose);
       await tester.pumpWidget(
         MaterialApp(

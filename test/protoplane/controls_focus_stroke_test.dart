@@ -16,7 +16,7 @@ void main() {
     () {
       final model = constructionWorld();
       addTearDown(model.dispose);
-      final ground = model.planes['ground-4-4']!;
+      final ground = model.planes['ground-starter-paperWhite-0-0']!;
       final plane = CraftPlane(
         id: 'long',
         origin: ground.origin,
@@ -67,7 +67,7 @@ void main() {
     () {
       final model = constructionWorld();
       addTearDown(model.dispose);
-      final plane = model.planes['ground-4-4']!;
+      final plane = model.planes['ground-starter-paperWhite-0-0']!;
       for (final x in [-6.0, 6.0]) {
         for (final z in [-4.0, 4.0]) {
           final camera = Camera(
@@ -163,7 +163,7 @@ void main() {
     );
     final pose = focusPlanePose(
       camera,
-      c.planes['ground-4-4']!,
+      c.planes['ground-starter-paperWhite-0-0']!,
       const Size(900, 700),
     );
     final old = (camera.position - camera.target).normalized(),
@@ -177,11 +177,11 @@ void main() {
   test('focus context keeps only neighboring tiles on the same level', () {
     final c = constructionWorld();
     addTearDown(c.dispose);
-    final active = c.planes['ground-4-4']!;
+    final active = c.planes['ground-starter-paperWhite-0-0']!;
     expect(
       adjacentFocusContext(
         active,
-        c.planes['ground-5-5']!,
+        c.planes['ground-starter-paperWhite-1-1']!,
         c.objects,
         c.planes,
       ),
@@ -190,7 +190,7 @@ void main() {
     expect(
       adjacentFocusContext(
         active,
-        c.planes['ground-6-4']!,
+        c.planes['ground-starter-paperWhite-2-0']!,
         c.objects,
         c.planes,
       ),
@@ -211,7 +211,7 @@ void main() {
     () {
       final c = constructionWorld();
       addTearDown(c.dispose);
-      final grid = c.planes['ground-4-4']!.grids.single;
+      final grid = c.planes['ground-starter-paperWhite-0-0']!.grids.single;
       final path = [0];
       final partial = liveStrokePreview(
         grid: grid,

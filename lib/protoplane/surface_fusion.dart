@@ -1,4 +1,5 @@
-import 'dart:ui';
+import 'pencil.dart';
+import 'bedroom_items.dart';
 import 'package:vector_math/vector_math_64.dart';
 import 'geometry.dart';
 import 'models.dart';
@@ -79,65 +80,9 @@ class CraftSurfaceFusion {
       for (final object in group) {
         final p = snapshots[object.id]!;
         final union = _mapRegion(region, basis, p);
-        final grids = <CraftGrid>[];
-        for (var index = 0; index < p.grids.length; index++) {
-          final original = p.grids[index];
-          final expanded = tileFloorGrid(
-            CraftGrid(
-              id: original.id,
-              name: original.name,
-              nodes: original.nodes,
-              edges: original.edges,
-              recipes: original.recipes,
-              examples: original.examples,
-              connectionStyle: original.connectionStyle,
-            ),
-            union,
-          );
-          final nodes = List<Offset>.of(expanded.nodes);
-          final edges = List<GridEdge>.of(expanded.edges);
-          final seenEdges = {
-            for (final e in edges) '${e.a}/${e.b}/${e.control}',
-          };
-          for (final other in group) {
-            if (other.id == object.id) continue;
-            final source = snapshots[other.id]!;
-            if (index >= source.grids.length) continue;
-            final grid = source.grids[index];
-            final mapping = <int>[];
-            for (final n in grid.nodes) {
-              final point = p.local(source.point(n));
-              var found = nodes.indexWhere(
-                (v) => (v - point).distance < geometryEpsilon,
-              );
-              if (found < 0) {
-                found = nodes.length;
-                nodes.add(point);
-              }
-              mapping.add(found);
-            }
-            for (final e in grid.edges) {
-              final a = mapping[e.a], b = mapping[e.b];
-              final control = e.control == null
-                  ? null
-                  : p.local(source.point(e.control!));
-              if (a == b || !seenEdges.add('$a/$b/$control')) continue;
-              edges.add(GridEdge(a, b, control));
-            }
-          }
-          grids.add(
-            CraftGrid(
-              id: original.id,
-              name: original.name,
-              nodes: nodes,
-              edges: edges,
-              recipes: original.recipes,
-              examples: original.examples,
-              tiled: true,
-              connectionStyle: original.connectionStyle,
-            ),
-          );
-        }
+        final grids = [
+          paperDrawingGrid(p.id, union, const [], surfaceRecipes(object.kind)),
+        ];
         planes[p.id] = CraftPlane(
           id: p.id,
           origin: p.origin,
@@ -187,7 +132,7 @@ class CraftSurfaceFusion {
           id: id,
           origin: surface.point(a, .001),
           u: edge.normalized(),
-          v: Vector3(0, 1, 0),
+          v: surface.normal,
           region: region,
           owner: surface.owner,
           wallCandidate: true,

@@ -33,7 +33,7 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        c.enter('ground-4-4');
+        c.enter('ground-starter-paperWhite-0-0');
         await tester.pumpAndSettle();
         expect(find.byKey(const ValueKey('craft-safe-zone')), findsNothing);
         await tester.tap(find.text('devtools'));

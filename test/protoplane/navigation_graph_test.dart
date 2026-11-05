@@ -1,3 +1,4 @@
+import 'package:flatmates/protoplane/harvest.dart';
 import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
@@ -50,14 +51,38 @@ void main() {
         grids: surface.grids,
         owner: floor.id,
       );
-      final graph = model.navigationGraph;
+      model.landscape = PaperLandscape();
+      model.landscape.deplete(floor.planeId, part);
+      final source = model.planes[floor.planeId]!;
+      final neighbors = <String, CraftPlane>{
+        for (final entry in {
+          'ground-starter-paperWhite--1-0': const Offset(-1, 0),
+          'ground-starter-paperWhite-1-0': const Offset(1, 0),
+          'ground-starter-paperWhite-0--1': const Offset(0, -1),
+          'ground-starter-paperWhite-0-1': const Offset(0, 1),
+        }.entries)
+          entry.key: face(
+            entry.key,
+            entry.value.dx,
+            entry.value.dy,
+            height: source.origin.y,
+          ),
+      };
+      final graph = PlaneNavigationGraph(
+        {
+          source.id: source,
+          surface.id: model.planes[surface.id]!,
+          ...neighbors,
+        },
+        {floor.id: model.objects[floor.id]!},
+      );
       expect(
         adjacent(graph, floor.planeId),
         containsAll([
-          'ground-3-4',
-          'ground-5-4',
-          'ground-4-3',
-          'ground-4-5',
+          'ground-starter-paperWhite--1-0',
+          'ground-starter-paperWhite-1-0',
+          'ground-starter-paperWhite-0--1',
+          'ground-starter-paperWhite-0-1',
           surface.id,
         ]),
       );

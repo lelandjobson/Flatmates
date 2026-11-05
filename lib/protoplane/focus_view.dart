@@ -5,6 +5,7 @@ import '../rendering/scene/camera.dart';
 import 'models.dart';
 import 'bedrooms.dart';
 import 'layered_terrain.dart';
+import 'focus_context.dart';
 
 class PlaneFocusPose {
   const PlaneFocusPose(this.position, this.target, this.up, this.fov);
@@ -23,10 +24,29 @@ PlaneFocusPose focusPlanePose(
   bool fullFocus = false,
   int contextTiles = 0,
   Rect? safeZone,
+  double safeZoneFill = 1,
 }) {
+  if (!safeZoneFill.isFinite || safeZoneFill < .5 || safeZoneFill > 1) {
+    throw RangeError.value(
+      safeZoneFill,
+      'safeZoneFill',
+      'Must be between 0.5 and 1',
+    );
+  }
+  if (safeZone != null && safeZoneFill != 1) {
+    safeZone = Rect.fromCenter(
+      center: safeZone.center,
+      width: safeZone.width * safeZoneFill,
+      height: safeZone.height * safeZoneFill,
+    );
+  }
   final target = plane.point(plane.region.bounds.center);
-  final width = safeZone?.width ?? math.max(120.0, viewport.width - 150),
-      height = safeZone?.height ?? math.max(160.0, viewport.height - 280);
+  final width =
+          safeZone?.width ??
+          math.max(120.0, viewport.width - 150) * safeZoneFill,
+      height =
+          safeZone?.height ??
+          math.max(160.0, viewport.height - 280) * safeZoneFill;
   final contextBounds = plane.region.bounds.inflate(contextTiles.toDouble());
   final outline = contextTiles > 0
       ? [
@@ -151,12 +171,13 @@ PlaneFocusPose focusPlanePose(
     if (!fullFocus) {
       distance = math.max(
         distance,
-        math.max(bounds.width, bounds.height) * 2.5,
+        math.max(bounds.width, bounds.height) * 2.5 / safeZoneFill,
       );
       if (contextTiles > 0) {
         distance = math.max(
           distance,
-          fit(contextOffsets, (Offset.zero & viewport).deflate(12)),
+          fit(contextOffsets, (Offset.zero & viewport).deflate(12)) /
+              safeZoneFill,
         );
       }
     }
@@ -165,7 +186,7 @@ PlaneFocusPose focusPlanePose(
   }
   final distance = math.max(
     span * .58 / math.tan(fov * math.pi / 360),
-    fullFocus ? .1 : math.max(bounds.width, bounds.height) * 2.5,
+    fullFocus ? .1 : math.max(bounds.width, bounds.height) * 2.5 / safeZoneFill,
   );
   return PlaneFocusPose(target + direction * distance, target, up, fov);
 }
@@ -178,7 +199,15 @@ Vector3 contextAnchor(
   final id = supportingFloor(p.owner, objects, planes);
   final floor = objects[id];
   final source = floor == null ? null : planes[floor.planeId];
-  if (floor == null || source == null) return p.point(p.region.bounds.center);
+  if (floor == null || source == null) {
+    final center = p.point(p.region.bounds.center);
+    // A freestanding wall is contextual to the level it stands on, rather
+    // than the elevation halfway up its face. This also works for slopes.
+    if (!isFloorOrientation(p)) {
+      center.y = p.region.outer.map((v) => p.point(v).y).reduce(math.min);
+    }
+    return center;
+  }
   final center = source.point(floor.region.bounds.center, floor.depth);
   // An unlocked upper candidate belongs to the floor below, but is on the
   // next story; never leave it visible as same-level ground context.

@@ -6,23 +6,60 @@ import '../geometry/geometry.dart';
 import '../rendering/mesh.dart';
 import '../rendering/scene/planar_texture.dart';
 import 'harvest.dart';
-import 'meshes.dart';
 import 'models.dart';
-import 'paper_patterns.dart';
 import 'appearance.dart';
 import 'layered_terrain.dart';
 import 'geometry.dart' as planar;
+import 'crumpled_paper.dart';
 
 /// Like GameView's LandscapeGenerator/landscape painter, bake material into an
 /// atlas and submit textured ground. Only changed slots rasterize again; camera,
 /// hover and draft changes reuse the image. Polygons remain the harvest truth.
 class HarvestMeshCache {
-  static const renderVersion = 2;
-  static const tilePixels = 256, gutter = 1, columns = 8;
+  static const renderVersion = 4;
+  static const tilePixels = 128, gutter = 1, columns = 16;
   static const slotPixels = tilePixels + gutter * 2;
   final atlas = PlanarTextureAtlas();
   final Map<String, (String, Geometry, PlanarTexture)> _tiles = {};
-  int rasterizedTiles = 0;
+  int rasterizedTiles = 0, crumpleBakes = 0;
+  CrumpledPaperResources? _crumpleResources;
+  FragmentShader? _crumpleShader;
+  int _crumpleRevision = 0;
+  double _foldStrength = 1, _foldScale = 1, _bakedShadow = 1;
+  double _foldDensity = 1;
+  FoldDistribution _foldDistribution = FoldDistribution.pockets;
+
+  void setCrumpledPaper(CrumpledPaperResources? resources) {
+    if (identical(resources, _crumpleResources)) return;
+    _crumpleShader?.dispose();
+    _crumpleResources = resources;
+    _crumpleShader = resources?.program.fragmentShader();
+    _crumpleShader?.setImageSampler(0, resources!.image);
+    _crumpleRevision++;
+  }
+
+  void configureCrumple({
+    required double strength,
+    required double scale,
+    required double shadow,
+    double density = 1,
+    FoldDistribution distribution = FoldDistribution.pockets,
+  }) {
+    if (_foldStrength == strength &&
+        _foldScale == scale &&
+        _bakedShadow == shadow &&
+        _foldDensity == density &&
+        _foldDistribution == distribution) {
+      return;
+    }
+    _foldStrength = strength;
+    _foldScale = scale;
+    _bakedShadow = shadow;
+    _foldDensity = density;
+    _foldDistribution = distribution;
+    _crumpleRevision++;
+  }
+
   final Map<String, (TerrainSheet, Object, Mesh)> _walls = {};
   int rebuiltWalls = 0;
   Iterable<Mesh> walls(LayeredTerrain terrain) sync* {
@@ -169,9 +206,7 @@ class HarvestMeshCache {
   }
 
   String _styleKey = '';
-  ColorFilter? _fillFilter, _textureFilter;
-  double _grainStrength = .6,
-      _grainRepeat = ColorTextureCatalog.whiteRepeatWorld;
+  double _grainRepeat = ColorTextureCatalog.whiteRepeatWorld;
   void configureStyle({
     required SurfaceAppearance fill,
     required SurfaceAppearance grain,
@@ -181,9 +216,6 @@ class HarvestMeshCache {
     final key = jsonEncode([fill.toJson(), grain.toJson(), strength, repeat]);
     if (key == _styleKey) return;
     _styleKey = key;
-    _fillFilter = fill.filter;
-    _textureFilter = grain.filter;
-    _grainStrength = strength;
     if (repeat != _grainRepeat) {
       final image = _paperImage;
       setPaperTexture(null);
@@ -214,6 +246,9 @@ class HarvestMeshCache {
   }
 
   void dispose() {
+    _crumpleShader?.dispose();
+    _crumpleShader = null;
+    _crumpleResources = null;
     _paperGrain?.dispose();
     _paperGrain = null;
     _paperImage = null;
@@ -223,17 +258,16 @@ class HarvestMeshCache {
   }
 
   void synchronize(Iterable<CraftPlane> planes, PaperLandscape landscape) {
-    final tilePixels = landscape.terrain == null
-        ? HarvestMeshCache.tilePixels
-        : 128;
-    final columns = landscape.terrain == null ? HarvestMeshCache.columns : 16;
-    final slotPixels = tilePixels + gutter * 2;
     PictureRecorder? recorder;
     Canvas? canvas;
     final temporary = <Image>[];
     for (final plane in planes.where((p) => p.id.startsWith('ground-'))) {
+      final naturalWhite =
+          landscape.terrain.tiles[plane.id]?.sheet.material ==
+          PaperMaterial.paperWhite;
+      final crumpleKey = naturalWhite ? _crumpleRevision : 0;
       final key =
-          '$renderVersion/${landscape.terrain?.signature(plane.id) ?? landscape.revision(plane.id)}/${PaperLandscape.generationVersion}/${landscape.preset.name}/${landscape.preset.materials.map((m) => '${m.id}:${m.base.toARGB32()}:${m.ink.toARGB32()}:${m.pattern.name}').join(',')}/${landscape.seed}/${jsonEncode(plane.region.toJson())}/${jsonEncode(landscape.depleted(plane.id).map((r) => r.toJson()).toList())}/${plane.origin}/${plane.u}/${plane.v}';
+          '$renderVersion/$crumpleKey/${landscape.terrain.signature(plane.id)}/${PaperLandscape.generationVersion}/${landscape.seed}/${jsonEncode(plane.region.toJson())}/${plane.origin}/${plane.u}/${plane.v}';
       final cached = _tiles[plane.id];
       if (cached != null && cached.$1 == key) continue;
       if (recorder == null) {
@@ -261,9 +295,7 @@ class HarvestMeshCache {
       final box = plane.region.bounds;
       tileCanvas.scale(tilePixels / box.width, tilePixels / box.height);
       tileCanvas.translate(-box.left, -box.top);
-      if (_fillFilter != null && landscape.terrain == null) {
-        tileCanvas.saveLayer(box, Paint()..colorFilter = _fillFilter);
-      }
+
       final visiblePaper = Path();
       void face(
         List<Offset> points,
@@ -277,18 +309,6 @@ class HarvestMeshCache {
         colors.add(color);
         final path = Path()..addPolygon(points, true);
         visiblePaper.addPath(path, Offset.zero);
-        if (material != null && material.patterned) {
-          final origin = Offset(plane.origin.x, -plane.origin.z);
-          tileCanvas.save();
-          tileCanvas.clipPath(path, doAntiAlias: false);
-          tileCanvas.translate(-origin.dx, -origin.dy);
-          tileCanvas.drawRect(
-            box.shift(origin),
-            Paint()..shader = PaperPatternAtlas.shared.texture(material).shader,
-          );
-          tileCanvas.restore();
-          return;
-        }
         tileCanvas.drawPath(
           path,
           Paint()
@@ -299,26 +319,45 @@ class HarvestMeshCache {
 
       // Retain exact fallback geometry for near-plane clipping and debug views.
       for (final patch in landscape.remaining(plane)) {
-        final base = paperColors[patch.color]!;
-        final tint = Color.lerp(
-          base,
-          patch.grain < 0 ? const Color(0xff384539) : const Color(0xfffffff0),
-          patch.grain.abs(),
-        )!;
-        face(patch.region.outer, tint, .001, patch.color);
+        face(patch.region.outer, patch.color.base, .001);
       }
-      if (_fillFilter != null && landscape.terrain == null) {
+
+      // Fold shading belongs to natural white-paper terrain, never its material
+      // globally: placed sheets, graphite and cork keep their existing finish.
+      if (naturalWhite &&
+          _crumpleShader != null &&
+          _foldStrength > 0 &&
+          _foldDensity > 0) {
+        final shader = _crumpleShader!;
+        final base = PaperMaterial.paperWhite.base;
+        // Stable phase per world; shared coordinates guarantee seam continuity.
+        final phase = (landscape.seed & 1023) / 256.0;
+        final uniforms = [
+          plane.origin.x + phase,
+          -plane.origin.z + phase,
+          _foldScale,
+          _foldStrength,
+          _bakedShadow,
+          base.r,
+          base.g,
+          base.b,
+          _foldDensity,
+          _foldDistribution.index.toDouble(),
+        ];
+        for (var i = 0; i < uniforms.length; i++) {
+          shader.setFloat(i, uniforms[i]);
+        }
+        tileCanvas.save();
+        tileCanvas.clipPath(visiblePaper, doAntiAlias: false);
+        tileCanvas.drawRect(box, Paint()..shader = shader);
         tileCanvas.restore();
+        crumpleBakes++;
       }
-      final layerMaterial = landscape.terrain?.tiles[plane.id]?.sheet.material;
+      final layerMaterial = landscape.terrain.tiles[plane.id]?.sheet.material;
       final grain = layerMaterial == PaperMaterial.graphite
           ? null
           : _paperGrain;
-      final strength = landscape.terrain == null
-          ? _grainStrength
-          : layerMaterial == PaperMaterial.cork
-          ? .16
-          : .10;
+      final strength = (layerMaterial == PaperMaterial.cork ? .16 : .10);
       if (grain != null && strength > 0) {
         // World-aligned coordinates keep grain continuous across tile seams.
         final origin = Offset(plane.origin.x, -plane.origin.z);
@@ -330,7 +369,6 @@ class HarvestMeshCache {
           Paint()
             ..shader = grain
             ..blendMode = BlendMode.multiply
-            ..colorFilter = landscape.terrain == null ? _textureFilter : null
             ..color = Color.fromRGBO(255, 255, 255, strength),
         );
         tileCanvas.restore();
@@ -406,7 +444,7 @@ class HarvestMeshCache {
           bounds: box,
           source: source,
           atlas: atlas,
-          depthSorted: landscape.terrain != null,
+          depthSorted: true,
         ),
       );
     }

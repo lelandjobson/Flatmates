@@ -6,7 +6,6 @@ import '../geometry/geometry.dart';
 import '../rendering/mesh.dart';
 import 'geometry.dart';
 import 'models.dart';
-import 'paper_patterns.dart';
 
 final paperColors = <PaperMaterial, Color>{
   for (final material in PaperMaterial.values) material: material.base,
@@ -58,23 +57,22 @@ Geometry regionGeometry(
   );
 }
 
-Mesh planeMesh(CraftPlane plane, {double highlight = 0, bool ink = false}) =>
-    Mesh(
-      id: plane.id,
-      name: 'Protoplane',
-      groundPlane: plane.id.startsWith('ground-'),
-      geometry: regionGeometry(plane.id, plane, plane.region, 0),
-      material: MaterialModel(
-        color: Color.lerp(
-          ink ? const Color(0xff222222) : const Color(0xff1a222e),
-          ink ? const Color(0xffbbbbbb) : const Color(0xff8a83db),
-          highlight,
-        )!,
-        doubleSided: true,
-        opacity: plane.id.startsWith('ground-') ? 1 : .23,
-        strokeEdges: false,
-      ),
-    );
+Mesh planeMesh(CraftPlane plane, {double highlight = 0}) => Mesh(
+  id: plane.id,
+  name: 'Protoplane',
+  groundPlane: plane.id.startsWith('ground-'),
+  geometry: regionGeometry(plane.id, plane, plane.region, 0),
+  material: MaterialModel(
+    color: Color.lerp(
+      const Color(0xff222222),
+      const Color(0xffbbbbbb),
+      highlight,
+    )!,
+    doubleSided: true,
+    opacity: plane.id.startsWith('ground-') ? 1 : .23,
+    strokeEdges: false,
+  ),
+);
 
 List<Mesh> objectMeshes(
   CraftObject object,
@@ -93,9 +91,6 @@ List<Mesh> objectMeshes(
     name: object.kind.label,
     geometry: geometry,
     shadeEdges: true,
-    surfaceTexture: object.material.patterned
-        ? PaperPatternAtlas.shared.texture(object.material)
-        : null,
     textureUp: plane.u,
     material: MaterialModel(
       color: color,

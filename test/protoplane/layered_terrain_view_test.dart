@@ -14,14 +14,14 @@ void main() {
   testWidgets('atlas updates columns only, stable pans and restore signatures', (
     tester,
   ) async {
-    final c = ProtoplaneController(preset: WorldPreset.paper);
+    final c = ProtoplaneController();
     final cache = HarvestMeshCache();
     addTearDown(c.dispose);
     addTearDown(cache.dispose);
     final before = snapshot(c);
     cache.synchronize(c.planes.values, c.landscape);
     final initial = cache.rasterizedTiles;
-    final wallMeshes = cache.walls(c.landscape.terrain!).toList();
+    final wallMeshes = cache.walls(c.landscape.terrain).toList();
     expect(wallMeshes.length, greaterThan(6));
     final initialWalls = cache.rebuiltWalls;
     final image = cache.atlas.image;
@@ -41,7 +41,7 @@ void main() {
     drawTile(c);
     c.commitDrawing();
     cache.synchronize(c.planes.values, c.landscape);
-    cache.walls(c.landscape.terrain!).toList();
+    cache.walls(c.landscape.terrain).toList();
     expect(cache.rasterizedTiles, initial + 3);
     expect(cache.rebuiltWalls, initialWalls + 1);
     c.undo();
@@ -58,7 +58,7 @@ void main() {
     ) async {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
-      final c = ProtoplaneController(preset: WorldPreset.paper);
+      final c = ProtoplaneController();
       addTearDown(() {
         c.dispose();
         tester.view.resetPhysicalSize();
@@ -153,7 +153,7 @@ void main() {
       await capture('cut');
       final graphite = centerId(c, PaperMaterial.graphite);
       // Tap the exposed lower material away from grid nodes, including while focused.
-      final exposed = c.landscape.terrain!.exposed(graphite).first;
+      final exposed = c.landscape.terrain.exposed(graphite).first;
       final target = c.planes[graphite]!.point(exposed.bounds.center);
       await tester.tapAt(camera.projectToScreen(target, size)!);
       await tester.pumpAndSettle();

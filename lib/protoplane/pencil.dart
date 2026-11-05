@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 import 'geometry.dart';
 import 'models.dart';
@@ -106,9 +107,10 @@ CraftGrid paperDrawingGrid(
   bool pencil = false,
   List<Region>? material,
 }) {
+  final committed = marks.toList();
   final raw = [
     ...paperGridLines(region, spacing: pencil ? .25 : .5),
-    if (!pencil) ...clipPencil(marks, region),
+    if (!pencil) ...clipPencil(committed, region),
   ];
   final lines = material == null
       ? raw
@@ -125,10 +127,40 @@ CraftGrid paperDrawingGrid(
     },
   );
   for (final s in lines) {
-    for (final part in splitPencil(s, lines)) {
-      final a = node(part.a), b = node(part.b);
-      final key = a < b ? '$a/$b' : '$b/$a';
-      if (linked.add(key)) links.add(GridEdge(a, b));
+    for (final split in splitPencil(s, lines)) {
+      final dots = <Offset>[split.a, split.b];
+      if (!pencil &&
+          committed.any(
+            (m) => onSegment(split.a, m.a, m.b) && onSegment(split.b, m.a, m.b),
+          )) {
+        for (
+          var x = (math.min(split.a.dx, split.b.dx) * 4).ceil();
+          x <= (math.max(split.a.dx, split.b.dx) * 4).floor();
+          x++
+        ) {
+          for (
+            var y = (math.min(split.a.dy, split.b.dy) * 4).ceil();
+            y <= (math.max(split.a.dy, split.b.dy) * 4).floor();
+            y++
+          ) {
+            final p = Offset(x / 4, y / 4);
+            if (onSegment(p, split.a, split.b) &&
+                !dots.any((n) => near(n, p))) {
+              dots.add(p);
+            }
+          }
+        }
+      }
+      dots.sort(
+        (a, b) => (a - split.a).distanceSquared.compareTo(
+          (b - split.a).distanceSquared,
+        ),
+      );
+      for (var i = 1; i < dots.length; i++) {
+        final a = node(dots[i - 1]), b = node(dots[i]);
+        final key = a < b ? '$a/$b' : '$b/$a';
+        if (linked.add(key)) links.add(GridEdge(a, b));
+      }
     }
   }
   return CraftGrid(

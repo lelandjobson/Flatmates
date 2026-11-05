@@ -8,7 +8,6 @@ import 'package:flatmates/protoplane/controller.dart';
 import 'package:flatmates/protoplane/fog_overlay.dart';
 import 'package:flatmates/protoplane/fog_settings.dart';
 import 'package:flatmates/protoplane/harvest_meshes.dart';
-import 'package:flatmates/protoplane/models.dart';
 import 'package:flatmates/rendering/scene/scene.dart';
 import 'package:flatmates/rendering/scene/camera.dart';
 import 'package:flatmates/rendering/scene_view.dart';
@@ -27,7 +26,7 @@ void main() {
   testWidgets(
     'cloud ticks repaint only the overlay; pan and styles reuse masks and atlas',
     (tester) async {
-      final c = ProtoplaneController(preset: WorldPreset.paper);
+      final c = ProtoplaneController();
       final fog = FogSettings();
       final scene = Scene();
       final camera = Camera(
@@ -40,7 +39,7 @@ void main() {
       final cache = HarvestMeshCache();
       scene.setMeshes([
         for (final p in c.planes.values) cache.mesh(p, c.landscape),
-        ...cache.walls(c.landscape.terrain!),
+        ...cache.walls(c.landscape.terrain),
       ]);
       addTearDown(() {
         scene.dispose();
@@ -123,7 +122,7 @@ void main() {
       ) async {
         tester.view.physicalSize = size;
         tester.view.devicePixelRatio = 1;
-        final c = ProtoplaneController(preset: WorldPreset.paper);
+        final c = ProtoplaneController();
         final scene = Scene(), cache = HarvestMeshCache(), fog = FogSettings();
         final camera = Camera(
           name: 'capture',
@@ -134,7 +133,7 @@ void main() {
         scene.camera = camera;
         scene.setMeshes([
           for (final p in c.planes.values) cache.mesh(p, c.landscape),
-          ...cache.walls(c.landscape.terrain!),
+          ...cache.walls(c.landscape.terrain),
         ]);
         addTearDown(() {
           tester.view.resetPhysicalSize();

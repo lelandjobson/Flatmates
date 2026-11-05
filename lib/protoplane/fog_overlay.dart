@@ -205,7 +205,7 @@ class _FogOverlayState extends State<FogOverlay>
   void _sync() {
     final known = widget.model.revealedAreas.toList()..sort();
     final next =
-        '${widget.model.preset}/${widget.model.areas.values.map((a) => '${a.id}:${a.footprints.map((r) => r.outer).join()}').join()}/$known';
+        '${widget.model.areas.values.map((a) => '${a.id}:${a.footprints.map((r) => r.outer).join()}').join()}/$known';
     if (next == signature || widget.model.areas.isEmpty) return;
     signature = next;
     final nextField = FogField(

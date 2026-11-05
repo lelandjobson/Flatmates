@@ -1,3 +1,4 @@
+import 'package:flatmates/protoplane/materials.dart';
 import 'construction_fixture.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flatmates/gestures/point_scrub.dart';
@@ -8,7 +9,7 @@ void main() {
     () {
       final c = constructionWorld();
       addTearDown(c.dispose);
-      c.enter('ground-4-4');
+      c.enter('ground-starter-paperWhite-0-0');
       final balances = Map.of(c.balances);
       c.beginGesture();
       for (final n in [0, 1, 4, 3, 0]) {
@@ -33,7 +34,7 @@ void main() {
     () {
       final c = constructionWorld();
       addTearDown(c.dispose);
-      c.enter('ground-4-4');
+      c.enter('ground-starter-paperWhite-0-0');
       c.beginGesture();
       for (final n in [0, 1, 4, 3, 0]) {
         c.appendNode(n);
@@ -45,10 +46,14 @@ void main() {
       c.onCommitted = (json) => saved = json;
       c.clearWorld();
       expect(c.objects, isEmpty);
-      expect(c.planes.length, 64);
+      expect(c.planes.length, c.landscape.terrain.tiles.length);
       expect(c.activePlane, isNull);
       expect(c.drafts, isEmpty);
-      expect(c.balances.values.every((v) => v == 256), isTrue);
+      expect(c.balances, {
+        PaperMaterial.paperWhite: 256,
+        PaperMaterial.graphite: 0,
+        PaperMaterial.cork: 0,
+      });
       expect(saved, c.toJson());
       c.undo();
       expect(c.toJson(), original);
@@ -62,7 +67,7 @@ void main() {
     () {
       final c = constructionWorld();
       addTearDown(c.dispose);
-      c.enter('ground-4-4');
+      c.enter('ground-starter-paperWhite-0-0');
       c.beginGesture();
       for (final n in [0, 1, 2, 5, 8]) {
         c.appendNode(n);
@@ -84,7 +89,7 @@ void main() {
     () {
       final c = constructionWorld();
       addTearDown(c.dispose);
-      c.enter('ground-4-4');
+      c.enter('ground-starter-paperWhite-0-0');
       c.beginGesture();
       expect(c.appendNode(0), isTrue);
       expect(c.appendNode(2), isTrue);
@@ -134,7 +139,7 @@ void main() {
     () {
       final c = constructionWorld();
       addTearDown(c.dispose);
-      c.enter('ground-4-4');
+      c.enter('ground-starter-paperWhite-0-0');
       final balances = Map.of(c.balances);
       c.beginGesture();
       for (final n in [0, 9, 12, 11, 0]) {

@@ -18,7 +18,7 @@ void main() {
   testWidgets('landscape atlas renders darker focused marks without rebaking', (
     tester,
   ) async {
-    final c = ProtoplaneController(preset: WorldPreset.paper);
+    final c = ProtoplaneController();
     final atlas = HarvestMeshCache(), cache = PencilTextureCache();
     addTearDown(c.dispose);
     addTearDown(atlas.dispose);

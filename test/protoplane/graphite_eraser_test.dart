@@ -8,7 +8,7 @@ import 'package:flatmates/protoplane/geometry.dart' show Region;
 import 'layered_terrain_test.dart' show centerId, drawTile, snapshot;
 
 ProtoplaneController graphiteWorld() {
-  final c = ProtoplaneController(preset: WorldPreset.paper);
+  final c = ProtoplaneController();
   c.enter(centerId(c, PaperMaterial.paperWhite));
   drawTile(c);
   c.commitDrawing();
@@ -75,7 +75,7 @@ void main() {
       final loaded = ProtoplaneController()..load(after);
       addTearDown(loaded.dispose);
       expect(snapshot(loaded), after);
-      final sheet = c.landscape.terrain!.tiles[c.activePlaneId]!.sheet;
+      final sheet = c.landscape.terrain.tiles[c.activePlaneId]!.sheet;
       expect(sheet.cuts, isEmpty);
       expect(sheet.erased.values.single.bytes.length, 32);
       expect(jsonEncode(sheet.toJson()['eraser']).length, lessThan(100));
@@ -103,7 +103,7 @@ void main() {
   test(
     'covered graphite, partial cover cells, and construction are protected',
     () {
-      final c = ProtoplaneController(preset: WorldPreset.paper);
+      final c = ProtoplaneController();
       addTearDown(c.dispose);
       c.enter(centerId(c, PaperMaterial.graphite));
       c.beginErasing();
@@ -130,9 +130,9 @@ void main() {
     },
   );
   test('rotated edge fragments and legacy cuts retain exact yield', () {
-    final edge = ProtoplaneController(preset: WorldPreset.paper);
+    final edge = ProtoplaneController();
     addTearDown(edge.dispose);
-    final terrain = edge.landscape.terrain!;
+    final terrain = edge.landscape.terrain;
     double area(List<Region> regions) =>
         regions.fold<double>(0, (a, r) => a + r.area);
     final tile = terrain.tiles.values.firstWhere(
@@ -192,7 +192,7 @@ void main() {
       ]);
       c.finishErasing();
       final tile =
-          c.landscape.terrain!.tiles[centerId(c, PaperMaterial.graphite)]!;
+          c.landscape.terrain.tiles[centerId(c, PaperMaterial.graphite)]!;
       final count = List.generate(
         256,
         (i) => i,

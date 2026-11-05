@@ -39,7 +39,7 @@ void main() {
     );
     expect(loaded.sun, .4);
     expect(
-      await File('${dir.path}/protoplane_concept/world.json').exists(),
+      await File('${dir.path}/protoplane_concept/world-paper.json').exists(),
       isFalse,
     );
   });

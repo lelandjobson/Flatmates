@@ -1,3 +1,4 @@
+import 'recipe_fixture.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flatmates/protoplane/pencil.dart';
 import 'package:flatmates/protoplane/controller.dart';
@@ -6,7 +7,7 @@ import 'package:flatmates/protoplane/models.dart';
 import 'package:vector_math/vector_math_64.dart';
 
 ProtoplaneController paperWorld({Region? region}) {
-  final c = ProtoplaneController(preset: WorldPreset.paper);
+  final c = ProtoplaneController();
   final p = CraftPlane(
     id: 'test-support',
     origin: Vector3.zero(),

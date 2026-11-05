@@ -6,7 +6,7 @@ import 'layered_terrain_test.dart' show centerId, drawTile, snapshot;
 
 void main() {
   test('lower focus cuts topmost intersecting material and stays anchored', () {
-    final c = ProtoplaneController(preset: WorldPreset.paper);
+    final c = ProtoplaneController();
     addTearDown(c.dispose);
     final white = centerId(c, PaperMaterial.paperWhite);
     final cork = centerId(c, PaperMaterial.cork);
@@ -33,7 +33,7 @@ void main() {
   test(
     'clipped disconnected placement uses top layer, exact cost and history',
     () {
-      final c = ProtoplaneController(preset: WorldPreset.paper);
+      final c = ProtoplaneController();
       addTearDown(c.dispose);
       final white = centerId(c, PaperMaterial.paperWhite);
       final graphite = centerId(c, PaperMaterial.graphite);
@@ -70,7 +70,7 @@ void main() {
   test(
     'placement chooses exposed lower support and empty columns award nothing',
     () {
-      final c = ProtoplaneController(preset: WorldPreset.paper);
+      final c = ProtoplaneController();
       addTearDown(c.dispose);
       final white = centerId(c, PaperMaterial.paperWhite);
       final graphite = centerId(c, PaperMaterial.graphite);

@@ -20,14 +20,14 @@ void main() {
     () {
       final c = ProtoplaneController();
       addTearDown(c.dispose);
-      c.enter('ground-4-4');
+      c.enter('ground-starter-paperWhite-0-0');
       final before = snapshot(c);
       var commits = 0;
       c.onCommitted = (_) => commits++;
       c.beginGesture();
       loop(c);
       for (var i = 0; i < 10; i++) {
-        expect(c.drawingReady, isTrue);
+        expect(c.drawingReady, isTrue, reason: c.completionError());
       }
       expect(c.toJson(), before);
       expect(commits, 0);
@@ -54,7 +54,7 @@ void main() {
     () {
       final c = constructionWorld();
       addTearDown(c.dispose);
-      c.enter('ground-4-4');
+      c.enter('ground-starter-paperWhite-0-0');
       c.balances[c.paper] = 0;
       c.beginGesture();
       loop(c);
@@ -79,7 +79,7 @@ void main() {
   test('open scissors split releases both pieces with one undo', () {
     final c = constructionWorld();
     addTearDown(c.dispose);
-    c.enter('ground-4-4');
+    c.enter('ground-starter-paperWhite-0-0');
     c.beginGesture();
     loop(c);
     c.commitDrawing();
@@ -90,7 +90,7 @@ void main() {
     for (final i in [1, 4, 7]) {
       c.appendNode(i);
     }
-    expect(c.drawingReady, isTrue);
+    expect(c.drawingReady, isTrue, reason: c.completionError());
     expect(c.toJson(), before);
     final result = c.commitDrawing()!;
     expect(result.action, PaperAction.split);
@@ -105,7 +105,7 @@ void main() {
   test('closed scissors cut captures only removed area', () {
     final c = constructionWorld();
     addTearDown(c.dispose);
-    c.enter('ground-4-4');
+    c.enter('ground-starter-paperWhite-0-0');
     c.beginGesture();
     loop(c);
     c.commitDrawing();
@@ -116,7 +116,7 @@ void main() {
     for (final i in [0, 1, 4, 3, 0]) {
       c.appendNode(i);
     }
-    expect(c.drawingReady, isTrue);
+    expect(c.drawingReady, isTrue, reason: c.completionError());
     expect(c.toJson(), before);
     final result = c.commitDrawing()!;
     expect(result.action, PaperAction.removal);
@@ -131,13 +131,13 @@ void main() {
   test('blocked harvest never advertises readiness or succeeds', () {
     final c = ProtoplaneController();
     addTearDown(c.dispose);
-    c.enter('ground-4-4');
+    c.enter('ground-starter-paperWhite-0-0');
     c.objects['obstacle'] = CraftObject(
       id: 'obstacle',
       planeId: c.activePlaneId!,
       kind: CraftKind.floor,
       region: rectangle(.25, .25),
-      material: PaperMaterial.white,
+      material: PaperMaterial.paperWhite,
     );
     final before = snapshot(c);
     c.beginGesture();

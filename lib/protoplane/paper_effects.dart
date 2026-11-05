@@ -9,7 +9,6 @@ import '../rendering/scene/scene.dart';
 import 'completion.dart';
 import 'models.dart';
 import 'meshes.dart';
-import 'paper_patterns.dart';
 
 /// Material-specific overrides can be registered without changing gestures.
 class PaperEffectProfile {
@@ -85,7 +84,7 @@ class PaperEffects extends ChangeNotifier {
     final material =
         completion.paper.firstOrNull?.material ??
         completion.harvest?.patches.firstOrNull?.color ??
-        PaperMaterial.white;
+        PaperMaterial.paperWhite;
     final profile = resolve(completion.action, material);
     _pending[ticket] = completion;
     notifyListeners();
@@ -133,7 +132,7 @@ class PaperEffects extends ChangeNotifier {
                 for (final paper in completion.paper)
                   PaperCompletion(
                     action: completion.action,
-                    plane: completion.plane,
+                    plane: completion.frameFor(paper),
                     trace: completion.trace,
                     paper: [paper],
                   ),
@@ -314,20 +313,15 @@ Future<List<_Surface>> _bake(
 
   if (completion.harvest case final harvest?) {
     for (final patch in harvest.patches) {
-      final color = Color.lerp(
-        patch.color.base,
-        patch.grain < 0 ? const Color(0xff384539) : const Color(0xfffffff0),
-        patch.grain.abs(),
-      )!;
       add(
         patch.region.outer.map((p) => completion.plane.point(p, .001)).toList(),
         patch.color,
-        color,
+        patch.color.base,
       );
     }
   } else {
     for (final paper in completion.paper) {
-      for (final mesh in objectMeshes(paper, completion.plane)) {
+      for (final mesh in objectMeshes(paper, completion.frameFor(paper))) {
         for (final face in mesh.geometry.faces) {
           add(
             face.map((i) => mesh.geometry.vertices[i]).toList(),
@@ -363,10 +357,7 @@ Future<List<_Surface>> _bake(
           Path()..addPolygon(polygon.points, true),
           Paint()
             ..isAntiAlias = false
-            ..color = polygon.color
-            ..shader = polygon.material.patterned
-                ? PaperPatternAtlas.shared.texture(polygon.material).shader
-                : null,
+            ..color = polygon.color,
         );
       }
       final picture = recorder.endRecording();
@@ -626,7 +617,9 @@ class PaperEffectsPainter extends CustomPainter {
             final points = <Offset>[];
             for (final point in ring) {
               final screen = camera.projectToScreen(
-                effect.completion.plane.point(point, paper.depth + .003),
+                effect.completion
+                    .frameFor(paper)
+                    .point(point, paper.depth + .003),
                 size,
               );
               if (screen != null) points.add(screen);

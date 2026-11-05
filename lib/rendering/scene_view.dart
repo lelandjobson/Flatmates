@@ -120,6 +120,7 @@ class ScenePainter extends CustomPainter {
     final planarBatches = <(PlanarTexture, Matrix4, Color, ColorFilter?)>[];
     final sortedDepths = <PlanarTexture, double>{};
     final markedBatches = <PlanarTexture, Mesh>{};
+    final croppedBatchPaths = <PlanarTexture, Path>{};
     var batchedFaces = 0;
     final allMeshes = _scene.meshes;
     var visibleMeshes = 0;
@@ -148,6 +149,26 @@ class ScenePainter extends CustomPainter {
           size,
         );
         if (transform != null) {
+          if (mesh.cropBox case final crop?) {
+            final polygon = crop.clip([
+              for (final p in [
+                batch.bounds.topLeft,
+                batch.bounds.topRight,
+                batch.bounds.bottomRight,
+                batch.bounds.bottomLeft,
+              ])
+                world.transformed3(
+                  batch.origin + batch.u * p.dx + batch.v * p.dy,
+                ),
+            ]);
+            if (polygon.length < 3) continue;
+            final projected = polygon
+                .map((p) => _projectToScreen(p, viewProjection, size))
+                .toList();
+            if (projected.any((p) => p == null)) continue;
+            croppedBatchPaths[batch] = Path()
+              ..addPolygon(projected.cast<Offset>(), true);
+          }
           final origin = world.transformed3(batch.origin);
           final normal =
               world.transformed3(batch.origin + batch.u.cross(batch.v)) -
@@ -443,6 +464,11 @@ class ScenePainter extends CustomPainter {
 
     void paintBatch((PlanarTexture, Matrix4, Color, ColorFilter?) value) {
       final (batch, transform, tint, appearance) = value;
+      final crop = croppedBatchPaths[batch];
+      if (crop != null) {
+        canvas.save();
+        canvas.clipPath(crop, doAntiAlias: false);
+      }
       canvas.save();
       if (appearance != null) {
         canvas.saveLayer(
@@ -490,6 +516,7 @@ class ScenePainter extends CustomPainter {
           canvas.restore();
         }
       }
+      if (crop != null) canvas.restore();
       drawCalls++;
     }
 
@@ -600,9 +627,10 @@ class ScenePainter extends CustomPainter {
       }
 
       final occlusion = mesh.groundOcclusion;
+      final cropped = mesh.cropBox?.clip(worldVertices) ?? worldVertices;
       final faceParts = occlusion == null
-          ? <List<Vector3>>[worldVertices]
-          : clipFaceToVisibleParts(camera, worldVertices, occlusion);
+          ? <List<Vector3>>[cropped]
+          : clipFaceToVisibleParts(camera, cropped, occlusion);
       if (faceParts.isEmpty) continue;
 
       // Compute face normal from the original (unclipped) vertices to avoid
@@ -849,7 +877,11 @@ class ScenePainter extends CustomPainter {
       if (normal.dot(toCamera) <= -0.15 && !isDoubleSided) continue;
 
       // Clip against near plane, then project.
-      final clipped = _clipFaceToNearPlane(worldVerts, view, camera.near);
+      final clipped = _clipFaceToNearPlane(
+        mesh.cropBox?.clip(worldVerts) ?? worldVerts,
+        view,
+        camera.near,
+      );
       if (clipped.length < 3) continue;
 
       final projected = <Offset>[];

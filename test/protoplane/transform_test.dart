@@ -9,7 +9,7 @@ void main() {
     () {
       final c = constructionWorld();
       addTearDown(c.dispose);
-      c.enter('ground-4-4');
+      c.enter('ground-starter-paperWhite-0-0');
       c.beginGesture();
       for (final n in [0, 1, 4, 3, 0]) {
         c.appendNode(n);
@@ -24,7 +24,7 @@ void main() {
       expect(c.canUndo, isFalse);
       c.redo();
       expect(c.objects.length, 1);
-      c.enter('ground-5-4');
+      c.enter('ground-starter-paperWhite-1-0');
       c.balances[c.paper] = 0;
       c.beginGesture();
       for (final n in [0, 1, 4, 3, 0]) {
@@ -40,7 +40,7 @@ void main() {
   test('automatic first match follows recipe priority', () {
     final c = constructionWorld();
     addTearDown(c.dispose);
-    c.enter('ground-4-4');
+    c.enter('ground-starter-paperWhite-0-0');
     c.beginGesture();
     for (final n in [0, 2, 8, 6, 0]) {
       c.appendNode(n);
@@ -49,11 +49,7 @@ void main() {
     c.create();
     final floor = c.objects.values.single;
     c.enter('surface-${floor.id}');
-    c.beginGesture();
-    for (final n in c.grid!.examples[CraftKind.rug]!) {
-      c.appendNode(n);
-    }
-    c.finishGesture();
+    drawPoints(c, recipePoints(c, CraftKind.rug));
     expect(c.matches.length, greaterThan(1));
     expect(c.chosen, c.matches.first);
     expect(

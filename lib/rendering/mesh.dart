@@ -4,6 +4,7 @@ import 'package:vector_math/vector_math_64.dart';
 import '../geometry/geometry.dart';
 import '../geometry/transformable.dart';
 import 'ground_occlusion.dart';
+import 'world_crop_box.dart';
 import 'scene/planar_texture.dart';
 import 'scene/surface_texture.dart';
 import 'surface_edge_shading.dart';
@@ -49,6 +50,9 @@ class Mesh extends Transformable {
 
   /// When set, faces are clipped so solid ground hides underground parts.
   GroundOcclusion? groundOcclusion;
+
+  /// Optional presentation-only crop; never changes gameplay geometry.
+  WorldCropBox? cropBox;
 
   /// Optional atlas sprite for flat ground surfaces.
   final PlanarTexture? planarTexture;

@@ -3,69 +3,67 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flatmates/protoplane/controller.dart';
 import 'package:flatmates/protoplane/models.dart';
 import 'package:flatmates/protoplane/storage.dart';
-import 'package:flatmates/protoplane/world_sessions.dart';
+import 'dart:convert';
 import 'layered_terrain_test.dart' show centerId, drawTile, snapshot;
 
 void main() {
   test(
-    'Paper saves, recovery, switching, drafts and histories remain independent',
+    'Paper saves retain history, recover backups, and ignore retired files',
     () async {
-      final dir = await Directory.systemTemp.createTemp('paper-worlds');
+      final dir = await Directory.systemTemp.createTemp('paper-storage-');
       addTearDown(() => dir.delete(recursive: true));
-      WorldSessions sessions() => WorldSessions(
-        storageFactory: (p) =>
-            ProtoplaneStorage(directory: () async => dir, fileName: p.fileName),
-      );
-      final worlds = sessions();
-      addTearDown(worlds.dispose);
-      await worlds.load(WorldPreset.paper);
-      final paper = worlds.controller(WorldPreset.paper);
+      ProtoplaneStorage store() =>
+          ProtoplaneStorage(directory: () async => dir);
+      final paper = ProtoplaneController();
+      addTearDown(paper.dispose);
+      final storage = store();
+      await storage.load(paper.load);
+      final folder = Directory('${dir.path}/protoplane_concept');
+      final retired = [
+        File('${folder.path}/world-ink.json'),
+        File('${folder.path}/world.json'),
+      ];
+      for (final file in retired) {
+        await file.writeAsString('retired world');
+      }
       paper.enter(centerId(paper, PaperMaterial.paperWhite));
       drawTile(paper);
       paper.commitDrawing();
       final saved = snapshot(paper);
-      paper.appendNode(0);
-      final ink = await worlds.switchFrom(WorldPreset.paper, WorldPreset.ink);
-      final inkBefore = snapshot(ink);
-      expect(
-        await worlds.switchFrom(WorldPreset.ink, WorldPreset.paper),
-        same(paper),
-      );
-      expect(paper.draft.path, [0]);
-      paper.undo(); // draft
-      paper.undo(); // harvest
+      await storage.save(saved);
+      paper.undo();
       expect(paper.balances[PaperMaterial.paperWhite], 256);
       paper.redo();
       expect(snapshot(paper), saved);
-      await worlds.switchFrom(WorldPreset.paper, WorldPreset.ink);
-      final file = File('${dir.path}/protoplane_concept/world-paper.json');
+      await storage.save(saved);
+      final file = File('${folder.path}/world-paper.json');
       await file.writeAsString('broken');
-      final fresh = sessions();
-      addTearDown(fresh.dispose);
-      await fresh.load(WorldPreset.paper);
-      expect(fresh.storage(WorldPreset.paper).recoveryMessage, isNotNull);
-      expect(snapshot(fresh.controller(WorldPreset.paper)), saved);
-      fresh.controller(WorldPreset.paper).clearWorld();
-      await fresh.load(WorldPreset.ink);
-      expect(snapshot(fresh.controller(WorldPreset.ink)), inkBefore);
-      final blocked = WorldSessions(
-        storageFactory: (p) => ProtoplaneStorage(
-          directory: () =>
-              Future.error(FileSystemException('Disk unavailable')),
-          fileName: p.fileName,
-        ),
+      final recovered = store();
+      final loaded = await recovered.load(paper.load);
+      expect(recovered.recoveryMessage, isNotNull);
+      expect(loaded, saved);
+      paper.clearWorld();
+      await recovered.save(paper.toJson());
+      for (final old in retired) {
+        expect(await old.readAsString(), 'retired world');
+      }
+      for (final preset in ['ink', 'pastel']) {
+        final bad = jsonDecode(jsonEncode(saved)) as Map<String, dynamic>;
+        bad['preset'] = preset;
+        final before = paper.toJson();
+        expect(() => paper.load(bad), throwsFormatException);
+        expect(paper.toJson(), before);
+      }
+      final blocked = ProtoplaneStorage(
+        directory: () => Future.error(FileSystemException('Disk unavailable')),
       );
-      addTearDown(blocked.dispose);
-      expect(
-        () => blocked.switchFrom(WorldPreset.paper, WorldPreset.ink),
-        throwsStateError,
-      );
+      await expectLater(blocked.save(saved), throwsStateError);
     },
   );
   test(
     'navigation follows exposed edges, never bridges islands, and restores after undo',
     () {
-      final c = ProtoplaneController(preset: WorldPreset.paper);
+      final c = ProtoplaneController();
       addTearDown(c.dispose);
       final white = centerId(c, PaperMaterial.paperWhite);
       final graph = c.navigationGraph;
@@ -74,17 +72,16 @@ void main() {
       expect(
         neighbors.every(
           (e) =>
-              c.landscape.terrain!.tiles[e.planeId]!.sheet.material ==
+              c.landscape.terrain.tiles[e.planeId]!.sheet.material ==
               PaperMaterial.paperWhite,
         ),
         isTrue,
       );
       for (final entry in graph.neighbors.entries) {
-        final island = c.landscape.terrain!.tiles[entry.key]!.sheet.island;
+        final island = c.landscape.terrain.tiles[entry.key]!.sheet.island;
         expect(
           entry.value.every(
-            (e) =>
-                c.landscape.terrain!.tiles[e.planeId]!.sheet.island == island,
+            (e) => c.landscape.terrain.tiles[e.planeId]!.sheet.island == island,
           ),
           isTrue,
         );
