@@ -1,4 +1,5 @@
 import 'construction_fixture.dart';
+import 'package:flatmates/gestures/gesture_debug.dart';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -7,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flatmates/protoplane/controller.dart';
+import 'package:flatmates/protoplane/dev_settings.dart';
 import 'package:flatmates/protoplane/models.dart';
 import 'package:flatmates/rendering/scene_view.dart';
 import 'package:flatmates/screens/protoplane_concept_view.dart';
@@ -25,7 +27,9 @@ void main() {
       model.dispose();
     });
     await tester.pumpWidget(
-      MaterialApp(home: ProtoplaneConceptView(controller: model)),
+      MaterialApp(
+        home: ProtoplaneConceptView(animateFog: false, controller: model),
+      ),
     );
     await tester.pumpAndSettle();
     model.enter('ground-4-4');
@@ -64,7 +68,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData.dark(),
-        home: ProtoplaneConceptView(controller: model),
+        home: ProtoplaneConceptView(animateFog: false, controller: model),
       ),
     );
     await tester.pumpAndSettle();
@@ -123,7 +127,11 @@ void main() {
         theme: ThemeData.dark(useMaterial3: true),
         home: RepaintBoundary(
           key: const ValueKey('capture'),
-          child: ProtoplaneConceptView(controller: model, entryFocusLevel: 0),
+          child: ProtoplaneConceptView(
+            animateFog: false,
+            controller: model,
+            entryFocusLevel: 0,
+          ),
         ),
       ),
     );
@@ -323,7 +331,7 @@ void main() {
       model.undo();
       expect(model.draft.path, isEmpty);
       model.redo();
-      expect(model.draft.path, [0, 9, 1]);
+      expect(model.draft.path, isEmpty);
       await tester.pumpAndSettle();
       await tester.pumpWidget(const SizedBox());
     },
@@ -349,9 +357,11 @@ void main() {
 
     await tester.tap(find.text('Grid connection lines'));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Lighting'));
     await tester.tap(find.text('Lighting'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Ambient GI'), findsOneWidget);
+    await tester.ensureVisible(find.text('Camera'));
     await tester.tap(find.text('Camera'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Wall reveal near'), findsOneWidget);
@@ -372,6 +382,7 @@ void main() {
       await mount(tester, model, const Size(900, 700));
       await tester.tap(find.text('devtools'));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Camera'));
       await tester.tap(find.text('Camera'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Disable focus zoom'));
@@ -450,7 +461,7 @@ void main() {
   });
 
   testWidgets(
-    'release commits valid open crafts but preserves incomplete drafts when disabled',
+    'release commits valid open crafts and discards invalid drafts even with reset disabled',
     (tester) async {
       final model = constructionWorld();
       addTearDown(() {
@@ -501,7 +512,7 @@ void main() {
       model.enter('ground-5-4');
       await tester.pumpAndSettle();
       await draw(0, 1);
-      expect(model.draft.path, isNotEmpty);
+      expect(model.draft.path, isEmpty);
       expect(model.objects.length, 2);
       await tester.tap(find.text('devtools'));
       await tester.pumpAndSettle();
@@ -598,9 +609,11 @@ void main() {
           model.activePlane!.point(model.grid!.nodes[n], .008),
           const Size(900, 700),
         )!;
-        final mid = node(0) * .7 + node(1) * .3, delta = node(1) - node(0);
-        final sample = mid + Offset(-delta.dy, delta.dx) / delta.distance * 2;
         Future<List<int>> pixel() async {
+          // Safe-zone framing can move when the validation banner appears.
+          // Follow the same point on the stroke rather than a stale screen pixel.
+          final mid = node(0) * .7 + node(1) * .3, delta = node(1) - node(0);
+          final sample = mid + Offset(-delta.dy, delta.dx) / delta.distance * 2;
           final paint = tester
               .widget<CustomPaint>(
                 find.byKey(const ValueKey('craft-grid-overlay')),
@@ -626,6 +639,7 @@ void main() {
           return result!;
         }
 
+        final restingAlpha = (await pixel())[3];
         final drag = await tester.startGesture(
           node(0),
           kind: PointerDeviceKind.mouse,
@@ -651,8 +665,215 @@ void main() {
         expect(fading[3], lessThan(released[3]));
         expect(fading[3], greaterThan(0));
         await tester.pump(const Duration(milliseconds: 375));
-        expect((await pixel())[3], 0);
+        // Wider context framing brings the selected-dot glow closer to the
+        // sample. Allow a <3% antialiased tail after the stroke disappears.
+        expect((await pixel())[3], lessThanOrEqualTo(restingAlpha + 8));
+        final dynamic overlay = tester
+            .widget<CustomPaint>(
+              find.byKey(const ValueKey('craft-grid-overlay')),
+            )
+            .painter;
+        expect(overlay.lineOpacity, 0);
         await tester.pumpAndSettle();
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
+
+  testWidgets(
+    'gesture debug uses actual swipe verdict and retains released trace',
+    (tester) async {
+      final model = constructionWorld();
+      addTearDown(() {
+        resetView(tester);
+        model.dispose();
+      });
+      await mount(tester, model, const Size(900, 700));
+      await tester.tap(find.text('devtools'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Camera'));
+      await tester.tap(find.text('Camera'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Gesture overlay'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Close'));
+      await tester.pumpAndSettle();
+      expect(find.byType(GestureDebugOverlay), findsOneWidget);
+      model.enter('ground-4-4');
+      await tester.pumpAndSettle();
+      final a = await tester.startGesture(const Offset(300, 310), pointer: 41);
+      final b = await tester.startGesture(const Offset(300, 410), pointer: 42);
+      await a.moveBy(const Offset(110, 0));
+      await b.moveBy(const Offset(110, 0));
+      await a.up();
+      await b.up();
+      await tester.pumpAndSettle();
+      final debug = tester
+          .widget<GestureDebugOverlay>(find.byType(GestureDebugOverlay))
+          .debug;
+      expect(debug.phase, 'Released');
+      expect(debug.contacts.length, 2);
+      expect(debug.verdict, 'Swipe Right / E');
+      expect(model.activePlaneId, isNot('ground-4-4'));
+      await tester.pump(const Duration(seconds: 2));
+      expect(debug.contacts.length, 2);
+      final next = await tester.startGesture(
+        const Offset(450, 350),
+        pointer: 43,
+      );
+      expect(debug.contacts.keys, [43]);
+      await next.up();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('devtools'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Camera'));
+      await tester.tap(find.text('Camera'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Gesture overlay'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Close'));
+      await tester.pumpAndSettle();
+      expect(find.byType(GestureDebugOverlay), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  for (final size in [
+    const Size(390, 844),
+    const Size(844, 390),
+    const Size(1100, 800),
+  ]) {
+    testWidgets(
+      'docked devtools leave world and focused scene pannable at $size',
+      (tester) async {
+        final model = constructionWorld();
+        addTearDown(() {
+          resetView(tester);
+          model.dispose();
+        });
+        await mount(tester, model, size);
+        final camera = tester
+            .widget<SceneView>(find.byType(SceneView).first)
+            .scene
+            .camera!;
+        Future<List<int>> scenePixel() async {
+          final boundary = tester.renderObject<RenderRepaintBoundary>(
+            find.byKey(const ValueKey('capture')),
+          );
+          return (await tester.runAsync(() async {
+            final image = await boundary.toImage();
+            final data = (await image.toByteData(
+              format: ui.ImageByteFormat.rawRgba,
+            ))!.buffer.asUint8List();
+            final offset =
+                ((size.height * .65).floor() * size.width.toInt() +
+                    size.width.toInt() -
+                    12) *
+                4;
+            final pixel = data.sublist(offset, offset + 4);
+            image.dispose();
+            return pixel;
+          }))!;
+        }
+
+        final colorBefore = await scenePixel();
+        final barriersBefore = find.byType(ModalBarrier).evaluate().length;
+        await tester.tap(find.text('devtools'));
+        await tester.pumpAndSettle();
+        expect(find.byType(ModalBarrier).evaluate().length, barriersBefore);
+        expect(
+          await scenePixel(),
+          colorBefore,
+          reason: 'Opening devtools must not dim the scene',
+        );
+        final panel = find.byKey(const ValueKey('protoplane-devtools-panel'));
+        var rect = tester.getRect(panel);
+        expect(rect.left, lessThan(30));
+        expect(rect.right, lessThan(size.width * .6));
+        expect(
+          rect.top,
+          greaterThan(tester.getRect(find.byTooltip('Back')).bottom),
+        );
+        await tester.ensureVisible(find.text('Lighting'));
+        await tester.tap(find.text('Lighting'));
+        await tester.pumpAndSettle();
+        final before = camera.target.clone();
+        Offset point() => Offset(
+          (tester.getRect(panel).right + size.width - 80) / 2,
+          tester.getRect(panel).center.dy,
+        );
+        final world = await tester.startGesture(
+          point(),
+          kind: PointerDeviceKind.mouse,
+        );
+        await world.moveBy(const Offset(24, 12));
+        await world.up();
+        await tester.pumpAndSettle();
+        expect(camera.target.distanceTo(before), greaterThan(.001));
+        expect(find.text('Ambient GI'), findsOneWidget);
+        await tester.ensureVisible(find.text('Style'));
+        await tester.tap(find.text('Style'));
+        await tester.pumpAndSettle();
+        final strength = find.byKey(const ValueKey('Texture strength'));
+        final styleList = find
+            .ancestor(
+              of: find.text('Background'),
+              matching: find.byType(ListView),
+            )
+            .first;
+        await tester.scrollUntilVisible(
+          strength,
+          80,
+          scrollable: find
+              .descendant(of: styleList, matching: find.byType(Scrollable))
+              .first,
+        );
+        await tester.pumpAndSettle();
+        await tester.drag(strength, const Offset(-20, 0));
+        await tester.pumpAndSettle();
+        final pendingStrength = tester.widget<Slider>(strength).value;
+        final settings = tester
+            .widget<ProtoplaneDevToolsPanel>(
+              find.byType(ProtoplaneDevToolsPanel),
+            )
+            .settings;
+        expect(pendingStrength, isNot(settings.paperTextureStrength));
+        model.enter('ground-4-4');
+        await tester.pumpAndSettle();
+        rect = tester.getRect(panel);
+        final footer = tester.getRect(
+          find.byKey(ValueKey(model.activePlaneId)),
+        );
+        expect(rect.bottom, lessThan(footer.top));
+        expect(
+          rect.top,
+          greaterThan(tester.getRect(find.byTooltip('Back')).bottom),
+        );
+        final position = camera.position.clone(),
+            target = camera.target.clone(),
+            snapshot = model.toJson();
+        final focus = await tester.startGesture(
+          point(),
+          kind: PointerDeviceKind.mouse,
+        );
+        await focus.moveBy(const Offset(24, 12));
+        await focus.up();
+        await tester.pumpAndSettle();
+        expect(camera.target.distanceTo(target), greaterThan(.001));
+        expect(
+          (camera.position - position).distanceTo(camera.target - target),
+          lessThan(1e-6),
+        );
+        expect(model.toJson(), snapshot);
+        expect(model.draft.path, isEmpty);
+        expect(tester.widget<Slider>(strength).value, pendingStrength);
+        expect(settings.paperTextureStrength, .6);
+
+        expect(tester.takeException(), isNull);
+        await tester.tap(find.byTooltip('Close'));
+        await tester.pumpAndSettle();
+        expect(find.byType(ProtoplaneDevToolsPanel), findsNothing);
         await tester.pumpWidget(const SizedBox());
       },
     );

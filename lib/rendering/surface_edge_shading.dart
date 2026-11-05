@@ -16,8 +16,17 @@ class SurfaceEdgeShade {
     this.v,
     this.bounds,
     this.rectangular,
-  );
-  final ui.Image image;
+  ) : vectorPaint = null;
+  SurfaceEdgeShade.vector(
+    this.origin,
+    this.u,
+    this.v,
+    this.bounds,
+    this.vectorPaint,
+  ) : image = null,
+      rectangular = false;
+  final void Function(ui.Canvas)? vectorPaint;
+  final ui.Image? image;
   final Vector3 origin, u, v;
   final ui.Rect bounds;
   final bool rectangular;
@@ -28,6 +37,16 @@ class SurfaceEdgeShade {
     ..setColumn(3, Vector4(origin.x, origin.y, origin.z, 1));
 
   void paint(ui.Canvas canvas, double opacity) {
+    if (image == null) {
+      canvas.saveLayer(
+        bounds,
+        ui.Paint()..color = ui.Color.fromRGBO(255, 255, 255, opacity),
+      );
+      canvas.clipRect(bounds);
+      vectorPaint!(canvas);
+      canvas.restore();
+      return;
+    }
     final paint = ui.Paint()
       ..color = ui.Color.fromRGBO(255, 255, 255, opacity)
       ..filterQuality = ui.FilterQuality.low;
@@ -38,7 +57,7 @@ class SurfaceEdgeShade {
       canvas.save();
       canvas.scale(scale);
       canvas.drawImageNine(
-        image,
+        image!,
         const ui.Rect.fromLTRB(16, 16, 32, 32),
         ui.Rect.fromLTRB(
           bounds.left / scale,
@@ -51,8 +70,13 @@ class SurfaceEdgeShade {
       canvas.restore();
     } else {
       canvas.drawImageRect(
-        image,
-        ui.Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+        image!,
+        ui.Rect.fromLTWH(
+          0,
+          0,
+          image!.width.toDouble(),
+          image!.height.toDouble(),
+        ),
         bounds,
         paint,
       );

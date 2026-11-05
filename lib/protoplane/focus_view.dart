@@ -4,6 +4,7 @@ import 'package:vector_math/vector_math_64.dart';
 import '../rendering/scene/camera.dart';
 import 'models.dart';
 import 'bedrooms.dart';
+import 'layered_terrain.dart';
 
 class PlaneFocusPose {
   const PlaneFocusPose(this.position, this.target, this.up, this.fov);
@@ -20,24 +21,50 @@ PlaneFocusPose focusPlanePose(
   Size viewport, {
   bool preview = false,
   bool fullFocus = false,
+  int contextTiles = 0,
+  Rect? safeZone,
 }) {
   final target = plane.point(plane.region.bounds.center);
-  final width = math.max(120.0, viewport.width - 150),
-      height = math.max(160.0, viewport.height - 280);
+  final width = safeZone?.width ?? math.max(120.0, viewport.width - 150),
+      height = safeZone?.height ?? math.max(160.0, viewport.height - 280);
+  final contextBounds = plane.region.bounds.inflate(contextTiles.toDouble());
+  final outline = contextTiles > 0
+      ? [
+          contextBounds.topLeft,
+          contextBounds.topRight,
+          contextBounds.bottomRight,
+          contextBounds.bottomLeft,
+        ]
+      : plane.region.outer;
   final offsets = plane.region.outer
       .map((p) => plane.point(p) - target)
       .toList();
+  final contextOffsets = outline.map((p) => plane.point(p) - target).toList();
   double fittedSpan(Vector3 up, Vector3 direction) {
     final right = up.cross(direction).normalized();
-    double extent(Vector3 axis) {
-      final values = offsets.map((p) => p.dot(axis));
+    double extent(List<Vector3> points, Vector3 axis) {
+      final values = points.map((p) => p.dot(axis));
       return values.reduce(math.max) - values.reduce(math.min);
     }
 
-    return math.max(
-      extent(up) * viewport.height / height,
-      extent(right) * viewport.height / width,
+    final activeSpan = math.max(
+      extent(offsets, up) * viewport.height / height,
+      extent(offsets, right) * viewport.height / width,
     );
+    // The editable surface fits between the controls. Context may extend behind
+    // those controls, using the full viewport rather than shrinking the active
+    // grid into a third of the already-small editing area on a phone.
+    final contextSpan = math.max(
+      extent(contextOffsets, up) *
+          viewport.height /
+          math.max(1, viewport.height - 24),
+      extent(contextOffsets, right) *
+          viewport.height /
+          math.max(1, viewport.width - 24),
+    );
+    return contextTiles > 0 && !(fullFocus && safeZone != null)
+        ? math.max(activeSpan, contextSpan)
+        : activeSpan;
   }
 
   final incoming = (camera.position - camera.target).normalized();
@@ -93,6 +120,49 @@ PlaneFocusPose focusPlanePose(
   final bounds = plane.region.bounds;
   final span = fittedSpan(up, direction);
   final fov = camera.fovDegrees.clamp(38.0, 55.0);
+  if (safeZone != null && safeZone.width > 0 && safeZone.height > 0) {
+    final focal = viewport.height / (2 * math.tan(fov * math.pi / 360));
+    final right = up.cross(direction).normalized();
+    // Translate the optical target so the plane is centered in the actual
+    // unobscured rectangle, which need not be centered in the viewport.
+    final kx = (viewport.width / 2 - safeZone.center.dx) / focal;
+    final ky = (safeZone.center.dy - viewport.height / 2) / focal;
+    double fit(List<Vector3> points, Rect rect) {
+      final left = (rect.left - viewport.width / 2) / focal;
+      final rightEdge = (rect.right - viewport.width / 2) / focal;
+      final bottom = (viewport.height / 2 - rect.bottom) / focal;
+      final top = (viewport.height / 2 - rect.top) / focal;
+      var distance = .1;
+      for (final p in points) {
+        final x = p.dot(right), y = p.dot(up), z = p.dot(direction);
+        distance = [
+          distance,
+          z + .01,
+          (x + rightEdge * z) / (rightEdge + kx),
+          (-x - left * z) / (-left - kx),
+          (y + top * z) / (top + ky),
+          (-y - bottom * z) / (-bottom - ky),
+        ].reduce(math.max);
+      }
+      return distance;
+    }
+
+    var distance = fit(offsets, safeZone);
+    if (!fullFocus) {
+      distance = math.max(
+        distance,
+        math.max(bounds.width, bounds.height) * 2.5,
+      );
+      if (contextTiles > 0) {
+        distance = math.max(
+          distance,
+          fit(contextOffsets, (Offset.zero & viewport).deflate(12)),
+        );
+      }
+    }
+    final aim = target + (right * kx + up * ky) * distance;
+    return PlaneFocusPose(aim + direction * distance, aim, up, fov);
+  }
   final distance = math.max(
     span * .58 / math.tan(fov * math.pi / 360),
     fullFocus ? .1 : math.max(bounds.width, bounds.height) * 2.5,
@@ -120,11 +190,40 @@ bool adjacentFocusContext(
   CraftPlane active,
   CraftPlane other,
   Map<String, CraftObject> objects,
-  Map<String, CraftPlane> planes,
-) {
+  Map<String, CraftPlane> planes, {
+  int tiles = 1,
+  LayeredTerrain? terrain,
+}) {
   final a = contextAnchor(active, objects, planes),
       b = contextAnchor(other, objects, planes);
-  return (a.y - b.y).abs() < .05 &&
-      ((a.x + 4).floor() - (b.x + 4).floor()).abs() <= 1 &&
-      ((4 - a.z).floor() - (4 - b.z).floor()).abs() <= 1;
+  final activeTile = terrain?.tiles[active.id];
+  final otherTile = terrain?.tiles[other.id];
+  final sameStack =
+      activeTile != null &&
+      otherTile != null &&
+      activeTile.sheet.island == otherTile.sheet.island;
+  // Landscape context is a tile column, not a single elevation. Keep the
+  // story-height filter for constructed surfaces and legacy ground.
+  if (!sameStack && (a.y - b.y).abs() >= .05) return false;
+  Rect footprint(CraftPlane p) {
+    final floor = objects[supportingFloor(p.owner, objects, planes)];
+    final source = floor == null ? null : planes[floor.planeId];
+    final useFloor = source != null && !p.id.startsWith('surface-');
+    final points = (useFloor ? floor!.region.outer : p.region.outer)
+        .map((point) => (useFloor ? source : p).point(point))
+        .map((point) => Offset(point.x, point.z))
+        .toList();
+    return Rect.fromLTRB(
+      points.map((p) => p.dx).reduce(math.min),
+      points.map((p) => p.dy).reduce(math.min),
+      points.map((p) => p.dx).reduce(math.max),
+      points.map((p) => p.dy).reduce(math.max),
+    );
+  }
+
+  // Compare footprints, so a fused work surface gets the requested border
+  // around every constituent, not merely around the union's center tile.
+  return footprint(
+    active,
+  ).inflate(tiles.toDouble() + 1e-6).overlaps(footprint(other).deflate(1e-5));
 }

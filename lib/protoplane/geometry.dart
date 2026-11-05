@@ -150,6 +150,15 @@ class Region {
     return result;
   }
 
+  /// Intersect against a union of surface fragments, retaining disconnected
+  /// pieces and holes through the same boundary reconstruction as subtraction.
+  List<Region> clipTo(List<Region> surfaces) => _regionsFromCells(
+    slabs([
+      this,
+      ...surfaces,
+    ], (p) => contains(p) && surfaces.any((r) => r.contains(p))),
+  );
+
   List<Region> subtract(Region cut) {
     final cells = slabs([this, cut], (p) => contains(p) && !cut.contains(p));
     return _regionsFromCells(cells);

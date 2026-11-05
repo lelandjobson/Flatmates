@@ -74,6 +74,7 @@ void main() {
     );
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Style'));
     await tester.tap(find.text('Style'));
     await tester.pumpAndSettle();
     final slider = find.byKey(const ValueKey('Texture strength'));
@@ -121,6 +122,7 @@ void main() {
     );
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Style'));
     await tester.tap(find.text('Style'));
     await tester.pumpAndSettle();
     final middle = settings.backgroundColors[1],

@@ -137,45 +137,49 @@ void main() {
     },
   );
 
-  test('harvest credits visible mix, undo restores it, second cut builds', () {
-    final c = ProtoplaneController(preset: WorldPreset.pastel);
-    addTearDown(c.dispose);
-    expect(c.balances.values, everyElement(256));
-    c.enter('ground-4-4');
-    expect(c.grid!.nodes.length, 25);
-    final graph = c.navigationGraph;
-    c.beginGesture();
-    outline(c);
-    final expected = c.harvestPreview!.units;
-    expect(c.previewObject, isNull);
-    expect(c.completeCraft(), isTrue);
-    expect(c.objects, isEmpty);
-    expect(c.harvestPending, isTrue);
-    c.finishGesture();
-    for (final color in expected.keys) {
-      expect(
-        c.balances[color]! - 256 + c.landscape.remainders[color]!,
-        closeTo(expected[color]!, 1e-7),
-      );
-    }
-    expect(c.landscape.remaining(c.activePlane!), isEmpty);
-    expect(identical(graph, c.navigationGraph), isTrue);
-    final harvested = c.toJson();
-    c.undo();
-    expect(c.balances.values, everyElement(256));
-    expect(c.landscape.remaining(c.activePlane!), isNotEmpty);
-    expect(c.draft.path, isEmpty);
-    c.redo();
-    expect(c.toJson(), harvested);
-    c.beginGesture();
-    outline(c);
-    final balance = c.balances[c.paper]!;
-    expect(c.harvestPreview, isNull);
-    expect(c.completeCraft(), isTrue);
-    c.finishGesture();
-    expect(c.objects.values.single.kind, CraftKind.floor);
-    expect(c.balances[c.paper], balance - 128);
-  });
+  test(
+    'harvest credits visible mix, undo restores it, placement requires switching tools after harvesting',
+    () {
+      final c = ProtoplaneController(preset: WorldPreset.pastel);
+      addTearDown(c.dispose);
+      expect(c.balances.values, everyElement(256));
+      c.enter('ground-4-4');
+      expect(c.grid!.nodes.length, 25);
+      final graph = c.navigationGraph;
+      c.beginGesture();
+      outline(c);
+      final expected = c.harvestPreview!.units;
+      expect(c.previewObject, isNull);
+      expect(c.completeCraft(), isTrue);
+      expect(c.objects, isEmpty);
+      expect(c.harvestPending, isTrue);
+      c.finishGesture();
+      for (final color in expected.keys) {
+        expect(
+          c.balances[color]! - 256 + c.landscape.remainders[color]!,
+          closeTo(expected[color]!, 1e-7),
+        );
+      }
+      expect(c.landscape.remaining(c.activePlane!), isEmpty);
+      expect(identical(graph, c.navigationGraph), isTrue);
+      final harvested = c.toJson();
+      c.undo();
+      expect(c.balances.values, everyElement(256));
+      expect(c.landscape.remaining(c.activePlane!), isNotEmpty);
+      expect(c.draft.path, isEmpty);
+      c.redo();
+      expect(c.toJson(), harvested);
+      c.selectTool(CraftTool.place);
+      c.beginGesture();
+      outline(c);
+      final balance = c.balances[c.paper]!;
+      expect(c.harvestPreview, isNull);
+      expect(c.completeCraft(), isTrue);
+      c.finishGesture();
+      expect(c.objects.values.single.kind, CraftKind.floor);
+      expect(c.balances[c.paper], balance - 128);
+    },
+  );
 
   test('open and cancelled drawings never credit or persist a harvest', () {
     final c = ProtoplaneController(preset: WorldPreset.pastel);
@@ -255,6 +259,7 @@ void main() {
       outline(c);
       c.completeCraft();
       c.finishGesture();
+      c.selectTool(CraftTool.place);
       c.beginGesture();
       outline(c);
       c.completeCraft();
@@ -325,11 +330,13 @@ void main() {
       outline(c, [0, 1, 4, 3, 0]);
       c.completeCraft();
       c.finishGesture();
+      c.selectTool(CraftTool.place);
       c.beginGesture();
       outline(c, [0, 1, 4, 3, 0]);
       c.completeCraft();
       c.finishGesture();
       final before = c.toJson();
+      c.selectTool(CraftTool.scissors);
       c.beginGesture();
       outline(c);
       expect(c.harvestPreview, isNotNull);

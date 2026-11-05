@@ -8,6 +8,7 @@ Future<void> showStrokeColorPicker(
   String title = 'Line color',
 }) => showDialog<void>(
   context: context,
+  barrierColor: Colors.transparent,
   builder: (_) =>
       _StrokeColorDialog(initial: initial, changed: changed, title: title),
 );

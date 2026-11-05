@@ -118,6 +118,8 @@ class ScenePainter extends CustomPainter {
     final wireframeEdges = <_ProjectedLine>[];
 
     final planarBatches = <(PlanarTexture, Matrix4, Color, ColorFilter?)>[];
+    final sortedDepths = <PlanarTexture, double>{};
+    final markedBatches = <PlanarTexture, Mesh>{};
     var batchedFaces = 0;
     final allMeshes = _scene.meshes;
     var visibleMeshes = 0;
@@ -157,6 +159,7 @@ class ScenePainter extends CustomPainter {
               _scene.lights,
               _scene.globalIllumination,
             );
+            if (mesh.pencilShades.isNotEmpty) markedBatches[batch] = mesh;
             planarBatches.add((
               batch,
               transform,
@@ -168,6 +171,15 @@ class ScenePainter extends CustomPainter {
               ),
               mesh.appearanceFilter,
             ));
+            if (batch.depthSorted) {
+              final center =
+                  batch.origin +
+                  batch.u * batch.bounds.center.dx +
+                  batch.v * batch.bounds.center.dy;
+              sortedDepths[batch] = view
+                  .transformed3(world.transformed3(center))
+                  .z;
+            }
             batchedFaces += 2;
           }
           continue;
@@ -359,6 +371,15 @@ class ScenePainter extends CustomPainter {
         }
         drawCalls++;
 
+        if (!debugOptions.wireframeOnly && face.pencilShades.isNotEmpty) {
+          for (final (shade, transform) in face.pencilShades) {
+            canvas.save();
+            canvas.clipPath(Path()..addPolygon(face.points, true));
+            canvas.transform(transform.storage);
+            shade.paint(canvas, face.opacity * face.pencilOpacity);
+            canvas.restore();
+          }
+        }
         if (!debugOptions.wireframeOnly && face.edgeShade != null) {
           canvas.save();
           // Share the face's depth ordering and near-plane clip, so shading
@@ -420,8 +441,8 @@ class ScenePainter extends CustomPainter {
       flushGrid();
     }
 
-    Timeline.startSync('GroundTextureAtlas');
-    for (final (batch, transform, tint, appearance) in planarBatches) {
+    void paintBatch((PlanarTexture, Matrix4, Color, ColorFilter?) value) {
+      final (batch, transform, tint, appearance) = value;
       canvas.save();
       if (appearance != null) {
         canvas.saveLayer(
@@ -451,10 +472,60 @@ class ScenePainter extends CustomPainter {
         canvas.restore();
       }
       canvas.restore();
+      final marked = markedBatches[batch];
+      if (marked != null) {
+        final viewport = Matrix4.identity()
+          ..setEntry(0, 0, size.width / 2)
+          ..setEntry(1, 1, -size.height / 2)
+          ..setEntry(0, 3, size.width / 2)
+          ..setEntry(1, 3, size.height / 2);
+        for (final shade
+            in marked.pencilShades.values.expand((s) => s).toSet()) {
+          canvas.save();
+          canvas.transform(
+            (viewport * viewProjection * marked.transformMatrix * shade.basis)
+                .storage,
+          );
+          shade.paint(canvas, tint.a * marked.pencilOpacity);
+          canvas.restore();
+        }
+      }
       drawCalls++;
     }
+
+    Timeline.startSync('GroundTextureAtlas');
+    for (final batch in planarBatches.where(
+      (b) => !sortedDepths.containsKey(b.$1),
+    )) {
+      paintBatch(batch);
+    }
+    if (sortedDepths.isEmpty) {
+      paintFaces(passes.ground);
+    } else {
+      final ground =
+          <
+              (
+                double,
+                _ProjectedFace?,
+                (PlanarTexture, Matrix4, Color, ColorFilter?)?,
+              )
+            >[
+              for (final face in passes.ground) (face.depth, face, null),
+              for (final batch in planarBatches.where(
+                (b) => sortedDepths.containsKey(b.$1),
+              ))
+                (sortedDepths[batch.$1]!, null, batch),
+            ]
+            ..sort((a, b) => a.$1.compareTo(b.$1));
+      for (final item in ground) {
+        if (item.$2 != null) {
+          paintFaces([item.$2!]);
+        } else {
+          paintBatch(item.$3!);
+        }
+      }
+    }
     Timeline.finishSync();
-    paintFaces(passes.ground);
     final groundOutlines = this.groundOutlines;
     if (groundOutlines != null) {
       drawCalls += paintOutlineEdges(
@@ -692,8 +763,25 @@ class ScenePainter extends CustomPainter {
           edgeShadeTransform =
               viewport * viewProjection * world * edgeShade.basis;
         }
+        final pencilShades = <(SurfaceEdgeShade, Matrix4)>[];
+        if (identical(geometry, mesh.geometry)) {
+          final viewport = Matrix4.identity()
+            ..setEntry(0, 0, size.width / 2)
+            ..setEntry(1, 1, -size.height / 2)
+            ..setEntry(0, 3, size.width / 2)
+            ..setEntry(1, 3, size.height / 2);
+          for (final shade
+              in mesh.pencilShades[faceIndex] ?? <SurfaceEdgeShade>[]) {
+            pencilShades.add((
+              shade,
+              viewport * viewProjection * world * shade.basis,
+            ));
+          }
+        }
         facesToDraw.add(
           _ProjectedFace(
+            pencilShades: pencilShades,
+            pencilOpacity: mesh.pencilOpacity,
             edgeShade: edgeShade,
             edgeShadeTransform: edgeShadeTransform,
             appearanceFilter: mesh.appearanceFilter,
@@ -857,6 +945,8 @@ Matrix4? _planarTransform(
 
 class _ProjectedFace {
   _ProjectedFace({
+    this.pencilShades = const [],
+    this.pencilOpacity = .35,
     this.edgeShade,
     this.edgeShadeTransform,
     this.appearanceFilter,
@@ -879,6 +969,8 @@ class _ProjectedFace {
   });
 
   final ColorFilter? appearanceFilter;
+  final List<(SurfaceEdgeShade, Matrix4)> pencilShades;
+  final double pencilOpacity;
   final SurfaceEdgeShade? edgeShade;
   final Matrix4? edgeShadeTransform;
   final SurfaceTexture? texture;

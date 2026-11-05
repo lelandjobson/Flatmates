@@ -26,8 +26,10 @@ class PlanarTexture {
     required this.bounds,
     required this.source,
     required this.atlas,
+    this.depthSorted = false,
   });
   final Vector3 origin, u, v;
   final ui.Rect bounds, source;
   final PlanarTextureAtlas atlas;
+  final bool depthSorted;
 }

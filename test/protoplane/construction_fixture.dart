@@ -1,4 +1,4 @@
-import 'package:flatmates/protoplane/materials.dart';
+import 'package:flatmates/protoplane/models.dart';
 import 'package:flatmates/protoplane/controller.dart';
 
 /// Construction regressions start after resource collection, with enough paper
@@ -11,5 +11,6 @@ ProtoplaneController constructionWorld() {
   for (final color in model.balances.keys) {
     model.balances[color] = 12800;
   }
+  model.selectTool(CraftTool.place);
   return model;
 }

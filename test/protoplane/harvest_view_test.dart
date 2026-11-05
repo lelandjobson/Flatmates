@@ -44,12 +44,14 @@ void main() {
           theme: ThemeData.dark(),
           home: RepaintBoundary(
             key: const ValueKey('harvest-capture'),
-            child: ProtoplaneConceptView(controller: model),
+            child: ProtoplaneConceptView(animateFog: false, controller: model),
           ),
         ),
       );
       await tester.pumpAndSettle();
       Future<void> capture(String stage) async {
+        // Paint the frame scheduled by post-layout safe-zone measurement.
+        await tester.pump();
         final boundary = tester.renderObject<RenderRepaintBoundary>(
           find.byKey(const ValueKey('harvest-capture')),
         );
@@ -111,6 +113,7 @@ void main() {
       expect(find.byKey(const ValueKey('harvest-yield')), findsOneWidget);
       await capture('cut');
       await tester.pumpAndSettle();
+      model.selectTool(CraftTool.place);
       model.selectPaper(PaperMaterial.dots);
       final build = await cut();
       await build.up();

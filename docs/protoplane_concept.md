@@ -533,8 +533,7 @@ reuse their geometry when history or loading replaces the world state.
 
 ### Ink worlds and collectible patterns
 
-Ink is the default preset; the developer Crafting tab switches between Ink and
-Pastel. Pastel keeps `world.json`; Ink uses `world-ink.json`, with independent
+Ink remains available alongside Paper (the new default) and Pastel in the developer Crafting tab. Pastel keeps `world.json`; Ink uses `world-ink.json`, with independent
 atomic backups. Switching cancels the current gesture, retries and flushes saves,
 and refuses to switch on failure. Loaded controllers remain in memory, retaining
 each world's history, selected material, and drafts. Clear world affects only the
@@ -640,11 +639,12 @@ a snapshot of the stroke (including its live partial edge) fades out over
 snapshot survives draft clearing/creation without adding history entries.
 Retained drafts reappear when drawing resumes; stored geometry is unchanged.
 
-Devtools uses a 420×460 logical-pixel panel, constrained by the current window
-with 20-pixel dialog margins. Contents render at 75% of normal Flutter sizing
-(50% larger than the earlier half-scale panel). Slider labels and values share
-a row. The title, four tabs and Save/Reload footer remain fixed while tab
-contents scroll independently, including in mobile landscape.
+Devtools is a non-modal left inspector, sized to the current window and capped
+at 320 logical pixels wide. Its vertical bounds follow the measured header and
+crafting footer, with a gap on both ends. Contents render at 75% of normal
+Flutter sizing. Slider labels and values share a row; tabs scroll horizontally
+and footer buttons wrap on narrow screens. The title, tabs and footer stay
+fixed while tab contents scroll independently.
 
 The viewport background is a three-stop vertical gradient: blue at the bottom,
 purple at the midpoint and warm orange at the top. Devtools → Style includes a
@@ -687,3 +687,298 @@ These are test-environment CPU timings, not device GPU frame-rate measurements.
 Regression tests assert atlas identity and rasterization counts rather than
 fragile wall-clock limits. Fully continuous live style changes would favor a
 runtime shader, but explicit application keeps normal gameplay inexpensive.
+
+
+## Layered Paper islands
+
+Paper is a separate preset in `world-paper.json`, with independent atomic backups,
+inventory, drafts and undo history. On the first launch after this addition it
+becomes the selected preset; subsequent selections are remembered. Existing Ink
+and Pastel saves retain their terrain, materials and balances. World-save version
+4 adds sheet definitions and layer depletion; versions 1–3 remain readable.
+
+The starter white sheet is 5×5 units, centered at the origin and rotated +4°.
+The 8×8 northeast sheet is rotated −3°, with a two-unit gap between the complete
+stack bounds on each map axis. Map northeast is +X/+Y (world +X/−Z). White,
+graphite and cork have thicknesses 0.03, 0.06 and 0.18 units. Each lower sheet is
+rotated independently and sized to contain the one above with a 0.10-unit margin.
+The surface uses restrained white/off-white grain rather than material bands.
+
+Sheets own polygon footprints, elevation, thickness and depletion. Stable tile
+windows and the existing spatial index partition them for editing; no octree is
+needed. Exposed polygons drive picking, harvesting, rendering, placement support
+and navigation. Partial perimeter fragments, including tiny triangles, remain
+valid. Tile grids keep their node identities as material disappears.
+
+Tap exposed material to focus its tile. Focus stays anchored across all depths
+in that tile. A closed outline resolves the highest exposed layer with a
+positive-area intersection; touching an edge alone does not select that layer.
+Scissors clip to that layer's exposed area and commit on release, leaving lower
+layers untouched. Graphite still requires the eraser. Removing cork opens a hole
+through the island. Cuts remain single-tile operations.
+
+Place resolves the same highest intersecting layer and clips the footprint to
+its exposed support. Disconnected fragments become separate objects in one
+transaction, with one area-based material charge and matching completion effects.
+Empty intersections do nothing. Operation targets and clipped previews are cached
+against the outline and tile-column revisions. Graphite and cork are resources only, with
+zero initial balance; white starts at 256 and is the only crafting material.
+All three yield 128 units per square unit, with persisted fractional remainders.
+Terrain supporting construction cannot be harvested underneath it.
+
+Devtools → Crafting includes Tile grid opacity (0–100%, default 12%), independent
+of dot/stroke appearance and internal grid connections. The focused grid's label
+identifies terrain focus as Ground.
+
+Ground uses shared, world-anchored atlas slots at 128 pixels per tile. Cache keys
+include sheet geometry and intersecting depletion, so undo/load also invalidate
+only changed slots. Harvesting updates its vertical tile column; sidewalls cache
+by sheet revision and use complete sheet/cut boundaries, never internal tile
+seams. Depth-sorted atlas sprites interleave with outward-facing sidewalls and
+undersides; the older flat-ground render path remains unchanged. Camera motion
+reuses textures. Unit/widget tests cover both viewport orientations, recovery,
+legacy worlds, yield conservation, layered support, navigation, and cache reuse.
+
+
+### Graphite eraser
+
+Graphite uses an Eraser instead of closed scissors outlines. Selecting exposed
+Graphite automatically selects the eraser; White and Cork still use scissors.
+The eraser has a round 0.055-world-unit radius and scrubs a world-aligned 16×16
+cell grid within the selected tile. Swept pointer segments cover skipped input
+samples. Squares pop for 180 ms as they are removed; at most 96 visual fragments
+are retained, with no meshes or textures allocated per particle. Reduced motion
+omits the particles. Crafting dots are hidden while erasing.
+
+Each touched tile stores just a 32-byte depletion bitmask (base64 in save version
+5). Untouched tiles allocate no mask. Legacy polygon cuts are preserved. A
+transient area lookup is prepared once at gesture start, then pointer moves use
+bit tests and swept-rectangle hit tests. A cell is removable only when all its
+remaining graphite is exposed and it does not support construction; clipped
+island/legacy-cut edge cells yield their actual remaining area. Partly covered
+cells wait until their covering paper has been removed. A full square yields
+0.5 units, using the shared fractional balance system.
+
+Pointer events are batched once per frame. Surviving bits coalesce into rectangles
+for the cached geometry/atlas; graphite and the newly exposed cork update in the
+selected column. Graphite sidewalls cache per tile and neighboring boundary
+masks, avoiding whole-sheet polygon subtraction and internal tile seams. Camera
+motion does not rebuild these caches. The brush remains on its original layer
+throughout a scrub; release retains the tile's focus and tool. The eraser resolves
+exposed graphite in the focused column regardless of the focus anchor's depth.
+
+A scrub is one undo/save transaction. Its live yield and depletion are provisional
+until release. Cancellation, a second finger, tool/world changes or leaving the
+view restore the gesture snapshot and discard pending input. Revisiting erased
+cells never yields material twice. The eraser affects only the selected tile;
+Place continues to build white paper on exposed support.
+
+### Pencil marks and discovered motifs (Paper world)
+
+Landscape white paper counts as an existing floor: draw furniture directly on
+it without cutting and placing another sheet. Pencil, motifs and mark erasing
+work directly on its remaining material. Save version 8 permits stable terrain
+tile IDs as mark owners; depletion clips marks, and history restores them.
+Lower exposed layers remain accessible to scissors and resource erasing.
+Terrain marks share the bounded pencil cache and composite in the existing
+atlas depth pass.
+
+Placed and landscape white Paper-world surfaces use a fixed half-tile scissor lattice (2×2
+cells), with quarter-tile pencil dots (4×4 cells). Their original support-plane
+coordinate frame is the lattice frame: cutting, fusion and depth changes never
+fit a replacement grid to a fragment's bounding box. Recipe eligibility is
+inherited from the support; the automatic recipe-grid carousel is hidden on
+placed paper. Ink and Pastel behavior is unchanged in this feature.
+
+`pencil.dart` holds exact segments, material clipping, coincident-coverage
+subtraction, intersection splitting and motif recognition. The scissor graph
+contains only the half-tile lattice and committed marks, split at crossings.
+Pencil presentation jitter never enters this graph. New coverage costs 4,000
+thousandths of graphite per unit of local length, rounded once per completed
+drag or stamp. Retracing is free; insufficient inventory leaves the preview
+uncommitted. Erasing removes touched committed segments without refunds.
+
+Save version 6 adds `pencilMarks`, `motifs`, `graphiteMilli` and `nextStrokeId`.
+Marks have stable stroke IDs and are stored per constituent object, in that
+object's persisted support-plane coordinates. Queries transform and deduplicate
+those marks on fused work surfaces; new marks are distributed to their original
+members. Structural edits clip each member's marks to retained material.
+Extrusion moves their drawn face without adding marks to sidewalls. Versions
+1–5 load with empty marks and discoveries; Paper drawing grids are regenerated.
+Undo restores geometry and graphite but retains discoveries learned in the
+current world. Loading a world replaces that knowledge, and clearing the world
+clears it.
+
+The four initial motifs are Parallel lines, Crosshatch, Cross and Diamond.
+Recognition checks complete required segment coverage under quarter-turns,
+including reversed or subdivided strokes and additional marks. A complete tile
+must remain present. Discovered motifs appear only with Pencil, support rotated
+tile previews and atomic placement, and emit one discovery notification.
+
+Mark revisions invalidate affected drawing graphs separately from structural
+adjacency. Active previews repaint without rebuilding scene geometry. Committed
+marks use deterministic local graphite variation and an 8 MiB, 32-tile texture
+cache at 256×256 pixels per tile. Camera motion does not bake textures. If the
+visible working set exceeds the cache, excess tiles use vector drawing rather
+than omit marks. Face-local compositing uses existing perspective, depth sorting,
+and surface opacity, with mark opacity .8 while crafting and .35 in 3D.
+
+Regression coverage lives in `test/protoplane/pencil*_test.dart`, including
+geometry, ledger and knowledge persistence, migration, fused support frames,
+splitting and extrusion, pointer cancellation, narrow layouts, and rendered
+pixels through holes.
+
+Separate follow-up: retire Ink and Pastel worlds and consolidate their production
+code paths around Paper. Legacy world files should not be deleted as part of
+that cleanup.
+
+Focused context is adjustable in the Crafting dev-tools tab with **Context tiles**
+(0–4, default 1) and **Context opacity** (0–100%, default 35%). These settings
+persist independently of world saves; older settings use the defaults. Context
+is selected around the full support footprint, including fused surfaces, on the
+same level. Camera framing reserves room for the editable surface between the
+controls while fitting the surrounding context into the viewport. Neighbor
+traversal interpolates both camera pose and mesh opacity over 650 ms; outgoing
+context stays present until its fade completes.
+
+The **safe zone** is the central viewport rectangle left between the measured
+header/status area, left toolbar, right sidebar, and bottom controls, including
+platform insets and an 8-pixel clearance. It updates after layout, so tool
+changes, wrapped status text, window resizing and phone rotation change the
+usable area. Full focus fits the active plane to this rectangle without changing
+its proportions and centers it in the rectangle rather than the screen. Its
+limiting dimension reaches the rectangle boundary. Semi-focus retains the wider
+context framing. Refitting is deferred while a drawing or erasing gesture is
+active, then animated normally.
+
+**Dev Tools → Camera → Safe zone** toggles a non-interactive outline and subtle
+fill. The toggle is persisted and defaults off; it changes only the diagnostic
+graphic, not the fitting behavior. `safe_zone_test.dart` verifies asymmetric
+projection fits for floor and wall planes, and `safe_zone_view_test.dart` checks
+real control layout and pointer transparency at desktop and phone sizes.
+
+Scissors are cut-only: their completion APIs can harvest, remove, or split paper,
+but cannot fall through to recipe placement on empty/depleted support. Use
+**Place** for additions in every world. Entering an existing object's Edit action
+selects Scissors. Construction and harvesting regression fixtures select their
+intended tool explicitly.
+
+**Dev Tools → Crafting** has separate **Cutting line color** (red by default) and
+**Addition line color** (chartreuse by default) pickers. Both persist. Older
+settings retain their existing addition color and receive the default red cut
+color. Stroke previews and completion effects use the corresponding tool color.
+
+An invalid released cut or addition retains only its 750 ms fading visual trace;
+it discards the pending draft without changing geometry or inventory, showing a
+candidate/recipe panel, or reporting a validation banner. This also applies when
+Reset drawing on release is disabled. Valid volume editing keeps its Apply panel.
+
+## Gesture diagnostics
+
+Devtools → Camera → Gesture overlay enables read-only map/crafting telemetry,
+persisted as `showGestureDebug` (default false). Each contact gets a stable
+colored P-label, hollow start marker, filled endpoint, directional drag line,
+start/end screen coordinates and dx/dy in logical screen pixels. The readout
+also includes pointer IDs, input kind and buttons. Two-finger movement shows
+the centroid displacement, its screen cardinal intent, and the actual
+`PlaneSwipe` result: Pending, Pinch / rotation, Consumed / blocked, or the
+accepted Right/E, Left/W, Up/N or Down/S swipe. Accepted verdicts stay latched
+as the camera transitions; no second recognizer drives navigation.
+
+Released/cancelled traces remain until the next gesture starts. The IgnorePointer
+overlay does not intercept drawing, panning or navigation. Native trackpads show
+the OS pan centroid because Flutter does not expose individual contact positions.
+Scroll events are labeled separately with their delta vector, which helps
+identify devices sending scroll signals rather than native pan/zoom sequences.
+The readout uses the crafting safe zone to avoid the existing control bars.
+
+
+The inspector is mounted inside the game view rather than a dialog route.
+There is no dimming scrim or input barrier outside it; the map remains pannable.
+In focused mode, primary dragging while inspecting pans the camera along the
+active plane instead of drawing, without changing gameplay state or history.
+The dock reserves space in the focus safe zone and temporarily replaces the
+left crafting tool strip; top controls, paper selection and the crafting footer
+remain accessible. Closing restores the tool strip. Panel state and unapplied
+landscape edits survive camera panning and parent rebuilds. Color-picker dialogs
+also use a transparent barrier to avoid tinting the scene during color selection.
+
+### Area discovery fog and orbit limits
+
+Paper islands are discrete discovery areas, keyed by their stable island IDs.
+Area footprints use all original sheets, so depletion never changes entry
+boundaries. The starter begins revealed. Moving the orbit camera's ground
+target into another area calls the idempotent
+`revealArea(areaId, source: 'camera')`; other gameplay systems can call that API
+and subscribe to `onAreaRevealed`. Zoom, orbit rotation and focus transitions
+do not constitute entry. The notification fires only on a new discovery.
+
+Save version 7 adds `revealedAreas`. Migration reveals the starter and islands
+with construction or depletion. Discovery survives ordinary crafting undo and
+gesture cancellation. Clear world starts a new discovery epoch; undoing/redoing
+that reset restores the corresponding discovered set. Loading never replays
+reveal notifications. Existing atomic writes, backups and save-before-switch
+behavior remain in use.
+
+Fog is a direct canvas fragment shader, independent of terrain drawing. A
+256-square world-space distance texture uses two channels for distance precision;
+mask generation runs in an isolate and changes only with area definitions or
+discovery. A single reusable periodic noise texture supplies two drifting cloud
+layers sampled at different virtual heights. Manual bilinear sampling avoids
+distance-field bands and works on both Skia and Impeller (samplers remain global,
+rather than function arguments). Camera updates supply ray uniforms only.
+The fog repaint boundary does not repaint the scene during idle animation.
+
+An 800 ms mask crossfade reveals a new area. Focus supplies a temporary clear
+rectangle without changing discovery or rebuilding the mask. Hidden-surface
+picking uses the stable geographic field, not moving cloud noise. The shader
+has a static, interpolated-vertex fallback, including during loading. Animation
+pauses for hidden tickers, app backgrounding, disabled fog and reduced motion.
+Replaced images and shader instances are disposed.
+
+Devtools → Fog supplies Paper clouds, Charcoal mist and Background haze themes,
+independently retained colors/settings, arbitrary base/highlight color pickers,
+opacity, clear margin, edge softness, cloud scale, contrast, drift and apparent
+depth. Reset theme restores that theme; Reveal all areas persists discoveries.
+Disabling the overlay does not erase discovery. Fog defaults to Paper worlds;
+legacy Ink and Pastel terrain is unchanged.
+
+Devtools → Camera supplies Nearest distance and Farthest distance (defaults
+2 and 25 world units, range 1–60, minimum separation 0.5). Changes clamp orbit
+distance and pending zoom targets together; focus poses remain independent and
+the return pose respects updated limits. Paper orbit zoom has strict bounds;
+other map-camera consumers retain their existing spring overshoot. Paper pan
+bounds encompass both stacks with a two-unit margin.
+
+Validation: discovery, migration, malformed state, backup recovery, reset
+history, strict camera limits, fallback rendering, theme persistence and
+overlay-only repaint/cache reuse have regression tests. Non-animation widget
+fixtures explicitly freeze fog; the dedicated overlay suite exercises live
+cloud ticks. Run `flutter run -d macos --profile -t tool/fog_profile.dart` for
+a fresh unsaved world and matched 360-frame camera pans; timings and portrait/
+landscape theme captures are written to `/tmp/fog-profile.json` and
+`/tmp/fog-*.png`.
+
+On 2026-11-05, Apple M5 / macOS 26.6.2 / Impeller Metal, fixed 900×700 logical
+viewport: p95 raster time was 0.589 ms fog-off and 0.607 ms fog-on (+0.018 ms).
+Idle clouds caused zero scene paints; camera panning rebuilt zero distance
+masks, atlas slots or wall meshes. These are desktop measurements, not an
+iPhone performance claim.
+
+## Pencil presentation
+
+The pencil now uses a six-pixel grey live stroke with a soft halo, following the
+pointer between quarter-grid snap points. A successful release commits the
+same exact pencil geometry/accounting as before, while a presentation-only
+360 ms melt thins, fades and gently drops small sections of the live stroke to
+reveal the textured graphite underneath. Rapid strokes retain independent
+bounded trails; reduced-motion mode fades without dropping/fragmenting them.
+Cancellation removes the live stroke; undo and plane/world changes clear transient trails.
+
+Persistent graphite replaces sine-wave jitter with coordinate-hashed irregular
+knots: alternating straight runs and small linear kinks, plus variable ink
+opacity and width. The pattern is deterministic in paper coordinates and keeps
+its orientation when segment order reverses. Camera changes never reroll or
+rebake it. Logical pencil segments remain straight and retain existing cutting,
+recognition, persistence and paper/graphite costs. A texture-cache render version
+invalidates old periodic appearances without migrating stored pencil marks.

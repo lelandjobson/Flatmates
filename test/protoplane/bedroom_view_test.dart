@@ -26,7 +26,7 @@ void main() {
           theme: ThemeData.dark(),
           home: RepaintBoundary(
             key: const ValueKey('bedroom-capture'),
-            child: ProtoplaneConceptView(controller: f.c),
+            child: ProtoplaneConceptView(animateFog: false, controller: f.c),
           ),
         ),
       );

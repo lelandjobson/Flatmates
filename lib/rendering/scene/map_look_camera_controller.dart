@@ -21,6 +21,7 @@ class MapLookCameraController extends ChangeNotifier {
     double maxDistance = 400,
     int zoomStepCount = 3,
     this.ladderZoom = true,
+    this.strictZoomBounds = false,
     double pitch = defaultPitch,
     this.minPitch = defaultMinPitch,
     this.maxPitch = defaultMaxPitch,
@@ -29,18 +30,19 @@ class MapLookCameraController extends ChangeNotifier {
     this.zoomSensitivity = 0.0009,
     Vector3? boundsMin,
     Vector3? boundsMax,
-  })  : zoomStepCount = math.max(2, zoomStepCount),
-        _lookAt = Vector3(lookAt?.x ?? 0, 0, lookAt?.z ?? 0),
-        _boundsMin = boundsMin,
-        _boundsMax = boundsMax,
-        _minDistance = minDistance,
-        _maxDistance = math.max(maxDistance, minDistance + 1),
-        restPitch = pitch,
-        _pitch = pitch,
-        _yaw = yaw,
-        _yawTo = yaw {
+  }) : zoomStepCount = math.max(2, zoomStepCount),
+       _lookAt = Vector3(lookAt?.x ?? 0, 0, lookAt?.z ?? 0),
+       _boundsMin = boundsMin,
+       _boundsMax = boundsMax,
+       _minDistance = minDistance,
+       _maxDistance = math.max(maxDistance, minDistance + 1),
+       restPitch = pitch,
+       _pitch = pitch,
+       _yaw = yaw,
+       _yawTo = yaw {
     _steps = ladderZoom ? _buildSteps() : const [];
-    final start = distance ??
+    final start =
+        distance ??
         (ladderZoom
             ? _steps[_steps.length ~/ 2]
             : math.sqrt(minDistance * maxDistance));
@@ -117,9 +119,10 @@ class MapLookCameraController extends ChangeNotifier {
   double get yaw => _yaw;
   double get pitch => _pitch;
 
+  bool strictZoomBounds;
   final Vector3 _lookAt;
-  final Vector3? _boundsMin;
-  final Vector3? _boundsMax;
+  Vector3? _boundsMin;
+  Vector3? _boundsMax;
 
   late final AnimationController _zoomAnim;
   late final AnimationController _yawAnim;
@@ -437,8 +440,7 @@ class MapLookCameraController extends ChangeNotifier {
     }
     final ratio = maxDistance / minDistance;
     return [
-      for (var i = 0; i < n; i++)
-        minDistance * math.pow(ratio, i / (n - 1)),
+      for (var i = 0; i < n; i++) minDistance * math.pow(ratio, i / (n - 1)),
     ];
   }
 
@@ -463,6 +465,31 @@ class MapLookCameraController extends ChangeNotifier {
     _applyPose();
   }
 
+  /// Update both bounds together without applying a focus camera pose.
+  void setDistanceLimits(double min, double max, {bool applyPose = true}) {
+    if (!min.isFinite || !max.isFinite || min <= 0 || max - min < .5) {
+      throw ArgumentError('Invalid camera distance limits');
+    }
+    if (min == _minDistance && max == _maxDistance) return;
+    _scrollSnap?.cancel();
+    _zoomAnim.stop();
+    _gestureZooming = false;
+    _minDistance = min;
+    _maxDistance = max;
+    _distance = _distance.clamp(min, max);
+    _targetDistance = _distance;
+    if (ladderZoom) _steps = _buildSteps();
+    if (applyPose) _applyPose();
+  }
+
+  void setPanBounds(Vector3 min, Vector3 max, {bool applyPose = true}) {
+    if (_boundsMin == min && _boundsMax == max) return;
+    _boundsMin = min.clone();
+    _boundsMax = max.clone();
+    _clampLookAt();
+    if (applyPose) _applyPose();
+  }
+
   /// Live-update the nearest zoom. Clamps the current distance and pose.
   void setMinDistance(double value) {
     _minDistance = value.clamp(8.0, _maxDistance - 1);
@@ -479,8 +506,7 @@ class MapLookCameraController extends ChangeNotifier {
   static const double closeOvershootHard = 0.14;
 
   /// Closest live distance the rubber-band will allow.
-  double get closeLimitDistance =>
-      minDistance * (1.0 - closeOvershootHard);
+  double get closeLimitDistance => minDistance * (1.0 - closeOvershootHard);
 
   /// True while a live zoom wants to go closer than [minDistance].
   bool get isPushingPastCloseLimit => _pushingPastCloseLimit;
@@ -492,6 +518,7 @@ class MapLookCameraController extends ChangeNotifier {
   /// span — otherwise a wide far-range lets the camera pass through the
   /// look-at and invert the projection.
   double _rubberBand(double proposed) {
+    if (strictZoomBounds) return proposed.clamp(minDistance, maxDistance);
     if (proposed >= minDistance && proposed <= maxDistance) return proposed;
     if (proposed < minDistance) {
       final soft = minDistance * closeOvershootSoft;
@@ -524,7 +551,9 @@ class MapLookCameraController extends ChangeNotifier {
   }
 
   void _onZoomTick() {
-    _distance = _zoomAnim.value;
+    _distance = strictZoomBounds
+        ? _zoomAnim.value.clamp(minDistance, maxDistance)
+        : _zoomAnim.value;
     _applyPose();
   }
 

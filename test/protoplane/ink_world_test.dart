@@ -29,14 +29,14 @@ void main() {
     expect(c.balances.values, [256, 256, 256, 256, 0, 0]);
     expect(c.paper, PaperMaterial.white);
     final settings = ProtoplaneSettings();
-    expect(settings.worldPreset, WorldPreset.ink);
+    expect(settings.worldPreset, WorldPreset.paper);
     settings.worldPreset = WorldPreset.pastel;
     expect(
       (ProtoplaneSettings()..load(settings.toJson())).worldPreset,
       WorldPreset.pastel,
     );
     final legacy = settings.toJson()..remove('worldPreset');
-    expect((ProtoplaneSettings()..load(legacy)).worldPreset, WorldPreset.ink);
+    expect((ProtoplaneSettings()..load(legacy)).worldPreset, WorldPreset.paper);
   });
   for (final seed in [0, 42, 91, 173]) {
     test('calibrated area coverage and accent rarity for seed $seed', () {
@@ -103,6 +103,7 @@ void main() {
     addTearDown(c.dispose);
     c.enter('ground-4-4');
     c.landscape.deplete(c.activePlaneId!, c.activePlane!.region);
+    c.selectTool(CraftTool.place);
     c.selectPaper(PaperMaterial.lines);
     c.beginGesture();
     loop(c);

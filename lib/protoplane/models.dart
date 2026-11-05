@@ -26,7 +26,7 @@ enum CraftKind {
   storage,
 }
 
-enum CraftTool { scissors, volume }
+enum CraftTool { scissors, volume, place, eraser, pencil }
 
 enum GridConnections { orthogonal, diagonal, arbitrary }
 

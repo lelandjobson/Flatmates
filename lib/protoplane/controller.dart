@@ -1,4 +1,7 @@
 import 'completion.dart';
+import 'discovery.dart';
+import 'pencil.dart';
+import 'graphite_eraser.dart';
 import 'dart:convert';
 import 'dart:collection';
 import 'dart:math' as math;
@@ -18,7 +21,29 @@ import 'recipes.dart';
 import 'bedroom_items.dart';
 import 'bedrooms.dart';
 
+part 'pencil_controller.dart';
+
 class ProtoplaneController extends ChangeNotifier {
+  bool pencilPreviewUpdate = false;
+  void _notifyPencil({bool previewOnly = false}) {
+    pencilPreviewUpdate = previewOnly;
+    try {
+      notifyListeners();
+    } finally {
+      pencilPreviewUpdate = false;
+    }
+  }
+
+  final Map<String, List<PencilStroke>> pencilMarks = {};
+  final Set<PencilMotif> discoveredMotifs = {};
+  final List<PencilMotif> motifNotices = [];
+  int graphiteMilli = 0, markingRevision = 0, nextStrokeId = 1;
+  final List<Offset> pencilPreview = [];
+  PencilMotif? selectedMotif;
+  int motifTurns = 0;
+  Offset? motifTile;
+  final Map<String, CraftGrid> _paperGrids = {};
+
   ProtoplaneController({this.preset = WorldPreset.ink}) {
     landscape = PaperLandscape(preset: preset);
     paper = preset.materials.first;
@@ -26,10 +51,183 @@ class ProtoplaneController extends ChangeNotifier {
       preset.materials.map((m) => MapEntry(m, m.starterUnits)),
     );
     _ground();
+    _resetDiscovery();
   }
+  Map<String, WorldArea> areas = {};
+  final Set<String> revealedAreas = {};
+  ValueChanged<AreaRevealed>? onAreaRevealed;
+  int discoveryRevision = 0, _discoveryEpoch = 0;
+  void _resetDiscovery() {
+    areas = WorldArea.fromTerrain(landscape.terrain);
+    revealedAreas
+      ..clear()
+      ..addAll(areas.containsKey('starter') ? ['starter'] : <String>[]);
+    discoveryRevision++;
+  }
+
+  bool revealArea(String areaId, {String source = 'gameplay'}) {
+    if (!areas.containsKey(areaId) || !revealedAreas.add(areaId)) return false;
+    discoveryRevision++;
+    onCommitted?.call(toJson());
+    onAreaRevealed?.call(AreaRevealed(areaId, source));
+    notifyListeners();
+    return true;
+  }
+
+  void discoverAt(Offset mapPoint) {
+    for (final area in areas.values) {
+      if (area.contains(mapPoint)) revealArea(area.id, source: 'camera');
+    }
+  }
+
+  void revealAllAreas() {
+    for (final id in areas.keys) {
+      revealArea(id, source: 'devtools');
+    }
+  }
+
+  double discoveryDistance(Offset mapPoint) =>
+      distanceToDiscovered(areas.values, revealedAreas, mapPoint);
+
   late final Map<String, CraftPlane> planes = _WorldMap(_invalidateNavigation);
   WorldPreset preset;
   List<PaperMaterial> get materials => preset.materials;
+  List<PaperMaterial> get craftMaterials =>
+      materials.where((m) => m.craftable).toList();
+
+  /// Focus is an editing window; terrain operations resolve their own depth.
+  List<CraftPlane> get terrainColumn {
+    if (editId != null) return [];
+    final terrain = landscape.terrain,
+        tile = landscape.terrain?.tiles[activePlaneId];
+    if (terrain == null || tile == null) return [];
+    return [
+      for (final t in terrain.tiles.values)
+        if (t.x == tile.x &&
+            t.y == tile.y &&
+            t.sheet.island == tile.sheet.island)
+          planes[t.id]!,
+    ]..sort((a, b) => b.origin.y.compareTo(a.origin.y));
+  }
+
+  bool sameTerrainFocus(String a, String b) {
+    final first = landscape.terrain?.tiles[a],
+        second = landscape.terrain?.tiles[b];
+    return first != null &&
+        second != null &&
+        first.x == second.x &&
+        first.y == second.y &&
+        first.sheet.island == second.sheet.island;
+  }
+
+  CraftPlane? resolveTerrainRegion(Region outline) {
+    if (!outline.valid) return null;
+    for (final plane in terrainColumn) {
+      if (landscape.preview(plane, outline) != null) return plane;
+    }
+    return null;
+  }
+
+  String? _operationKey;
+  CraftPlane? _operationTarget;
+  CraftPlane? get operationPlane {
+    final column = terrainColumn;
+    if (column.isEmpty || !closed) return activePlane;
+    final key =
+        '${identityHashCode(landscape)}/$activePlaneId/${identityHashCode(grid)}/${draft.path}/${column.map((p) => landscape.revision(p.id)).join(',')}';
+    if (key != _operationKey) {
+      _operationKey = key;
+      _operationTarget = resolveTerrainRegion(
+        Region(trace.sublist(0, trace.length - 1)),
+      );
+    }
+    return _operationTarget;
+  }
+
+  CraftPlane? get eraserPlane => planes[_eraserPlane];
+  CraftPlane? get graphitePlane => terrainColumn
+      .where(
+        (p) =>
+            landscape.terrain!.tiles[p.id]!.sheet.material ==
+            PaperMaterial.graphite,
+      )
+      .firstOrNull;
+
+  bool get graphiteSelected =>
+      editId == null &&
+      landscape.terrain?.tiles[activePlaneId]?.sheet.material ==
+          PaperMaterial.graphite;
+  GraphiteBrush? _eraserBrush;
+  String? _eraserPlane;
+  bool get erasing => _eraserPlane != null;
+
+  bool beginErasing() {
+    final target = graphitePlane;
+    if (target == null || tool != CraftTool.eraser) return false;
+    beginGesture();
+    _eraserPlane = target.id;
+    final terrain = landscape.terrain!;
+    _eraserBrush = GraphiteBrush(
+      terrain.remainingInTile(target.id),
+      terrain.exposed(target.id),
+      [
+        for (final o in objects.values.where((o) => o.planeId == target.id))
+          ...occupancy(o),
+      ],
+    );
+    return true;
+  }
+
+  /// One frame's swept samples. The gesture snapshot/history is taken only once.
+  List<Region> eraseGraphite(List<(Offset, Offset)> segments) {
+    final id = _eraserPlane, brush = _eraserBrush;
+    if (id == null ||
+        brush == null ||
+        !sameTerrainFocus(activePlaneId ?? '', id) ||
+        tool != CraftTool.eraser) {
+      return [];
+    }
+    final tile = landscape.terrain!.tiles[id]!;
+    final mask = tile.sheet.erased[tile.maskKey];
+    final cells = <int>{};
+    for (final (a, b) in segments) {
+      for (final i in brush.touched(a, b)) {
+        if (mask?.removed(i) != true) cells.add(i);
+      }
+    }
+    if (cells.isEmpty) return [];
+    final area = cells.fold<double>(0, (a, i) => a + brush.areas[i]);
+    final credit = landscape.eraseGraphite(id, cells.toList(), area);
+    balances[PaperMaterial.graphite] =
+        balances[PaperMaterial.graphite]! + credit;
+    lastHarvest = {
+      PaperMaterial.graphite:
+          (lastHarvest?[PaperMaterial.graphite] ?? 0) + credit,
+    };
+    harvestPending = true;
+    _invalidateNavigation();
+    notifyListeners();
+    return [for (final i in cells) ...brush.regions(i)];
+  }
+
+  void finishErasing() {
+    final id = _eraserPlane;
+    if (id == null) return;
+    _eraserPlane = null;
+    _eraserBrush = null;
+    // Keep the tile focus and tool stable when its material is depleted.
+    finishGesture();
+  }
+
+  bool get terrainScissors =>
+      preset == WorldPreset.paper &&
+      tool == CraftTool.scissors &&
+      editId == null &&
+      landscape.terrain!.tiles.containsKey(activePlaneId);
+  List<Region> surfaceRegions(CraftPlane plane) =>
+      landscape.terrain?.tiles.containsKey(plane.id) == true
+      ? landscape.terrain!.exposed(plane.id)
+      : [plane.region];
   late PaperLandscape landscape;
   Map<PaperColor, int>? lastHarvest;
   bool harvestPending = false;
@@ -37,9 +235,14 @@ class ProtoplaneController extends ChangeNotifier {
   String? _harvestPreviewKey;
   HarvestResult? _harvestPreview;
   HarvestResult? get harvestPreview {
-    final plane = activePlane;
+    final plane = operationPlane;
     if (plane == null ||
+        tool != CraftTool.scissors ||
         !plane.id.startsWith('ground-') ||
+        (preset == WorldPreset.paper &&
+            (tool != CraftTool.scissors ||
+                landscape.terrain!.tiles[plane.id]?.sheet.material ==
+                    PaperMaterial.graphite)) ||
         editId != null ||
         !closed) {
       return null;
@@ -63,11 +266,14 @@ class ProtoplaneController extends ChangeNotifier {
       return false;
     }
     final before = _gestureBefore ?? _snapshot();
+    final completedDraftKey = draftKey;
     final credits = landscape.collect(result);
+    _refreshPaperGrids();
     for (final entry in credits.entries) {
       balances[entry.key] = balances[entry.key]! + entry.value;
     }
-    drafts.remove(draftKey);
+    drafts.remove(completedDraftKey);
+    if (landscape.terrain != null) _invalidateNavigation();
     lastHarvest = credits;
     if (_gestureBefore != null) {
       harvestPending = true;
@@ -83,7 +289,13 @@ class ProtoplaneController extends ChangeNotifier {
   );
   PlaneNavigationGraph? _navigationGraph;
   PlaneNavigationGraph get navigationGraph =>
-      _navigationGraph ??= PlaneNavigationGraph(planes, objects, aliases: surfaceFusion.canonical, excluded: surfaceFusion.retired);
+      _navigationGraph ??= PlaneNavigationGraph(
+        planes,
+        objects,
+        surfaceRegions: landscape.terrain == null ? null : surfaceRegions,
+        aliases: surfaceFusion.canonical,
+        excluded: surfaceFusion.retired,
+      );
 
   void _invalidateNavigation() => _navigationGraph = null;
 
@@ -111,7 +323,9 @@ class ProtoplaneController extends ChangeNotifier {
   bool get canUndo => _undo.isNotEmpty;
   bool get canRedo => _redo.isNotEmpty;
   CraftPlane? get activePlane => planes[activePlaneId];
-  CraftGrid? get grid => activePlane == null
+  CraftGrid? get grid => paperSurface
+      ? paperGrid
+      : activePlane == null
       ? null
       : activePlane!.grids[gridIndex.clamp(0, activePlane!.grids.length - 1)];
   String get draftKey =>
@@ -140,7 +354,12 @@ class ProtoplaneController extends ChangeNotifier {
       final parts = key.split('/');
       if (parts.length < 2) return true;
       final plane = planes[parts[0]];
-      final grid = plane?.grids.where((g) => g.id == parts[1]).firstOrNull;
+      final grid =
+          parts[0] == activePlaneId &&
+              paperSurface &&
+              parts[1].endsWith('-paper')
+          ? paperGrid
+          : plane?.grids.where((g) => g.id == parts[1]).firstOrNull;
       if (grid == null ||
           draft.path.any((n) => n < 0 || n >= grid.nodes.length)) {
         return true;
@@ -222,6 +441,15 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   void _ground() {
+    if (landscape.terrain != null) {
+      for (final tile in landscape.terrain!.tiles.values) {
+        planes[tile.id] = tile.plane(
+          count: protoplaneCells == null ? 5 : protoplaneCells! + 1,
+        );
+      }
+      _applyProtoplaneConnections();
+      return;
+    }
     for (var y = 0; y < 8; y++) {
       for (var x = 0; x < 8; x++) {
         final id = 'ground-$x-$y';
@@ -243,12 +471,20 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   void clearWorld() {
+    cancelPencil();
+    if (erasing) cancelGesture();
     presentationEpoch++;
     final before = _snapshot();
     _gestureBefore = null;
     surfaceFusion.retired.clear();
     surfaceFusion.canonical.clear();
     surfaceFusion.members.clear();
+    pencilMarks.clear();
+    discoveredMotifs.clear();
+    motifNotices.clear();
+    graphiteMilli = 0;
+    selectedMotif = null;
+    _marksChanged();
     objects.clear();
     landscape = PaperLandscape(preset: preset);
     harvestPending = false;
@@ -263,21 +499,33 @@ class ProtoplaneController extends ChangeNotifier {
     activePlaneId = editId = error = null;
     gridIndex = 0;
     _ground();
+    _discoveryEpoch++;
+    _resetDiscovery();
     _record(before, committed: true);
     notifyListeners();
   }
 
   void enter(String planeId, {String? editObject}) {
+    cancelPencil();
+    if (erasing) cancelGesture();
     if (!planes.containsKey(planeId)) return;
     lastHarvest = null;
     activePlaneId = planeId;
     editId = editObject;
+    if (editObject != null) tool = CraftTool.scissors;
+    if (!paperSurface && tool == CraftTool.pencil) tool = CraftTool.scissors;
+    if (graphiteSelected && tool == CraftTool.scissors) tool = CraftTool.eraser;
+    if (!graphiteSelected && tool == CraftTool.eraser) {
+      tool = CraftTool.scissors;
+    }
     gridIndex = 0;
     error = null;
     notifyListeners();
   }
 
   void leave() {
+    cancelPencil();
+    if (erasing) cancelGesture();
     activePlaneId = null;
     editId = null;
     error = null;
@@ -291,12 +539,14 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   void selectPaper(PaperMaterial color) {
-    if (!materials.contains(color)) return;
+    if (!materials.contains(color) || !color.craftable) return;
     paper = color;
     notifyListeners();
   }
 
   void selectTool(CraftTool value) {
+    cancelPencil();
+    if (_gestureBefore != null) cancelGesture();
     tool = value;
     notifyListeners();
   }
@@ -332,6 +582,9 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   void cancelGesture() {
+    cancelPencil();
+    _eraserBrush = null;
+    _eraserPlane = null;
     harvestPending = false;
     final before = _gestureBefore;
     _gestureBefore = null;
@@ -445,10 +698,25 @@ class ProtoplaneController extends ChangeNotifier {
   void clearDraft() => _change(() {
     drafts.remove(draftKey);
   });
-  List<CraftKind> get matches =>
-      activePlane == null || grid == null || editId != null
-      ? []
-      : recognize(activePlane!, grid!, draft.path);
+  List<CraftKind> get matches {
+    if (activePlane == null || grid == null || editId != null) return [];
+    final target = operationPlane;
+    final drawingGrid = grid!;
+    final effectiveGrid =
+        landscapePaperPlanes.isNotEmpty &&
+            target != null &&
+            !isLandscapePaper(target.id)
+        ? CraftGrid(
+            id: drawingGrid.id,
+            name: drawingGrid.name,
+            nodes: drawingGrid.nodes,
+            edges: drawingGrid.edges,
+            recipes: target.grids.expand((g) => g.recipes).toSet().toList(),
+          )
+        : drawingGrid;
+    return recognize(activePlane!, effectiveGrid, draft.path);
+  }
+
   CraftKind? get chosen {
     final found = matches;
     return found.contains(draft.choice) ? draft.choice : found.firstOrNull;
@@ -493,8 +761,37 @@ class ProtoplaneController extends ChangeNotifier {
     }
   }
 
-  CraftObject? get previewObject {
-    if (harvestPreview != null) return null;
+  String? _placementKey;
+  List<CraftObject> _placementParts = [];
+  List<CraftObject> get previewObjects {
+    final raw = _unclippedPreviewObject;
+    if (raw == null) return [];
+    if (editId != null ||
+        terrainColumn.isEmpty ||
+        (raw.kind != CraftKind.floor && raw.kind != CraftKind.rug)) {
+      return [raw];
+    }
+    final target = operationPlane;
+    if (target == null) return [];
+    final key = '$_operationKey/${raw.kind}/${raw.depth}/${raw.material.id}';
+    if (key != _placementKey) {
+      _placementKey = key;
+      _placementParts = [
+        for (final r in raw.region.clipTo(surfaceRegions(target)))
+          raw.copyWith(region: r),
+      ];
+    }
+    return _placementParts;
+  }
+
+  CraftObject? get previewObject => previewObjects.firstOrNull;
+
+  CraftObject? get _unclippedPreviewObject {
+    if (harvestPreview != null ||
+        (tool == CraftTool.scissors && editId == null) ||
+        tool == CraftTool.eraser) {
+      return null;
+    }
     if (editId != null) return objects[editId]?.copyWith(depth: previewDepth);
     final kind = chosen;
     if (kind == null || trace.length < 2) return null;
@@ -520,7 +817,7 @@ class ProtoplaneController extends ChangeNotifier {
     }
     return CraftObject(
       id: 'preview',
-      planeId: activePlaneId!,
+      planeId: (operationPlane ?? activePlane!).id,
       kind: kind,
       region: region,
       color: paper,
@@ -556,14 +853,17 @@ class ProtoplaneController extends ChangeNotifier {
       return (math.max(0, p.materialArea - old.materialArea) * 128 - 1e-8)
           .ceil();
     }
-    return (p.materialArea * 128 - 1e-8).ceil();
+    return (previewObjects.fold<double>(0, (sum, o) => sum + o.materialArea) *
+                128 -
+            1e-8)
+        .ceil();
   }
 
   String? validateObject(CraftObject object, {String? replacing}) {
     final plane = planes[object.planeId];
     if (plane == null) return 'Missing support plane';
     final item = bedroomItems[object.kind];
-    if (item != null && !item.supports.contains(objects[plane.owner]?.kind)) {
+    if (item != null && !item.supports.contains(supportKind(plane))) {
       return '${object.kind.label} needs its supporting furniture';
     }
     if (!object.region.valid) return 'Invalid outline';
@@ -583,7 +883,12 @@ class ProtoplaneController extends ChangeNotifier {
         !recipes[object.kind]!.depthAllowed(object.depth)) {
       return 'Depth does not match ${object.kind.label}';
     }
+    if (!object.color.craftable) return 'Select white paper';
     for (final part in occupancy(object)) {
+      if (landscape.terrain?.tiles.containsKey(plane.id) == true &&
+          !landscape.terrain!.supports(plane.id, part)) {
+        return 'Placement needs exposed support beneath its entire footprint';
+      }
       if (!plane.region.containsRegion(part)) return 'Outside the plane';
       for (final other in objects.values) {
         if (other.id == replacing || other.planeId != object.planeId) continue;
@@ -687,15 +992,26 @@ class ProtoplaneController extends ChangeNotifier {
           ? 'Cutout overlaps placed paper'
           : null;
     }
+    if (tool == CraftTool.scissors &&
+        landscape.terrain?.tiles[operationPlane?.id]?.sheet.material ==
+            PaperMaterial.graphite) {
+      return 'Select the eraser for graphite';
+    }
+    if (tool == CraftTool.eraser) return 'Scrub exposed graphite';
+    if (terrainScissors) return 'Select exposed material and close a cutout';
     if (editId != null) {
+      if (tool != CraftTool.scissors) return 'Select scissors to cut';
       if (cutObjects == null) return 'Complete a cut between boundaries';
       return _editError();
     }
+    if (tool == CraftTool.scissors) return 'Select paper to cut';
     if ((!closed && !allowOpen) || matches.isEmpty) return 'Complete a drawing';
     final candidate = previewObject;
     if (candidate == null) return 'Complete a drawing';
-    final error = validateObject(candidate);
-    if (error != null) return error;
+    for (final part in previewObjects) {
+      final error = validateObject(part);
+      if (error != null) return error;
+    }
     if (balances[paper]! < quote) return 'Not enough ${paper.label} paper';
     if (candidate.kind == CraftKind.window ||
         candidate.kind == CraftKind.door) {
@@ -717,11 +1033,11 @@ class ProtoplaneController extends ChangeNotifier {
       report(error);
       return null;
     }
-    final plane = activePlane!;
+    final plane = operationPlane ?? activePlane!;
     final path = List<Offset>.of(trace);
     final harvest = harvestPreview;
     final original = objects[editId];
-    final candidate = previewObject;
+    final candidates = previewObjects;
     final removed = <CraftObject>[];
     if (original != null && closed && original.kind == CraftKind.screen) {
       final paths =
@@ -735,7 +1051,9 @@ class ProtoplaneController extends ChangeNotifier {
       }
       removed.addAll(regions.map((r) => original.copyWith(region: r)));
     }
-    final id = 'object-$nextId';
+    final placementIds = {
+      for (var i = 0; i < candidates.length; i++) 'object-${nextId + i}',
+    };
     final success = original != null
         ? applyEdit()
         : completeCraft(allowOpen: allowOpen);
@@ -756,13 +1074,13 @@ class ProtoplaneController extends ChangeNotifier {
             ? removed
             : harvest != null
             ? <CraftObject>[]
-            : [objects[id] ?? candidate!],
+            : [for (final objectId in placementIds) objects[objectId]!],
       ),
-      placedIds: action == PaperAction.placement ? {id} : {},
+      placedIds: action == PaperAction.placement ? placementIds : {},
       affectedIds: original != null
           ? {original.id}
           : action == PaperAction.placement
-          ? {id}
+          ? placementIds
           : {},
     );
   }
@@ -771,6 +1089,7 @@ class ProtoplaneController extends ChangeNotifier {
   bool completeCraft({bool allowOpen = false}) {
     final harvest = harvestPreview;
     if (harvest != null) return _harvest(harvest);
+    if (tool == CraftTool.scissors || tool == CraftTool.eraser) return false;
     if (editId != null || (!closed && !allowOpen) || matches.isEmpty) {
       return false;
     }
@@ -781,12 +1100,16 @@ class ProtoplaneController extends ChangeNotifier {
     lastHarvest = null;
     final harvest = harvestPreview;
     if (harvest != null) return _harvest(harvest);
+    if (tool == CraftTool.scissors || tool == CraftTool.eraser) return false;
     final candidate = previewObject;
     if (candidate == null || editId != null) return false;
-    final message = validateObject(candidate);
-    if (message != null) {
-      report(message);
-      return false;
+    final parts = previewObjects;
+    for (final part in parts) {
+      final message = validateObject(part);
+      if (message != null) {
+        report(message);
+        return false;
+      }
     }
     final cost = quote;
     if (balances[paper]! < cost) {
@@ -795,7 +1118,7 @@ class ProtoplaneController extends ChangeNotifier {
     }
     final before = _gestureBefore ?? _snapshot();
     final object = candidate.copyWith(id: 'object-${nextId++}');
-    final plane = activePlane!;
+    final plane = planes[object.planeId]!;
     if (object.kind == CraftKind.window || object.kind == CraftKind.door) {
       final owner = objects[plane.owner];
       if (owner == null || owner.kind != CraftKind.wall) return false;
@@ -811,6 +1134,10 @@ class ProtoplaneController extends ChangeNotifier {
       );
     }
     objects[object.id] = object;
+    for (final part in parts.skip(1)) {
+      final extra = part.copyWith(id: 'object-${nextId++}');
+      objects[extra.id] = extra;
+    }
     balances[paper] = balances[paper]! - cost;
     drafts.remove(draftKey);
     _derivePlanes();
@@ -879,7 +1206,18 @@ class ProtoplaneController extends ChangeNotifier {
       return [];
     }
     final found = <CraftKind>{};
-    for (final grid in plane.grids) {
+    final grids = isLandscapePaper(plane.id)
+        ? [
+            CraftGrid(
+              id: '${plane.id}-recipes',
+              name: 'Paper',
+              nodes: [],
+              edges: [],
+              recipes: landscapeRecipes,
+            ),
+          ]
+        : plane.grids;
+    for (final grid in grids) {
       final curved = grid.edges
           .where((e) => e.control != null)
           .any(
@@ -990,10 +1328,13 @@ class ProtoplaneController extends ChangeNotifier {
     final cost = quote;
     final before = _gestureBefore ?? _snapshot();
     _gestureBefore = null;
+    final oldMarks = pencilMarks.remove(original.id) ?? <PencilStroke>[];
     objects[original.id] = edited.first;
+    pencilMarks[original.id] = _clipStrokes(oldMarks, edited.first.region);
     for (final piece in edited.skip(1)) {
       final id = 'object-${nextId++}';
       objects[id] = piece.copyWith(id: id);
+      pencilMarks[id] = _clipStrokes(oldMarks, piece.region);
     }
     balances[original.color] = balances[original.color]! - cost;
     drafts.remove(draftKey);
@@ -1004,6 +1345,7 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   void _derivePlanes() {
+    _paperGrids.clear();
     final old = Map<String, CraftPlane>.of(planes);
     planes.removeWhere((id, p) => !id.startsWith('ground-'));
     // Objects are inserted parent-first and IDs remain stable through saves.
@@ -1097,28 +1439,35 @@ class ProtoplaneController extends ChangeNotifier {
     }
     for (final object in objects.values) {
       final prior = old[object.planeId];
-      if (prior != null && !planes.containsKey(prior.id)) planes[prior.id] = prior;
+      if (prior != null && !planes.containsKey(prior.id)) {
+        planes[prior.id] = prior;
+      }
     }
     _upgradeBedroomGrids();
     surfaceFusion.rebuild(planes, objects);
+    _refreshPaperGrids();
     // Fusion can expand a generated grid. Preserve stored strokes by position
     // rather than letting changed node indices move a draft to different dots.
     for (final entry in drafts.entries.toList()) {
       final parts = entry.key.split('/');
       if (parts.length < 2) continue;
       final before = old[parts[0]], after = planes[parts[0]];
-      if (before == null || after == null ||
+      if (before == null ||
+          after == null ||
           (before.supports.isEmpty && after.supports.isEmpty)) {
         continue;
       }
-      final previousGrid = before.grids.where((g) => g.id == parts[1]).firstOrNull;
+      final previousGrid = before.grids
+          .where((g) => g.id == parts[1])
+          .firstOrNull;
       final nextGrid = after.grids.where((g) => g.id == parts[1]).firstOrNull;
       if (previousGrid == null || nextGrid == null) continue;
       final path = <int>[];
       for (final node in entry.value.path) {
         if (node < 0 || node >= previousGrid.nodes.length) break;
         final index = nextGrid.nodes.indexWhere(
-          (p) => (p - previousGrid.nodes[node]).distance < geometryEpsilon);
+          (p) => (p - previousGrid.nodes[node]).distance < geometryEpsilon,
+        );
         if (index < 0) break;
         path.add(index);
       }
@@ -1218,6 +1567,10 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   void undo() {
+    if (erasing) {
+      cancelGesture();
+      return;
+    }
     presentationEpoch++;
     if (_undo.isEmpty) return;
     _redo.add(_snapshot());
@@ -1227,6 +1580,8 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   void redo() {
+    cancelPencil();
+    if (erasing) cancelGesture();
     presentationEpoch++;
     if (_redo.isEmpty) return;
     _undo.add(_snapshot());
@@ -1236,6 +1591,7 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   String _snapshot() => jsonEncode({
+    'discoveryEpoch': _discoveryEpoch,
     'world': toJson(),
     'drafts': {for (final e in drafts.entries) e.key: e.value.toJson()},
     'active': activePlaneId,
@@ -1244,22 +1600,36 @@ class ProtoplaneController extends ChangeNotifier {
   });
   void _restore(String snapshot) {
     final j = jsonDecode(snapshot) as Map<String, dynamic>;
+    final knownAreas = Set<String>.of(revealedAreas);
+    final retainAreas = _discoveryEpoch == (j['discoveryEpoch'] ?? 0);
+    _discoveryEpoch = j['discoveryEpoch'] ?? 0;
+    final knowledge = Set<PencilMotif>.of(discoveredMotifs);
     _load(j['world']);
+    discoveredMotifs.addAll(knowledge);
+    if (retainAreas) revealedAreas.addAll(knownAreas.where(areas.containsKey));
     drafts
       ..clear()
       ..addAll({
         for (final e in (j['drafts'] as Map).entries)
           e.key: CraftDraft.fromJson(e.value),
       });
-    _discardInvalidDrafts();
     activePlaneId = j['active'];
     editId = j['edit'];
     gridIndex = j['grid'];
+    _discardInvalidDrafts();
     error = null;
   }
 
   Map<String, dynamic> toJson() => {
-    'version': 3,
+    'version': 8,
+    'revealedAreas': revealedAreas.toList()..sort(),
+    'pencilMarks': {
+      for (final e in pencilMarks.entries)
+        e.key: e.value.map((s) => s.toJson()).toList(),
+    },
+    'motifs': discoveredMotifs.map((m) => m.name).toList(),
+    'graphiteMilli': graphiteMilli,
+    'nextStrokeId': nextStrokeId,
     'preset': preset.name,
     'paper': paper.id,
     'landscape': landscape.toJson(),
@@ -1274,6 +1644,8 @@ class ProtoplaneController extends ChangeNotifier {
     try {
       validated._load(json);
       validated._validateLoaded();
+      _eraserBrush = null;
+      _eraserPlane = null;
       _load(validated.toJson());
     } finally {
       validated.dispose();
@@ -1287,18 +1659,47 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   void _load(Map<String, dynamic> j) {
-    if (j['version'] != 1 && j['version'] != 2 && j['version'] != 3) {
+    if (j['version'] != 1 &&
+        j['version'] != 2 &&
+        j['version'] != 3 &&
+        j['version'] != 4 &&
+        j['version'] != 5 &&
+        j['version'] != 6 &&
+        j['version'] != 7 &&
+        j['version'] != 8) {
       throw const FormatException('Unsupported world version');
     }
-    preset = j['version'] == 3
+    preset = j['version'] >= 3
         ? WorldPreset.values.byName(j['preset'])
         : WorldPreset.pastel;
-    paper = j['version'] == 3 && j['paper'] != null
+    paper = j['version'] >= 3 && j['paper'] != null
         ? PaperMaterial.decode(j['paper'])
         : materials.first;
-    if (!materials.contains(paper)) {
+    if (!materials.contains(paper) || !paper.craftable) {
       throw const FormatException('Invalid selected material');
     }
+    pencilMarks
+      ..clear()
+      ..addAll({
+        for (final e in ((j['pencilMarks'] ?? {}) as Map).entries)
+          e.key as String: (e.value as List)
+              .map((s) => PencilStroke.fromJson(s))
+              .toList(),
+      });
+    discoveredMotifs
+      ..clear()
+      ..addAll(
+        ((j['motifs'] ?? []) as List).map((m) => PencilMotif.values.byName(m)),
+      );
+    graphiteMilli = j['graphiteMilli'] ?? 0;
+    nextStrokeId = j['nextStrokeId'] ?? 1;
+    if (graphiteMilli < 0 || graphiteMilli >= 1000 || nextStrokeId < 1) {
+      throw const FormatException('Invalid graphite balance');
+    }
+    cancelPencil();
+    motifNotices.clear();
+    selectedMotif = null;
+    _marksChanged();
     balances.clear();
     planes
       ..clear()
@@ -1319,7 +1720,7 @@ class ProtoplaneController extends ChangeNotifier {
     nextId = j['nextId'];
     for (final color in materials) {
       final value =
-          j['balances'][j['version'] == 3 ? color.id : color.name] ??
+          j['balances'][j['version'] >= 3 ? color.id : color.name] ??
           (j['version'] == 1 &&
                   (color == PaperColor.blue || color == PaperColor.sand)
               ? 256
@@ -1349,16 +1750,46 @@ class ProtoplaneController extends ChangeNotifier {
         }
       }
     }
+    _resetDiscovery();
+    if (j['version'] >= 7) {
+      final ids = j['revealedAreas'];
+      if (ids is! List ||
+          ids.any((id) => id is! String || !areas.containsKey(id)) ||
+          ids.toSet().length != ids.length ||
+          (areas.containsKey('starter') && !ids.contains('starter'))) {
+        throw const FormatException('Invalid area discovery');
+      }
+      revealedAreas
+        ..clear()
+        ..addAll(ids.cast<String>());
+    } else if (landscape.terrain != null) {
+      for (final sheet in landscape.terrain!.sheets) {
+        if (sheet.cuts.isNotEmpty || sheet.erased.isNotEmpty) {
+          revealedAreas.add(sheet.island);
+        }
+      }
+      for (final object in objects.values) {
+        final plane = planes[object.planeId];
+        if (plane == null) continue;
+        final p = plane.point(object.region.bounds.center);
+        for (final area in areas.values) {
+          if (area.contains(Offset(p.x, -p.z))) revealedAreas.add(area.id);
+        }
+      }
+    }
     lastHarvest = null;
     harvestPending = false;
     _harvestPreviewKey = null;
     _upgradeBedroomGrids();
     surfaceFusion.rebuild(planes, objects);
+    _refreshPaperGrids();
     bedrooms = evaluateBedrooms(objects, planes);
   }
 
   void _validateLoaded() {
-    if (nextId < 1 || balances.values.any((b) => b < 0) || planes.length < 64) {
+    if (nextId < 1 ||
+        balances.values.any((b) => b < 0) ||
+        (preset != WorldPreset.paper && planes.length < 64)) {
       throw const FormatException('Invalid world data');
     }
     for (final p in planes.values) {
@@ -1393,6 +1824,7 @@ class ProtoplaneController extends ChangeNotifier {
     }
     for (final o in objects.values) {
       if (!materials.contains(o.material) ||
+          !o.material.craftable ||
           !planes.containsKey(o.planeId) ||
           !o.region.valid ||
           !o.depth.isFinite ||

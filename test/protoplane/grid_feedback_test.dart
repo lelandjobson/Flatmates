@@ -121,7 +121,7 @@ void main() {
           theme: ThemeData.dark(),
           home: RepaintBoundary(
             key: const ValueKey('dots'),
-            child: ProtoplaneConceptView(controller: c),
+            child: ProtoplaneConceptView(animateFog: false, controller: c),
           ),
         ),
       );

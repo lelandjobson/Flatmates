@@ -21,7 +21,9 @@ void main() {
           model.dispose();
         });
         await tester.pumpWidget(
-          MaterialApp(home: ProtoplaneConceptView(controller: model)),
+          MaterialApp(
+            home: ProtoplaneConceptView(animateFog: false, controller: model),
+          ),
         );
         await tester.pumpAndSettle();
         final camera = tester
@@ -81,7 +83,9 @@ void main() {
       final model = constructionWorld();
       addTearDown(model.dispose);
       await tester.pumpWidget(
-        MaterialApp(home: ProtoplaneConceptView(controller: model)),
+        MaterialApp(
+          home: ProtoplaneConceptView(animateFog: false, controller: model),
+        ),
       );
       await tester.pumpAndSettle();
       model.enter('ground-4-4');

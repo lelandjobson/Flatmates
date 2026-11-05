@@ -58,6 +58,8 @@ class Mesh extends Transformable {
   /// Opt-in shading prepared outside the renderer's paint loop.
   final bool shadeEdges;
   Map<int, SurfaceEdgeShade> edgeShades = const {};
+  Map<int, List<SurfaceEdgeShade>> pencilShades = const {};
+  double pencilOpacity = .35;
 
   Geometry _geometry;
   Geometry get geometry => _geometry;

@@ -33,6 +33,7 @@ class PlaneNavigationGraph {
     Map<String, CraftObject> objects, {
     Map<String, String> aliases = const {},
     Set<String> excluded = const {},
+    List<Region> Function(CraftPlane)? surfaceRegions,
   }) : aliases = Map.unmodifiable(aliases),
        relations = CraftRelations(planes, objects) {
     final structural = <String, List<CraftObject>>{};
@@ -85,7 +86,7 @@ class PlaneNavigationGraph {
           (aliases[plane.id] ?? plane.id) != plane.id) {
         continue;
       }
-      var remaining = [plane.region];
+      var remaining = surfaceRegions?.call(plane) ?? [plane.region];
       // Only the occupied area is replaced. A small floor must not make the
       // rest of a ground tile, wall candidate or upper candidate unreachable.
       for (final object in structural[plane.id] ?? <CraftObject>[]) {

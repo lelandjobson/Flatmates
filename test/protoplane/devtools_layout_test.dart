@@ -50,6 +50,7 @@ void main() {
         expect(rect.left, greaterThanOrEqualTo(20));
         expect(rect.right, lessThanOrEqualTo(size.width - 20));
         for (final tab in ['Lighting', 'Camera', 'Style', 'Crafting']) {
+          await tester.ensureVisible(find.text(tab));
           await tester.tap(find.text(tab));
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull);

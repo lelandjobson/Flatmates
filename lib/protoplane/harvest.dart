@@ -3,6 +3,7 @@ import 'dart:ui';
 import '../rendering/iso/perlin_noise.dart';
 import 'geometry.dart';
 import 'models.dart';
+import 'layered_terrain.dart';
 
 class NaturalPaperPatch {
   const NaturalPaperPatch(this.region, this.color, this.grain);
@@ -12,7 +13,15 @@ class NaturalPaperPatch {
 }
 
 class HarvestResult {
-  HarvestResult(this.planeId, this.outline, this.patches);
+  HarvestResult(
+    this.planeId,
+    this.outline,
+    this.patches, {
+    this.layerId,
+    this.elevation = 0,
+  });
+  final String? layerId;
+  final double elevation;
   final String planeId;
   final Region outline;
   final List<NaturalPaperPatch> patches;
@@ -32,7 +41,9 @@ class HarvestResult {
 /// Versioned, world-locked paper field. Its polygons are the single source for
 /// both visible coverage and inventory yield. Depletion never edits CraftPlane.
 class PaperLandscape {
-  PaperLandscape({this.seed = 42, this.preset = WorldPreset.ink});
+  PaperLandscape({this.seed = 42, this.preset = WorldPreset.ink})
+    : terrain = preset == WorldPreset.paper ? LayeredTerrain.starter() : null;
+  LayeredTerrain? terrain;
   final WorldPreset preset;
   final int seed;
   static const generationVersion = 1;
@@ -45,7 +56,7 @@ class PaperLandscape {
     for (final material in preset.materials) material: 0,
   };
 
-  int revision(String id) => _revisions[id] ?? 0;
+  int revision(String id) => terrain?.revision(id) ?? _revisions[id] ?? 0;
   List<Region> depleted(String id) => List.unmodifiable(_depleted[id] ?? []);
 
   double sample(double x, double y) => _noise.fbm2(
@@ -75,6 +86,15 @@ class PaperLandscape {
   List<NaturalPaperPatch> generated(CraftPlane plane) => _generated.putIfAbsent(
     plane.id,
     () {
+      if (terrain != null) {
+        final tile = terrain!.tiles[plane.id];
+        if (tile == null) return [];
+        return [
+          for (final r in terrain!.exposed(plane.id))
+            for (final cell in slabs([r], r.contains))
+              NaturalPaperPatch(Region(cell), tile.sheet.material, 0),
+        ];
+      }
       final result = <NaturalPaperPatch>[];
       final bands = preset == WorldPreset.ink
           ? inkThresholds
@@ -140,9 +160,20 @@ class PaperLandscape {
     },
   );
 
-  List<NaturalPaperPatch> remaining(CraftPlane plane) => _remaining.putIfAbsent(
-    plane.id,
-    () {
+  List<NaturalPaperPatch> remaining(CraftPlane plane) {
+    if (terrain != null) {
+      final tile = terrain!.tiles[plane.id];
+      if (tile == null) return [];
+      return _remaining.putIfAbsent(
+        plane.id,
+        () => [
+          for (final r in terrain!.exposed(plane.id))
+            for (final cell in slabs([r], r.contains))
+              NaturalPaperPatch(Region(cell), tile.sheet.material, 0),
+        ],
+      );
+    }
+    return _remaining.putIfAbsent(plane.id, () {
       var patches = generated(plane);
       for (final cut in _depleted[plane.id] ?? <Region>[]) {
         final next = <NaturalPaperPatch>[];
@@ -161,8 +192,8 @@ class PaperLandscape {
         patches = next;
       }
       return List.unmodifiable(patches);
-    },
-  );
+    });
+  }
 
   HarvestResult? preview(CraftPlane plane, Region outline) {
     final patches = <NaturalPaperPatch>[];
@@ -179,10 +210,43 @@ class PaperLandscape {
         geometryEpsilon) {
       return null;
     }
-    return HarvestResult(plane.id, outline, patches);
+    return HarvestResult(
+      plane.id,
+      outline,
+      patches,
+      layerId: terrain?.tiles[plane.id]?.sheet.id,
+      elevation: plane.origin.y,
+    );
+  }
+
+  int eraseGraphite(String id, List<int> cells, double area) {
+    terrain!.erase(id, cells);
+    final tile = terrain!.tiles[id]!;
+    for (final t in terrain!.tiles.values.where(
+      (t) => t.x == tile.x && t.y == tile.y,
+    )) {
+      _remaining.remove(t.id);
+      _generated.remove(t.id);
+    }
+    const material = PaperMaterial.graphite;
+    final total = remainders[material]! + area * 128;
+    final whole = (total + 1e-9).floor();
+    remainders[material] = (total - whole).clamp(0.0, 1.0);
+    return whole;
   }
 
   void deplete(String id, Region region) {
+    if (terrain != null) {
+      terrain!.deplete(id, region);
+      final tile = terrain!.tiles[id]!;
+      for (final t in terrain!.tiles.values.where(
+        (t) => t.x == tile.x && t.y == tile.y,
+      )) {
+        _remaining.remove(t.id);
+        _generated.remove(t.id);
+      }
+      return;
+    }
     (_depleted[id] ??= []).add(region);
     _remaining.remove(id);
     _revisions[id] = revision(id) + 1;
@@ -196,12 +260,19 @@ class PaperLandscape {
       credits[entry.key] = whole;
       remainders[entry.key] = (total - whole).clamp(0.0, 1.0);
     }
-    deplete(result.planeId, result.outline);
+    if (terrain == null) {
+      deplete(result.planeId, result.outline);
+    } else {
+      for (final patch in result.patches) {
+        deplete(result.planeId, patch.region);
+      }
+    }
     return credits;
   }
 
   Map<String, dynamic> toJson() => {
     'seed': seed,
+    if (terrain != null) 'sheets': terrain!.toJson(),
     'preset': preset.name,
     'generationVersion': generationVersion,
     'depleted': {
@@ -224,6 +295,25 @@ class PaperLandscape {
       throw const FormatException('Landscape preset mismatch');
     }
     final result = PaperLandscape(seed: json['seed'], preset: preset);
+    if (preset == WorldPreset.paper) {
+      result.terrain = LayeredTerrain.fromJson(json['sheets'] as List);
+      for (final tile in result.terrain!.tiles.values) {
+        final p = planes[tile.id];
+        if (p == null ||
+            (p.origin - tile.plane().origin).length > geometryEpsilon ||
+            (p.u - tile.plane().u).length > geometryEpsilon ||
+            (p.v - tile.plane().v).length > geometryEpsilon ||
+            p.owner != null ||
+            !p.region.containsRegion(rectangle(1, 1)) ||
+            (p.region.area - 1).abs() > geometryEpsilon) {
+          throw const FormatException('Terrain tile mismatch');
+        }
+      }
+      if (planes.keys.where((id) => id.startsWith('ground-')).length !=
+          result.terrain!.tiles.length) {
+        throw const FormatException('Unexpected terrain tile');
+      }
+    }
     for (final color in preset.materials) {
       final value =
           (json['remainders'][color.id] ?? json['remainders'][color.name]);
@@ -231,6 +321,9 @@ class PaperLandscape {
         throw const FormatException('Invalid paper remainder');
       }
       result.remainders[color] = value.toDouble();
+    }
+    if (preset == WorldPreset.paper && (json['depleted'] as Map).isNotEmpty) {
+      throw const FormatException('Paper depletion must belong to a layer');
     }
     for (final entry in (json['depleted'] as Map).entries) {
       final plane = planes[entry.key];

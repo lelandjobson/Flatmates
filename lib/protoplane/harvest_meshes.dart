@@ -10,6 +10,8 @@ import 'meshes.dart';
 import 'models.dart';
 import 'paper_patterns.dart';
 import 'appearance.dart';
+import 'layered_terrain.dart';
+import 'geometry.dart' as planar;
 
 /// Like GameView's LandscapeGenerator/landscape painter, bake material into an
 /// atlas and submit textured ground. Only changed slots rasterize again; camera,
@@ -21,6 +23,151 @@ class HarvestMeshCache {
   final atlas = PlanarTextureAtlas();
   final Map<String, (String, Geometry, PlanarTexture)> _tiles = {};
   int rasterizedTiles = 0;
+  final Map<String, (TerrainSheet, Object, Mesh)> _walls = {};
+  int rebuiltWalls = 0;
+  Iterable<Mesh> walls(LayeredTerrain terrain) sync* {
+    for (final sheet in terrain.sheets) {
+      if (sheet.material == PaperMaterial.graphite) {
+        for (final tile in terrain.tiles.values.where(
+          (t) => identical(t.sheet, sheet),
+        )) {
+          final key = terrain.wallSignature(tile.id);
+          final old = _walls[tile.id];
+          if (old != null && identical(old.$1, sheet) && old.$2 == key) {
+            if (old.$3.geometry.faces.isNotEmpty) yield old.$3;
+            continue;
+          }
+          final vertices = <Vector3>[], faces = <List<int>>[];
+          bool contains(Offset world) {
+            final x = world.dx.floor(), y = world.dy.floor();
+            final neighbor = TerrainTile(sheet, x, y);
+            return terrain
+                .remainingInTile(neighbor.id)
+                .any(
+                  (r) => r.contains(world - neighbor.origin, boundary: false),
+                );
+          }
+
+          for (final region in terrain.remainingInTile(tile.id)) {
+            for (final ring in region.rings) {
+              for (var i = 0; i < ring.length; i++) {
+                final a = ring[i] + tile.origin,
+                    b = ring[(i + 1) % ring.length] + tile.origin;
+                final delta = b - a;
+                if (delta.distance < planar.geometryEpsilon) continue;
+                final normal =
+                    Offset(-delta.dy, delta.dx) / delta.distance * .00001;
+                final mid = (a + b) / 2;
+                final left = contains(mid + normal),
+                    right = contains(mid - normal);
+                if (left == right) continue; // internal slab or tile seam
+                Vector3 point(Offset p, double z) => Vector3(p.dx, z, -p.dy);
+                final points = [
+                  point(a, sheet.elevation),
+                  point(b, sheet.elevation),
+                  point(b, sheet.elevation - sheet.thickness),
+                  point(a, sheet.elevation - sheet.thickness),
+                ];
+                final start = vertices.length;
+                vertices.addAll(left ? points.reversed : points);
+                faces.add(List.generate(4, (i) => start + i));
+              }
+            }
+          }
+          final mesh = Mesh(
+            id: 'terrain-wall-${tile.id}',
+            name: 'Graphite edges',
+            groundPlane: true,
+            geometry: Geometry(
+              id: 'terrain-wall-${tile.id}',
+              name: 'Graphite edges',
+              vertices: vertices,
+              faces: faces,
+            ),
+            material: MaterialModel(
+              color: sheet.material.base,
+              doubleSided: false,
+              strokeEdges: false,
+            ),
+          );
+          _walls[tile.id] = (sheet, key, mesh);
+          rebuiltWalls++;
+          if (faces.isNotEmpty) yield mesh;
+        }
+        continue;
+      }
+      final old = _walls[sheet.id];
+      if (old != null && identical(old.$1, sheet) && old.$2 == sheet.revision) {
+        yield old.$3;
+        continue;
+      }
+      final vertices = <Vector3>[], faces = <List<int>>[];
+      void face(List<Vector3> points) {
+        final start = vertices.length;
+        vertices.addAll(points);
+        faces.add(List.generate(points.length, (i) => start + i));
+      }
+
+      Vector3 point(Offset p, double height) => Vector3(p.dx, height, -p.dy);
+      for (final r in sheet.remaining) {
+        for (final originalRing in r.rings) {
+          final signed = List.generate(
+            originalRing.length,
+            (i) =>
+                originalRing[i].dx *
+                    originalRing[(i + 1) % originalRing.length].dy -
+                originalRing[(i + 1) % originalRing.length].dx *
+                    originalRing[i].dy,
+          ).fold<double>(0, (a, b) => a + b);
+          final outer = identical(originalRing, r.outer);
+          final ring = (outer == (signed > 0))
+              ? originalRing
+              : originalRing.reversed.toList();
+          for (var i = 0; i < ring.length; i++) {
+            final a = ring[i], b = ring[(i + 1) % ring.length];
+            face(
+              [
+                point(a, sheet.elevation),
+                point(b, sheet.elevation),
+                point(b, sheet.elevation - sheet.thickness),
+                point(a, sheet.elevation - sheet.thickness),
+              ].reversed.toList(),
+            );
+          }
+        }
+        for (final triangle in r.triangles) {
+          final points = triangle
+              .map((p) => point(p, sheet.elevation - sheet.thickness))
+              .toList();
+          if ((points[1] - points[0]).cross(points[2] - points[0]).y > 0) {
+            face(points.reversed.toList());
+          } else {
+            face(points);
+          }
+        }
+      }
+      final mesh = Mesh(
+        id: 'terrain-wall-${sheet.id}',
+        name: sheet.material.label,
+        groundPlane: true,
+        geometry: Geometry(
+          id: 'terrain-wall-${sheet.id}',
+          name: 'Sheet edges',
+          vertices: vertices,
+          faces: faces,
+        ),
+        material: MaterialModel(
+          color: sheet.material.base,
+          doubleSided: false,
+          strokeEdges: false,
+        ),
+      );
+      _walls[sheet.id] = (sheet, sheet.revision, mesh);
+      rebuiltWalls++;
+      yield mesh;
+    }
+  }
+
   String _styleKey = '';
   ColorFilter? _fillFilter, _textureFilter;
   double _grainStrength = .6,
@@ -71,16 +218,22 @@ class HarvestMeshCache {
     _paperGrain = null;
     _paperImage = null;
     atlas.dispose();
+    _walls.clear();
     _tiles.clear();
   }
 
   void synchronize(Iterable<CraftPlane> planes, PaperLandscape landscape) {
+    final tilePixels = landscape.terrain == null
+        ? HarvestMeshCache.tilePixels
+        : 128;
+    final columns = landscape.terrain == null ? HarvestMeshCache.columns : 16;
+    final slotPixels = tilePixels + gutter * 2;
     PictureRecorder? recorder;
     Canvas? canvas;
     final temporary = <Image>[];
     for (final plane in planes.where((p) => p.id.startsWith('ground-'))) {
       final key =
-          '$renderVersion/${PaperLandscape.generationVersion}/${landscape.preset.name}/${landscape.preset.materials.map((m) => '${m.id}:${m.base.toARGB32()}:${m.ink.toARGB32()}:${m.pattern.name}').join(',')}/${landscape.seed}/${jsonEncode(plane.region.toJson())}/${jsonEncode(landscape.depleted(plane.id).map((r) => r.toJson()).toList())}/${plane.origin}/${plane.u}/${plane.v}';
+          '$renderVersion/${landscape.terrain?.signature(plane.id) ?? landscape.revision(plane.id)}/${PaperLandscape.generationVersion}/${landscape.preset.name}/${landscape.preset.materials.map((m) => '${m.id}:${m.base.toARGB32()}:${m.ink.toARGB32()}:${m.pattern.name}').join(',')}/${landscape.seed}/${jsonEncode(plane.region.toJson())}/${jsonEncode(landscape.depleted(plane.id).map((r) => r.toJson()).toList())}/${plane.origin}/${plane.u}/${plane.v}';
       final cached = _tiles[plane.id];
       if (cached != null && cached.$1 == key) continue;
       if (recorder == null) {
@@ -108,7 +261,7 @@ class HarvestMeshCache {
       final box = plane.region.bounds;
       tileCanvas.scale(tilePixels / box.width, tilePixels / box.height);
       tileCanvas.translate(-box.left, -box.top);
-      if (_fillFilter != null) {
+      if (_fillFilter != null && landscape.terrain == null) {
         tileCanvas.saveLayer(box, Paint()..colorFilter = _fillFilter);
       }
       final visiblePaper = Path();
@@ -154,9 +307,19 @@ class HarvestMeshCache {
         )!;
         face(patch.region.outer, tint, .001, patch.color);
       }
-      if (_fillFilter != null) tileCanvas.restore();
-      final grain = _paperGrain;
-      if (grain != null && _grainStrength > 0) {
+      if (_fillFilter != null && landscape.terrain == null) {
+        tileCanvas.restore();
+      }
+      final layerMaterial = landscape.terrain?.tiles[plane.id]?.sheet.material;
+      final grain = layerMaterial == PaperMaterial.graphite
+          ? null
+          : _paperGrain;
+      final strength = landscape.terrain == null
+          ? _grainStrength
+          : layerMaterial == PaperMaterial.cork
+          ? .16
+          : .10;
+      if (grain != null && strength > 0) {
         // World-aligned coordinates keep grain continuous across tile seams.
         final origin = Offset(plane.origin.x, -plane.origin.z);
         tileCanvas.save();
@@ -167,8 +330,8 @@ class HarvestMeshCache {
           Paint()
             ..shader = grain
             ..blendMode = BlendMode.multiply
-            ..colorFilter = _textureFilter
-            ..color = Color.fromRGBO(255, 255, 255, _grainStrength),
+            ..colorFilter = landscape.terrain == null ? _textureFilter : null
+            ..color = Color.fromRGBO(255, 255, 255, strength),
         );
         tileCanvas.restore();
       }
@@ -243,6 +406,7 @@ class HarvestMeshCache {
           bounds: box,
           source: source,
           atlas: atlas,
+          depthSorted: landscape.terrain != null,
         ),
       );
     }

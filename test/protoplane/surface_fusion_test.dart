@@ -17,7 +17,9 @@ void main() {
     final b = fixtures.floor(model, tile: 'ground-5-4');
     model.leave();
     await tester.pumpWidget(
-      MaterialApp(home: ProtoplaneConceptView(controller: model)),
+      MaterialApp(
+        home: ProtoplaneConceptView(animateFog: false, controller: model),
+      ),
     );
     await tester.pumpAndSettle();
     final scene = tester.widget<SceneView>(find.byType(SceneView).first).scene;

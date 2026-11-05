@@ -30,6 +30,7 @@ flutter:
 
   shaders:
     - shaders/paper_reveal.frag
+    - shaders/discovery_fog.frag
 
   assets:
     - lib/geometry/prefabs/Cableclamp.obj
