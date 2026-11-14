@@ -143,6 +143,47 @@ void main() {
     tester.view.resetDevicePixelRatio();
   }
 
+  testWidgets('world touch regions orbit and pan while pinch only zooms', (
+    tester,
+  ) async {
+    final model = constructionWorld();
+    addTearDown(() {
+      resetView(tester);
+      model.dispose();
+    });
+    await mount(tester, model, const Size(900, 700));
+    final camera = tester
+        .widget<SceneView>(find.byType(SceneView).first)
+        .scene
+        .camera!;
+    final target = camera.target.clone();
+    final position = camera.position.clone();
+    final orbit = await tester.startGesture(const Offset(800, 610));
+    await orbit.moveBy(const Offset(60, -250));
+    await orbit.up();
+    expect(camera.target, target);
+    expect((camera.position - position).length, greaterThan(.01));
+    final bottom = await tester.startGesture(const Offset(600, 500));
+    await bottom.moveBy(const Offset(60, -200));
+    await bottom.up();
+    expect((camera.target - target).length, greaterThan(.01));
+    final beforePinch = camera.target.clone();
+    final direction = (camera.position - camera.target).normalized();
+    final distance = (camera.position - camera.target).length;
+    final a = await tester.startGesture(const Offset(500, 250), pointer: 1);
+    final b = await tester.startGesture(const Offset(500, 450), pointer: 2);
+    await a.moveBy(const Offset(40, -30));
+    await b.moveBy(const Offset(40, 30));
+    await a.up();
+    await b.up();
+    expect(camera.target, beforePinch);
+    expect(
+      (camera.position - camera.target).normalized().dot(direction),
+      closeTo(1, 1e-6),
+    );
+    expect((camera.position - camera.target).length, lessThan(distance));
+    await tester.pumpWidget(const SizedBox());
+  });
   testWidgets('cursor aim focuses smoothly with dim adjacent Paper tiles', (
     tester,
   ) async {
@@ -787,15 +828,21 @@ void main() {
         await tester.tap(find.text('devtools'));
         await tester.pumpAndSettle();
         expect(find.byType(ModalBarrier).evaluate().length, barriersBefore);
-        expect(
-          await scenePixel(),
-          colorBefore,
-          reason: 'Opening devtools must not dim the scene',
-        );
+        if (size.shortestSide >= 600) {
+          expect(
+            await scenePixel(),
+            colorBefore,
+            reason: 'Opening devtools must not dim the scene',
+          );
+        }
         final panel = find.byKey(const ValueKey('protoplane-devtools-panel'));
         var rect = tester.getRect(panel);
         expect(rect.left, lessThan(30));
-        expect(rect.right, lessThan(size.width * .6));
+        if (size.shortestSide < 600) {
+          expect(rect.width, size.width - 24);
+        } else {
+          expect(rect.right, lessThan(size.width * .6));
+        }
         expect(
           rect.top,
           greaterThan(tester.getRect(find.byTooltip('Back')).bottom),
@@ -805,7 +852,9 @@ void main() {
         await tester.pumpAndSettle();
         final before = camera.target.clone();
         Offset point() => Offset(
-          (tester.getRect(panel).right + size.width - 80) / 2,
+          size.shortestSide < 600
+              ? size.width - 4
+              : (tester.getRect(panel).right + size.width - 80) / 2,
           tester.getRect(panel).center.dy,
         );
         final world = await tester.startGesture(

@@ -8,6 +8,7 @@ class ScenePaintStats {
     this.source = 'scene',
     this.meshes = 0,
     this.visibleMeshes = 0,
+    this.viewportMeshes = 0,
     this.faces = 0,
     this.drawCalls = 0,
     this.paintMs = 0,
@@ -16,6 +17,9 @@ class ScenePaintStats {
   final String source;
   final int meshes;
   final int visibleMeshes;
+
+  /// Meshes with projected face bounds intersecting the viewport; not occlusion.
+  final int viewportMeshes;
   final int faces;
   final int drawCalls;
   final double paintMs;

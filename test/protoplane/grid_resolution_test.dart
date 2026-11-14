@@ -42,12 +42,12 @@ void main() {
     }
     expect(() => c.setProtoplaneCells(6), throwsRangeError);
   });
-  test('settings default to three cells and validate discrete range', () {
+  test('settings default to tile corners and validate discrete range', () {
     final settings = ProtoplaneSettings();
-    expect(settings.protoplaneCells, 3);
+    expect(settings.protoplaneCells, 1);
     final json = settings.toJson()..remove('protoplaneCells');
     settings.load(json);
-    expect(settings.protoplaneCells, 3);
+    expect(settings.protoplaneCells, 1);
     settings.load({...json, 'protoplaneCells': 5});
     expect(settings.protoplaneCells, 5);
     expect(

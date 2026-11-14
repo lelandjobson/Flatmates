@@ -4,9 +4,32 @@ Open `protoplane_concept` in the developer menu (`/protoplane-concept`). This
 prototype has its own world, paper inventory, history, and local save. It does
 not change GameView or the grid-puzzle rules.
 
+## In-place focus and landscape drawing
+
+Tap to focus keeps the current camera position, target, up vector and lens.
+The scene retains its normal visibility and has no focus crop. A soft viewport
+vignette marks focus. Light pencil is the initial tool: draw orthogonal paths
+through the displayed pips, release to retain the outline, then choose Volume
+and drag the cap directly in the same 3D view. Create commits the result.
+Light-pencil outlines do not consume graphite; Graphite pencil remains a
+separate material-marking tool. New drawing connections are orthogonal only.
+
+Terrain drawing joins connected exposed tiles on the same island and at the
+same elevation. Tile corners become unique shared pips, so a rectangle can
+span several tiles and create one floor/volume. Gaps, holes and elevation
+changes remain boundaries. Tile materials and harvesting identities remain
+independent underneath this shared support frame. Creation rechecks exposed
+support, occupancy and the material quote. Shared support frames survive saves
+and history so existing objects never move when terrain changes.
+
+Tile protoplanes default to one cell (four corners). Scissors and graphite
+operations still resolve their physical terrain tile. The older camera-fit,
+context-crop and focus-zoom notes below describe the prior interaction; those
+settings no longer move or isolate the scene during in-place focus.
+
 ## Interaction
 
-- In the world, drag to pan. Touch taps select at the center reticle; mouse
+- In the world, Center gesture zones (default) pan in the middle 70% of screen height and orbit in the top and bottom 15%. Devtools also offers Split: top-half orbit and bottom-half pan. Pinch anywhere to zoom. Touch taps select at the center reticle; mouse
   clicks select at the cursor. Two-finger horizontal swipes or secondary mouse
   dragging rotate; pinching or the mouse wheel zooms.
 - Select a protoplane to draw on its dots. Continue a path across separate
@@ -26,7 +49,7 @@ not change GameView or the grid-puzzle rules.
 
 ## Construction and recipes
 
-Each ground tile has a 5×5 dot grid. Any simple closed outline can become a
+Each ground tile defaults to its four corner dots. Any simple closed outline can become a
 floor. Sibling pieces may share boundaries but not material area. Floor
 surfaces receive three deterministic generated grids; generated node/edge
 definitions are saved, so they never reroll on reopen. Templates guarantee
@@ -139,7 +162,11 @@ material requirements can be introduced without rewriting room recognition.
 `GameControls` loads desktop or mobile defaults and follows the active pointer
 kind on hybrid devices. Desktop uses a cursor-following reticle; touch keeps
 it centered. Both use the same world aim for highlighting and selection,
-primary dragging to pan, and secondary/two-finger dragging to rotate. Crafting
+mouse primary dragging to pan, and secondary dragging to rotate. Touch drags
+choose their mode at pointer-down and keep it until release. The devtools
+Gesture zones selector defaults to Center (middle 70% pans, outer 15% bands
+orbit); Split uses top-half orbit and bottom-half pan. Two-finger world gestures only zoom, regardless
+of location; moving their center does not pan or rotate. Crafting
 always follows the actual pointer. Native trackpad pan/zoom is supported.
 
 Plane focus preserves the incoming azimuth and perspective lens, tips only

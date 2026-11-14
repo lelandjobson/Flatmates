@@ -1,3 +1,4 @@
+import '../../debug/scene_paint_stats.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show Color, Colors;
 
@@ -10,6 +11,8 @@ import 'camera.dart';
 class Scene extends ChangeNotifier {
   Scene({double globalIllumination = 0.2})
     : globalIllumination = globalIllumination.clamp(0.0, 1.0);
+
+  ScenePaintStats? paintStats;
 
   final List<Mesh> _meshes = [];
   final List<DirectionalLight> _lights = [];

@@ -4,9 +4,11 @@ import 'package:flutter/gestures.dart';
 
 enum ReticleMode { centered, cursor }
 
-enum WorldDrag { pan, rotate }
+enum WorldDrag { pan, rotate, zoom }
 
-/// The two input paths share gesture meanings; only world aiming differs.
+enum WorldGestureZones { split, center }
+
+/// World navigation and aiming for touch and desktop input.
 /// Keep platform/device decisions here rather than in gameplay screens.
 class GameControlProfile {
   const GameControlProfile(this.reticle);
@@ -14,11 +16,27 @@ class GameControlProfile {
   static const mobile = GameControlProfile(ReticleMode.centered);
   static const desktop = GameControlProfile(ReticleMode.cursor);
 
-  WorldDrag worldDrag({required int pointers, required int buttons}) =>
-      pointers > 1 ||
-          (buttons & (kSecondaryMouseButton | kMiddleMouseButton)) != 0
-      ? WorldDrag.rotate
-      : WorldDrag.pan;
+  WorldDrag worldDrag({
+    required int pointers,
+    required int buttons,
+    required Offset origin,
+    required Size viewport,
+    WorldGestureZones zones = WorldGestureZones.center,
+  }) {
+    if (pointers > 1) return WorldDrag.zoom;
+    if (reticle == ReticleMode.centered) {
+      final pan = switch (zones) {
+        WorldGestureZones.split => origin.dy >= viewport.height / 2,
+        WorldGestureZones.center =>
+          origin.dy >= viewport.height * .15 &&
+              origin.dy < viewport.height * .85,
+      };
+      return pan ? WorldDrag.pan : WorldDrag.rotate;
+    }
+    return (buttons & (kSecondaryMouseButton | kMiddleMouseButton)) != 0
+        ? WorldDrag.rotate
+        : WorldDrag.pan;
+  }
 
   bool canActivate(int buttons) => buttons == kPrimaryMouseButton;
 }

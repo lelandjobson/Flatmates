@@ -1,4 +1,5 @@
 import 'construction_fixture.dart';
+import 'package:flatmates/protoplane/dev_settings.dart';
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -11,6 +12,46 @@ import 'package:flatmates/protoplane/stroke_preview.dart';
 import 'package:flatmates/rendering/scene/camera.dart';
 
 void main() {
+  test('world zones classify boundaries and always prioritize zoom', () {
+    const size = Size(800, 800);
+    for (final zones in WorldGestureZones.values) {
+      for (final y in [0.0, 119.0, 120.0, 399.0, 400.0, 679.0, 680.0, 799.0]) {
+        final pan = zones == WorldGestureZones.center
+            ? y >= 120 && y < 680
+            : y >= 400;
+        for (final x in [0.0, 400.0, 799.0]) {
+          expect(
+            GameControlProfile.mobile.worldDrag(
+              pointers: 1,
+              buttons: 1,
+              origin: Offset(x, y),
+              viewport: size,
+              zones: zones,
+            ),
+            pan ? WorldDrag.pan : WorldDrag.rotate,
+          );
+          expect(
+            GameControlProfile.mobile.worldDrag(
+              pointers: 2,
+              buttons: 1,
+              origin: Offset(x, y),
+              viewport: size,
+              zones: zones,
+            ),
+            WorldDrag.zoom,
+          );
+        }
+      }
+    }
+    final settings = ProtoplaneSettings();
+    expect(settings.worldGestureZones, WorldGestureZones.center);
+    settings.worldGestureZones = WorldGestureZones.split;
+    final saved = settings.toJson();
+    final loaded = ProtoplaneSettings()..load(saved);
+    expect(loaded.worldGestureZones, WorldGestureZones.split);
+    loaded.load(saved..remove('worldGestureZones'));
+    expect(loaded.worldGestureZones, WorldGestureZones.center);
+  });
   test(
     'full focus fits long pieces to viewport and picks nearest half-turn',
     () {
@@ -127,12 +168,22 @@ void main() {
         GameControlProfile.desktop,
       ]) {
         expect(
-          profile.worldDrag(pointers: 1, buttons: kPrimaryMouseButton),
+          profile.worldDrag(
+            pointers: 1,
+            buttons: kPrimaryMouseButton,
+            origin: const Offset(100, 400),
+            viewport: size,
+          ),
           WorldDrag.pan,
         );
         expect(
-          profile.worldDrag(pointers: 2, buttons: kPrimaryMouseButton),
-          WorldDrag.rotate,
+          profile.worldDrag(
+            pointers: 2,
+            buttons: kPrimaryMouseButton,
+            origin: point,
+            viewport: size,
+          ),
+          WorldDrag.zoom,
         );
         expect(profile.canActivate(kSecondaryMouseButton), isFalse);
       }

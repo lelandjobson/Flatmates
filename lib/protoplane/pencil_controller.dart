@@ -235,6 +235,15 @@ extension PencilCrafting on ProtoplaneController {
 
   bool commitMarks(List<PencilSegment> segments) {
     if (!paperSurface) return false;
+    if (inPlaceDrawing &&
+        segments.any(
+          (s) =>
+              (s.a.dx - s.b.dx).abs() > geometryEpsilon &&
+              (s.a.dy - s.b.dy).abs() > geometryEpsilon,
+        )) {
+      report('Only orthogonal pencil lines are supported');
+      return false;
+    }
     final plane = activePlane!;
     final fresh = newPencilCoverage(clipToPaper(segments), marksOn(plane));
     final cost = (fresh.fold<double>(0, (sum, s) => sum + s.length) * 4000)

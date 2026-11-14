@@ -35,7 +35,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('dev menu', () {
-    test('keeps every route and lists the grid puzzle views', () {
+    test('keeps supported routes and lists the protoplane view', () {
       final names = router.configuration.routes
           .whereType<GoRoute>()
           .map((route) => route.name)
@@ -43,22 +43,14 @@ void main() {
       expect(
         names,
         containsAll([
-          'gameview',
+          'protoplane_concept',
           'legacy_crafting',
           'papercut_puzzles',
           'craft_room',
         ]),
       );
-      expect(kDevMenuRouteNames, {
-        'blueprint_examination',
-        'grid_puzzles',
-        'dynamic_grid_puzzles',
-        'puzzle_editor',
-        'tool_animations',
-        'asmr',
-        'asmr_split',
-        'craft_room',
-      });
+      expect(names, isNot(contains('gameview')));
+      expect(kDevMenuRouteNames, {'protoplane_concept'});
     });
   });
 

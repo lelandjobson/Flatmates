@@ -6,6 +6,7 @@ extension LinearCrafting on ProtoplaneController {
   bool planeAvailable(CraftPlane p) =>
       !surfaceFusion.retired.contains(p.id) &&
       !p.id.startsWith('construction-') &&
+      !p.id.startsWith('landscape-drawing-') &&
       (impliedProtoplanes || !isImpliedPlane(p));
 
   void setImpliedProtoplanes(bool value) {

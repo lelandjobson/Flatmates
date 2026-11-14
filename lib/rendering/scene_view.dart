@@ -68,8 +68,11 @@ class ScenePainter extends CustomPainter {
   final Color groundOutlineColor;
   final SceneDebugOptions debugOptions;
 
+  final _viewportMeshIds = <String>{};
+
   @override
   void paint(Canvas canvas, Size size) {
+    _viewportMeshIds.clear();
     final sw = Stopwatch()..start();
     Timeline.startSync('ScenePainter');
     var meshes = 0;
@@ -84,7 +87,8 @@ class ScenePainter extends CustomPainter {
       drawCalls = counts.$4;
     } finally {
       Timeline.finishSync();
-      PaintStatsProbe.scene = ScenePaintStats(
+      _scene.paintStats = PaintStatsProbe.scene = ScenePaintStats(
+        viewportMeshes: _viewportMeshIds.length,
         source: 'scene',
         meshes: meshes,
         visibleMeshes: visibleMeshes,
@@ -181,6 +185,28 @@ class ScenePainter extends CustomPainter {
               _scene.globalIllumination,
             );
             if (mesh.pencilShades.isNotEmpty) markedBatches[batch] = mesh;
+            final screenPoints = [
+              for (final p in [
+                batch.bounds.topLeft,
+                batch.bounds.topRight,
+                batch.bounds.bottomRight,
+                batch.bounds.bottomLeft,
+              ])
+                _projectToScreen(
+                  world.transformed3(
+                    batch.origin + batch.u * p.dx + batch.v * p.dy,
+                  ),
+                  viewProjection,
+                  size,
+                ),
+            ];
+            if (screenPoints.every((p) => p != null) &&
+                (croppedBatchPaths[batch]?.getBounds() ??
+                        (Path()..addPolygon(screenPoints.cast<Offset>(), true))
+                            .getBounds())
+                    .overlaps(Offset.zero & size)) {
+              _viewportMeshIds.add(mesh.id);
+            }
             planarBatches.add((
               batch,
               transform,
@@ -805,6 +831,11 @@ class ScenePainter extends CustomPainter {
               viewport * viewProjection * world * shade.basis,
             ));
           }
+        }
+        if ((Path()..addPolygon(points, true)).getBounds().overlaps(
+          Offset.zero & size,
+        )) {
+          _viewportMeshIds.add(mesh.id);
         }
         facesToDraw.add(
           _ProjectedFace(

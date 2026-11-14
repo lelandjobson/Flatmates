@@ -1,3 +1,4 @@
+import '../protoplane/geometry_benchmark.dart';
 import '../protoplane/adjacent_grid_indicators.dart';
 import '../protoplane/crumpled_paper.dart';
 import '../protoplane/focus_context.dart';
@@ -35,7 +36,6 @@ import '../protoplane/plane_navigation.dart';
 import '../rendering/surface_edge_shading.dart';
 import '../protoplane/storage.dart';
 import '../protoplane/stroke_preview.dart';
-import '../protoplane/focus_view.dart';
 import '../protoplane/wall_reveal.dart';
 import '../protoplane/dev_settings.dart';
 import '../ui/game/dev_tools_button.dart';
@@ -92,10 +92,11 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   late ProtoplaneController model;
   late ProtoplaneStorage storage;
   final devSettings = ProtoplaneSettings();
-  int appliedProtoplaneCells = 3;
+  int appliedProtoplaneCells = 1;
   late GridConnections appliedGridConnections = GridConnections.orthogonal;
   final settingsStore = ProtoplaneStorage(fileName: 'settings.json');
   String? settingsError;
+  final _geometryBenchmark = GeometryBenchmark();
   late final Scene scene;
   late final GameControls controls;
   final residents = BedroomResidents();
@@ -151,7 +152,9 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       final dock = Rect.fromLTWH(
         left,
         dockTop,
-        math.min(320, math.max(170, viewport.width * .45)),
+        viewport.shortestSide < 600
+            ? math.max(1, viewport.width - left - padding.right - 12)
+            : 320,
         dockBottom - dockTop,
       );
       final dockChanged = _devToolsRect != dock;
@@ -255,6 +258,12 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     var distance = 24.0;
     for (final p in model.paperGrid.nodes) {
       if (!model.paperContains(p)) continue;
+      final tail = pencilDwell.tail;
+      if (tail != null &&
+          (tail.dx - p.dx).abs() > geometryEpsilon &&
+          (tail.dy - p.dy).abs() > geometryEpsilon) {
+        continue;
+      }
       final projected = camera.projectToScreen(plane.point(p, .008), viewport);
       if (projected == null) continue;
       final d = (projected - screen).distance;
@@ -309,6 +318,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     controls = loadGameControls();
     unawaited(_loadLandscapePaper());
     model = widget.controller ?? ProtoplaneController();
+    model.enableInPlaceDrawing();
     if (widget.controller == null) {
       model.setProtoplaneCells(devSettings.protoplaneCells);
     }
@@ -496,6 +506,15 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       devSettings.farthestDistance,
       applyPose: false,
     );
+    if (_geometryBenchmark.active) {
+      final half = _geometryBenchmark.side / 2;
+      mapCamera.setPanBounds(
+        Vector3(-half, 0, -half),
+        Vector3(half, 0, half),
+        applyPose: false,
+      );
+      return;
+    }
     final areas = model.areas.values;
     if (areas.isNotEmpty) {
       final bounds = areas
@@ -806,15 +825,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     if (_lastPlane != model.activePlaneId) {
       final traversing =
           _lastPlane != null && model.activePlane != null && worldPose != null;
-      if (traversing) {
-        contextTransitionFrom
-          ..clear()
-          ..addEntries(
-            scene.meshes.map((m) => MapEntry(m.id, m.material.opacity)),
-          );
-      } else {
-        contextTransitionFrom.clear();
-      }
+      contextTransitionFrom.clear();
       completedTrace = [];
       releasedTrace = [];
       releaseFade.value = 1;
@@ -881,7 +892,10 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   void _cameraChanged() {
     if (_disposed) return;
     scene.markNeedsPaint();
-    if (model.activePlane == null && !transition.isAnimating && !loading) {
+    if (!_geometryBenchmark.active &&
+        model.activePlane == null &&
+        !transition.isAnimating &&
+        !loading) {
       final target = Offset(mapCamera.lookAt.x, -mapCamera.lookAt.z);
       if (_lastDiscoveryTarget != target) {
         _lastDiscoveryTarget = target;
@@ -995,7 +1009,9 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
         if (p != null) meshes.addAll(_objectMeshes(o, p));
       }
     } else {
-      meshes.add(_planeMesh(active)..groundPlane = true);
+      if (!model.sharedLandscapeFocus) {
+        meshes.add(_planeMesh(active)..groundPlane = true);
+      }
       final edit = model.editId;
       for (final o in model.objects.values) {
         if (o.id == edit && !drawing) continue;
@@ -1018,7 +1034,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
           final existing = _objectMeshes(
             o,
             model.planes[o.planeId]!,
-            opacity: o.id == active.owner ? .4 : 1,
+            opacity: 1,
           );
           if (o.id == active.owner) {
             for (final m in existing) {
@@ -1082,29 +1098,8 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     if (active != null) {
       focusedMeshIds = meshes.map((m) => m.id).toSet();
       void addContext(Iterable<Mesh> additions, CraftPlane p) {
-        final target =
-            adjacentFocusContext(
-                  active,
-                  p,
-                  model.objects,
-                  model.planes,
-                  tiles: devSettings.focusContextTiles,
-                  terrain: model.landscape.terrain,
-                ) &&
-                (!devSettings.hideOrthogonalContext ||
-                    sameFocusOrientation(active, p))
-            ? devSettings.focusContextOpacity
-            : 0.0;
-        if (target == 0 &&
-            contextFade.value >= .999 &&
-            !contextTransitionFrom.containsKey(p.id) &&
-            !additions.any((m) => contextTransitionFrom.containsKey(m.id))) {
-          return;
-        }
         for (final mesh in additions) {
-          if (focusedMeshIds.contains(mesh.id)) continue;
-          meshes.add(mesh);
-          contextOpacity[mesh.id] = target;
+          if (!focusedMeshIds.contains(mesh.id)) meshes.add(mesh);
         }
       }
 
@@ -1124,83 +1119,13 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
           );
         }
       }
-    } else if (contextPlane != null) {
-      for (final mesh in meshes) {
-        if (focusedMeshIds.contains(mesh.id)) continue;
-        final p =
-            model.planes[mesh.id] ??
-            model.planes[model.objects[mesh.id]?.planeId];
-        if (p != null) {
-          contextOpacity[mesh.id] =
-              adjacentFocusContext(
-                contextPlane!,
-                p,
-                model.objects,
-                model.planes,
-                tiles: devSettings.focusContextTiles,
-                terrain: model.landscape.terrain,
-              )
-              ? devSettings.focusContextOpacity
-              : 0;
-        }
-      }
     }
-    // Terrain edge meshes are cached; focus cropping must never leak into a
-    // later focus or the overall view.
     for (final mesh in meshes) {
       mesh.cropBox = null;
     }
-    if (active != null) {
-      final crop = devSettings.focusCropEnabled
-          ? focusCropBox(
-              active,
-              xPadding: devSettings.focusCropX,
-              zPadding: devSettings.focusCropZ,
-              above: devSettings.focusCropAbove,
-              below: devSettings.focusCropBelow,
-            )
-          : null;
-      final ownerPlane = model.planes[model.objects[active.owner]?.planeId];
-      for (final mesh in meshes) {
-        if (mesh.id == active.id ||
-            (mesh.id == active.owner &&
-                (ownerPlane == null ||
-                    sameFocusOrientation(active, ownerPlane))) ||
-            mesh.id == model.editId ||
-            mesh.id.startsWith('preview') ||
-            mesh.id.startsWith('cut-')) {
-          continue;
-        }
-        final terrainWall = mesh.id.startsWith('terrain-wall-');
-        CraftObject? object = model.objects[mesh.id];
-        object ??= model.objects.values
-            .where((o) => mesh.id.startsWith('${o.id}-'))
-            .firstOrNull;
-        final plane = model.planes[mesh.id] ?? model.planes[object?.planeId];
-        final sameOrientation = terrainWall
-            ? !isFloorOrientation(active)
-            : plane == null ||
-                  sameFocusOrientation(
-                    active,
-                    plane,
-                    upright: object?.kind == CraftKind.screen,
-                  );
-        if (devSettings.hideOrthogonalContext && !sameOrientation) {
-          contextOpacity[mesh.id] = 0;
-        } else if (terrainWall ||
-            (mesh.id == active.owner && !sameOrientation)) {
-          contextOpacity[mesh.id] = devSettings.focusContextOpacity;
-        }
-        if (crop != null) {
-          // Fully contained atlas sprites retain the existing fast batch path.
-          final world = mesh.transformMatrix;
-          if (!mesh.geometry.vertices.every(
-            (p) => crop.contains(world.transformed3(p)),
-          )) {
-            mesh.cropBox = crop;
-          }
-        }
-      }
+    if (_geometryBenchmark.active) {
+      meshes.add(_geometryBenchmark.ground);
+      meshes.addAll(_geometryBenchmark.meshes);
     }
     baseOpacity
       ..clear()
@@ -1210,16 +1135,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       ..addEntries(meshes.map((m) => MapEntry(m.id, m.material.color)));
     edgeShading.synchronize(meshes);
     scene.setMeshes(meshes);
-    residents.sync(
-      scene,
-      model.bedrooms.where(
-        (b) =>
-            model.activePlane == null ||
-            (preview && model.activeBedroom?.floorId == b.floorId),
-      ),
-      model.objects,
-      model.planes,
-    );
+    residents.sync(scene, model.bedrooms, model.objects, model.planes);
     final craftedIds = meshes.map((m) => m.id).toSet();
     for (final m in scene.meshes) {
       if (!craftedIds.contains(m.id)) {
@@ -1266,7 +1182,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
           : null;
       final original = mesh.material;
       var opacity = baseOpacity[mesh.id] ?? original.opacity;
-      if (model.activePlane == null) {
+      {
         final object = model.objects[mesh.id];
         if (object != null &&
             (object.kind == CraftKind.wall ||
@@ -1357,27 +1273,8 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   void _focusPlane() {
     final plane = model.activePlane;
     if (plane == null || viewport.isEmpty) return;
-    final pose = focusPlanePose(
-      camera,
-      plane,
-      viewport,
-      preview: preview,
-      contextTiles: devSettings.focusContextTiles,
-      safeZone: _safeZone,
-      safeZoneFill: devSettings.safeZoneFill,
-    );
-    semiFocusPose = _Pose.at(pose.position, pose.target, pose.up, pose.fov);
-    final full = focusPlanePose(
-      camera,
-      plane,
-      viewport,
-      fullFocus: true,
-      contextTiles: devSettings.focusContextTiles,
-      safeZone: _safeZone,
-      safeZoneFill: devSettings.safeZoneFill,
-    );
-    fullFocusPose = _Pose.at(full.position, full.target, full.up, full.fov);
-    _transition(_zoomFocusPose());
+    // Focus changes input ownership, never the incoming camera pose.
+    semiFocusPose = fullFocusPose = worldPose ?? _Pose(camera);
   }
 
   _Pose _zoomFocusPose() {
@@ -1486,7 +1383,8 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
         normal: plane.normal,
       );
       if (p == null || !region.contains(plane.local(p))) return;
-      if (devSettings.fog.enabled &&
+      if (!_geometryBenchmark.active &&
+          devSettings.fog.enabled &&
           model.discoveryDistance(Offset(p.x, -p.z)) >=
               devSettings.fog.style.margin + devSettings.fog.style.softness) {
         return;
@@ -1670,7 +1568,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
           model.setDepth(.035, continuous: true);
           pullStartDepth = .035;
         }
-        if (preview) {
+        {
           final plane = model.activePlane!;
           pullPlane = plane.point(point, pullStartDepth);
           final axis = plane.normal;
@@ -1687,7 +1585,9 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
         if (!pulling) model.finishGesture();
       }
     } else if (!preview &&
-        (model.tool == CraftTool.scissors || model.tool == CraftTool.place) &&
+        (model.tool == CraftTool.scissors ||
+            model.tool == CraftTool.place ||
+            model.tool == CraftTool.lightPencil) &&
         !secondary) {
       final node = _nodeAt(e.localPosition);
       if (node != null) {
@@ -1738,7 +1638,6 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     }
     if (pointers.length > 1) strokeShake.reset();
     controls.move(e.kind, e.localPosition);
-    final oldPositions = pointers.values.toList();
     pointers[e.pointer] = e.localPosition;
     final delta = e.localPosition - (previous ?? e.localPosition);
     if (down != null && (e.localPosition - down!).distance > 6) moved = true;
@@ -1766,10 +1665,6 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       final values = pointers.values.toList();
       final span = (values[0] - values[1]).distance;
       final ratio = lastSpan > 0 ? span / lastSpan : 1.0;
-      final dx =
-          ((values[0] + values[1]) / 2 -
-                  (oldPositions[0] + oldPositions[1]) / 2)
-              .dx;
       final swipe = planeSwipe.update(
         pointers.values,
         PlaneSwipe.threshold(viewport),
@@ -1786,13 +1681,19 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       } else if (!planeSwipe.consumed &&
           !transition.isAnimating &&
           (model.activePlane == null || planeSwipe.zooming)) {
-        _navigateMulti(dx, ratio);
+        _navigateMulti(ratio);
       } else if (model.activePlane == null && !transition.isAnimating) {
-        _navigateMulti(dx, ratio);
+        _navigateMulti(ratio);
       }
       if (model.activePlane == null || planeSwipe.zooming) lastSpan = span;
     } else if (!multi && model.activePlane == null) {
-      if (controls.profile.worldDrag(pointers: 1, buttons: e.buttons) ==
+      if (controls.profile.worldDrag(
+            pointers: 1,
+            buttons: e.buttons,
+            origin: down ?? e.localPosition,
+            viewport: viewport,
+            zones: devSettings.worldGestureZones,
+          ) ==
           WorldDrag.rotate) {
         mapCamera.restorePose(
           lookAt: mapCamera.lookAt,
@@ -1993,6 +1894,15 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       moved = true;
       return;
     }
+    if (drawing && model.tool == CraftTool.lightPencil && !multi) {
+      model.finishGesture();
+      drawing = false;
+      moved = true;
+      setState(() {
+        livePointer = null;
+      });
+      return;
+    }
     if (!moved && !multi && drawing && model.draft.path.length == 1) {
       model.cancelGesture();
       drawing = false;
@@ -2067,14 +1977,9 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     model.enter(next);
   }
 
-  void _navigateMulti(double dx, double ratio) {
+  void _navigateMulti(double ratio) {
     if (model.activePlane == null) {
       if ((ratio - 1).abs() > .004) mapCamera.zoomByScale(ratio);
-      mapCamera.restorePose(
-        lookAt: mapCamera.lookAt,
-        distance: mapCamera.distance,
-        yaw: mapCamera.yaw - dx * .008,
-      );
     } else {
       _zoomCrafting(ratio);
     }
@@ -2116,7 +2021,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     }
     controls.move(event.kind, event.localPosition);
     if (model.activePlane == null) {
-      _navigateMulti(event.panDelta.dx, event.scale / trackpadScale);
+      _navigateMulti(event.scale / trackpadScale);
     } else {
       final swipe = planeSwipe.updateTrackpad(
         event.pan,
@@ -2134,7 +2039,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       if (swipe != null) {
         _navigatePlane(swipe);
       } else if (planeSwipe.zooming) {
-        _navigateMulti(0, event.scale / trackpadScale);
+        _navigateMulti(event.scale / trackpadScale);
       }
     }
     if (model.activePlane == null || planeSwipe.zooming) {
@@ -2365,14 +2270,32 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                               subtilesPerTile: BedroomResidents.subtiles,
                               listenable: scene,
                             ),
-                            FogOverlay(
-                              key: const ValueKey('paper-fog'),
-                              model: model,
-                              camera: camera,
-                              settings: devSettings.fog,
-                              cameraChanges: scene,
-                              animate: widget.animateFog,
-                            ),
+                            if (!_geometryBenchmark.active)
+                              FogOverlay(
+                                key: const ValueKey('paper-fog'),
+                                model: model,
+                                camera: camera,
+                                settings: devSettings.fog,
+                                cameraChanges: scene,
+                                animate: widget.animateFog,
+                              ),
+                            if (model.activePlane != null)
+                              IgnorePointer(
+                                child: DecoratedBox(
+                                  key: const ValueKey('focus-vignette'),
+                                  decoration: BoxDecoration(
+                                    gradient: RadialGradient(
+                                      radius: .85,
+                                      colors: [
+                                        Colors.transparent,
+                                        Color(0x667e8999),
+                                      ],
+                                      stops: [.5, 1],
+                                    ),
+                                  ),
+                                  child: SizedBox.expand(),
+                                ),
+                              ),
                             IgnorePointer(
                               child: CustomPaint(
                                 key: const ValueKey('adjacent-grid-overlay'),
@@ -2380,7 +2303,8 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                                   model,
                                   camera,
                                   scene,
-                                  enabled: !preview,
+                                  enabled:
+                                      !preview && !model.sharedLandscapeFocus,
                                   opacity: Curves.easeInOutSine.transform(
                                     contextFade.value,
                                   ),
@@ -2400,8 +2324,16 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                                   ready: _drawingReady,
                                   segmentPulse: 1 - segmentGlow.value,
                                   completedTrace: completedTrace,
-                                  traceOverride: drawing ? null : releasedTrace,
-                                  lineOpacity: drawing
+                                  traceOverride:
+                                      drawing ||
+                                          model.tool == CraftTool.lightPencil ||
+                                          model.tool == CraftTool.volume
+                                      ? null
+                                      : releasedTrace,
+                                  lineOpacity:
+                                      drawing ||
+                                          model.tool == CraftTool.lightPencil ||
+                                          model.tool == CraftTool.volume
                                       ? 1
                                       : 1 -
                                             Curves.easeOut.transform(
@@ -2636,9 +2568,19 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                 ],
                 if (devToolsOpen && _devToolsRect != null)
                   Positioned.fromRect(
+                    key: const ValueKey('protoplane-devtools-dock'),
                     rect: _devToolsRect!,
                     child: ProtoplaneDevToolsPanel(
                       key: const ValueKey('docked-devtools'),
+                      benchmarkPanel: GeometryBenchmarkPanel(
+                        benchmark: _geometryBenchmark,
+                        scene: scene,
+                        changed: () {
+                          _configureOrbit();
+                          _refreshScene();
+                          setState(() {});
+                        },
+                      ),
                       settings: devSettings,
                       store: settingsStore,
                       changed: _applyDevSettings,
@@ -2766,6 +2708,13 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   Widget _tools() {
     final buttons = <Widget>[
       _button(
+        'Light pencil',
+        Icons.draw_outlined,
+        () => model.selectTool(CraftTool.lightPencil),
+        active: model.tool == CraftTool.lightPencil,
+      ),
+      const SizedBox(height: 8),
+      _button(
         'Scissors',
         Icons.content_cut,
         () => model.selectTool(CraftTool.scissors),
@@ -2773,7 +2722,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       ),
       if (model.paperSurface) ...[
         const SizedBox(height: 8),
-        _button('Pencil', Icons.edit_outlined, () {
+        _button('Graphite pencil', Icons.edit_outlined, () {
           model.selectedMotif = null;
           model.selectTool(CraftTool.pencil);
         }, active: model.tool == CraftTool.pencil),
@@ -3066,6 +3015,16 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                       FilledButton(
                         onPressed: () => _completeDrawing(allowOpen: true),
                         child: const Text('Finish'),
+                      ),
+                    if (model.editId == null &&
+                        model.closed &&
+                        [
+                          CraftTool.lightPencil,
+                          CraftTool.volume,
+                        ].contains(model.tool))
+                      FilledButton(
+                        onPressed: () => _completeDrawing(),
+                        child: const Text('Create'),
                       ),
                     if (model.editId != null)
                       FilledButton(

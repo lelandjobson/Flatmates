@@ -24,6 +24,7 @@ import 'bedrooms.dart';
 
 part 'pencil_controller.dart';
 part 'linear_placement.dart';
+part 'landscape_drawing.dart';
 
 class ProtoplaneController extends ChangeNotifier {
   bool impliedProtoplanes = false;
@@ -47,6 +48,15 @@ class ProtoplaneController extends ChangeNotifier {
   int motifTurns = 0;
   Offset? motifTile;
   final Map<String, CraftGrid> _paperGrids = {};
+
+  // Legacy authored fixtures can retain their explicit tile editing workflow.
+  // The interactive view enables in-place drawing on initialization.
+  bool inPlaceDrawing = false;
+  void enableInPlaceDrawing() {
+    if (inPlaceDrawing) return;
+    inPlaceDrawing = true;
+    tool = CraftTool.lightPencil;
+  }
 
   ProtoplaneController() {
     landscape = PaperLandscape();
@@ -358,7 +368,12 @@ class ProtoplaneController extends ChangeNotifier {
   bool get canUndo => _undo.isNotEmpty;
   bool get canRedo => _redo.isNotEmpty;
   CraftPlane? get activePlane => planes[activePlaneId];
-  CraftGrid? get grid => paperSurface
+  CraftGrid? get grid => _drawingGrid == null
+      ? null
+      : (inPlaceDrawing ? orthogonalGrid(_drawingGrid!) : _drawingGrid!);
+  CraftGrid? get _drawingGrid => sharedLandscapeFocus
+      ? orthogonalDrawingGrid
+      : paperSurface
       ? paperGrid
       : activePlane == null
       ? null
@@ -528,6 +543,14 @@ class ProtoplaneController extends ChangeNotifier {
     }
     lastHarvest = null;
     activePlaneId = planeId;
+    if (editObject == null &&
+        [
+          CraftTool.lightPencil,
+          CraftTool.place,
+          CraftTool.volume,
+        ].contains(tool)) {
+      _enterLandscapeDrawing(planeId);
+    }
     editId = editObject;
     if (editObject != null) tool = CraftTool.scissors;
     if (editObject == null &&
@@ -571,6 +594,18 @@ class ProtoplaneController extends ChangeNotifier {
     cancelPencil();
     if (_gestureBefore != null) cancelGesture();
     tool = value;
+    final active = activePlane;
+    if (editId == null && active != null) {
+      if ([
+        CraftTool.lightPencil,
+        CraftTool.place,
+        CraftTool.volume,
+      ].contains(value)) {
+        _enterLandscapeDrawing(active.id);
+      } else if (sharedLandscapeFocus) {
+        activePlaneId = active.supports.first;
+      }
+    }
     if (activePlaneId?.startsWith('surface-') == true &&
         objects[activePlane?.owner]?.linear != null) {
       editId = value == CraftTool.scissors || value == CraftTool.volume
@@ -948,6 +983,10 @@ class ProtoplaneController extends ChangeNotifier {
     for (final part in occupancy(object)) {
       if (landscape.terrain.tiles.containsKey(plane.id) == true &&
           !landscape.terrain.supports(plane.id, part)) {
+        return 'Placement needs exposed support beneath its entire footprint';
+      }
+      if (plane.id.startsWith('landscape-drawing-') &&
+          !_landscapeSupports(plane, part)) {
         return 'Placement needs exposed support beneath its entire footprint';
       }
       if (!plane.region.containsRegion(part)) return 'Outside the plane';
@@ -1452,7 +1491,10 @@ class ProtoplaneController extends ChangeNotifier {
   void _derivePlanes() {
     _paperGrids.clear();
     final old = Map<String, CraftPlane>.of(planes);
-    planes.removeWhere((id, p) => !id.startsWith('ground-'));
+    planes.removeWhere(
+      (id, p) =>
+          !id.startsWith('ground-') && !id.startsWith('landscape-drawing-'),
+    );
     // Objects are inserted parent-first and IDs remain stable through saves.
     for (final object in objects.values) {
       if (object.linear != null) {
@@ -1816,7 +1858,11 @@ class ProtoplaneController extends ChangeNotifier {
           (p.v.length - 1).abs() > 1e-5 ||
           p.u.dot(p.v).abs() > 1e-5 ||
           (p.owner != null && !objects.containsKey(p.owner)) ||
-          p.supports.any((s) => !objects.containsKey(s))) {
+          p.supports.any(
+            (s) => p.id.startsWith('landscape-drawing-')
+                ? !landscape.terrain.tiles.containsKey(s)
+                : !objects.containsKey(s),
+          )) {
         throw const FormatException('Invalid plane');
       }
       for (final g in p.grids) {

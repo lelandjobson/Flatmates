@@ -17,7 +17,6 @@ import '../screens/book_view.dart';
 import '../screens/craft_assembly_view.dart';
 import '../screens/craft_model_preview_view.dart';
 import '../screens/landscape_tiles_debug_view.dart';
-import '../screens/game_view.dart';
 import '../screens/protoplane_concept_view.dart';
 import '../screens/expression_lab_view.dart';
 import '../screens/movement_lab_view.dart';
@@ -49,11 +48,6 @@ final router = GoRouter(
       path: '/dev-routes',
       name: 'dev_routes',
       builder: (context, state) => const DevRoutesScreen(),
-    ),
-    GoRoute(
-      path: '/gameview',
-      name: 'gameview',
-      builder: (context, state) => const GameView(),
     ),
     GoRoute(
       path: '/',

@@ -1,4 +1,5 @@
 import 'models.dart';
+import '../gestures/game_controls.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'fog_settings.dart';
@@ -9,6 +10,7 @@ import 'crumpled_paper.dart';
 import 'stroke_color_picker.dart';
 
 class ProtoplaneSettings {
+  WorldGestureZones worldGestureZones = WorldGestureZones.center;
   FogSettings fog = FogSettings();
   double nearestDistance = 2, farthestDistance = 25;
   double tileGridOpacity = .12;
@@ -48,7 +50,7 @@ class ProtoplaneSettings {
   SurfaceAppearance landscapeAppearance = SurfaceAppearance(),
       craftedAppearance = SurfaceAppearance();
   bool gridLines = false;
-  int protoplaneCells = 3;
+  int protoplaneCells = 1;
   GridConnections? _gridConnections;
   GridConnections get gridConnections =>
       _gridConnections ?? GridConnections.orthogonal;
@@ -60,6 +62,7 @@ class ProtoplaneSettings {
   Map<String, dynamic> toJson() => {
     'version': 1,
     'fog': fog.toJson(),
+    'worldGestureZones': worldGestureZones.name,
     'nearestDistance': nearestDistance,
     'farthestDistance': farthestDistance,
     'tileGridOpacity': tileGridOpacity,
@@ -118,6 +121,10 @@ class ProtoplaneSettings {
     }
 
     fog = FogSettings.fromJson(json['fog']);
+    worldGestureZones = WorldGestureZones.values.firstWhere(
+      (zones) => zones.name == json['worldGestureZones'],
+      orElse: () => WorldGestureZones.center,
+    );
     nearestDistance = json.containsKey('nearestDistance')
         ? number('nearestDistance', 1, 59.5)
         : 2;
@@ -168,7 +175,7 @@ class ProtoplaneSettings {
     if (reset is! bool) {
       throw const FormatException('Invalid drawing reset setting');
     }
-    final cells = json['protoplaneCells'] ?? 3;
+    final cells = json['protoplaneCells'] ?? 1;
     if (cells is! int || cells < 1 || cells > 5) {
       throw const FormatException('Invalid grid resolution');
     }
@@ -355,10 +362,12 @@ class ProtoplaneDevToolsPanel extends StatefulWidget {
     required this.store,
     required this.changed,
     required this.onClose,
+    this.benchmarkPanel,
     this.initialError,
     this.clearWorld,
     this.revealAllAreas,
   });
+  final Widget? benchmarkPanel;
   final ProtoplaneSettings settings;
   final ProtoplaneStorage store;
   final VoidCallback changed, onClose;
@@ -434,7 +443,7 @@ class _ProtoplaneDevToolsPanelState extends State<ProtoplaneDevToolsPanel> {
               width: constraints.maxWidth / .75,
               height: constraints.maxHeight / .75,
               child: DefaultTabController(
-                length: 6,
+                length: widget.benchmarkPanel == null ? 6 : 7,
                 child: Column(
                   children: [
                     Row(
@@ -452,18 +461,20 @@ class _ProtoplaneDevToolsPanelState extends State<ProtoplaneDevToolsPanel> {
                         ),
                       ],
                     ),
-                    const TabBar(
+                    TabBar(
                       isScrollable: true,
                       tabAlignment: TabAlignment.start,
                       labelPadding: EdgeInsets.symmetric(horizontal: 6),
                       labelStyle: TextStyle(fontSize: 14),
                       tabs: [
-                        Tab(text: 'Crafting'),
+                        const Tab(text: 'Crafting'),
                         Tab(text: 'Lighting'),
                         Tab(text: 'Camera'),
                         Tab(text: 'Style'),
                         Tab(text: 'Fog'),
                         Tab(text: 'Focus context'),
+                        if (widget.benchmarkPanel != null)
+                          const Tab(text: 'Benchmark'),
                       ],
                     ),
                     Expanded(
@@ -674,6 +685,29 @@ class _ProtoplaneDevToolsPanelState extends State<ProtoplaneDevToolsPanel> {
                           ListView(
                             padding: const EdgeInsets.all(16),
                             children: [
+                              DropdownButtonFormField<WorldGestureZones>(
+                                initialValue: settings.worldGestureZones,
+                                decoration: const InputDecoration(
+                                  labelText: 'Gesture zones',
+                                ),
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: WorldGestureZones.split,
+                                    child: Text('Split'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: WorldGestureZones.center,
+                                    child: Text('Center'),
+                                  ),
+                                ],
+                                onChanged: (value) {
+                                  if (value == null) return;
+                                  update(
+                                    () => settings.worldGestureZones = value,
+                                  );
+                                  changed();
+                                },
+                              ),
                               SwitchListTile(
                                 title: const Text('Gesture overlay'),
                                 value: settings.showGestureDebug,
@@ -1032,6 +1066,8 @@ class _ProtoplaneDevToolsPanelState extends State<ProtoplaneDevToolsPanel> {
                               ],
                             ],
                           ),
+                          if (widget.benchmarkPanel != null)
+                            widget.benchmarkPanel!,
                         ],
                       ),
                     ),
