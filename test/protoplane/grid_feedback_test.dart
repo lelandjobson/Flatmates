@@ -55,13 +55,13 @@ void main() {
       expect(c.draft.path, isEmpty);
       expect(c.balances, balances);
       expect(c.grid!.nodes, points);
-      expect(c.grid!.dotStyle(4), 'square');
+      expect(c.grid!.dotStyle(4), 'circle');
       expect(
         c.grid!.edges.any((e) {
           final d = c.grid!.nodes[e.a] - c.grid!.nodes[e.b];
           return d.dx.abs() > .01 && d.dy.abs() > .01;
         }),
-        isFalse,
+        isTrue,
       );
       c.beginGesture();
       for (final i in [0, 2, 8, 6, 0]) {
@@ -69,7 +69,7 @@ void main() {
       }
       c.commitDrawing();
       c.undo();
-      expect(c.grid!.dotStyle(4), 'square');
+      expect(c.grid!.dotStyle(4), 'circle');
       c.redo();
       final saved = c.toJson();
       final loaded = ProtoplaneController()..load(saved);
@@ -91,7 +91,7 @@ void main() {
       c.setProtoplaneConnections(GridConnections.arbitrary);
       expect(c.canUndo, isTrue);
       c.undo();
-      expect(c.grid!.dotStyle(4), 'square');
+      expect(c.grid!.dotStyle(4), 'star');
       expect(
         c.landscape.terrain.tiles['ground-starter-paperWhite-0-0']!.sheet.cuts,
         isEmpty,

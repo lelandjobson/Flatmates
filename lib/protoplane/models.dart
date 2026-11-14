@@ -24,9 +24,21 @@ enum CraftKind {
   blanket,
   lamp,
   storage,
+  tableLeg,
+  pictureFrame,
+  poolLining,
 }
 
-enum CraftTool { scissors, volume, place, eraser, pencil }
+enum CraftTool {
+  scissors,
+  volume,
+  place,
+  eraser,
+  pencil,
+  orbit,
+  program,
+  combine,
+}
 
 enum GridConnections { orthogonal, diagonal, arbitrary }
 

@@ -52,7 +52,7 @@ void main() {
     ]) {
       expect(c.appendNode(c.grid!.nodes.indexOf(point)), isTrue);
     }
-    expect(c.matches, contains(CraftKind.bedFrame));
+    expect(c.matches, [CraftKind.floor]);
     c.choose(CraftKind.bedFrame);
     expect(c.completionError(), isNull);
     expect(c.commitDrawing(), isNotNull);

@@ -105,11 +105,13 @@ CraftGrid paperDrawingGrid(
   Iterable<PencilSegment> marks,
   List<CraftKind> recipes, {
   bool pencil = false,
+  double? spacing,
+  GridConnections? connections,
   List<Region>? material,
 }) {
   final committed = marks.toList();
   final raw = [
-    ...paperGridLines(region, spacing: pencil ? .25 : .5),
+    ...paperGridLines(region, spacing: spacing ?? (pencil ? .25 : .5)),
     if (!pencil) ...clipPencil(committed, region),
   ];
   final lines = material == null
@@ -163,6 +165,28 @@ CraftGrid paperDrawingGrid(
       }
     }
   }
+  if (connections != null && connections != GridConnections.orthogonal) {
+    final step = spacing ?? (pencil ? .25 : .5);
+    for (var a = 0; a < nodes.length; a++) {
+      for (var b = a + 1; b < nodes.length; b++) {
+        final key = '$a/$b', delta = nodes[b] - nodes[a];
+        if (linked.contains(key) ||
+            (connections == GridConnections.diagonal &&
+                (delta.dx.abs() > step + geometryEpsilon ||
+                    delta.dy.abs() > step + geometryEpsilon))) {
+          continue;
+        }
+        final segment = PencilSegment(nodes[a], nodes[b]);
+        final coverage = newPencilCoverage([
+          for (final r in material ?? [region]) ...clipPencil([segment], r),
+        ], const []);
+        if (coverage.fold<double>(0, (v, s) => v + s.length) >=
+            segment.length - geometryEpsilon) {
+          links.add(GridEdge(a, b));
+        }
+      }
+    }
+  }
   return CraftGrid(
     id: '$id-${pencil ? 'pencil' : 'paper'}',
     name: 'Paper',
@@ -170,6 +194,7 @@ CraftGrid paperDrawingGrid(
     edges: links,
     recipes: recipes,
     tiled: true,
+    connectionStyle: connections,
   );
 }
 

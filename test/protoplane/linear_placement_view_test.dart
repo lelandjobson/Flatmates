@@ -67,7 +67,7 @@ void main() {
       await tester.tap(find.byTooltip('Scissors'));
       await tester.pumpAndSettle();
       expect(c.editId, wall.id);
-      await tester.tap(find.byTooltip('Pencil'));
+      await tester.tap(find.byTooltip('Light pencil'));
       await tester.pumpAndSettle();
       expect(c.editId, isNull);
       expect(c.paperSurface, isTrue);
@@ -79,7 +79,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 701));
       await pencil.up();
       await tester.pumpAndSettle();
-      expect(c.marksOn(c.activePlane!), isNotEmpty);
+      expect(c.workspace.lines.values.any((lines) => lines.isNotEmpty), isTrue);
+      expect(c.marksOn(c.activePlane!), isEmpty);
       expect(tester.takeException(), isNull);
       await tester.runAsync(() async {
         final boundary = tester.renderObject<RenderRepaintBoundary>(

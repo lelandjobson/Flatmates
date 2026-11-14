@@ -4,107 +4,131 @@ Open `protoplane_concept` in the developer menu (`/protoplane-concept`). This
 prototype has its own world, paper inventory, history, and local save. It does
 not change GameView or the grid-puzzle rules.
 
-## Interaction
+## Light pencil and regions
 
-- In the world, drag to pan. Touch taps select at the center reticle; mouse
-  clicks select at the cursor. Two-finger horizontal swipes or secondary mouse
-  dragging rotate; pinching or the mouse wheel zooms.
-- Select a protoplane to draw on its dots. Continue a path across separate
-  drags. Only the displayed connections can be used. Ground connections may
-  be diagonal, but pass through intervening dots. Lines cannot self-intersect.
-- A valid drawing sustains a glow in the selected line color. Choose a matching object, inspect its preview
-  and material quote, and press Create. Swiping the bottom carousel changes
-  acetate grids without losing their drafts. The right carousel chooses paper.
-- Select a crafted object to craft on its surface. Edit changes that object
-  using its original source grid. A closed scissors path removes its region;
-  a boundary-to-boundary path splits paper and retains both pieces. On a Screen,
-  cuts trim or split its original open path into retained panel runs.
-- Volume taps give a region thickness. Toggle 3D (or double-tap background)
-  and drag the cap along its normal to adjust depth. Apply confirms an edit.
-- Pinch inward past the exit threshold, scroll outward, or use Back to return
-  to the cached world perspective. Undo/redo cover strokes and committed edits.
+Orbit and Light pencil stay available in world and focus views. Orbit is the
+teal first tool: primary or secondary drag rotates, middle drag pans, and wheel
+or pinch zooms. Orbit surface taps enter focus. Existing two-finger and trackpad
+navigation also works while crafting. Navigation cancels the active drawing
+gesture and preserves completed light paths and regions.
+Leaving focus selects Orbit, so the next drag or surface tap can navigate immediately.
 
-## Construction and recipes
+Light pencil draws free glowing orange paths on any material. Pointer-down
+chooses a surface and locks the stroke to its plane without moving the camera.
+Light pencil, Cut, and Place use the configured drawing resolution and
+connections, orthogonal by default. Connected coplanar tiles can be crossed;
+different elevations and perpendicular faces remain separate. Physical object
+ownership and original coordinate frames are retained.
+Light pencil uses the same animated pips, six-pixel strokes, segment glow, and
+cursor-following partial lines as Cut and Place, including in the world view.
 
-Each ground tile has a 5×5 dot grid. Any simple closed outline can become a
-floor. Sibling pieces may share boundaries but not material area. Floor
-surfaces receive three deterministic generated grids; generated node/edge
-definitions are saved, so they never reroll on reopen. Templates guarantee
-drawable Rug, Tabletop, Bench, Planter, and Screen examples across the grids.
-Curved connections are quadratic paths flattened to a fixed local tolerance.
+A closed loop creates a region. Boundary-to-boundary paths subdivide existing
+regions, including intersections with earlier paths. Incomplete paths remain
+available to close or extend during the session. Region interiors do not
+overlap; uncovered remainder areas are implied regions without orange outlines.
+A program hover temporarily fills its target and previews the generated geometry.
+Combine selects two adjacent regions, removes their internal seam and preserves
+holes. Corner contacts and different planes cannot combine.
 
-Recognition combines geometry (oriented aspect ratio, area, curves), topology
-(open path/closed region), and support context. Rotation, reflection, winding,
-and start-point order do not determine identity. Ambiguous matches are offered
-as choices. Identity survives later cuts and depth edits.
+Each region has one use. A successful program consumes only its target; shared
+boundaries needed by other regions remain. The consumed area can become implied
+space again where material permits. Clear regions clears the workspace. Removed
+lines fade, respecting reduced motion. Undo/redo restores regions and their use
+alongside material edits. Regions survive focus changes and orbiting, but end
+when leaving the prototype and never enter world saves.
 
-Floors generate wall candidates on their outer straight edges. Any wall
-unlocks one upper-floor candidate over its supporting floor at one tile-width
-story height. Walls support interior windows and bottom-touching doors;
-openings remove actual wall material. Window and planter cavities are stored
-in their geometry, including their inner sidewall material costs. Upper floors
-repeat the construction loop. No structural simulation is performed.
+## Program stickerbook
 
-Support ownership and wall support lists are explicit. Edits that could strand
-existing attachments or occupied derived planes are conservatively rejected.
-Unused derived planes are rebuilt after edits. Screen occupancy follows all
-its panel segments; volumetric collision uses convex triangular prisms and
-separating axes, including differently oriented planes.
+Open Programs with the book button, `/`, or Cmd/Ctrl+K. Search names and aliases;
+arrow keys select a sticker, Enter chooses it, and Escape closes search. Drag a
+sticker onto a region, or choose it and click/tap a region. Toolbar Cut, Place,
+Eraser, Volume, and Combine icons can also be dragged onto regions; tapping
+them retains their direct-tool behavior. The preview includes a numeric paper
+quote. Invalid targets use red fill and a reason icon with an
+accessible semantic description: size, orientation/material, collision, missing
+support, insufficient paper, or an unusable outline.
+
+The initial catalog is explicit:
+
+- Cut removes the target material using existing cutting, harvesting, and
+  dependency protections. Erase removes graphite and legacy marks.
+- Place fills the outline with plain paper: horizontal floors or vertical walls.
+  Direct open Place paths still construct walls/floors, and direct Cut and Eraser
+  gestures remain available. Closed paths no longer infer furniture.
+- Volume stages a selected paper region for depth adjustment. Apply commits the
+  subdivision and consumes the region; Cancel changes nothing.
+- House fits the largest supported grid-aligned rectangle fully contained in
+  the region, accounting for holes and obstacles. Both dimensions must be at
+  least one tile. Equal-area ties prefer the drop point, then stable coordinate
+  order. An L-shaped three-tile region fits a two-tile house. It creates an
+  editable floor, four walls, a doorway on the side nearest the drop, and a flat
+  roof. Story height is 1, thickness .02, and doorway .25 × .7.
+- Pool follows concavity and holes, preserving islands. It requires area .25
+  and a connected interior after a .02 inward lining offset. It excavates
+  terrain through depth .5, creates a paper bottom and lining, and renders water
+  .05 below the rim. Unrelated structures and their supports are protected.
+  Water is visual only and disappears if the editable basin is breached.
+- Rug follows a supported horizontal region with a thin paper layer.
+- Table fits a contained rectangle at least .5 × .5 and creates a .35-high table
+  with a .03 tabletop and four legs.
+- Picture Frame fits a vertical rectangle at least .25 × .25, with an empty
+  center, border 10% of the shorter side, and depth .02.
+
+House, Table, and Picture Frame consume the entire selected region even when
+the fitted rectangle uses only part of it. The remainder becomes implied space.
+There is no runtime craft recognition, inferred Transform picker, paid pencil
+dwell, or motif creation UI. Previously saved objects and marks remain editable.
 
 ## Material and history
 
-A tile is one square world unit and 128 material units. Paper starts with 256
-white-paper units and zero graphite or cork. Closed crafts cost
-`ceil(128 × (net planar area + perimeter including holes × depth))`.
-Screen sheets cost `ceil(128 × path length × height)`. Bench geometry is a
-stylized seat and supports; its material quote uses its drawn extrusion
-envelope. This is a prototype accounting convention, not a paper unfolding.
+One square tile is 128 material units. The finite starter balance remains 256
+white paper, with zero graphite and cork. Devtools → Crafting → Unlimited paper
+is enabled by default, including migration from settings without that field.
+It displays `∞`, bypasses white-paper deductions for direct tools and programs,
+and preserves the finite balance. Turning it off restores normal accounting.
+Quotes are always calculated from the same component geometry used for display,
+collision, and supports: net planar area plus perimeter times depth.
 
-Depth increases charge only added side area. Cuts, splits, and reductions
-do not refund material. Undo restores the exact previous balance. A completed
-drag is one history action, independent of pointer-event frequency. Camera
-animation never enters history. Histories and per-grid drafts are session-only.
+Programs evaluate every step on a detached world before mutation. Application
+revalidates current geometry, dependencies, inventory, and region availability.
+A successful program commits geometry, balances, assembly metadata, region use,
+history, and the save callback together as one undo action. Failed operations
+change none of them. Volume consumes its region only after Apply succeeds.
 
 ## Implementation and persistence
 
-`lib/protoplane/` separates geometry, models/grid generation, recognition,
-collision, controller/history, meshing, and storage. The screen adapts these
-to the existing SceneView, WorldPlane, MapLookCameraController, reticle,
-undo/redo controls, and axis-drag projection.
+`RegionWorkspace` stores plane frames, source references, disjoint regions,
+remaining uses, and finite drawn boundaries. A shared surface resolver unions
+connected coplanar work areas without transferring ownership. The program catalog
+uses a common evaluation result containing preview geometry, quote, typed issue,
+and staged world. Rectangle fitting tests fully contained cells, not just their
+corners or centers. Polygon splitting uses the existing planar graph and Region
+Booleans; lining offsets follow Boost.Geometry negative-buffer and miter-join
+ideas ported to Dart, without a native dependency.
 
-Geometry uses Boost.Geometry's Cartesian segment-intersection approach and
-the repository's planar splitting primitives. Vertical decomposition handles
-concavity and holes; seam cancellation preserves disconnected cut results.
-No Boost runtime dependency is introduced.
-
-Native saves live in the application-support directory under
-`protoplane_concept/world.json`, through `path_provider`. Version 2 stores
-planes and their grid definitions, objects and dependencies, stable IDs,
-paper balances, and the seeded landscape with depletion and fractional yields.
-Version 1 saves migrate automatically, retaining existing balances and objects. Writes are serialized and atomically renamed, with a
-previous valid backup. A damaged primary is retained separately when recovery
-uses the backup. If neither save validates, writes remain blocked and Retry
-reloads; an empty world never silently overwrites the damaged data.
+Program outputs are ordinary editable objects. Version 10 adds assembly identity,
+component roles, support references, footprints, and reconstruction parameters.
+Pool water derives from saved basin geometry and current lining/bottom components.
+Readers retain earlier supported formats and preserve legacy marks, balances,
+and applicable cut/depth edits. Session regions and previews are excluded.
+Native storage retains serialized writes, atomic rename, valid backup recovery,
+and protection against overwriting an unrecoverable damaged world.
 
 ## Validation
 
-Run `flutter test test/protoplane`. The suite covers geometry and holes,
-template solvability, invariant recognition, all starter craft families,
-paper transactions, support protection, collisions, construction through a
-second story, save/recovery, and mouse/touch interaction. UI checks exercise
-portrait, landscape, and desktop layouts without golden-image dependencies.
-
-The existing GameViewer, WorldPlane, craft-palette, and debug-layout tests are
-useful regression checks. Native desktop builds verify the storage plugin;
-physical-device touch tuning remains a separate playtest.
+Run `flutter test test/protoplane`, relevant shared geometry/rendering tests,
+`flutter analyze`, and `flutter build macos --debug`. Region/program tests cover
+finite partitions, holes, fitting, atomic application, exact undo/redo, water
+basins, supported furniture, stale targets, save round trips, and unlimited-paper
+migration. Widget checks cover world/focus drawing, stickerbook search, cancellation,
+and portrait, landscape, and desktop layouts. Legacy recipe helpers remain for
+loading and regression fixtures; they do not drive the new creation UI.
 
 ## Bedrooms and flatmates
 
-Every floor surface now has a fourth **Bedroom** acetate with Bed frame,
-Lamp, Storage, and Rug recipes. A bed frame's surface offers Mattress;
-a mattress offers Pillow and Blanket. Lamps can also be crafted on tabletops
-and storage. Existing saves gain the added recipes without rerolling their
-original grids or resetting paper balances.
+Existing bedroom objects, their attachment geometry, and resident evaluation
+remain supported. Bedroom recipe families are not in the initial stickerbook;
+legacy saves retain their grids and objects without resetting balances.
 
 For this stage, a bedroom is one authored floor footprint, with no ceiling
 requirement. Every boundary must have actual wall coverage through 0.65 units
@@ -139,7 +163,7 @@ material requirements can be introduced without rewriting room recognition.
 `GameControls` loads desktop or mobile defaults and follows the active pointer
 kind on hybrid devices. Desktop uses a cursor-following reticle; touch keeps
 it centered. Both use the same world aim for highlighting and selection,
-primary dragging to pan, and secondary/two-finger dragging to rotate. Crafting
+Orbit primary/secondary dragging to rotate, middle dragging to pan, and two-finger navigation. Crafting
 always follows the actual pointer. Native trackpad pan/zoom is supported.
 
 Plane focus preserves the incoming azimuth and perspective lens, tips only
@@ -149,7 +173,7 @@ distant context fades out. Context is not selectable while crafting. Back or
 pinching out restores the cached world pose and fades the surroundings back in.
 
 Live strokes follow the permitted straight or curved edge toward the pointer
-before the next node is reached. Reaching a node pulses the completed segment in the line color; a recognized craft brightens the entire trace. These transient effects
+before the next node is reached. Reaching a node pulses the completed segment in the line color; a valid direct operation brightens the entire trace. These transient effects
 do not add history entries or alter the committed geometry.
 
 Crafting supports two local backtracking gestures with Scissors active. Hold
@@ -173,8 +197,8 @@ The nearest dot determines the target so neighboring dots cannot steal a hold
 intended for the start, current endpoint, or a new point. The start remains
 reserved for loop closure; scrubbing the current endpoint can reopen a loop.
 
-Floor acetates repeat their stored motif across the floor without resizing
-recipes. Copies share coincident nodes, retain curved controls, and omit edges
+Legacy floor acetates retain their stored grids and examples without resizing
+existing objects. Copies share coincident nodes, retain curved controls, and omit edges
 whose flattened geometry crosses a boundary or hole. Original node indices
 and example paths remain stable. A persisted tiled marker makes expansion
 idempotent when loading existing saves. Bedroom grids use the same expansion.
@@ -262,50 +286,6 @@ uncommitted trace when a drawing pointer lifts. It defaults on and persists
 as `resetDrawingOnRelease`. Reset happens inside the drawing transaction,
 without spending paper or adding a redundant undo entry for an empty drag.
 Volume gestures and committed objects are unaffected.
-
-## Recognition priority and transformation
-
-Recipes carry an integer `priority` (lower wins); equal priorities use stable
-family order. The creation preview shows the first recognized family instead
-of a candidate chooser. Create still confirms the preview and its paper quote.
-The controller's explicit choice API remains available for authored fixtures.
-
-Selecting a furnished object exposes Transform when its actual outline has
-other valid meanings on the source plane's grids. The picker shows alternative
-names and incremental material quotes. Transformation retains ID, outline,
-holes and paper color, preserves depth when valid, or adopts the new recipe's
-default depth. Added side area is charged; reductions do not refund paper.
-Collision/support checks run before commit, surface grids regenerate for the
-new family, and the change persists with exact undo/redo. Structural pieces,
-openings, screens, and objects with dependents are protected for now.
-
-Valid scissors drawings sustain a line-colored glow while held and commit only on
-release. This includes harvesting, new paper, closed cuts, open recipes, and
-boundary-to-boundary splits. Readiness uses commit validation, including balance,
-overlap, and support constraints, without changing the world. A closed path is
-frozen while held; cancellation or a second finger restores its previous draft.
-Each drawing and successful action is one saved undo transaction. Apply remains
-for depth edits. Transform remains available for existing furnishings.
-
-Paper removal retains its original material, tumbles 10–30 degrees, drifts down
-80 logical pixels, and fades over 400 ms. Disconnected removed pieces animate
-independently; mixed natural colors remain together on connected sheets. Splits
-keep both pieces and pulse only the seam. Placement fills white inward from all
-boundaries (including holes) for 75% of its duration, then settles into its final
-color/pattern. Temporary coplanar textures and distance masks are baked once;
-a fragment shader handles the reveal without per-frame polygon offsets.
-
-Devtools → Crafting exposes Effect duration (100–1,000 ms), Haptics, and Screen
-shake. Removal uses a medium haptic; placement/splits use a light haptic. Shake
-is capped at 2 logical pixels for 140 ms and moves scene content without moving
-controls. Reduced motion uses a 100 ms fade and disables tumble/shake.
-
-Effects never delay commits, saves, or the next drawing. Undo/redo, navigation,
-world switching, and Clear world discard effects and their temporary resources;
-redo does not replay feedback. A material/action profile resolver permits later
-material-specific animation variants. Existing material appearance filters apply
-to effects as well as the completed paper.
-
 
 ## Fused crafting surfaces
 
@@ -485,7 +465,7 @@ Large worlds can combine a coarse chunk/octree for streaming with per-chunk BVHs
 and explicit cross-chunk portal IDs. This avoids committing game semantics to
 one spatial tree or requiring an ECS rewrite before there is a measured need.
 
-Reset drawing on release controls incomplete drafts only. Valid open recipes and
+Reset drawing on release controls incomplete drafts only. Valid open structural paths and
 closed actions commit on release in either mode. With reset disabled, incomplete
 paths persist across drags; invalid completed actions retain actionable errors.
 
@@ -500,20 +480,20 @@ navigation. Placed paper remains smooth. Camera movement reuses the terrain
 atlas (128 pixels per tile with one-pixel gutters).
 
 Release commits geometry and inventory as one undo transaction. Cancellation
-restores the unfinished gesture. Paper uses its fixed half-tile base grid plus
-committed pencil paths; quarter-tile pencil marks supply additional cut paths.
+restores the unfinished gesture. Paper uses the shared drawing grid, without
+requiring paid pencil marks.
 
 ### Paper-only runtime and persistence
 
 Ink and Pastel have been retired. Their world selector, session manager, colored
 noise terrain, collectible pattern atlas, and runtime recipe-grid generators
 have been removed. The controller always creates layered Paper terrain, and
-terrain is non-null throughout the Paper runtime. Surface recipes come from
-support context; one paper drawing graph is regenerated from constituent marks.
+terrain is non-null throughout the Paper runtime. New creation uses explicit
+programs and a shared drawing graph independent of legacy marks.
 Authored legacy recipe examples remain in test fixtures for geometry coverage.
 
 Paper continues to use `world-paper.json` and its atomic backup. Existing Paper
-save versions 3–9 with layered terrain load through the same validator, retaining
+save versions 3–10 with layered terrain load through the same validator, retaining
 objects, inventory, marks, discovery, and attachments. Serialized `preset: paper`
 is kept as a compatibility discriminator, not a runtime switch. Retired presets
 are rejected before mutating the current world. Existing `world.json` and
@@ -562,8 +542,8 @@ row/column diagonals, never arbitrary long or knight-move edges. Long straight
 gestures can traverse intermediate permitted neighbors. All edges still respect
 plane boundaries and holes. The default remains Orthogonal neighbors.
 
-The setting applies to ground, wall-candidate, and upper-floor protoplanes;
-authored recipe grids retain their own connections. Mode changes preserve node
+The setting applies to drawing surfaces, including the connected coplanar
+workspace. Stored legacy grid definitions remain available for existing edits. Mode changes preserve node
 indices, construction, inventory, and history. They cancel the active gesture
 and discard only drafts whose edges are no longer allowed. New protoplanes and
 history restoration use the selected mode. Grid metadata persists dot semantics,
@@ -736,103 +716,11 @@ view restore the gesture snapshot and discard pending input. Revisiting erased
 cells never yields material twice. The eraser affects only the selected tile;
 Place continues to build white paper on exposed support.
 
-### Pencil marks and discovered motifs (Paper world)
+### Legacy graphite marks
 
-Landscape white paper counts as an existing floor: draw furniture directly on
-it without cutting and placing another sheet. Pencil, motifs and mark erasing
-work directly on its remaining material. Save version 8 permits stable terrain
-tile IDs as mark owners; depletion clips marks, and history restores them.
-Lower exposed layers remain accessible to scissors and resource erasing.
-Terrain marks share the bounded pencil cache and composite in the existing
-atlas depth pass.
-
-Placed and landscape white Paper-world surfaces use a fixed half-tile scissor lattice (2×2
-cells), with quarter-tile pencil dots (4×4 cells). Their original support-plane
-coordinate frame is the lattice frame: cutting, fusion and depth changes never
-fit a replacement grid to a fragment's bounding box. Recipe eligibility is
-inherited from the support; the automatic recipe-grid carousel is hidden on
-placed paper. Ink and Pastel behavior is unchanged in this feature.
-
-`pencil.dart` holds exact segments, material clipping, coincident-coverage
-subtraction, intersection splitting and motif recognition. The scissor graph
-contains only the half-tile lattice and committed marks, split at crossings.
-Pencil presentation jitter never enters this graph. New coverage costs 4,000
-thousandths of graphite per unit of local length, rounded once per completed
-drag or stamp. Retracing is free; insufficient inventory leaves the preview
-uncommitted. Erasing removes touched committed segments without refunds.
-
-Save version 6 adds `pencilMarks`, `motifs`, `graphiteMilli` and `nextStrokeId`.
-Marks have stable stroke IDs and are stored per constituent object, in that
-object's persisted support-plane coordinates. Queries transform and deduplicate
-those marks on fused work surfaces; new marks are distributed to their original
-members. Structural edits clip each member's marks to retained material.
-Extrusion moves their drawn face without adding marks to sidewalls. Versions
-1–5 load with empty marks and discoveries; Paper drawing grids are regenerated.
-Undo restores geometry and graphite but retains discoveries learned in the
-current world. Loading a world replaces that knowledge, and clearing the world
-clears it.
-
-The four initial motifs are Parallel lines, Crosshatch, Cross and Diamond.
-Recognition checks complete required segment coverage under quarter-turns,
-including reversed or subdivided strokes and additional marks. A complete tile
-must remain present. Discovered motifs appear only with Pencil, support rotated
-tile previews and atomic placement, and emit one discovery notification.
-
-Mark revisions invalidate affected drawing graphs separately from structural
-adjacency. Active previews repaint without rebuilding scene geometry. Committed
-marks use deterministic local graphite variation and an 8 MiB, 32-tile texture
-cache at 256×256 pixels per tile. Camera motion does not bake textures. If the
-visible working set exceeds the cache, excess tiles use vector drawing rather
-than omit marks. Face-local compositing uses existing perspective, depth sorting,
-and surface opacity, with mark opacity .8 while crafting and .35 in 3D.
-
-Regression coverage lives in `test/protoplane/pencil*_test.dart`, including
-geometry, ledger and knowledge persistence, migration, fused support frames,
-splitting and extrusion, pointer cancellation, narrow layouts, and rendered
-pixels through holes.
-
-Ink and Pastel retirement is complete; see Paper-only runtime and persistence.
-
-Focused context is adjustable in the Crafting dev-tools tab with **Context tiles**
-(0–4, default 1) and **Context opacity** (0–100%, default 35%). These settings
-persist independently of world saves; older settings use the defaults. Context
-is selected around the full support footprint, including fused surfaces, on the
-same level. Camera framing reserves room for the editable surface between the
-controls while fitting the surrounding context into the viewport. Neighbor
-traversal interpolates both camera pose and mesh opacity over 650 ms; outgoing
-context stays present until its fade completes.
-
-The **safe zone** is the central viewport rectangle left between the measured
-header/status area, left toolbar, right sidebar, and bottom controls, including
-platform insets and an 8-pixel clearance. It updates after layout, so tool
-changes, wrapped status text, window resizing and phone rotation change the
-usable area. Full focus fits the active plane to this rectangle without changing
-its proportions and centers it in the rectangle rather than the screen. Its
-limiting dimension reaches the rectangle boundary. Semi-focus retains the wider
-context framing. Refitting is deferred while a drawing or erasing gesture is
-active, then animated normally.
-
-**Dev Tools → Camera → Safe zone** toggles a non-interactive outline and subtle
-fill. The toggle is persisted and defaults off; it changes only the diagnostic
-graphic, not the fitting behavior. `safe_zone_test.dart` verifies asymmetric
-projection fits for floor and wall planes, and `safe_zone_view_test.dart` checks
-real control layout and pointer transparency at desktop and phone sizes.
-
-Scissors are cut-only: their completion APIs can harvest, remove, or split paper,
-but cannot fall through to recipe placement on empty/depleted support. Use
-**Place** for additions in every world. Entering an existing object's Edit action
-selects Scissors. Construction and harvesting regression fixtures select their
-intended tool explicitly.
-
-**Dev Tools → Crafting** has separate **Cutting line color** (red by default) and
-**Addition line color** (chartreuse by default) pickers. Both persist. Older
-settings retain their existing addition color and receive the default red cut
-color. Stroke previews and completion effects use the corresponding tool color.
-
-An invalid released cut or addition retains only its 750 ms fading visual trace;
-it discards the pending draft without changing geometry or inventory, showing a
-candidate/recipe panel, or reporting a validation banner. This also applies when
-Reset drawing on release is disabled. Valid volume editing keeps its Apply panel.
+Existing saved pencil marks retain exact clipping, material erasure, deterministic
+texture appearance, and their stored balance data. New Light pencil paths live
+only in RegionWorkspace and never spend graphite or discover/stamp motifs.
 
 ## Gesture diagnostics
 
@@ -926,40 +814,10 @@ Idle clouds caused zero scene paints; camera panning rebuilt zero distance
 masks, atlas slots or wall meshes. These are desktop measurements, not an
 iPhone performance claim.
 
-## Pencil presentation
-
-Freehand pointer sampling is replaced by a 300 ms endpoint dwell. Press near a
-quarter-grid dot to anchor; dragging over another dot shows a cyan segment and
-enlarges both endpoints with a 140 ms eased scale animation. Sustaining that
-target for 300 ms commits the segment and starts a separate 75 ms glowing swipe
-that replaces the cyan preview with graphite from tail to tip. The swipe finishes
-even if the pointer releases or moves to another dot. The old anchor shrinks,
-and the target becomes the new anchor for another leg in the same drag.
-Passing dots does not create intermediate bends. Dot selection uses a 24 logical
-pixel screen radius, including positions just outside paper edges.
-
-Leaving a target resets only its pending timer. Release, second-finger input,
-pointer cancellation, tool/focus/world changes and opening devtools discard the
-unfinished leg. Completed legs remain placed, each with its own undo transaction
-and existing exact coverage/graphite accounting. Stationary completed endpoints
-cannot repeatedly charge graphite. Motif stamping retains its existing flow.
-Dwell progress is presentation only: no texture is rebaked until a leg commits.
-
-Persistent graphite replaces sine-wave jitter with coordinate-hashed irregular
-knots: alternating straight runs and small linear kinks, plus variable ink
-opacity and width. The pattern is deterministic in paper coordinates and keeps
-its orientation when segment order reverses. Camera changes never reroll or
-rebake it. Logical pencil segments remain straight and retain existing cutting,
-recognition, persistence and paper/graphite costs. A texture-cache render version
-invalidates old periodic appearances without migrating stored pencil marks.
-
-
 ### Linear structural placement
 
 Open Place paths on paper floors create walls; paths on walls create floors or
-ramps. Paths follow the same half-tile lattice and committed pencil connections
-as Scissors. Quarter-tile points on a mark are available without unlocking any
-unmarked connections. Closed outlines retain existing recipe recognition.
+ramps. Paths follow the shared configured drawing lattice used by Light pencil and Cut. Closed outlines place plain floors or walls; furniture requires its explicit program.
 Consecutive straight segments collapse into one sheet. All sheets in a polyline
 validate and commit atomically, with one paper charge and undo entry.
 
@@ -979,7 +837,7 @@ attachments add bidirectional navigation portals even through a floor's interior
 fusion canonicalizes those portals and removes internal constituent navigation.
 
 Reverse traversal immediately removes the active stroke's tail for Place,
-Scissors and Pencil. It never erases committed marks or jumps across a bend.
+Scissors and Light pencil. It never erases committed marks or jumps across a bend.
 Three compact pointer reversals cancel an active Place stroke (650 ms window,
 12 px minimum legs, 64 px envelope); cancellation consumes the rest of that
 pointer contact and creates neither objects, charges, nor an undo record.
@@ -991,8 +849,7 @@ Regression coverage: `linear_placement_test.dart`,
 
 ## Unified eraser
 
-The crafting toolbar now shows one Eraser whenever either pencil-mark erasing or
-exposed graphite is available. Both former icons already selected the same tool;
+The crafting toolbar keeps Eraser available in world and focus views. Both former icons already selected the same tool;
 their gesture paths are now consolidated as well. `beginErasing` starts one
 transaction, `eraseStroke` batches pencil marks and exposed graphite together,
 and `finishErasing` records/saves once. Marks use separately projected samples

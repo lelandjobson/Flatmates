@@ -9,6 +9,7 @@ import 'crumpled_paper.dart';
 import 'stroke_color_picker.dart';
 
 class ProtoplaneSettings {
+  bool unlimitedPaper = true;
   FogSettings fog = FogSettings();
   double nearestDistance = 2, farthestDistance = 25;
   double tileGridOpacity = .12;
@@ -58,6 +59,7 @@ class ProtoplaneSettings {
   double entryFocusLevel = 1;
   double ambient = .7, sun = .25, wallNear = 4, wallFar = 8;
   Map<String, dynamic> toJson() => {
+    'unlimitedPaper': unlimitedPaper,
     'version': 1,
     'fog': fog.toJson(),
     'nearestDistance': nearestDistance,
@@ -105,6 +107,11 @@ class ProtoplaneSettings {
     'wallFar': wallFar,
   };
   void load(Map<String, dynamic> json) {
+    final unlimited = json['unlimitedPaper'] ?? true;
+    if (unlimited is! bool) {
+      throw const FormatException('Invalid unlimited paper setting');
+    }
+    unlimitedPaper = unlimited;
     impliedProtoplanes = json['impliedProtoplanes'] == true;
     if (json['version'] != 1 || json['gridLines'] is! bool) {
       throw const FormatException('Invalid settings');
@@ -472,6 +479,14 @@ class _ProtoplaneDevToolsPanelState extends State<ProtoplaneDevToolsPanel> {
                           ListView(
                             children: [
                               SwitchListTile(
+                                title: const Text('Unlimited paper'),
+                                value: settings.unlimitedPaper,
+                                onChanged: (value) {
+                                  update(() => settings.unlimitedPaper = value);
+                                  changed();
+                                },
+                              ),
+                              SwitchListTile(
                                 title: const Text('Implied protoplanes'),
                                 value: settings.impliedProtoplanes,
                                 onChanged: (v) {
@@ -750,6 +765,7 @@ class _ProtoplaneDevToolsPanelState extends State<ProtoplaneDevToolsPanel> {
                             ],
                           ),
                           ListView(
+                            key: const ValueKey('protoplane-style-settings'),
                             padding: const EdgeInsets.all(16),
                             children: [
                               const Text('Background'),

@@ -8,7 +8,7 @@ import 'models.dart';
 /// Convex triangular prisms, tested with the separating-axis theorem. Curved
 /// outlines and holes use the same triangulation as the visible surface.
 bool solidsOverlap(CraftObject a, CraftPlane ap, CraftObject b, CraftPlane bp) {
-  final ac = _cells(a, ap), bc = _cells(b, bp);
+  final ac = collisionCells(a, ap), bc = collisionCells(b, bp);
   if (!_boundsOverlap(
     ac.expand((v) => v).toList(),
     bc.expand((v) => v).toList(),
@@ -23,7 +23,7 @@ bool solidsOverlap(CraftObject a, CraftPlane ap, CraftObject b, CraftPlane bp) {
   return false;
 }
 
-List<List<Vector3>> _cells(CraftObject o, CraftPlane plane) {
+List<List<Vector3>> collisionCells(CraftObject o, CraftPlane plane) {
   // Flat paper has a small picking/rendering thickness too; it must not be
   // placed through an unrelated solid merely because its paid depth is zero.
   final depth = math.max(.002, o.depth);

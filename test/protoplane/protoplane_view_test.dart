@@ -170,6 +170,7 @@ void main() {
       tester.widget<ViewCrosshair>(find.byType(ViewCrosshair)).position,
       at,
     );
+    model.selectTool(CraftTool.orbit);
     await mouse.down(at);
     await mouse.up();
     await tester.pump();
@@ -392,6 +393,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Close'));
       await tester.pumpAndSettle();
+      model.selectTool(CraftTool.orbit);
       await tester.tapAt(const Offset(450, 350));
       await tester.pumpAndSettle();
       final camera = tester
@@ -435,6 +437,7 @@ void main() {
       model.dispose();
     });
     await mount(tester, model, const Size(900, 700));
+    model.selectTool(CraftTool.orbit);
     await tester.tapAt(const Offset(450, 350));
     await tester.pumpAndSettle();
     final camera = tester
@@ -482,6 +485,7 @@ void main() {
       model.leave();
       await mount(tester, model, const Size(900, 700));
       model.enter('surface-${floor.id}');
+      model.selectTool(CraftTool.place);
       model.selectGrid(2);
       await tester.pumpAndSettle();
       await tester.tap(find.text('devtools'));
@@ -605,6 +609,7 @@ void main() {
         }
         await mount(tester, model, const Size(900, 700));
         model.enter('ground-starter-paperWhite-0-0');
+        model.selectTool(CraftTool.place);
         await tester.pumpAndSettle();
         final camera = tester
             .widget<SceneView>(find.byType(SceneView).first)
@@ -821,12 +826,9 @@ void main() {
         await tester.tap(find.text('Style'));
         await tester.pumpAndSettle();
         final strength = find.byKey(const ValueKey('Texture strength'));
-        final styleList = find
-            .ancestor(
-              of: find.text('Background'),
-              matching: find.byType(ListView),
-            )
-            .first;
+        final styleList = find.byKey(
+          const ValueKey('protoplane-style-settings'),
+        );
         await tester.scrollUntilVisible(
           strength,
           80,
@@ -940,6 +942,7 @@ void main() {
     final scene = tester.widget<SceneView>(find.byType(SceneView).first).scene;
     final original = scene.camera!.position.clone();
     // Tap through the reticle from world mode to cache the actual map pose.
+    model.selectTool(CraftTool.orbit);
     await tester.tapAt(const Offset(450, 350));
     await tester.pumpAndSettle();
     expect(model.activePlane, isNotNull);

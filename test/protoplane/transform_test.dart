@@ -1,7 +1,6 @@
 import 'construction_fixture.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flatmates/protoplane/models.dart';
-import 'package:flatmates/protoplane/recipes.dart';
 
 void main() {
   test(
@@ -37,40 +36,30 @@ void main() {
     },
   );
 
-  test('automatic first match follows recipe priority', () {
-    final c = constructionWorld();
-    addTearDown(c.dispose);
-    c.enter('ground-starter-paperWhite-0-0');
-    c.beginGesture();
-    for (final n in [0, 2, 8, 6, 0]) {
-      c.appendNode(n);
-    }
-    c.finishGesture();
-    c.create();
-    final floor = c.objects.values.single;
-    c.enter('surface-${floor.id}');
-    drawPoints(c, recipePoints(c, CraftKind.rug));
-    expect(c.matches.length, greaterThan(1));
-    expect(c.chosen, c.matches.first);
-    expect(
-      recipes[c.chosen]!.priority,
-      lessThanOrEqualTo(recipes[CraftKind.tabletop]!.priority),
-    );
-    expect(c.create(), isTrue);
-    final rug = c.objects.values.last;
-    expect(rug.kind, CraftKind.rug);
-    final outline = rug.region.toJson(), balances = Map.of(c.balances);
-    expect(c.transformations(rug.id), contains(CraftKind.tabletop));
-    final quote = c.transformationQuote(rug.id, CraftKind.tabletop);
-    expect(c.transformObject(rug.id, CraftKind.tabletop), isTrue);
-    expect(c.objects[rug.id]!.region.toJson(), outline);
-    expect(c.objects[rug.id]!.kind, CraftKind.tabletop);
-    expect(c.balances[rug.color], balances[rug.color]! - quote);
-    c.undo();
-    expect(c.objects[rug.id]!.kind, CraftKind.rug);
-    expect(c.balances, balances);
-    c.redo();
-    expect(c.objects[rug.id]!.kind, CraftKind.tabletop);
-    expect(c.transformObject(floor.id, CraftKind.rug), isFalse);
-  });
+  test(
+    'direct placement is plain paper and has no inferred transformations',
+    () {
+      final c = constructionWorld();
+      addTearDown(c.dispose);
+      c.enter('ground-starter-paperWhite-0-0');
+      drawPoints(c, const [
+        Offset(0, 0),
+        Offset(1, 0),
+        Offset(1, 1),
+        Offset(0, 1),
+        Offset(0, 0),
+      ]);
+      expect(c.matches, [CraftKind.floor]);
+      expect(c.create(), isTrue);
+      final floor = c.objects.values.single;
+      c.enter('surface-${floor.id}');
+      drawPoints(c, recipePoints(c, CraftKind.rug));
+      expect(c.matches, [CraftKind.floor]);
+      expect(c.create(), isTrue);
+      final paper = c.objects.values.last;
+      expect(paper.kind, CraftKind.floor);
+      expect(c.transformations(paper.id), isEmpty);
+      expect(c.transformObject(paper.id, CraftKind.tabletop), isFalse);
+    },
+  );
 }

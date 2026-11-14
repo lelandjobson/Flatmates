@@ -37,7 +37,16 @@ CraftObject craft(
           count: c.paperSurface ? 5 : 3,
         );
   drawPoints(c, source.trace(path));
-  if (kind != null) c.choose(kind);
+  final explicitKind =
+      kind ??
+      (c.activePlane!.wallCandidate
+          ? CraftKind.wall
+          : c.objects[c.activePlane!.owner]?.kind == CraftKind.wall
+          ? CraftKind.door
+          : c.objects[c.activePlane!.owner]?.kind == CraftKind.bedFrame
+          ? CraftKind.mattress
+          : CraftKind.floor);
+  c.choose(explicitKind);
   expect(c.create(), isTrue, reason: c.error);
   return c.objects.values.last;
 }

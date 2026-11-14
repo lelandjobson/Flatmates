@@ -20,6 +20,9 @@ class Recipe {
 }
 
 const recipes = <CraftKind, Recipe>{
+  CraftKind.tableLeg: Recipe(CraftKind.tableLeg, .32, 0, 1),
+  CraftKind.pictureFrame: Recipe(CraftKind.pictureFrame, .02, 0, .2),
+  CraftKind.poolLining: Recipe(CraftKind.poolLining, .48, 0, 1),
   CraftKind.floor: Recipe(CraftKind.floor, 0, 0, .2, priority: 0),
   CraftKind.wall: Recipe(CraftKind.wall, .02, 0, .2, priority: 0),
   CraftKind.rug: Recipe(CraftKind.rug, 0, 0, .03, priority: 10),

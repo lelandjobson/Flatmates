@@ -173,26 +173,31 @@ class Region {
   static List<Region> _regionsFromCells(List<List<Offset>> cells) {
     if (cells.isEmpty) return [];
     final loops = _cellBoundaries(cells).map(simplifyRing).toList();
-    final outers = loops
-        .where(
-          (r) => !loops.any(
-            (s) =>
-                !identical(r, s) &&
-                polygonSignedArea(s).abs() > polygonSignedArea(r).abs() &&
-                inRing(r.first, s, boundary: false),
-          ),
-        )
-        .toList();
+    // Assign the smallest enclosing ring, as in Boost overlay/assign_parents.
+    // Even nesting depths are material islands; only immediate odd-depth
+    // children are holes. Treating all enclosed rings as holes loses islands
+    // inside holes (for example the inner lining around a pool island).
+    final areas = loops.map((r) => polygonSignedArea(r).abs()).toList();
+    final parents = List<int?>.filled(loops.length, null);
+    for (var i = 0; i < loops.length; i++) {
+      for (var j = 0; j < loops.length; j++) {
+        if (areas[j] <= areas[i] + geometryEpsilon ||
+            (parents[i] != null && areas[j] >= areas[parents[i]!])) {
+          continue;
+        }
+        if (loops[i].any((p) => inRing(p, loops[j], boundary: false))) {
+          parents[i] = j;
+        }
+      }
+    }
+    int depth(int i) => parents[i] == null ? 0 : 1 + depth(parents[i]!);
     return [
-      for (final o in outers)
-        Region(
-          o,
-          loops
-              .where(
-                (r) => !identical(r, o) && inRing(r.first, o, boundary: false),
-              )
-              .toList(),
-        ),
+      for (var i = 0; i < loops.length; i++)
+        if (depth(i).isEven)
+          Region(loops[i], [
+            for (var j = 0; j < loops.length; j++)
+              if (parents[j] == i) loops[j],
+          ]),
     ];
   }
 

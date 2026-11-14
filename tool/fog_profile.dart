@@ -10,7 +10,6 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:vector_math/vector_math_64.dart' show Vector3;
 import 'package:flatmates/protoplane/controller.dart';
-import 'package:flatmates/protoplane/models.dart';
 import 'package:flatmates/protoplane/fog_settings.dart';
 import 'package:flatmates/protoplane/fog_overlay.dart';
 import 'package:flatmates/protoplane/harvest_meshes.dart';
@@ -31,7 +30,7 @@ class _Profile extends StatefulWidget {
 
 class _ProfileState extends State<_Profile>
     with SingleTickerProviderStateMixin {
-  final c = ProtoplaneController(preset: WorldPreset.paper);
+  final c = ProtoplaneController();
   final fog = FogSettings();
   final cache = HarvestMeshCache();
   final scene = Scene();
@@ -59,7 +58,7 @@ class _ProfileState extends State<_Profile>
     scene.setLights(light.lights);
     scene.setMeshes([
       for (final p in c.planes.values) cache.mesh(p, c.landscape),
-      ...cache.walls(c.landscape.terrain!),
+      ...cache.walls(c.landscape.terrain),
     ]);
     SchedulerBinding.instance.addTimingsCallback(_timings);
     ticker.start();

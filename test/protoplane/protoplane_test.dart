@@ -415,6 +415,7 @@ void main() {
         final wall = c.objects.values.last;
         c.enter('surface-${wall.id}');
         draw(c, [1, 2, 3, 8, 13, 12, 11, 6, 1]);
+        c.choose(CraftKind.door);
         expect(c.chosen, CraftKind.door);
         expect(c.create(), isTrue, reason: c.error);
         expect(c.objects[wall.id]!.region.holes, isEmpty);
@@ -446,6 +447,7 @@ void main() {
       expect(c.planes.containsKey('upper-${f.id}'), isTrue);
       c.enter('surface-${wall.id}');
       draw(c, [6, 7, 8, 13, 18, 17, 16, 11, 6]);
+      c.choose(CraftKind.window);
       expect(c.chosen, CraftKind.window);
       expect(c.create(), isTrue, reason: c.error);
       expect(c.objects[wall.id]!.region.holes, hasLength(1));

@@ -1,3 +1,5 @@
+import '../protoplane/program_stickerbook.dart';
+import '../protoplane/region_overlay.dart';
 import '../protoplane/adjacent_grid_indicators.dart';
 import '../protoplane/crumpled_paper.dart';
 import '../protoplane/focus_context.dart';
@@ -52,6 +54,8 @@ import '../ui/game/game_tool_sidebar.dart';
 import '../ui/game/view_crosshair.dart';
 import '../ui/game/volume_transform_gizmo.dart' show axisDragDelta;
 
+part 'protoplane_region_interactions.dart';
+
 class ProtoplaneConceptView extends StatefulWidget {
   const ProtoplaneConceptView({
     super.key,
@@ -89,6 +93,52 @@ class _Hit {
 
 class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     with TickerProviderStateMixin {
+  void _updateRegions(VoidCallback update) => setState(update);
+  Offset? regionEraseLast;
+  bool regionErasing = false;
+  final worldKeyboard = FocusNode(debugLabel: 'Programs');
+  bool bookOpen = false, regionDragging = false, regionClick = false;
+  int? regionPointer;
+  RegionSurface? workSurface, hoverSurface;
+  CraftGrid? workGrid;
+  List<int> regionPath = [];
+  Offset? regionLivePointer;
+  Map<int, double> regionDotFrom = {}, regionDotTo = {};
+  late final regionPointGlow = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 140),
+    value: 1,
+  )..addListener(_paintChanged);
+  late final regionSegmentGlow = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 280),
+    value: 1,
+  )..addListener(_paintChanged);
+  Map<int, double> get regionDotSelection {
+    final t = Curves.easeOutCubic.transform(regionPointGlow.value);
+    return {
+      for (final i in {...regionDotFrom.keys, ...regionDotTo.keys})
+        i:
+            (regionDotFrom[i] ?? 0) +
+            ((regionDotTo[i] ?? 0) - (regionDotFrom[i] ?? 0)) * t,
+    };
+  }
+
+  CraftTool regionGestureTool = CraftTool.pencil;
+  LightRegion? regionHover;
+  ProgramKind? draggingProgram;
+  ProgramEvaluation? programHover;
+  Color regionFadeColor = lightPencilColor;
+  int lastRegionRevision = -1;
+  Map<RegionSurface, List<PencilSegment>> previousRegionLines = {},
+      fadingRegionLines = {};
+  late final regionFade =
+      AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 300),
+      )..addListener(() {
+        if (mounted) setState(() {});
+      });
   late ProtoplaneController model;
   late ProtoplaneStorage storage;
   final devSettings = ProtoplaneSettings();
@@ -181,6 +231,11 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
           !drawing &&
           !pulling &&
           !pencilDragging &&
+          !regionDragging &&
+          !regionErasing &&
+          !regionClick &&
+          draggingProgram == null &&
+          programHover == null &&
           !model.erasing) {
         _safeZoneRefocusPending = false;
         _focusPlane();
@@ -308,7 +363,10 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     super.initState();
     controls = loadGameControls();
     unawaited(_loadLandscapePaper());
-    model = widget.controller ?? ProtoplaneController();
+    model =
+        widget.controller ??
+        ProtoplaneController(unlimitedPaper: devSettings.unlimitedPaper);
+    if (widget.controller == null) model.selectTool(CraftTool.orbit);
     if (widget.controller == null) {
       model.setProtoplaneCells(devSettings.protoplaneCells);
     }
@@ -550,6 +608,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   }
 
   void _applyDevSettings() {
+    model.unlimitedPaper = devSettings.unlimitedPaper;
     model.setImpliedProtoplanes(devSettings.impliedProtoplanes);
     _configureOrbit();
     if (model.activePlane == null && !transition.isAnimating) {
@@ -722,6 +781,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
 
   void _modelChanged() {
     if (_disposed) return;
+    _syncRegionFade();
     if ((model.tool != CraftTool.pencil || model.selectedMotif != null) &&
         pencilDwell.tail != null) {
       pencilDwell.cancel();
@@ -804,6 +864,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       }
     }
     if (_lastPlane != model.activePlaneId) {
+      _cancelRegionGesture();
       final traversing =
           _lastPlane != null && model.activePlane != null && worldPose != null;
       if (traversing) {
@@ -1202,6 +1263,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
         }
       }
     }
+    _addProgramMeshes(meshes);
     baseOpacity
       ..clear()
       ..addEntries(meshes.map((m) => MapEntry(m.id, m.material.opacity)));
@@ -1598,6 +1660,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     controls.begin(e.kind, e.localPosition);
     pointers[e.pointer] = e.localPosition;
     if (pointers.length > 1) {
+      _cancelRegionGesture();
       pencilDwell.cancel();
       model.cancelPencil();
       pencilDragging = false;
@@ -1629,6 +1692,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     down = previous = e.localPosition;
     moved = multi = false;
     secondary = e.buttons & (kSecondaryMouseButton | kMiddleMouseButton) != 0;
+    if (_regionDown(e)) return;
     if (model.activePlane == null) return;
     if (devToolsOpen) {
       focusZoom.stop();
@@ -1719,6 +1783,15 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       gestureDebug.move(e.pointer, e.localPosition);
     }
     if (!pointers.containsKey(e.pointer)) return;
+    if (_regionMove(e)) {
+      pointers[e.pointer] = e.localPosition;
+      return;
+    }
+    if (_extendFocusedStroke(e)) {
+      pointers[e.pointer] = e.localPosition;
+      return;
+    }
+
     if (strokeCancelled) {
       pointers[e.pointer] = e.localPosition;
       return;
@@ -1792,8 +1865,10 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       }
       if (model.activePlane == null || planeSwipe.zooming) lastSpan = span;
     } else if (!multi && model.activePlane == null) {
-      if (controls.profile.worldDrag(pointers: 1, buttons: e.buttons) ==
-          WorldDrag.rotate) {
+      if (e.buttons & kMiddleMouseButton == 0 &&
+          (model.tool == CraftTool.orbit ||
+              controls.profile.worldDrag(pointers: 1, buttons: e.buttons) ==
+                  WorldDrag.rotate)) {
         mapCamera.restorePose(
           lookAt: mapCamera.lookAt,
           distance: mapCamera.distance,
@@ -1801,6 +1876,21 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
         );
       } else {
         mapCamera.pan(delta);
+      }
+    } else if (!multi &&
+        model.activePlane != null &&
+        (model.tool == CraftTool.orbit || secondary)) {
+      if (e.buttons & kMiddleMouseButton != 0) {
+        _panFocused(previous ?? e.localPosition, e.localPosition);
+      } else {
+        final target = camera.target;
+        final offset = Matrix4.rotationY(
+          -delta.dx * .008,
+        ).transform3(camera.position - target);
+        camera.setPosition(target + offset);
+        semiFocusPose = fullFocusPose = _Pose(camera);
+        scene.markNeedsPaint();
+        setState(() {});
       }
     } else if (!multi && devToolsOpen && model.activePlane != null) {
       _panFocused(previous ?? e.localPosition, e.localPosition);
@@ -1950,6 +2040,13 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     if (devSettings.showGestureDebug) {
       gestureDebug.end(e.pointer, at: e.localPosition);
     }
+    if (_regionUp(e)) {
+      pointers.remove(e.pointer);
+      controls.end();
+      moved = true;
+      secondary = false;
+      return;
+    }
     _resetPointGestures();
     if (!pointers.containsKey(e.pointer)) return;
     controls.move(e.kind, e.localPosition);
@@ -2028,6 +2125,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
 
   void _cancel(PointerCancelEvent e) {
     if (_disposed) return;
+    _cancelRegionGesture();
     if (devSettings.showGestureDebug) gestureDebug.cancel();
     pencilDwell.cancel();
     model.cancelPencil();
@@ -2089,6 +2187,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
         nativeTrackpad: true,
       );
     }
+    _cancelRegionGesture();
     trackpadActive = false;
     _resetPointGestures();
     if (loading || loadFailed || transition.isAnimating) return;
@@ -2270,7 +2369,12 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
           outlineVariant: const Color(0xff555555),
         ),
       )),
-      child: Builder(builder: _buildWorld),
+      child: Focus(
+        focusNode: worldKeyboard,
+        autofocus: true,
+        onKeyEvent: _programKey,
+        child: Builder(builder: _buildWorld),
+      ),
     );
   }
 
@@ -2328,18 +2432,16 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                         _resetPointGestures();
                       },
                       onHover: (e) {
-                        if (model.paperSurface &&
-                            model.tool == CraftTool.pencil &&
-                            model.selectedMotif == null &&
-                            !preview) {
-                          pencilDwell.pointAt(_pencilNode(e.localPosition));
-                        }
-                        if (model.paperSurface &&
-                            model.tool == CraftTool.pencil &&
-                            model.selectedMotif != null &&
-                            !preview) {
-                          final local = _local(e.localPosition, .008);
-                          if (local != null) model.extendPencil(local);
+                        if (!regionDragging &&
+                            !bookOpen &&
+                            [
+                              CraftTool.pencil,
+                              CraftTool.scissors,
+                              CraftTool.place,
+                              CraftTool.program,
+                              CraftTool.combine,
+                            ].contains(model.tool)) {
+                          _regionHover(e.localPosition);
                         }
                         controls.hover(e.kind, e.localPosition);
                       },
@@ -2357,6 +2459,23 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                                 ),
                               ),
                             ),
+                            IgnorePointer(
+                              child: CustomPaint(
+                                key: const ValueKey('region-overlay'),
+                                painter: RegionOverlayPainter(
+                                  workspace: model.workspace,
+                                  camera: camera,
+                                  preview: model.pendingVolume ?? programHover,
+                                  hover: model.tool == CraftTool.combine
+                                      ? regionHover
+                                      : null,
+                                  fading: fadingRegionLines,
+                                  fade: 1 - regionFade.value,
+                                  fadeColor: regionFadeColor,
+                                ),
+                              ),
+                            ),
+                            _regionDrawingFeedback(),
                             FriendEyeOverlay(
                               friends: residents.friends,
                               camera: camera,
@@ -2387,48 +2506,62 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                                 ),
                               ),
                             ),
-                            IgnorePointer(
-                              child: CustomPaint(
-                                key: const ValueKey('craft-grid-overlay'),
-                                painter: _GridPainter(
-                                  model,
-                                  camera,
-                                  preview: preview,
-                                  acetate: acetate.value,
-                                  outgoingGrid: outgoingGrid,
-                                  livePointer: drawing ? livePointer : null,
-                                  ready: _drawingReady,
-                                  segmentPulse: 1 - segmentGlow.value,
-                                  completedTrace: completedTrace,
-                                  traceOverride: drawing ? null : releasedTrace,
-                                  lineOpacity: drawing
-                                      ? 1
-                                      : 1 -
-                                            Curves.easeOut.transform(
-                                              releaseFade.value,
-                                            ),
-                                  whiteMix: drawing
-                                      ? closureWhite.value
-                                      : releasedWhite,
-                                  lineColor: model.tool == CraftTool.pencil
-                                      ? const Color(0xff00cfee)
-                                      : model.tool == CraftTool.scissors
-                                      ? devSettings.cutLineColor
-                                      : devSettings.lineColor,
-                                  dotSelection: model.tool == CraftTool.pencil
-                                      ? _pencilDotSelection
-                                      : dotSelection,
-                                  showGridLines: devSettings.gridLines,
-                                  tileGridOpacity: devSettings.tileGridOpacity,
-                                  hover: hover?.id,
-                                  previousHover: previousHover,
-                                  hoverFade: glow.value,
-                                  focusFade: Curves.easeInOutSine.transform(
-                                    contextFade.value,
+                            if (!regionDragging &&
+                                !(model.activePlane == null &&
+                                    [
+                                      CraftTool.scissors,
+                                      CraftTool.place,
+                                    ].contains(model.tool)) &&
+                                ![
+                                  CraftTool.pencil,
+                                  CraftTool.program,
+                                  CraftTool.combine,
+                                ].contains(model.tool))
+                              IgnorePointer(
+                                child: CustomPaint(
+                                  key: const ValueKey('craft-grid-overlay'),
+                                  painter: _GridPainter(
+                                    model,
+                                    camera,
+                                    preview: preview,
+                                    acetate: acetate.value,
+                                    outgoingGrid: outgoingGrid,
+                                    livePointer: drawing ? livePointer : null,
+                                    ready: _drawingReady,
+                                    segmentPulse: 1 - segmentGlow.value,
+                                    completedTrace: completedTrace,
+                                    traceOverride: drawing
+                                        ? null
+                                        : releasedTrace,
+                                    lineOpacity: drawing
+                                        ? 1
+                                        : 1 -
+                                              Curves.easeOut.transform(
+                                                releaseFade.value,
+                                              ),
+                                    whiteMix: drawing
+                                        ? closureWhite.value
+                                        : releasedWhite,
+                                    lineColor: model.tool == CraftTool.pencil
+                                        ? lightPencilColor
+                                        : model.tool == CraftTool.scissors
+                                        ? devSettings.cutLineColor
+                                        : devSettings.lineColor,
+                                    dotSelection: model.tool == CraftTool.pencil
+                                        ? _pencilDotSelection
+                                        : dotSelection,
+                                    showGridLines: devSettings.gridLines,
+                                    tileGridOpacity:
+                                        devSettings.tileGridOpacity,
+                                    hover: hover?.id,
+                                    previousHover: previousHover,
+                                    hoverFade: glow.value,
+                                    focusFade: Curves.easeInOutSine.transform(
+                                      contextFade.value,
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
                             IgnorePointer(
                               child: CustomPaint(
                                 key: const ValueKey('pencil-ink-overlay'),
@@ -2600,11 +2733,11 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                     ),
                   ),
                 ),
-                if (model.activePlane != null && !loading && !loadFailed) ...[
+                if (!loading && !loadFailed) ...[
                   if (!devToolsOpen)
                     Positioned(
                       left: 10,
-                      top: math.max(130, viewport.height * .35),
+                      top: math.min(130, viewport.height * .25),
                       bottom: viewport.height < 500 ? 80 : 120,
                       width: viewport.height < 500 ? 104 : 52,
                       child: SingleChildScrollView(
@@ -2614,17 +2747,12 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                     ),
                   Positioned(
                     right: 10,
-                    top: math.max(130, viewport.height * .35),
+                    top: math.min(130, viewport.height * .25),
                     bottom: 120,
-                    width: model.paperSurface && model.tool == CraftTool.pencil
-                        ? 112
-                        : 64,
+                    width: 64,
                     child: SingleChildScrollView(
                       key: _rightToolsKey,
-                      child:
-                          model.paperSurface && model.tool == CraftTool.pencil
-                          ? _pencilSidebar()
-                          : _paperSelector(),
+                      child: _paperSelector(),
                     ),
                   ),
                   Positioned(
@@ -2634,6 +2762,26 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                     child: SizedBox(key: _footerKey, child: _bottomControls()),
                   ),
                 ],
+                if (bookOpen)
+                  Positioned(
+                    left: 76,
+                    top: 92,
+                    bottom: 95,
+                    width: math.min(370, math.max(230, viewport.width - 92)),
+                    child: ProgramStickerbook(
+                      onSelected: _selectSticker,
+                      onClose: () {
+                        setState(() => bookOpen = false);
+                        _focusWorldKeyboard();
+                      },
+                      onDragStarted: (p) {
+                        draggingProgram = p;
+                      },
+                      onDragUpdate: (p, at) =>
+                          _regionHover(_regionLocal(at), program: p),
+                      onDrop: _dropSticker,
+                    ),
+                  ),
                 if (devToolsOpen && _devToolsRect != null)
                   Positioned.fromRect(
                     rect: _devToolsRect!,
@@ -2763,78 +2911,126 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     );
   }
 
+  Widget _programDrag(ProgramKind program, Widget child) =>
+      Draggable<ProgramKind>(
+        data: program,
+        feedback: Material(
+          type: MaterialType.transparency,
+          child: ProgramSticker(program: program),
+        ),
+        dragAnchorStrategy: pointerDragAnchorStrategy,
+        onDragStarted: () {
+          _cancelRegionGesture();
+          draggingProgram = program;
+        },
+        onDragUpdate: (d) =>
+            _regionHover(_regionLocal(d.globalPosition), program: program),
+        onDragEnd: (d) => _dropSticker(program, d.offset),
+        child: child,
+      );
+
+  Widget _programTool(
+    ProgramKind program,
+    String label,
+    IconData icon,
+    VoidCallback action, {
+    bool active = false,
+  }) => _programDrag(program, _button(label, icon, action, active: active));
+
   Widget _tools() {
     final buttons = <Widget>[
+      IconButton.filled(
+        tooltip: 'Orbit',
+        onPressed: () => model.selectTool(CraftTool.orbit),
+        style: IconButton.styleFrom(
+          backgroundColor: model.tool == CraftTool.orbit
+              ? const Color(0xff57b9af)
+              : const Color(0xff285a58),
+          foregroundColor: Colors.white,
+        ),
+        icon: const Icon(Icons.threesixty),
+      ),
+      const SizedBox(height: 8),
       _button(
+        'Light pencil',
+        Icons.edit_outlined,
+        () => model.selectTool(CraftTool.pencil),
+        active: model.tool == CraftTool.pencil,
+      ),
+      const SizedBox(height: 8),
+      _button(
+        'Programs',
+        Icons.auto_stories_outlined,
+        _openBook,
+        active: bookOpen,
+      ),
+      if (model.activePlane != null) ...[
+        const SizedBox(height: 8),
+        _button(
+          preview ? 'Grid' : '3D',
+          preview ? Icons.grid_on : Icons.view_in_ar,
+          _togglePreview,
+          active: preview,
+        ),
+      ],
+      if (model.selectedProgram case final program?) ...[
+        const SizedBox(height: 8),
+        _programDrag(
+          program,
+          _button(
+            program.label,
+            programIcon(program),
+            () => model.selectProgram(program),
+            active: true,
+          ),
+        ),
+      ],
+      const SizedBox(height: 8),
+      _programTool(
+        ProgramKind.cut,
         'Scissors',
         Icons.content_cut,
         () => model.selectTool(CraftTool.scissors),
         active: model.tool == CraftTool.scissors,
       ),
-      if (model.paperSurface) ...[
-        const SizedBox(height: 8),
-        _button('Pencil', Icons.edit_outlined, () {
-          model.selectedMotif = null;
-          model.selectTool(CraftTool.pencil);
-        }, active: model.tool == CraftTool.pencil),
-      ],
-      if (model.paperSurface || model.graphitePlane != null) ...[
-        const SizedBox(height: 8),
-        _button(
-          'Eraser',
-          Icons.cleaning_services_outlined,
-          () => model.selectTool(CraftTool.eraser),
-          active: model.tool == CraftTool.eraser,
-        ),
-      ],
-      ...[
-        const SizedBox(height: 8),
-        _button(
-          'Place',
-          Icons.add_box_outlined,
-          () => model.selectTool(CraftTool.place),
-          active: model.tool == CraftTool.place,
-        ),
-      ],
       const SizedBox(height: 8),
-      _button(
+      _programTool(
+        ProgramKind.place,
+        'Place',
+        Icons.add_box_outlined,
+        () => model.selectTool(CraftTool.place),
+        active: model.tool == CraftTool.place,
+      ),
+      const SizedBox(height: 8),
+      _programTool(
+        ProgramKind.erase,
+        'Eraser',
+        Icons.cleaning_services_outlined,
+        () => model.selectTool(CraftTool.eraser),
+        active: model.tool == CraftTool.eraser,
+      ),
+      const SizedBox(height: 8),
+      _programTool(
+        ProgramKind.volume,
         'Volume',
         Icons.open_in_full,
-        () => model.selectTool(CraftTool.volume),
-        active: model.tool == CraftTool.volume,
+        () => model.editId != null || model.draft.path.isNotEmpty
+            ? model.selectTool(CraftTool.volume)
+            : model.selectProgram(ProgramKind.volume),
+        active: model.selectedProgram == ProgramKind.volume,
       ),
       const SizedBox(height: 8),
-      _button(
-        preview ? 'Grid' : '3D',
-        preview ? Icons.grid_on : Icons.view_in_ar,
-        _togglePreview,
-        active: preview,
+      _programTool(
+        ProgramKind.combine,
+        'Combine',
+        Icons.join_inner,
+        () => model.selectProgram(ProgramKind.combine),
+        active: model.tool == CraftTool.combine,
       ),
+      const SizedBox(height: 8),
+      _button('Clear regions', Icons.auto_fix_off, model.clearRegions),
       if (selectedObject != null && model.editId == null) ...[
         const SizedBox(height: 8),
-        if (model.transformations(selectedObject!).isNotEmpty)
-          _button('Transform', Icons.transform, () async {
-            final id = selectedObject!;
-            final kind = await showModalBottomSheet<CraftKind>(
-              context: context,
-              builder: (context) => SafeArea(
-                child: ListView(
-                  shrinkWrap: true,
-                  children: [
-                    for (final kind in model.transformations(id))
-                      ListTile(
-                        title: Text(kind.label),
-                        trailing: Text(
-                          '${model.transformationQuote(id, kind)}',
-                        ),
-                        onTap: () => Navigator.pop(context, kind),
-                      ),
-                  ],
-                ),
-              ),
-            );
-            if (kind != null && mounted) model.transformObject(id, kind);
-          }),
         _button('Edit', Icons.edit, () {
           final o = model.objects[selectedObject];
           if (o != null) model.enter(o.planeId, editObject: o.id);
@@ -2851,33 +3047,6 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     }
     return Column(mainAxisSize: MainAxisSize.min, children: buttons);
   }
-
-  Widget _pencilSidebar() => Column(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Text(
-        '${((model.balances[PaperMaterial.graphite] ?? 0) + model.graphiteMilli / 1000).toStringAsFixed(3)} graphite',
-        textAlign: TextAlign.center,
-      ),
-      for (final motif in model.discoveredMotifs)
-        TextButton(
-          onPressed: () => model.selectMotif(motif),
-          child: Column(
-            children: [
-              CustomPaint(
-                size: const Size(24, 24),
-                painter: _MotifThumbnail(motif),
-              ),
-              Text(motif.label, textAlign: TextAlign.center),
-            ],
-          ),
-        ),
-      if (model.selectedMotif != null)
-        _button('Rotate', Icons.rotate_right, model.rotateMotif),
-      if (model.error != null && model.previewMarks.isNotEmpty)
-        _button('Retry', Icons.check, model.commitPencil),
-    ],
-  );
 
   Widget _paperSelector() => (Column(
     mainAxisSize: MainAxisSize.min,
@@ -2909,7 +3078,9 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                     ),
                   ),
                   Text(
-                    '${model.balances[material]}',
+                    model.unlimitedPaper && material == PaperMaterial.paperWhite
+                        ? '∞'
+                        : '${model.balances[material]}',
                     style: TextStyle(
                       color: material == PaperMaterial.graphite
                           ? Colors.white
@@ -2934,6 +3105,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        _programStatus(),
         if (selected != null && linear != null && model.draft.path.isEmpty)
           Container(
             padding: const EdgeInsets.all(6),
@@ -3089,7 +3261,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
             child: _button('Clear', Icons.close, model.clearDraft),
           ),
         const SizedBox(height: 8),
-        if (!model.paperSurface)
+        if (model.activePlane != null && !model.paperSurface)
           SizedBox(
             height: 46,
             child: PageView.builder(
@@ -3140,6 +3312,9 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   @override
   void dispose() {
     harvestNoticeTimer?.cancel();
+    regionFade.dispose();
+    worldKeyboard.dispose();
+    model.endRegionSession();
     harvestAtlas.dispose();
     landscapePaperTexture?.dispose();
     edgeShading.dispose();
@@ -3164,6 +3339,8 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     closureWhite.dispose();
     releaseFade.dispose();
     pointGlow.dispose();
+    regionPointGlow.dispose();
+    regionSegmentGlow.dispose();
     _resetPointGestures();
     controls.dispose();
     gestureDebug.dispose();
@@ -3195,6 +3372,10 @@ class _GridPainter extends CustomPainter {
     this.ready = false,
     this.completedTrace = const [],
     this.traceOverride,
+    this.planeOverride,
+    this.gridOverride,
+    this.pathOverride,
+    this.hideOutline = false,
     this.lineOpacity = 1,
     this.whiteMix = 0,
     Color? lineColor,
@@ -3209,6 +3390,10 @@ class _GridPainter extends CustomPainter {
   }) : _lineColor = lineColor,
        _dotSelection = dotSelection;
   final ProtoplaneController model;
+  final CraftPlane? planeOverride;
+  final CraftGrid? gridOverride;
+  final List<int>? pathOverride;
+  final bool hideOutline;
   final Camera camera;
   final bool preview;
   final double acetate;
@@ -3285,7 +3470,11 @@ class _GridPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (model.activePlane != null && model.tool == CraftTool.eraser) return;
+    if (planeOverride == null &&
+        model.activePlane != null &&
+        model.tool == CraftTool.eraser) {
+      return;
+    }
     Path projected(
       CraftPlane plane,
       List<Offset> points, {
@@ -3308,7 +3497,7 @@ class _GridPainter extends CustomPainter {
       return path;
     }
 
-    if (model.activePlane == null) {
+    if (planeOverride == null && model.activePlane == null) {
       for (final p in model.planes.values) {
         if (p.id.startsWith('surface-') ||
             (model.isPlane(p.id) && !p.id.startsWith('ground-'))) {
@@ -3372,7 +3561,9 @@ class _GridPainter extends CustomPainter {
       dots(hover, hoverFade);
       return;
     }
-    final plane = model.activePlane!, grid = model.grid!;
+    final plane = planeOverride ?? model.activePlane!,
+        grid = gridOverride ?? model.grid!;
+    final nodes = pathOverride ?? model.draft.path;
     if (preview) return;
     if (acetate < .5 && outgoingGrid != null) {
       final t = acetate * 2;
@@ -3406,17 +3597,19 @@ class _GridPainter extends CustomPainter {
       lift: lift,
       close: true,
     );
-    canvas.drawPath(
-      outline,
-      Paint()..color = Color.fromRGBO(190, 190, 190, .015 * progress),
-    );
-    canvas.drawPath(
-      outline,
-      Paint()
-        ..color = Color.fromRGBO(85, 85, 85, tileGridOpacity * progress)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5,
-    );
+    if (!hideOutline) {
+      canvas.drawPath(
+        outline,
+        Paint()..color = Color.fromRGBO(190, 190, 190, .015 * progress),
+      );
+      canvas.drawPath(
+        outline,
+        Paint()
+          ..color = Color.fromRGBO(85, 85, 85, tileGridOpacity * progress)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5,
+      );
+    }
     for (final edge in showGridLines ? grid.edges : <GridEdge>[]) {
       canvas.drawPath(
         projected(plane, edge.points(grid.nodes), lift: lift),
@@ -3501,8 +3694,7 @@ class _GridPainter extends CustomPainter {
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round,
       );
-      if (!valid && segmentPulse > 0 && model.draft.path.length >= 2) {
-        final nodes = model.draft.path;
+      if (!valid && segmentPulse > 0 && nodes.length >= 2) {
         final edge = grid.connection(nodes[nodes.length - 2], nodes.last)!;
         final latest = projected(
           plane,
@@ -3523,7 +3715,7 @@ class _GridPainter extends CustomPainter {
     if (livePointer != null) {
       final partial = liveStrokePreview(
         grid: grid,
-        path: model.draft.path,
+        path: nodes,
         pointer: livePointer!,
         project: (p) =>
             camera.projectToScreen(plane.point(p, lift + .001), size),

@@ -260,7 +260,7 @@ void main() {
     },
   );
   test(
-    'bends commit atomically, closed outlines retain recipes, insufficient paper changes nothing',
+    'bends commit atomically, closed outlines place plain paper, insufficient paper changes nothing',
     () {
       final c = world();
       addTearDown(c.dispose);
@@ -284,7 +284,7 @@ void main() {
         Offset(0, 0),
       ]);
       expect(c.linearPlacement, isFalse);
-      expect(c.previewObject!.kind, CraftKind.rug);
+      expect(c.previewObject!.kind, CraftKind.floor);
     },
   );
   test('wall creates level floor or marked ramp, vertical runs rejected', () {

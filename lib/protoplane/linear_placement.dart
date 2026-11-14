@@ -6,6 +6,7 @@ extension LinearCrafting on ProtoplaneController {
   bool planeAvailable(CraftPlane p) =>
       !surfaceFusion.retired.contains(p.id) &&
       !p.id.startsWith('construction-') &&
+      !p.id.startsWith('program-frame-') &&
       (impliedProtoplanes || !isImpliedPlane(p));
 
   void setImpliedProtoplanes(bool value) {
@@ -100,6 +101,42 @@ extension LinearCrafting on ProtoplaneController {
   }
 
   bool _harvestBlocked(HarvestResult result) {
+    for (final assembly in assemblies.values) {
+      if (!assembly.supports.contains(result.planeId) ||
+          !assembly.components.values.any(objects.containsKey)) {
+        continue;
+      }
+      final plane = planes[result.planeId];
+      if (plane != null &&
+          assembly.program == ProgramKind.place &&
+          assembly.components.values.every(
+            (id) => objects[id]?.linear != null,
+          )) {
+        for (final id in assembly.components.values) {
+          final attachment = objects[id]!.linear!,
+              source = planes[objects[id]!.linear!.sourcePlaneId]!;
+          final edge = PencilSegment(
+            plane.local(source.point(attachment.a)),
+            plane.local(source.point(attachment.b)),
+          );
+          if (clipPencil([
+                edge,
+              ], result.outline).fold<double>(0, (v, s) => v + s.length) >
+              geometryEpsilon) {
+            return true;
+          }
+        }
+        continue;
+      }
+      if (plane != null &&
+          mapRegion(
+            assembly.footprint,
+            assembly.frame,
+            plane,
+          ).overlaps(result.outline)) {
+        return true;
+      }
+    }
     if (objects.values.any(
       (o) => o.planeId == result.planeId && o.region.overlaps(result.outline),
     )) {
@@ -229,7 +266,7 @@ extension LinearCrafting on ProtoplaneController {
     final parts = linearPreviewObjects;
     final error = _linearError(parts);
     final cost = quote;
-    if (error != null || balances[paper]! < cost) {
+    if (error != null || !canSpend(paper, cost)) {
       report(error ?? 'Not enough ${paper.label} paper');
       return false;
     }
@@ -238,7 +275,7 @@ extension LinearCrafting on ProtoplaneController {
       final id = 'object-${nextId++}';
       objects[id] = part.copyWith(id: id, planeId: 'construction-$id');
     }
-    balances[paper] = balances[paper]! - cost;
+    spendPaper(paper, cost);
     drafts.remove(key);
     _derivePlanes();
     _gestureBefore = null;
@@ -331,7 +368,7 @@ extension LinearCrafting on ProtoplaneController {
     }
     final material = replacements.first.material;
     final cost = (addedArea * 128 - 1e-8).ceil();
-    if (balances[material]! < cost) {
+    if (!canSpend(material, cost)) {
       report('Not enough paper');
       return false;
     }
@@ -339,7 +376,7 @@ extension LinearCrafting on ProtoplaneController {
     for (final next in replacements) {
       objects[next.id] = next;
     }
-    balances[material] = balances[material]! - cost;
+    spendPaper(material, cost);
     _derivePlanes();
     _record(before, committed: true);
     _notifyPencil();

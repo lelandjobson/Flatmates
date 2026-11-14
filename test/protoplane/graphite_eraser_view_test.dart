@@ -73,6 +73,8 @@ void main() {
       c.enter(centerId(c, PaperMaterial.graphite));
       await tester.pumpAndSettle();
       expect(find.byTooltip('Eraser'), findsOneWidget);
+      await tester.tap(find.byTooltip('Eraser'));
+      await tester.pumpAndSettle();
       final before = snapshot(c);
       final camera = tester
           .widget<SceneView>(find.byType(SceneView).first)

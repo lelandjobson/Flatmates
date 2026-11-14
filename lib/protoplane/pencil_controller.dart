@@ -130,6 +130,10 @@ extension PencilCrafting on ProtoplaneController {
             ? landscapeRecipes
             : plane.grids.expand((g) => g.recipes).toSet().toList(),
         pencil: tool == CraftTool.pencil,
+        spacing: tool == CraftTool.pencil ? .25 : drawingSpacing,
+        connections: tool == CraftTool.pencil
+            ? null
+            : protoplaneConnections ?? GridConnections.orthogonal,
         material: landscapePaperPlanes.isNotEmpty && tool != CraftTool.pencil
             ? [for (final p in terrainColumn) ...surfaceRegions(p)]
             : paperRegions,
