@@ -34,18 +34,15 @@ extension _FocusTools on _ProtoplaneConceptViewState {
     if (_focusTouches.length > 1) {
       _cancelFocusStroke();
       _focusHadMultiple = true;
-      _focusSpan =
-          (_focusTouches.values.first - _focusTouches.values.last).distance;
       _updateFocusUi(() {});
       return true;
     }
     controls.begin(e.kind, e.localPosition);
     _focusHadMultiple = false;
-    _focusDownAt = e.localPosition;
     if (e.buttons & (kSecondaryMouseButton | kMiddleMouseButton) != 0) {
       return true;
     }
-    if (model.focusCard != FocusToolCard.drawing) return true;
+
     final surface = model.drawingSurface;
     if (surface == null) return true;
     _focusGestureSurface = surface.id;
@@ -66,12 +63,6 @@ extension _FocusTools on _ProtoplaneConceptViewState {
     _updateFocusUi(() {});
     controls.move(e.kind, e.localPosition);
     if (_focusTouches.length > 1) {
-      final span =
-          (_focusTouches.values.first - _focusTouches.values.last).distance;
-      if (_focusSpan > 0 && span / _focusSpan < .85) {
-        model.leave();
-        _cancelFocusStroke();
-      }
       return true;
     }
     if (_focusHadMultiple || _focusGestureSurface != model.drawingSurface?.id) {
@@ -117,18 +108,6 @@ extension _FocusTools on _ProtoplaneConceptViewState {
     _focusTouches.remove(e.pointer);
     if (_focusTouches.isNotEmpty) return true;
     controls.end();
-    if (_primedSticker != null) {
-      if (!_focusHadMultiple &&
-          _focusDownAt != null &&
-          (e.localPosition - _focusDownAt!).distance < 6) {
-        controls.move(e.kind, e.localPosition);
-        _placePrimedSticker();
-      }
-      _cancelFocusStroke();
-      _updateFocusUi(() {});
-      return true;
-    }
-
     if (!_focusHadMultiple &&
         _focusGestureSurface == model.drawingSurface?.id) {
       if (_eraseStart != null && _eraseEnd != null) {
@@ -136,20 +115,6 @@ extension _FocusTools on _ProtoplaneConceptViewState {
       } else if (_focusPath.length > 1) {
         final grid = model.focusDrawingGrid!;
         model.commitDrawingPath(_focusPath.map((n) => grid.nodes[n]).toList());
-      }
-    }
-    if (!_focusHadMultiple &&
-        _focusPath.length < 2 &&
-        _eraseStart == null &&
-        _focusDownAt != null &&
-        (e.localPosition - _focusDownAt!).distance < 6) {
-      final hit = _pick(e.localPosition);
-      if (hit != null) {
-        final id = hit.object == null ? hit.plane : 'surface-${hit.object}';
-        if (id != model.activePlaneId &&
-            !model.activePlane!.supports.contains(id)) {
-          model.enter(model.surfaceFusion.canonical[id] ?? id);
-        }
       }
     }
     _cancelFocusStroke();
@@ -167,104 +132,179 @@ extension _FocusTools on _ProtoplaneConceptViewState {
     return true;
   }
 
-  void _primeSticker(StickerKind? kind) {
-    _primedSticker = kind;
-    _stickerEvaluation = null;
-    _stickerPreviewKey = null;
+  void _selectConstructionTool(ConstructionTool requested) {
+    if (loading || loadFailed || devToolsOpen) return;
+    final next = model.constructionTool == requested ? null : requested;
+    final target = next == ConstructionTool.pencil && !_parcelShopping
+        ? _constructionTarget()
+        : null;
     _cancelFocusStroke();
-    if (kind != null) _previewPrimedSticker();
+    _focusTouches.clear();
+    pointers.clear();
+    controls.cancel();
+    drawing = pulling = pencilDragging = false;
+    trackpadActive = false;
+    mapCamera.pauseForHandoff();
+    focusZoom.stop();
+    transition.stop();
+    _constructionEvaluation = null;
+    _constructionPreviewKey = null;
+    model.constructionTool = null;
+    if (model.activePlane != null) {
+      worldPose = _Pose(camera);
+      model.leave();
+      transition.stop();
+    }
+    if (next == ConstructionTool.pencil) {
+      if (target == null) {
+        model.report('Aim at a drawable paper surface');
+      } else {
+        model.constructionTool = next;
+        model.drawingImplement = model.lastDrawingImplement =
+            DrawingImplement.pencil;
+        model.enter(target.planeId);
+        if (model.activePlane == null) model.constructionTool = null;
+      }
+    } else {
+      model.constructionTool = next;
+    }
+    _previewConstruction();
     _refreshScene();
     _updateFocusUi(() {});
   }
 
-  ({String planeId, DrawingSurface surface, Offset point})? _stickerTarget() {
-    if (!_stickerbookFocused || viewport.isEmpty) return null;
+  ({String planeId, DrawingSurface surface, Offset point})?
+  _constructionTarget() {
+    if (viewport.isEmpty) return null;
     final aim = viewport.center(Offset.zero);
-    final hit = _pick(aim);
-    if (hit == null) return null;
-    final id = hit.object == null ? hit.plane : 'surface-${hit.object}';
-    final planeId = model.surfaceFusion.canonical[id] ?? id;
-    final surface = model.drawingSurfaceFor(planeId);
+    final ray = camera.unprojectRay(aim, viewport);
+    if (ray == null) return null;
+    CraftPlane? best;
+    var distance = double.infinity;
+    for (final plane in model.planes.values) {
+      final terrain = model.landscape.terrain.tiles.containsKey(plane.id);
+      if (!terrain && !plane.id.startsWith('surface-')) continue;
+      if (terrain && !model.ownsTerrainTile(plane.id)) continue;
+      if (plane.normal.dot(camera.position - plane.origin) <= 0) continue;
+      final world = Camera.intersectPlane(
+        ray: ray,
+        point: plane.origin,
+        normal: plane.normal,
+      );
+      if (world == null || !plane.region.contains(plane.local(world))) continue;
+      if (!model.parcels.owns(Offset(world.x, -world.z))) continue;
+      if (terrain &&
+          !model
+              .surfaceRegions(plane)
+              .any((r) => r.contains(plane.local(world)))) {
+        continue;
+      }
+      final d = (world - ray.origin).length;
+      if (d < distance) {
+        distance = d;
+        best = plane;
+      }
+    }
+    if (best == null) return null;
+    // Actual scene faces block targeting, including legacy shapes that do not
+    // expose a drawable side. Ignore construction ghosts and implied guides.
+    final hits =
+        SceneHitTester(
+          scene: scene,
+          camera: camera,
+          viewportSize: viewport,
+        ).hitTestAll(
+          aim,
+          includeMesh: (mesh) =>
+              mesh.visible &&
+              mesh.material.opacity >= .35 &&
+              !mesh.id.startsWith('sticker-preview-') &&
+              (model.landscape.terrain.tiles.containsKey(mesh.id) ||
+                  mesh.id.startsWith('terrain-wall-') ||
+                  model.objects.keys.any(
+                    (id) => mesh.id == id || mesh.id.startsWith('$id-'),
+                  )),
+        );
+    if (hits.isNotEmpty) {
+      final hit = hits.first;
+      final world = Camera.intersectPlane(
+        ray: ray,
+        point: hit.center,
+        normal: hit.normal,
+      );
+      if (world != null && (world - ray.origin).length < distance - .015) {
+        return null;
+      }
+    }
+    final surface = model.drawingSurfaceFor(best.id);
     if (surface == null) return null;
     final point = _localOn(surface.frame, aim);
     return point == null
         ? null
-        : (planeId: planeId, surface: surface, point: point);
+        : (planeId: best.id, surface: surface, point: point);
   }
 
-  void _previewPrimedSticker() {
-    final kind = _primedSticker;
-    final target = kind == null ? null : _stickerTarget();
-    if (kind == null || target == null) {
-      if (_stickerEvaluation != null) {
-        _stickerEvaluation = null;
-        _stickerPreviewKey = null;
+  void _previewConstruction() {
+    final tool = model.constructionTool;
+    final target = _placingConstruction && !_parcelShopping && !devToolsOpen
+        ? _constructionTarget()
+        : null;
+    if (target == null || tool == null) {
+      if (_constructionEvaluation != null) {
+        _constructionEvaluation = null;
+        _constructionPreviewKey = null;
         _refreshScene();
       }
       return;
     }
     final face = model.drawingFaceAt(target.point, surface: target.surface);
     final key =
-        '$kind/${target.planeId}/${face?.graph.key}/${face?.id}/${model.drawingRevision}/${model.nextId}';
-    if (key == _stickerPreviewKey) return;
-    _stickerPreviewKey = key;
-    _stickerEvaluation = model.evaluateSticker(
-      kind,
+        '$tool/${model.constructionPaper}/${target.planeId}/${face?.id}/${model.drawingRevision}/${model.nextId}';
+    if (key == _constructionPreviewKey) return;
+    _constructionPreviewKey = key;
+    _constructionEvaluation = model.evaluateConstruction(
+      tool,
+      target.planeId,
       target.point,
-      targetPlaneId: target.planeId,
     );
     _refreshScene();
   }
 
-  void _placePrimedSticker() {
-    final kind = _primedSticker, target = _stickerTarget();
-    if (kind == null || target == null) return;
-    final evaluation = model.evaluateSticker(
-      kind,
+  void _updateEntityHover() {
+    if (_parcelShopping || _drawingFocused || viewport.isEmpty) {
+      _aimedEntityName = null;
+      return;
+    }
+    final target = _constructionTarget();
+    _aimedEntityName =
+        model.objects[model.planes[target?.planeId]?.owner]?.constructionName;
+  }
+
+  void _placeConstruction() {
+    if (!_placingConstruction || _parcelShopping) return;
+    final target = _constructionTarget();
+    if (target == null) {
+      model.report('Aim at a paper surface');
+      return;
+    }
+    final evaluation = model.evaluateConstruction(
+      model.constructionTool!,
+      target.planeId,
       target.point,
-      targetPlaneId: target.planeId,
     );
-    if (evaluation.valid && model.applySticker(evaluation)) {
-      _primeSticker(null);
+    if (evaluation.valid) {
+      if (model.applyConstruction(evaluation)) {
+        _entityNameTimer?.cancel();
+        _createdEntityId = evaluation.object!.id;
+        _entityNameTimer = Timer(const Duration(seconds: 2), () {
+          if (mounted) _updateFocusUi(() => _createdEntityId = null);
+        });
+        _updateFocusUi(() {});
+      }
     } else {
-      model.report(evaluation.issue ?? 'The target has changed');
+      model.report(evaluation.issue!);
     }
   }
-
-  void _focusPreferences() {
-    devSettings.focusToolCard = model.focusCard;
-    devSettings.drawingImplement = model.drawingImplement;
-    devSettings.lastDrawingImplement = model.lastDrawingImplement;
-    if (widget.controller == null) {
-      unawaited(
-        settingsStore.save(devSettings.toJson()).catchError((Object _) {
-          if (mounted) {
-            _updateFocusUi(
-              () => settingsError = 'Could not save tool preference',
-            );
-          }
-        }),
-      );
-    }
-  }
-
-  Widget _focusDock() => FocusToolDock(
-    key: ValueKey('focus-tools-${model.activePlaneId}'),
-    card: model.focusCard,
-    implement: model.drawingImplement,
-    primed: _primedSticker,
-    onPrime: _primeSticker,
-    onCard: (v) {
-      _primeSticker(null);
-      model.selectFocusCard(v);
-      _focusPreferences();
-    },
-    onImplement: (v) {
-      _cancelFocusStroke();
-      model.selectDrawingImplement(v);
-      _focusPreferences();
-    },
-  );
 }
 
 class _DrawingGraphPainter extends CustomPainter {
@@ -283,7 +323,7 @@ class _DrawingGraphPainter extends CustomPainter {
   final Scene scene;
   final List<int> path;
   final Offset? eraseA, eraseB, liveScreen;
-  final ProgramEvaluation? evaluation;
+  final ConstructionEvaluation? evaluation;
   @override
   void paint(Canvas canvas, Size size) {
     final surface = model.drawingSurface;
@@ -360,7 +400,35 @@ class _DrawingGraphPainter extends CustomPainter {
         }
       }
     }
-    if (surface == null) return;
+    final region = evaluation?.target?.region;
+    final targetSurface = evaluation?.target?.surface;
+    if (evaluation?.valid == true && region != null && targetSurface != null) {
+      final p = Path()..fillType = PathFillType.evenOdd;
+      for (final ring in region.rings) {
+        var first = true;
+        for (final node in ring) {
+          final at = camera.projectToScreen(
+            targetSurface.frame.point(node, .009),
+            size,
+          );
+          if (at == null) continue;
+          if (first) {
+            p.moveTo(at.dx, at.dy);
+            first = false;
+          } else {
+            p.lineTo(at.dx, at.dy);
+          }
+        }
+        p.close();
+      }
+      canvas.save();
+      clip(targetSurface.frame);
+      canvas.drawPath(p, Paint()..color = Colors.yellow.withValues(alpha: .22));
+      canvas.restore();
+    }
+    if (surface == null || model.constructionTool != ConstructionTool.pencil) {
+      return;
+    }
     final strokeColor = switch (model.drawingImplement) {
       DrawingImplement.pencil => const Color(0xffff9b32),
       DrawingImplement.pen => const Color(0xff83d5ef),
@@ -372,8 +440,7 @@ class _DrawingGraphPainter extends CustomPainter {
         ? 8.0
         : 6.0;
     lineFrame = surface.frame;
-    if (model.focusCard == FocusToolCard.drawing &&
-        model.drawingImplement != DrawingImplement.eraser) {
+    if (model.constructionTool == ConstructionTool.pencil) {
       final grid = model.focusDrawingGrid!;
       final preview = liveScreen == null
           ? <Offset>[]
@@ -443,37 +510,6 @@ class _DrawingGraphPainter extends CustomPainter {
           );
         }
       }
-    }
-    final region = evaluation?.region;
-    final targetSurface = evaluation == null
-        ? null
-        : model.drawingSurfaceFor(evaluation!.targetPlaneId);
-    if (model.focusCard == FocusToolCard.stickerbook &&
-        evaluation?.valid == true &&
-        region != null &&
-        targetSurface != null) {
-      final p = Path()..fillType = PathFillType.evenOdd;
-      for (final ring in region.rings) {
-        var first = true;
-        for (final node in ring) {
-          final at = camera.projectToScreen(
-            targetSurface.frame.point(node, .009),
-            size,
-          );
-          if (at == null) continue;
-          if (first) {
-            p.moveTo(at.dx, at.dy);
-            first = false;
-          } else {
-            p.lineTo(at.dx, at.dy);
-          }
-        }
-        p.close();
-      }
-      canvas.save();
-      clip(targetSurface.frame);
-      canvas.drawPath(p, Paint()..color = Colors.yellow.withValues(alpha: .22));
-      canvas.restore();
     }
     if (eraseA != null && eraseB != null) {
       line(eraseA!, eraseB!, Colors.redAccent, 2.5);

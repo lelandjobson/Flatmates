@@ -1,7 +1,8 @@
 import '../protoplane/drawing_graph.dart';
 import '../protoplane/drawing_visibility.dart';
-import '../protoplane/sticker_program.dart';
-import '../protoplane/focus_tool_dock.dart';
+import '../protoplane/construction.dart';
+import '../rendering/scene/scene_hit_tester.dart';
+import '../protoplane/construction_toolbar.dart';
 import '../protoplane/parcels.dart';
 import '../protoplane/parcel_overlay.dart';
 import '../protoplane/geometry_benchmark.dart';
@@ -99,18 +100,19 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     with TickerProviderStateMixin {
   final Map<int, Offset> _focusTouches = {};
   final List<int> _focusPath = [];
-  Offset? _eraseStart, _eraseEnd, _focusDownAt, _focusLiveScreen;
-  String? _focusGestureSurface, _stickerPreviewKey;
+  Offset? _eraseStart, _eraseEnd, _focusLiveScreen;
+  String? _focusGestureSurface, _constructionPreviewKey;
   bool _focusHadMultiple = false;
-  double _focusSpan = 0;
-  ProgramEvaluation? _stickerEvaluation;
-  StickerKind? _primedSticker;
-  FocusToolCard? _lastFocusCard;
+  ConstructionEvaluation? _constructionEvaluation;
+  String? _createdEntityId, _aimedEntityName;
+  Timer? _entityNameTimer;
+
   bool get _focused => model.activePlane != null;
   bool get _drawingFocused =>
-      _focused && model.focusCard == FocusToolCard.drawing;
-  bool get _stickerbookFocused =>
-      _focused && model.focusCard == FocusToolCard.stickerbook;
+      _focused && model.constructionTool == ConstructionTool.pencil;
+  bool get _placingConstruction =>
+      model.constructionTool == ConstructionTool.volume ||
+      model.constructionTool == ConstructionTool.paper;
   bool get _cameraUnlocked => !_drawingFocused;
   void _updateFocusUi(VoidCallback action) => setState(action);
   late ProtoplaneController model;
@@ -344,6 +346,8 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     model = widget.controller ?? ProtoplaneController();
     devSettings.parcelSize = model.parcels.size;
     model.enableInPlaceDrawing();
+    model.constructionTool = null;
+    model.activePlaneId = null;
     if (widget.controller == null) {
       model.setProtoplaneCells(devSettings.protoplaneCells);
     }
@@ -516,9 +520,8 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       );
       if (!mounted) return;
       if (json != null) devSettings.load(json);
-      model.focusCard = devSettings.focusToolCard;
-      model.drawingImplement = devSettings.drawingImplement;
-      model.lastDrawingImplement = devSettings.lastDrawingImplement;
+      model.drawingImplement = DrawingImplement.pencil;
+      model.lastDrawingImplement = DrawingImplement.pencil;
       settingsError = null;
       _applyDevSettings();
     } catch (_) {
@@ -798,20 +801,6 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
 
   void _modelChanged() {
     if (_disposed) return;
-    if (_lastFocusCard != model.focusCard) {
-      _lastFocusCard = model.focusCard;
-      _primedSticker = null;
-      _stickerEvaluation = null;
-      _stickerPreviewKey = null;
-      _cancelFocusStroke();
-      _focusTouches.clear();
-      pointers.clear();
-      controls.cancel();
-      mapCamera.pauseForHandoff();
-      focusZoom.stop();
-      if (_focused) worldPose = semiFocusPose = fullFocusPose = _Pose(camera);
-      _refreshScene();
-    }
     if ((model.tool != CraftTool.pencil || model.selectedMotif != null) &&
         pencilDwell.tail != null) {
       pencilDwell.cancel();
@@ -820,9 +809,9 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       setState(() {});
       return;
     }
-    if (_primedSticker != null) {
-      _stickerPreviewKey = null;
-      _previewPrimedSticker();
+    if (_placingConstruction) {
+      _constructionPreviewKey = null;
+      _previewConstruction();
     }
     if (model.motifNotices.isNotEmpty) {
       final notices = List<PencilMotif>.of(model.motifNotices);
@@ -897,10 +886,13 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
         extrusion.value = 1;
       }
     }
+    if (model.activePlane == null &&
+        model.constructionTool == ConstructionTool.pencil) {
+      model.constructionTool = null;
+    }
     if (_lastPlane != model.activePlaneId) {
-      _primedSticker = null;
-      _stickerEvaluation = null;
-      _stickerPreviewKey = null;
+      _constructionEvaluation = null;
+      _constructionPreviewKey = null;
       _cancelFocusStroke();
       final traversing =
           _lastPlane != null && model.activePlane != null && worldPose != null;
@@ -958,7 +950,8 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
 
   void _controlsChanged() {
     if (_disposed) return;
-    _previewPrimedSticker();
+    _previewConstruction();
+    _updateEntityHover();
     if (model.activePlane == null &&
         !viewport.isEmpty &&
         !transition.isAnimating) {
@@ -973,10 +966,11 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
 
   void _cameraChanged() {
     if (_disposed) return;
-    if (_stickerbookFocused) {
+    if (_placingConstruction) {
       worldPose = _Pose(camera);
-      _previewPrimedSticker();
+      _previewConstruction();
     }
+    _updateEntityHover();
     scene.markNeedsPaint();
     if (!_geometryBenchmark.active &&
         model.activePlane == null &&
@@ -1236,21 +1230,23 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
         }
       }
     }
-    if (_stickerbookFocused) {
+    if (!_drawingFocused) {
       meshes.removeWhere(
-        (m) => model.planes.containsKey(m.id) && !model.isLandscapePaper(m.id),
+        (m) =>
+            model.planes.containsKey(m.id) &&
+            !model.landscape.terrain.tiles.containsKey(m.id),
       );
     }
     for (final mesh in meshes) {
       mesh.cropBox = null;
     }
-    final sticker = _stickerEvaluation;
-    if (sticker != null && sticker.valid) {
-      for (final object in sticker.objects) {
+    final construction = _constructionEvaluation;
+    if (construction != null && construction.valid) {
+      for (final object in [construction.object!]) {
         meshes.addAll(
           _objectMeshes(
             object.copyWith(id: 'sticker-preview-${object.id}'),
-            sticker.frames[object.planeId]!,
+            construction.frame!,
             opacity: .55,
           ),
         );
@@ -1298,6 +1294,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     }
     _effectsChanged();
     _applyHighlight();
+    _updateEntityHover();
   }
 
   void _applyHighlight() {
@@ -1456,20 +1453,6 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     focusZoom.forward(from: 0);
   }
 
-  void _enter(_Hit hit) {
-    worldPose ??= _Pose(camera);
-    mapLook ??= mapCamera.lookAt;
-    mapDistance = mapCamera.distance;
-    mapYaw = mapCamera.yaw;
-    mapCamera.pauseForHandoff();
-    selectedObject = hit.object;
-    preview = false;
-    _setHover(null);
-    final surface = hit.object == null ? hit.plane : 'surface-${hit.object}';
-    final destination = model.planes.containsKey(surface) ? surface : hit.plane;
-    model.enter(model.surfaceFusion.canonical[destination] ?? destination);
-  }
-
   void _restoreWorld() {
     preview = false;
     selectedObject = null;
@@ -1577,7 +1560,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     }
     for (final plane in model.planes.values) {
       if (!plane.id.startsWith('surface-') &&
-          (!_stickerbookFocused || model.isLandscapePaper(plane.id)) &&
+          (!_placingConstruction || model.isLandscapePaper(plane.id)) &&
           model.planeAvailable(plane) &&
           (model.surfaceFusion.canonical[plane.id] ?? plane.id) == plane.id) {
         for (final region in model.surfaceRegions(plane)) {
@@ -1832,7 +1815,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
         _navigateMulti(ratio);
       }
       if (_cameraUnlocked || planeSwipe.zooming) lastSpan = span;
-    } else if (!multi && _cameraUnlocked) {
+    } else if (!multi && _cameraUnlocked && moved) {
       if (controls.profile.worldDrag(
             pointers: 1,
             buttons: e.buttons,
@@ -2071,8 +2054,14 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       );
     }
     if (!moved && !multi && !drawing && !pulling && !secondary) {
-      if (_stickerbookFocused) {
-        if (!devToolsOpen) _placePrimedSticker();
+      if (_placingConstruction) {
+        if (!devToolsOpen) {
+          if (_parcelShopping) {
+            _tap(e.localPosition);
+          } else {
+            _placeConstruction();
+          }
+        }
       } else if (!devToolsOpen || model.activePlane == null) {
         _tap(e.localPosition);
       }
@@ -2138,6 +2127,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   }
 
   void _trackpadStart(PointerPanZoomStartEvent event) {
+    if (_drawingFocused) return;
     if (devSettings.showGestureDebug) {
       gestureDebug.down(
         event.pointer,
@@ -2173,7 +2163,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     }
     controls.move(event.kind, event.localPosition);
     if (_cameraUnlocked) {
-      if (_stickerbookFocused) mapCamera.pan(event.panDelta);
+      mapCamera.pan(event.panDelta);
       _navigateMulti(event.scale / trackpadScale);
     } else {
       final swipe = planeSwipe.updateTrackpad(
@@ -2216,8 +2206,6 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       return;
     }
     if (model.activePlane == null) {
-      final hit = _pick(controls.worldAim(viewport));
-      if (hit != null) _enter(hit);
       return;
     }
     if (model.draft.path.isEmpty && model.editId == null) {
@@ -2300,7 +2288,9 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     if (!_disposed && devSettings.showGestureDebug && e is PointerScrollEvent) {
       gestureDebug.scrollEvent(e.pointer, e.localPosition, e.scrollDelta);
     }
-    if (e is! PointerScrollEvent || transition.isAnimating) return;
+    if (e is! PointerScrollEvent || transition.isAnimating || _drawingFocused) {
+      return;
+    }
     controls.hover(e.kind, e.localPosition);
     if (_cameraUnlocked) {
       mapCamera.zoomByScroll(e.scrollDelta.dy);
@@ -2526,12 +2516,12 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                                   List.of(_focusPath),
                                   _eraseStart,
                                   _eraseEnd,
-                                  _stickerEvaluation,
+                                  _constructionEvaluation,
                                   _focusLiveScreen,
                                 ),
                               ),
                             ),
-                            if (model.activePlane == null)
+                            if (_drawingFocused)
                               IgnorePointer(
                                 child: CustomPaint(
                                   key: const ValueKey('craft-grid-overlay'),
@@ -2628,15 +2618,14 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                     ),
                   ),
                 ),
-                if (_stickerbookFocused ||
-                    (model.activePlane == null && controls.showReticle))
+                if (!_drawingFocused)
                   Positioned.fill(
                     child: ViewCrosshair(
-                      position: _stickerbookFocused
-                          ? viewport.center(Offset.zero)
-                          : controls.worldAim(viewport),
-                      selectable: _primedSticker != null
-                          ? _stickerEvaluation?.valid == true
+                      position: _parcelShopping
+                          ? controls.worldAim(viewport)
+                          : viewport.center(Offset.zero),
+                      selectable: _placingConstruction
+                          ? _constructionEvaluation?.valid == true
                           : hover != null,
                     ),
                   ),
@@ -2761,10 +2750,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                     ),
                   ),
                 ),
-                if (model.activePlane != null &&
-                    !loading &&
-                    !loadFailed &&
-                    !devToolsOpen)
+                if (!loading && !loadFailed && !devToolsOpen)
                   Positioned(
                     bottom: 12 + MediaQuery.paddingOf(context).bottom,
                     left: 12,
@@ -2772,21 +2758,24 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                     child: Center(
                       child: SizedBox(
                         key: _footerKey,
-                        width: 640,
-                        child: _focusDock(),
-                      ),
-                    ),
-                  ),
-                if (_stickerEvaluation?.issue != null)
-                  Positioned(
-                    bottom: viewport.height < 500 ? 140 : 180,
-                    left: 16,
-                    right: 16,
-                    child: IgnorePointer(
-                      child: Text(
-                        _stickerEvaluation!.issue!,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.orangeAccent),
+                        width: 320,
+                        child: ConstructionToolbar(
+                          key: const ValueKey('construction-toolbar'),
+                          selected: model.constructionTool,
+                          paper: model.constructionPaper,
+                          entityName:
+                              model
+                                  .objects[_createdEntityId]
+                                  ?.constructionName ??
+                              _aimedEntityName,
+                          onPaper: (paper) {
+                            model.constructionPaper = paper;
+                            _constructionPreviewKey = null;
+                            _previewConstruction();
+                            setState(() {});
+                          },
+                          onSelect: _selectConstructionTool,
+                        ),
                       ),
                     ),
                   ),
@@ -2942,6 +2931,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
 
   @override
   void dispose() {
+    _entityNameTimer?.cancel();
     harvestNoticeTimer?.cancel();
     harvestAtlas.dispose();
     landscapePaperTexture?.dispose();

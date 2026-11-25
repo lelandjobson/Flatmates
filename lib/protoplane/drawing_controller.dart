@@ -78,11 +78,7 @@ extension FocusDrawing on ProtoplaneController {
       regions: [
         for (final id in sources)
           if (planes[id] != null)
-            _inFrame(
-              objects[planes[id]!.owner]?.region ?? planes[id]!.region,
-              planes[id]!,
-              basis,
-            ),
+            _inFrame(planes[id]!.region, planes[id]!, basis),
       ],
     );
   }
@@ -92,7 +88,12 @@ extension FocusDrawing on ProtoplaneController {
     if (surface == null) return null;
     return _drawingGrids.putIfAbsent(
       drawingImplement,
-      () => surface.grid(drawingImplement),
+      () => surface.grid(
+        drawingImplement,
+        spacing: constructionTool == ConstructionTool.pencil
+            ? drawingSpacingFor(activePlaneId!)
+            : null,
+      ),
     );
   }
 
@@ -122,7 +123,11 @@ extension FocusDrawing on ProtoplaneController {
       return false;
     }
     for (final point in path) {
-      final p = drawingImplement.toLattice(point) / drawingImplement.spacing;
+      final p =
+          drawingImplement.toLattice(point) /
+          (constructionTool == ConstructionTool.pencil
+              ? drawingSpacingFor(activePlaneId!)
+              : drawingImplement.spacing);
       if ((p.dx - p.dx.round()).abs() > 1e-5 ||
           (p.dy - p.dy.round()).abs() > 1e-5) {
         return false;
@@ -197,8 +202,13 @@ extension FocusDrawing on ProtoplaneController {
     for (final id in surface.sources) {
       final p = planes[id];
       if (p == null) continue;
-      final owner = objects[p.owner];
-      final regions = owner != null ? [owner.region] : surfaceRegions(p);
+      final regions = p.owner != null
+          ? [
+              p.id.contains('-side-')
+                  ? p.region
+                  : (objects[p.owner]?.region ?? p.region),
+            ]
+          : surfaceRegions(p);
       for (final r in regions) {
         final mapped = _inFrame(r, p, surface.frame);
         remainder = remainder.expand((part) => part.subtract(mapped)).toList();

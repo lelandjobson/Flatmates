@@ -75,6 +75,7 @@ void main() {
         PaperMaterial.paperWhite: 256,
         PaperMaterial.graphite: 0,
         PaperMaterial.cork: 0,
+        PaperMaterial.paperGreen: 0,
       });
       final before = snapshot(c);
       final white = centerId(c, PaperMaterial.paperWhite);
@@ -111,6 +112,7 @@ void main() {
         PaperMaterial.paperWhite: 384,
         PaperMaterial.graphite: 128,
         PaperMaterial.cork: 128,
+        PaperMaterial.paperGreen: 0,
       });
       drawTile(c);
       expect(c.drawingReady, isFalse);

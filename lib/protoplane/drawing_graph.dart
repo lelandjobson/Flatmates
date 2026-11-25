@@ -182,13 +182,15 @@ class DrawingSurface {
       newPencilCoverage([
         for (final r in regions) ...clipPencil(segments, r),
       ], const []);
-  CraftGrid grid(DrawingImplement implement) {
+  CraftGrid grid(DrawingImplement implement, {double? spacing}) {
     final coordinates = frame.region.outer.map(implement.toLattice).toList();
     final left = coordinates.map((p) => p.dx).reduce(math.min),
         right = coordinates.map((p) => p.dx).reduce(math.max);
     final top = coordinates.map((p) => p.dy).reduce(math.min),
         bottom = coordinates.map((p) => p.dy).reduce(math.max);
-    final step = implement.spacing, nodes = <Offset>[], ids = <String, int>{};
+    final step = spacing ?? implement.spacing,
+        nodes = <Offset>[],
+        ids = <String, int>{};
     for (
       var y = (top / step).ceil();
       y <= (bottom / step + 1e-6).floor();
@@ -212,9 +214,7 @@ class DrawingSurface {
         final next = ids[key];
         if (next == null) continue;
         final edge = PencilSegment(nodes[entry.value], nodes[next]);
-        final coverage = clipPencil([
-          edge,
-        ], frame.region).fold<double>(0, (s, e) => s + e.length);
+        final coverage = clip([edge]).fold<double>(0, (s, e) => s + e.length);
         if (coverage >= edge.length - 1e-6) {
           connections.add(GridEdge(entry.value, next));
         }

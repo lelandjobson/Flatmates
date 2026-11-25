@@ -59,7 +59,7 @@ void main() {
           find.byKey(const ValueKey('craft-safe-zone')),
         );
         final dock = tester.getRect(
-          find.byKey(ValueKey('focus-tools-${c.activePlaneId}')),
+          find.byKey(const ValueKey('construction-toolbar')),
         );
         expect(rect.bottom, lessThanOrEqualTo(dock.top));
         expect(rect.left, greaterThanOrEqualTo(0));

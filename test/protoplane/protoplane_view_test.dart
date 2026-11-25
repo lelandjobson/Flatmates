@@ -118,7 +118,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('focus zoom is disabled by default but outward zoom dismisses', (
+  testWidgets('pencil ignores scroll and deselects through toolbar', (
     tester,
   ) async {
     final model = constructionWorld();
@@ -127,7 +127,7 @@ void main() {
       model.dispose();
     });
     await mount(tester, model, const Size(900, 700));
-    await tester.tapAt(const Offset(450, 350));
+    await tester.tap(find.byKey(const ValueKey('construction-pencil')));
     await tester.pumpAndSettle();
     final camera = tester
         .widget<SceneView>(find.byType(SceneView).first)
@@ -150,6 +150,9 @@ void main() {
         scrollDelta: Offset(0, 60),
       ),
     );
+    await tester.pumpAndSettle();
+    expect(model.activePlane, isNotNull);
+    await tester.tap(find.byKey(const ValueKey('construction-pencil')));
     await tester.pumpAndSettle();
     expect(model.activePlane, isNull);
     await tester.pumpWidget(const SizedBox());
@@ -300,7 +303,9 @@ void main() {
     );
   }
 
-  testWidgets('touch pinch exits and restores world pose', (tester) async {
+  testWidgets('touch pinch preserves pencil pose until deselected', (
+    tester,
+  ) async {
     final model = constructionWorld();
     addTearDown(() {
       resetView(tester);
@@ -310,7 +315,7 @@ void main() {
     final scene = tester.widget<SceneView>(find.byType(SceneView).first).scene;
     final original = scene.camera!.position.clone();
     // Tap through the reticle from world mode to cache the actual map pose.
-    await tester.tapAt(const Offset(450, 350));
+    await tester.tap(find.byKey(const ValueKey('construction-pencil')));
     await tester.pumpAndSettle();
     expect(model.activePlane, isNotNull);
     final a = await tester.startGesture(const Offset(300, 300), pointer: 1);
@@ -319,6 +324,9 @@ void main() {
     await b.moveTo(const Offset(490, 300));
     await a.up();
     await b.up();
+    await tester.pumpAndSettle();
+    expect(model.activePlane, isNotNull);
+    await tester.tap(find.byKey(const ValueKey('construction-pencil')));
     await tester.pumpAndSettle();
     expect(model.activePlane, isNull);
     expect(scene.camera!.position.distanceTo(original), lessThan(.00001));

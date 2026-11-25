@@ -114,6 +114,7 @@ void main() {
         PaperMaterial.paperWhite: 256,
         PaperMaterial.graphite: 0,
         PaperMaterial.cork: 0,
+        PaperMaterial.paperGreen: 0,
       });
       c.enter('ground-starter-paperWhite-0-0');
       expect(c.grid!.nodes.length, 9);
@@ -140,6 +141,7 @@ void main() {
         PaperMaterial.paperWhite: 256,
         PaperMaterial.graphite: 0,
         PaperMaterial.cork: 0,
+        PaperMaterial.paperGreen: 0,
       });
       expect(c.landscape.remaining(c.activePlane!), isNotEmpty);
       expect(c.draft.path, isEmpty);
@@ -263,6 +265,7 @@ void main() {
         PaperMaterial.paperWhite: 256,
         PaperMaterial.graphite: 0,
         PaperMaterial.cork: 0,
+        PaperMaterial.paperGreen: 0,
       });
       expect(
         c.landscape.terrain.tiles['ground-starter-paperWhite-0-0']!.sheet.cuts,

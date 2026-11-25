@@ -16,7 +16,12 @@ import 'crumpled_paper.dart';
 /// atlas and submit textured ground. Only changed slots rasterize again; camera,
 /// hover and draft changes reuse the image. Polygons remain the harvest truth.
 class HarvestMeshCache {
-  static const renderVersion = 4;
+  static const renderVersion = 5;
+  static const constructionPaperColor = Color(0xffa1a39f);
+  Color terrainColor(PaperMaterial material) =>
+      material == PaperMaterial.paperWhite
+      ? constructionPaperColor
+      : material.base;
   static const tilePixels = 128, gutter = 1, columns = 16;
   static const slotPixels = tilePixels + gutter * 2;
   final atlas = PlanarTextureAtlas();
@@ -122,7 +127,7 @@ class HarvestMeshCache {
               faces: faces,
             ),
             material: MaterialModel(
-              color: sheet.material.base,
+              color: terrainColor(sheet.material),
               doubleSided: false,
               strokeEdges: false,
             ),
@@ -194,7 +199,7 @@ class HarvestMeshCache {
           faces: faces,
         ),
         material: MaterialModel(
-          color: sheet.material.base,
+          color: terrainColor(sheet.material),
           doubleSided: false,
           strokeEdges: false,
         ),
@@ -319,7 +324,7 @@ class HarvestMeshCache {
 
       // Retain exact fallback geometry for near-plane clipping and debug views.
       for (final patch in landscape.remaining(plane)) {
-        face(patch.region.outer, patch.color.base, .001);
+        face(patch.region.outer, terrainColor(patch.color), .001);
       }
 
       // Fold shading belongs to natural white-paper terrain, never its material
@@ -329,7 +334,7 @@ class HarvestMeshCache {
           _foldStrength > 0 &&
           _foldDensity > 0) {
         final shader = _crumpleShader!;
-        final base = PaperMaterial.paperWhite.base;
+        const base = constructionPaperColor;
         // Stable phase per world; shared coordinates guarantee seam continuity.
         final phase = (landscape.seed & 1023) / 256.0;
         final uniforms = [

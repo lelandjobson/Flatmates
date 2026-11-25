@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flatmates/protoplane/adjacent_grid_indicators.dart';
 import 'package:flatmates/protoplane/controller.dart';
-import 'package:flatmates/protoplane/drawing_graph.dart';
+import 'package:flatmates/protoplane/construction.dart';
 import 'package:flatmates/protoplane/models.dart';
 import 'package:flatmates/rendering/scene_view.dart';
 import 'package:flatmates/screens/protoplane_concept_view.dart';
@@ -51,7 +51,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('primed sticker preview follows camera and a drag never places', (
+  testWidgets('paper preview follows camera and a drag never places', (
     tester,
   ) async {
     final model = ProtoplaneController();
@@ -68,9 +68,7 @@ void main() {
       model.commitDrawingPath([...region.outer, region.outer.first]),
       isTrue,
     );
-    model.selectFocusCard(FocusToolCard.stickerbook);
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('sticker-card-0')));
+    await tester.tap(find.byKey(const ValueKey('construction-paper')));
     await tester.pumpAndSettle();
     dynamic painter() => tester
         .widget<CustomPaint>(
@@ -78,6 +76,7 @@ void main() {
         )
         .painter;
     expect(painter().evaluation?.valid, isTrue);
+    final previousTarget = painter().evaluation?.target?.planeId;
     final drag = await tester.startGesture(
       const Offset(300, 250),
       kind: PointerDeviceKind.mouse,
@@ -85,22 +84,16 @@ void main() {
     await drag.moveBy(const Offset(300, 0));
     await drag.up();
     await tester.pumpAndSettle();
-    expect(painter().evaluation?.valid == true, isFalse);
+    expect(painter().evaluation?.target?.planeId, isNot(previousTarget));
     expect(model.assemblies, isEmpty);
-    expect(
-      tester
-          .widget<Transform>(find.byKey(const ValueKey('sticker-lift-0')))
-          .transform
-          .storage[13],
-      -8,
-    );
+    expect(model.constructionTool, ConstructionTool.paper);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
 
   for (final kind in [PointerDeviceKind.mouse, PointerDeviceKind.touch]) {
     testWidgets(
-      'stickerbook navigates with $kind and drawing locks the resulting pose',
+      'volume navigates with $kind and drawing locks the resulting pose',
       (tester) async {
         final model = ProtoplaneController();
         addTearDown(model.dispose);
@@ -110,16 +103,15 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        model.enter(centerId(model, PaperMaterial.paperWhite));
+        await tester.tap(find.byKey(const ValueKey('construction-pencil')));
         await tester.pumpAndSettle();
         final camera = tester
             .widget<SceneView>(find.byType(SceneView).first)
             .scene
             .camera!;
         final initial = camera.position.clone();
-        final plane = model.activePlaneId;
         expect(find.byType(ViewCrosshair), findsNothing);
-        model.selectFocusCard(FocusToolCard.stickerbook);
+        await tester.tap(find.byKey(const ValueKey('construction-volume')));
         await tester.pumpAndSettle();
         expect(camera.position, initial);
         expect(
@@ -142,10 +134,10 @@ void main() {
         await drag.up();
         await tester.pumpAndSettle();
         expect(camera.position, isNot(initial));
-        expect(model.activePlaneId, plane);
+        expect(model.activePlaneId, isNull);
         expect(model.assemblies, isEmpty);
         final moved = camera.position.clone();
-        model.selectFocusCard(FocusToolCard.drawing);
+        await tester.tap(find.byKey(const ValueKey('construction-pencil')));
         await tester.pumpAndSettle();
         expect(camera.position, moved);
         expect(find.byType(ViewCrosshair), findsNothing);
@@ -157,7 +149,7 @@ void main() {
         await drawing.up();
         await tester.pumpAndSettle();
         expect(camera.position, moved);
-        model.selectFocusCard(FocusToolCard.stickerbook);
+        await tester.tap(find.byKey(const ValueKey('construction-volume')));
         await tester.pumpAndSettle();
         final trackpad = await tester.createGesture(
           kind: PointerDeviceKind.trackpad,
@@ -171,7 +163,7 @@ void main() {
         await trackpad.panZoomEnd();
         await tester.pumpAndSettle();
         expect(camera.position, isNot(moved));
-        expect(model.activePlaneId, plane);
+        expect(model.activePlaneId, isNull);
         final beforeScroll = camera.position.clone();
         await tester.sendEventToBinding(
           const PointerScrollEvent(
@@ -181,7 +173,7 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(camera.position, isNot(beforeScroll));
-        expect(model.activePlaneId, plane);
+        expect(model.activePlaneId, isNull);
         final navigated = camera.position.clone();
         model.leave();
         await tester.pumpAndSettle();

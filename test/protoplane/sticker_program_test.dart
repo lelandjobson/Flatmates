@@ -123,7 +123,7 @@ void main() {
     expect(c.drawingSurface!.id, id);
     expect(c.surfaceGraphs.length, 1);
     final saved = c.toJson();
-    expect(saved['version'], 10);
+    expect(saved['version'], 11);
     final legacy = jsonDecode(jsonEncode(saved)) as Map<String, dynamic>;
     legacy['version'] = 9;
     legacy.remove('drawingGraphs');

@@ -88,7 +88,7 @@ List<Mesh> objectMeshes(
   )!;
   Mesh mesh(String suffix, Geometry geometry) => Mesh(
     id: '${object.id}$suffix',
-    name: object.kind.label,
+    name: object.constructionName ?? object.kind.label,
     geometry: geometry,
     shadeEdges: true,
     textureUp: plane.u,
@@ -157,7 +157,7 @@ List<Mesh> objectMeshes(
           '',
           Geometry(
             id: object.id,
-            name: object.kind.label,
+            name: object.constructionName ?? object.kind.label,
             vertices: vertices,
             faces: faces,
             colorSeed: 7,

@@ -4,88 +4,47 @@ Open `protoplane_concept` in the developer menu (`/protoplane-concept`). This
 prototype has its own world, paper inventory, history, and local save. It does
 not change GameView or the grid-puzzle rules.
 
-## Current focus tools and stickerbook
+## Current construction toolbar and inflation
 
-Focus enables the tool dock and context treatment, with a soft edge vignette.
-Drawing locks the current camera pose and shows the drawing grids and plane
-pips; Stickerbook preserves world navigation and hides those guides. Switching
-cards preserves the current pose, and leaving Stickerbook keeps the navigated
-view. Drawing uses the cursor or finger directly and hides the reticle.
-The former toolbar and paper/acetate selectors are replaced by a transparent
-bottom dock. Horizontal swipes in the dock switch Drawing and Stickerbook;
-Drawing has a looping vertical scroll wheel showing Pencil, Pen, Marker, Crooked
-pencil and Eraser together. Dragging centers and selects the highlighted implement;
-the surrounding implements are dark silhouettes. A soft black edge shadow and a
-black-to-transparent gradient over the bottom quarter of the screen back the dock.
-The selected card, implement and last non-eraser implement persist in settings.
-The illustrations are code-native side elevations with a briefly visible name.
+The bottom toolbar has Pencil, Inflate, and Paper. No tool is selected at launch;
+selecting the active tool again restores navigation. Legacy drawing implements
+and sticker programs remain readable in saved worlds but have no selector here.
 
-Pencil and Pen use quarter-tile spacing (5×5 points per tile), Marker uses tile
-corners (2×2), and Crooked pencil rotates the quarter-unit lattice by 45°.
-Connections are orthogonal in the implement's axes. Live tracing uses a thick
-6-pixel glowing line (8 for Marker), matching the earlier light pencil feedback.
-Dragging backward retracts the current stroke, including across skipped pips;
-dragging forward extends it again. Between-pip feedback remains transient:
-release saves only completed pip-to-pip connections, and unsupported connections
-reject the transaction instead of leaving clipped partial segments. Separate implements own
-separate persistent graphs on a stable shared surface, including across owned
-coplanar terrain tiles. Multiple released strokes can close a face. Intersections
-and T-junctions split topological edges; intermediate pips do not. Nested loops
-retain holes, and surface boundaries never implicitly close a drawing.
-Committed lines remain visible outside focus and on other surfaces while focused.
-Foreground scene geometry clips the lines and their glow; drawing grids and live
-feedback remain limited to drawing focus.
+Pencil locks the surface under the centered reticle and keeps the incoming camera
+pose. The reticle disappears and cursor/finger strokes connect orthogonal dots,
+including retracing and between-dot feedback. Ground uses tile corners; volume
+faces use quarter-unit spacing. Committed lines remain visible outside focus,
+clipped by foreground geometry together with their glow. Switching tools cancels
+an unfinished stroke. Pinches, wheel input, and trackpads do not move Pencil's camera.
 
-Eraser drags a single unsnapped red segment from the initial pointer position.
-Every intersected topological edge glows orange across the surface's implement
-graphs. Moving the endpoint recomputes the selection; release erases exactly
-that set in one undo transaction. Cancellation or a second pointer erases nothing.
-Erasing construction guides does not change instantiated objects.
+Paper and Inflate keep normal navigation with a centered reticle. On grey
+construction-paper ground, draw a closed boundary before placing a sheet. The
+smallest containing drawn region wins; on existing objects, their exposed face
+is the fallback. Region holes remain holes. Valid targets have a yellow fill
+and a ghost preview. Only a click/tap without a navigation drag commits; the
+tool remains selected. Parcel shopping suppresses construction previews and placement.
 
-The stickerbook is a vertically scrolling grid tilted in perspective, with five
-functional illustrated cards and thirty inert graphic placeholders to exercise
-scrolling. It has no text search and no dragging interaction. Tap a real card
-to prime it: the original picture lifts in its own cell over 180 ms, with an
-animated shadow while the other entries dim. Reduced motion makes the lift
-immediate. Its name appears above the book. A separate world click or tap applies
-it at the always-centered reticle on both mouse and touch; navigation gestures
-never place a sticker. Any book tap cancels priming; scrolling never primes a card. Switching
-cards, leaving focus, or successful placement clears priming. An invalid placement
-keeps the sticker primed and reports an actionable error.
+Paper opens a fixed-height horizontal material wheel above the tools. Five slots
+are visible, the center item is selected live, and the list loops through Building
+and Cloth. The wheel reveals from the center outward. Building paper is white;
+cloth is green. Each sheet starts .01 units thick and inherits its support's grid.
+Ground-backed sheets use tile corners until inflated.
 
-Targeting resolves the visible surface under the reticle independently of the
-focused surface, then chooses the smallest drawn face across its implement
-graphs. A valid selected-sticker target gets a translucent yellow fill (22%);
-invalid targets and misses get no fill. Camera movement updates the preview and
-clears stale targets. Among containing faces, equal areas prefer the last drawing implement, then stable
-IDs. The face is selected before sticker constraints are checked. The preview
-uses staged geometry, and placement revalidates support, occupancy and the face
-before atomically committing. Oversize regions are rejected, never resized to fit.
-Stickers are free white-paper operations in this prototype; the evaluator still
-calculates material quotes without debiting inventory.
+Inflate transforms a building mat into a one-unit building volume, or a cloth
+sheet into a .05-unit blanket. It replaces the sheet in one undo transaction,
+keeping its ID and moving any local drawing to the new exposed surface. Attached
+objects and collisions prevent inflation. New volume tops and sides, including
+hole walls, have stable quarter-unit drawing surfaces. Bare ground and already
+inflated entities cannot inflate directly. Creation and reticle hover show the
+entity names: building mat, cloth sheet, building volume, and blanket.
 
-House builds a floor and 1-unit enclosing walls, without a roof or automatic
-door, on a 1×1 through 8×8 ground footprint; courtyard holes and concavity remain.
-Hill builds up to three .25-high inset paper tiers within 4×4, requiring at least
-two tiers, without changing terrain. Bed creates frame, mattress, pillow and
-blanket over a .5–1 by 1–2 rectangular footprint. Door cuts an upright opening at
-the wall bottom, at most .25 wide and .5–.75 high. Window cuts a framed .25–.75
-rectangle with wall remaining around every side. Rotated House and Bed drawings
-are supported; wall openings remain upright.
+Grey ground uses the natural terrain rendering path, retaining existing terrain
+IDs and save compatibility; placed building paper stays white. Construction is
+free. Version 11 adds solidVolume, paperSheet, inflatedCloth, paper.green, and
+inherited drawingSpacing; versions 3–10 remain readable.
 
-World format v10 stores drawing graphs, coordinate frames and program assemblies.
-Faces are derived when loading. v9 worlds migrate with empty drawing graphs and
-retain objects, inventories and existing graphite marks. Graph mutations and
-sticker commits use the existing atomic save/history pipeline. Tool preferences
-remain independent of world undo. The earlier toolbar/focus notes below document
-superseded behavior.
-
-Validation keeps legacy geometry, crafting, material, rendering and storage
-model tests. Obsolete toolbar-only mouse/touch tests were replaced by graph,
-program, dock, and end-to-end reticle placement tests; camera-fit/crop expectations
-now assert camera invariance and unchanged scene visibility. Coverage includes
-portrait, landscape and desktop, graph erasure preview/cancellation, migration,
-rotated grids, nested faces, stale targets, free atomic creation, and undo/redo.
+The following sections retain details of the legacy construction systems and
+supporting rendering infrastructure.
 
 ## In-place focus and landscape drawing
 

@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:vector_math/vector_math_64.dart';
 
 import 'camera.dart';
+import '../mesh.dart';
 import 'scene.dart';
 
 class FocusedFace {
@@ -39,7 +40,10 @@ class SceneHitTester {
   }
 
   /// Return every face hit along the ray, sorted nearest-to-farthest.
-  List<FocusedFace> hitTestAll(Offset position) {
+  List<FocusedFace> hitTestAll(
+    Offset position, {
+    bool Function(Mesh)? includeMesh,
+  }) {
     final ray = _buildRay(position);
     if (ray == null) {
       return const [];
@@ -48,6 +52,7 @@ class SceneHitTester {
     final hits = <(double, FocusedFace)>[];
 
     for (final mesh in _scene.meshes) {
+      if (includeMesh != null && !includeMesh(mesh)) continue;
       final world = mesh.transformMatrix;
       final isDoubleSided = mesh.material.doubleSided;
 
@@ -168,6 +173,7 @@ double _maxDistance(List<Vector3> vertices, Vector3 center) {
   }
   return maxDistance;
 }
+
 class _Ray {
   _Ray({required this.origin, required this.direction});
 
@@ -223,8 +229,7 @@ _FaceIntersection? _intersectFace({
   if (bestDistance == null) {
     return null;
   }
-  final facingNormal =
-      normal.dot(ray.direction) < 0 ? normal : -normal;
+  final facingNormal = normal.dot(ray.direction) < 0 ? normal : -normal;
   return _FaceIntersection(
     distance: bestDistance,
     center: center,
@@ -259,6 +264,7 @@ double? _rayTriangleIntersection(_Ray ray, Vector3 v0, Vector3 v1, Vector3 v2) {
   }
   return t;
 }
+
 Vector4 _transformVector4(Matrix4 matrix, Vector4 vector) {
   final storage = matrix.storage;
   final x = vector.x;

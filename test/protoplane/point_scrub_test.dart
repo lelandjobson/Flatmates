@@ -53,6 +53,7 @@ void main() {
         PaperMaterial.paperWhite: 256,
         PaperMaterial.graphite: 0,
         PaperMaterial.cork: 0,
+        PaperMaterial.paperGreen: 0,
       });
       expect(saved, c.toJson());
       c.undo();

@@ -1,4 +1,5 @@
 import 'drawing_graph.dart';
+import 'construction.dart';
 import 'parcels.dart';
 import 'sticker_program.dart';
 import 'completion.dart';
@@ -29,9 +30,12 @@ part 'pencil_controller.dart';
 part 'linear_placement.dart';
 part 'landscape_drawing.dart';
 part 'drawing_controller.dart';
+part 'construction_controller.dart';
 part 'sticker_controller.dart';
 
 class ProtoplaneController extends ChangeNotifier {
+  ConstructionTool? constructionTool;
+  ConstructionPaper constructionPaper = ConstructionPaper.building;
   FocusToolCard focusCard = FocusToolCard.drawing;
   DrawingImplement drawingImplement = DrawingImplement.pencil;
   DrawingImplement lastDrawingImplement = DrawingImplement.pencil;
@@ -1595,6 +1599,10 @@ class ProtoplaneController extends ChangeNotifier {
                 ),
               ],
       );
+      if ((object.kind == CraftKind.solidVolume ||
+          object.kind == CraftKind.inflatedCloth)) {
+        _deriveVolumeSides(object, source);
+      }
       if (object.kind == CraftKind.floor) {
         final ring = simplifyRing(object.region.outer);
         for (var i = 0; i < ring.length; i++) {
@@ -1760,7 +1768,7 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   Map<String, dynamic> toJson() => {
-    'version': 10,
+    'version': 11,
     'parcels': parcels.toJson(),
     'drawingGraphs': drawingGraphs.values.map((g) => g.toJson()).toList(),
     'assemblies': assemblies.values.map((a) => a.toJson()).toList(),
@@ -1801,7 +1809,7 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   void _load(Map<String, dynamic> j) {
-    if (![3, 4, 5, 6, 7, 8, 9, 10].contains(j['version'])) {
+    if (![3, 4, 5, 6, 7, 8, 9, 10, 11].contains(j['version'])) {
       throw const FormatException('Unsupported world version');
     }
     parcels = WorldParcels.fromJson(j['parcels']);
@@ -1875,7 +1883,9 @@ class ProtoplaneController extends ChangeNotifier {
       );
     nextId = j['nextId'];
     for (final color in materials) {
-      final value = j['balances'][color.id];
+      final value =
+          j['balances'][color.id] ??
+          (color == PaperMaterial.paperGreen && j['version'] < 11 ? 0 : null);
       if (value is! int || value < 0) {
         throw const FormatException('Invalid paper balance');
       }
@@ -1988,6 +1998,12 @@ class ProtoplaneController extends ChangeNotifier {
           !o.depth.isFinite ||
           o.depth < 0 ||
           o.depth > 1 ||
+          ((o.kind == CraftKind.solidVolume ||
+                  o.kind == CraftKind.inflatedCloth ||
+                  o.kind == CraftKind.paperSheet) &&
+              o.drawingSpacing == null) ||
+          (o.drawingSpacing != null &&
+              ![1.0, .25].contains(o.drawingSpacing)) ||
           o.attachmentIds.any((id) => !objects.containsKey(id)) ||
           (o.linear != null &&
               (!planes.containsKey(o.linear!.sourcePlaneId) ||

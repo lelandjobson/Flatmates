@@ -24,6 +24,9 @@ enum CraftKind {
   blanket,
   lamp,
   storage,
+  solidVolume,
+  paperSheet,
+  inflatedCloth,
 }
 
 enum CraftTool { scissors, volume, place, eraser, pencil, lightPencil }
@@ -347,8 +350,10 @@ class CraftObject {
     this.path = const [],
     this.attachmentIds = const [],
     this.linear,
+    this.drawingSpacing,
   }) : material = material ?? color ?? PaperMaterial.paperWhite;
   final String id, planeId;
+  final double? drawingSpacing;
   final CraftKind kind;
   final Region region;
   final PaperMaterial material;
@@ -357,6 +362,13 @@ class CraftObject {
   final List<Offset> path;
   final List<String> attachmentIds;
   final LinearAttachment? linear;
+  String? get constructionName => switch (kind) {
+    CraftKind.paperSheet =>
+      material == PaperMaterial.paperGreen ? 'cloth sheet' : 'building mat',
+    CraftKind.solidVolume => 'building volume',
+    CraftKind.inflatedCloth => 'blanket',
+    _ => null,
+  };
   CraftObject copyWith({
     CraftKind? kind,
     Region? region,
@@ -366,10 +378,12 @@ class CraftObject {
     List<String>? attachmentIds,
     String? planeId,
     LinearAttachment? linear,
+    double? drawingSpacing,
   }) => CraftObject(
     id: id ?? this.id,
     planeId: planeId ?? this.planeId,
     linear: linear ?? this.linear,
+    drawingSpacing: drawingSpacing ?? this.drawingSpacing,
     kind: kind ?? this.kind,
     region: region ?? this.region,
     color: color,
@@ -384,6 +398,7 @@ class CraftObject {
     'id': id,
     'planeId': planeId,
     'kind': kind.name,
+    if (drawingSpacing != null) 'drawingSpacing': drawingSpacing,
     'region': region.toJson(),
     'material': material.id,
     'depth': depth,
@@ -395,6 +410,7 @@ class CraftObject {
     id: j['id'],
     planeId: j['planeId'],
     kind: CraftKind.values.byName(j['kind']),
+    drawingSpacing: (j['drawingSpacing'] as num?)?.toDouble(),
     region: Region.fromJson(j['region']),
     material: PaperMaterial.decode(j['material'] ?? j['color']),
     depth: (j['depth'] as num).toDouble(),
