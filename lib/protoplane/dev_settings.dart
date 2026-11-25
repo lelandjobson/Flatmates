@@ -1,3 +1,4 @@
+import 'drawing_graph.dart';
 import 'models.dart';
 import '../gestures/game_controls.dart';
 import 'dart:async';
@@ -10,8 +11,13 @@ import 'crumpled_paper.dart';
 import 'stroke_color_picker.dart';
 
 class ProtoplaneSettings {
+  FocusToolCard focusToolCard = FocusToolCard.drawing;
+  DrawingImplement drawingImplement = DrawingImplement.pencil;
+  DrawingImplement lastDrawingImplement = DrawingImplement.pencil;
   WorldGestureZones worldGestureZones = WorldGestureZones.center;
   FogSettings fog = FogSettings();
+  int parcelSize = 3;
+  double parcelZoomNear = 16, parcelZoomFar = 25;
   double nearestDistance = 2, farthestDistance = 25;
   double tileGridOpacity = .12;
   int focusContextTiles = 2;
@@ -61,7 +67,13 @@ class ProtoplaneSettings {
   double ambient = .7, sun = .25, wallNear = 4, wallFar = 8;
   Map<String, dynamic> toJson() => {
     'version': 1,
+    'focusToolCard': focusToolCard.name,
+    'drawingImplement': drawingImplement.name,
+    'lastDrawingImplement': lastDrawingImplement.name,
     'fog': fog.toJson(),
+    'parcelSize': parcelSize,
+    'parcelZoomNear': parcelZoomNear,
+    'parcelZoomFar': parcelZoomFar,
     'worldGestureZones': worldGestureZones.name,
     'nearestDistance': nearestDistance,
     'farthestDistance': farthestDistance,
@@ -108,6 +120,21 @@ class ProtoplaneSettings {
     'wallFar': wallFar,
   };
   void load(Map<String, dynamic> json) {
+    focusToolCard = FocusToolCard.values.byName(
+      json['focusToolCard'] ?? 'drawing',
+    );
+    drawingImplement = DrawingImplement.values.byName(
+      json['drawingImplement'] ?? 'pencil',
+    );
+    lastDrawingImplement = DrawingImplement.values.byName(
+      json['lastDrawingImplement'] ??
+          (drawingImplement == DrawingImplement.eraser
+              ? 'pencil'
+              : drawingImplement.name),
+    );
+    if (lastDrawingImplement == DrawingImplement.eraser) {
+      throw const FormatException('Invalid drawing preference');
+    }
     impliedProtoplanes = json['impliedProtoplanes'] == true;
     if (json['version'] != 1 || json['gridLines'] is! bool) {
       throw const FormatException('Invalid settings');
@@ -121,6 +148,20 @@ class ProtoplaneSettings {
     }
 
     fog = FogSettings.fromJson(json['fog']);
+    final side = json['parcelSize'] ?? 3;
+    if (side is! int || side < 1 || side > 12) {
+      throw const FormatException('Invalid parcel size');
+    }
+    parcelSize = side;
+    parcelZoomNear = json.containsKey('parcelZoomNear')
+        ? number('parcelZoomNear', 1, 59)
+        : 16;
+    parcelZoomFar = json.containsKey('parcelZoomFar')
+        ? number('parcelZoomFar', 2, 60)
+        : 25;
+    if (parcelZoomNear >= parcelZoomFar) {
+      throw const FormatException('Invalid parcel zoom range');
+    }
     worldGestureZones = WorldGestureZones.values.firstWhere(
       (zones) => zones.name == json['worldGestureZones'],
       orElse: () => WorldGestureZones.center,
@@ -707,6 +748,37 @@ class _ProtoplaneDevToolsPanelState extends State<ProtoplaneDevToolsPanel> {
                                   );
                                   changed();
                                 },
+                              ),
+                              ListTile(
+                                title: const Text('Parcel size'),
+                                trailing: Text(
+                                  '${settings.parcelSize} × ${settings.parcelSize}',
+                                ),
+                              ),
+                              Slider(
+                                key: const ValueKey('Parcel size'),
+                                value: settings.parcelSize.toDouble(),
+                                min: 1,
+                                max: 12,
+                                divisions: 11,
+                                onChanged: (v) => update(
+                                  () => settings.parcelSize = v.round(),
+                                ),
+                                onChangeEnd: (_) => changed(),
+                              ),
+                              slider(
+                                'Parcel zoom near',
+                                settings.parcelZoomNear,
+                                1,
+                                settings.parcelZoomFar - 1,
+                                (v) => settings.parcelZoomNear = v,
+                              ),
+                              slider(
+                                'Parcel zoom far',
+                                settings.parcelZoomFar,
+                                settings.parcelZoomNear + 1,
+                                60,
+                                (v) => settings.parcelZoomFar = v,
                               ),
                               SwitchListTile(
                                 title: const Text('Gesture overlay'),

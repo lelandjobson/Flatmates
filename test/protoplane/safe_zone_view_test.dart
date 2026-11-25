@@ -3,7 +3,6 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flatmates/rendering/scene_view.dart';
 import 'package:flatmates/screens/protoplane_concept_view.dart';
 import 'construction_fixture.dart';
 
@@ -59,25 +58,12 @@ void main() {
         final rect = tester.getRect(
           find.byKey(const ValueKey('craft-safe-zone')),
         );
-        final camera = tester
-            .widget<SceneView>(find.byType(SceneView).first)
-            .scene
-            .camera!;
-        final points = c.activePlane!.region.outer
-            .map((p) => camera.projectToScreen(c.activePlane!.point(p), size)!)
-            .toList();
-        var bounds = Rect.fromPoints(points.first, points.first);
-        for (final p in points) {
-          bounds = bounds.expandToInclude(Rect.fromPoints(p, p));
-        }
-        expect(rect.inflate(.1).contains(bounds.topLeft), isTrue);
-        expect(rect.inflate(.1).contains(bounds.bottomRight), isTrue);
-        expect((rect.center - bounds.center).distance, lessThan(.1));
-        expect(
-          (rect.width - bounds.width).abs() < .1 ||
-              (rect.height - bounds.height).abs() < .1,
-          isTrue,
+        final dock = tester.getRect(
+          find.byKey(ValueKey('focus-tools-${c.activePlaneId}')),
         );
+        expect(rect.bottom, lessThanOrEqualTo(dock.top));
+        expect(rect.left, greaterThanOrEqualTo(0));
+        expect(rect.right, lessThanOrEqualTo(size.width));
         final boundary = tester.renderObject<RenderRepaintBoundary>(
           find.byKey(const ValueKey('capture')),
         );
@@ -92,9 +78,7 @@ void main() {
           );
           image.dispose();
         });
-        await tester.tap(find.byTooltip('3D'));
-        await tester.pumpAndSettle();
-        expect(find.byTooltip('Grid'), findsOneWidget);
+        expect(find.byTooltip('3D'), findsNothing);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox());
       },

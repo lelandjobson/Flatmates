@@ -7,7 +7,7 @@ import 'package:flatmates/screens/protoplane_concept_view.dart';
 
 void main() {
   for (final exit in ['trackpad', 'touch', 'leave']) {
-    testWidgets('Paper landscape $exit exit interpolates back to world', (
+    testWidgets('Paper landscape $exit exit retains the world camera', (
       tester,
     ) async {
       final model = ProtoplaneController();
@@ -23,12 +23,11 @@ void main() {
           .scene
           .camera!;
       final world = camera.position.clone(), target = camera.target.clone();
-      model.enter(
-        model.planes.keys.firstWhere((id) => id.startsWith('ground-')),
-      );
+      model.enter('ground-starter-paperWhite-0-0');
       await tester.pumpAndSettle();
+      expect(model.activePlane, isNotNull);
       final focused = camera.position.clone();
-      expect(focused.distanceTo(world), greaterThan(1));
+      expect(focused.distanceTo(world), lessThan(1e-6));
       if (exit == 'trackpad') {
         final gesture = await tester.createGesture(
           kind: PointerDeviceKind.trackpad,
@@ -58,11 +57,11 @@ void main() {
       await tester.pump();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 325));
-      expect(camera.position.distanceTo(focused), greaterThan(.1));
+      expect(camera.position.distanceTo(focused), lessThan(1e-6));
       expect(
         camera.position.distanceTo(world),
-        greaterThan(.1),
-        reason: 'the camera must pass through intermediate poses',
+        lessThan(1e-6),
+        reason: 'the camera remains fixed through exit',
       );
       await tester.pumpAndSettle();
       expect(camera.position.distanceTo(world), lessThan(1e-6));

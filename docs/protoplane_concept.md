@@ -4,6 +4,89 @@ Open `protoplane_concept` in the developer menu (`/protoplane-concept`). This
 prototype has its own world, paper inventory, history, and local save. It does
 not change GameView or the grid-puzzle rules.
 
+## Current focus tools and stickerbook
+
+Focus enables the tool dock and context treatment, with a soft edge vignette.
+Drawing locks the current camera pose and shows the drawing grids and plane
+pips; Stickerbook preserves world navigation and hides those guides. Switching
+cards preserves the current pose, and leaving Stickerbook keeps the navigated
+view. Drawing uses the cursor or finger directly and hides the reticle.
+The former toolbar and paper/acetate selectors are replaced by a transparent
+bottom dock. Horizontal swipes in the dock switch Drawing and Stickerbook;
+Drawing has a looping vertical scroll wheel showing Pencil, Pen, Marker, Crooked
+pencil and Eraser together. Dragging centers and selects the highlighted implement;
+the surrounding implements are dark silhouettes. A soft black edge shadow and a
+black-to-transparent gradient over the bottom quarter of the screen back the dock.
+The selected card, implement and last non-eraser implement persist in settings.
+The illustrations are code-native side elevations with a briefly visible name.
+
+Pencil and Pen use quarter-tile spacing (5×5 points per tile), Marker uses tile
+corners (2×2), and Crooked pencil rotates the quarter-unit lattice by 45°.
+Connections are orthogonal in the implement's axes. Live tracing uses a thick
+6-pixel glowing line (8 for Marker), matching the earlier light pencil feedback.
+Dragging backward retracts the current stroke, including across skipped pips;
+dragging forward extends it again. Between-pip feedback remains transient:
+release saves only completed pip-to-pip connections, and unsupported connections
+reject the transaction instead of leaving clipped partial segments. Separate implements own
+separate persistent graphs on a stable shared surface, including across owned
+coplanar terrain tiles. Multiple released strokes can close a face. Intersections
+and T-junctions split topological edges; intermediate pips do not. Nested loops
+retain holes, and surface boundaries never implicitly close a drawing.
+Committed lines remain visible outside focus and on other surfaces while focused.
+Foreground scene geometry clips the lines and their glow; drawing grids and live
+feedback remain limited to drawing focus.
+
+Eraser drags a single unsnapped red segment from the initial pointer position.
+Every intersected topological edge glows orange across the surface's implement
+graphs. Moving the endpoint recomputes the selection; release erases exactly
+that set in one undo transaction. Cancellation or a second pointer erases nothing.
+Erasing construction guides does not change instantiated objects.
+
+The stickerbook is a vertically scrolling grid tilted in perspective, with five
+functional illustrated cards and thirty inert graphic placeholders to exercise
+scrolling. It has no text search and no dragging interaction. Tap a real card
+to prime it: the original picture lifts in its own cell over 180 ms, with an
+animated shadow while the other entries dim. Reduced motion makes the lift
+immediate. Its name appears above the book. A separate world click or tap applies
+it at the always-centered reticle on both mouse and touch; navigation gestures
+never place a sticker. Any book tap cancels priming; scrolling never primes a card. Switching
+cards, leaving focus, or successful placement clears priming. An invalid placement
+keeps the sticker primed and reports an actionable error.
+
+Targeting resolves the visible surface under the reticle independently of the
+focused surface, then chooses the smallest drawn face across its implement
+graphs. A valid selected-sticker target gets a translucent yellow fill (22%);
+invalid targets and misses get no fill. Camera movement updates the preview and
+clears stale targets. Among containing faces, equal areas prefer the last drawing implement, then stable
+IDs. The face is selected before sticker constraints are checked. The preview
+uses staged geometry, and placement revalidates support, occupancy and the face
+before atomically committing. Oversize regions are rejected, never resized to fit.
+Stickers are free white-paper operations in this prototype; the evaluator still
+calculates material quotes without debiting inventory.
+
+House builds a floor and 1-unit enclosing walls, without a roof or automatic
+door, on a 1×1 through 8×8 ground footprint; courtyard holes and concavity remain.
+Hill builds up to three .25-high inset paper tiers within 4×4, requiring at least
+two tiers, without changing terrain. Bed creates frame, mattress, pillow and
+blanket over a .5–1 by 1–2 rectangular footprint. Door cuts an upright opening at
+the wall bottom, at most .25 wide and .5–.75 high. Window cuts a framed .25–.75
+rectangle with wall remaining around every side. Rotated House and Bed drawings
+are supported; wall openings remain upright.
+
+World format v10 stores drawing graphs, coordinate frames and program assemblies.
+Faces are derived when loading. v9 worlds migrate with empty drawing graphs and
+retain objects, inventories and existing graphite marks. Graph mutations and
+sticker commits use the existing atomic save/history pipeline. Tool preferences
+remain independent of world undo. The earlier toolbar/focus notes below document
+superseded behavior.
+
+Validation keeps legacy geometry, crafting, material, rendering and storage
+model tests. Obsolete toolbar-only mouse/touch tests were replaced by graph,
+program, dock, and end-to-end reticle placement tests; camera-fit/crop expectations
+now assert camera invariance and unchanged scene visibility. Coverage includes
+portrait, landscape and desktop, graph erasure preview/cancellation, migration,
+rotated grids, nested faces, stale targets, free atomic creation, and undo/redo.
+
 ## In-place focus and landscape drawing
 
 Tap to focus keeps the current camera position, target, up vector and lens.
@@ -1167,3 +1250,31 @@ box, fade in with focus, and are omitted in world mode, wall focus, and 3D previ
 The same passive overlay remains available while erasing. Geometry and navigation
 snapshots remain independent of presentation; indicators do not change state,
 accounting, drafts, or history.
+
+### Parcels
+
+New worlds own one 3×3 parcel. Parcels use an axis-aligned grid of whole terrain
+squares, shared across material layers. The starting parcel includes tile (0, 0).
+Unowned parcels use an opaque cover to hide their contents and cannot be entered for crafting; connected
+landscape drawing frames include only owned tiles.
+
+At world camera distances 16–25, parcel boundaries and the hovered parcel's
+price appear. Mouse hover targets the pointer; touch previews the parcel under
+the finger (or the center reticle when idle). Tap/click the parcel to buy it.
+Dragging and pinching navigate without purchasing. Leaving this zoom range
+restores normal world selection. Owned parcels show “Owned”.
+
+Funds are unlimited for now. Price is $100 per square, so a 3×3 parcel costs
+$900. Only parcels sharing an edge with owned land are shown and offered for purchase.
+Diagonal-only neighbors and more distant parcels are hidden. Buying expands
+the visible neighboring parcels immediately. Parcels cover the authored terrain; buying does not generate
+new terrain. Ownership is saved with the world and survives crafting undo/redo.
+Buying also reveals the parcel's geographic area, while other unowned parcels
+in that area stay covered.
+
+Devtools provides Parcel size (1–12 whole squares per side), Parcel zoom near,
+and Parcel zoom far. Changing size resizes every parcel, including the starting
+parcel; purchased grid coordinates are retained. This can change which terrain
+squares are owned. Resizing exits active crafting so its support region can be
+rebuilt. Clearing the world resets ownership to the starting parcel at the
+configured size. Older saves without parcel data start with the starting parcel.

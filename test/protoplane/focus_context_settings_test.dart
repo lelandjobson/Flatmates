@@ -51,7 +51,7 @@ void main() {
     expect(visible('ground-starter-paperWhite-1-0', 0), isFalse);
   });
   testWidgets(
-    'focused terrain includes adjacent exposed cork at context opacity',
+    'focused terrain includes adjacent exposed cork at normal opacity',
     (tester) async {
       final c = ProtoplaneController();
       addTearDown(c.dispose);
@@ -121,7 +121,7 @@ void main() {
           .scene;
       expect(
         scene.meshes.firstWhere((m) => m.id == cork).material.opacity,
-        closeTo(.35, 1e-6),
+        closeTo(1, 1e-6),
       );
       c.leave();
       await tester.pumpAndSettle();
@@ -134,7 +134,7 @@ void main() {
     },
   );
   testWidgets(
-    'neighbor remains visible and fades continuously during traversal',
+    'neighbor remains visible without fading or moving the camera during traversal',
     (tester) async {
       final c = ProtoplaneController();
       addTearDown(c.dispose);
@@ -155,32 +155,18 @@ void main() {
           .scene;
       double opacity(String id) =>
           scene.meshes.firstWhere((m) => m.id == id).material.opacity;
-      expect(opacity('ground-starter-paperWhite-1-0'), closeTo(.35, 1e-6));
-      final border = c.activePlane!.region.bounds.inflate(1);
-      for (final local in [
-        border.topLeft,
-        border.topRight,
-        border.bottomLeft,
-        border.bottomRight,
-      ]) {
-        final point = scene.camera!.projectToScreen(
-          c.activePlane!.point(local),
-          const Size(800, 600),
-        )!;
-        expect(point.dx, inInclusiveRange(0, 800));
-        expect(point.dy, inInclusiveRange(0, 600));
-      }
+      expect(opacity('ground-starter-paperWhite-1-0'), closeTo(1, 1e-6));
       final start = scene.camera!.position.clone();
       c.enter('ground-starter-paperWhite-1-0');
-      expect(opacity('ground-starter-paperWhite-1-0'), closeTo(.35, 1e-6));
+      expect(opacity('ground-starter-paperWhite-1-0'), closeTo(1, 1e-6));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 325));
-      expect(opacity('ground-starter-paperWhite-1-0'), greaterThan(.35));
-      expect(opacity('ground-starter-paperWhite-1-0'), lessThan(1));
-      expect(scene.camera!.position.distanceTo(start), greaterThan(.01));
+      expect(opacity('ground-starter-paperWhite-1-0'), closeTo(1, 1e-6));
+      expect(opacity('ground-starter-paperWhite-1-0'), closeTo(1, 1e-6));
+      expect(scene.camera!.position.distanceTo(start), lessThan(1e-6));
       await tester.pumpAndSettle();
       expect(opacity('ground-starter-paperWhite-1-0'), closeTo(1, 1e-6));
-      expect(opacity('ground-starter-paperWhite-0-0'), closeTo(.35, 1e-6));
+      expect(opacity('ground-starter-paperWhite-0-0'), closeTo(1, 1e-6));
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
     },

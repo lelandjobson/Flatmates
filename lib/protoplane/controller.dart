@@ -1,3 +1,6 @@
+import 'drawing_graph.dart';
+import 'parcels.dart';
+import 'sticker_program.dart';
 import 'completion.dart';
 import '../gestures/stroke_reversal.dart';
 import 'discovery.dart';
@@ -25,8 +28,19 @@ import 'bedrooms.dart';
 part 'pencil_controller.dart';
 part 'linear_placement.dart';
 part 'landscape_drawing.dart';
+part 'drawing_controller.dart';
+part 'sticker_controller.dart';
 
 class ProtoplaneController extends ChangeNotifier {
+  FocusToolCard focusCard = FocusToolCard.drawing;
+  DrawingImplement drawingImplement = DrawingImplement.pencil;
+  DrawingImplement lastDrawingImplement = DrawingImplement.pencil;
+  final Map<String, DrawingGraph> drawingGraphs = {};
+  final Map<String, ProgramAssembly> assemblies = {};
+  int drawingRevision = 0;
+  String? _drawingSurfaceKey;
+  DrawingSurface? _drawingSurfaceCache;
+  final Map<DrawingImplement, CraftGrid> _drawingGrids = {};
   bool impliedProtoplanes = false;
   int placementSide = 1;
   bool pencilPreviewUpdate = false;
@@ -65,6 +79,35 @@ class ProtoplaneController extends ChangeNotifier {
     _ground();
     _resetDiscovery();
   }
+  WorldParcels parcels = WorldParcels();
+  bool buyParcel(ParcelId id) {
+    if (!parcels.buy(id, landscape.terrain)) return false;
+    for (final tile in landscape.terrain.tiles.values) {
+      if (parcels.at(tile.origin + const Offset(.5, .5)) == id &&
+          revealedAreas.add(tile.sheet.island)) {
+        discoveryRevision++;
+        onAreaRevealed?.call(AreaRevealed(tile.sheet.island, 'parcel'));
+      }
+    }
+    onCommitted?.call(toJson());
+    notifyListeners();
+    return true;
+  }
+
+  void setParcelSize(int size) {
+    if (parcels.size == size) return;
+    if (activePlaneId != null) leave();
+    parcels = parcels.resized(size);
+    _drawingSurfaceKey = null;
+    onCommitted?.call(toJson());
+    notifyListeners();
+  }
+
+  bool ownsTerrainTile(String id) {
+    final tile = landscape.terrain.tiles[id];
+    return tile == null || parcels.owns(tile.origin + const Offset(.5, .5));
+  }
+
   Map<String, WorldArea> areas = {};
   final Set<String> revealedAreas = {};
   ValueChanged<AreaRevealed>? onAreaRevealed;
@@ -518,6 +561,10 @@ class ProtoplaneController extends ChangeNotifier {
     landscape = PaperLandscape();
     harvestPending = false;
     lastHarvest = null;
+    drawingGraphs.clear();
+    assemblies.clear();
+    _drawingSurfaceKey = null;
+    drawingRevision++;
     planes.clear();
     drafts.clear();
     bedrooms = [];
@@ -529,6 +576,7 @@ class ProtoplaneController extends ChangeNotifier {
     gridIndex = 0;
     _ground();
     _discoveryEpoch++;
+    parcels = WorldParcels(size: parcels.size);
     _resetDiscovery();
     _record(before, committed: true);
     notifyListeners();
@@ -537,6 +585,7 @@ class ProtoplaneController extends ChangeNotifier {
   void enter(String planeId, {String? editObject}) {
     cancelPencil();
     if (erasing) cancelGesture();
+    if (inPlaceDrawing && !ownsTerrainTile(planeId)) return;
     if (!planes.containsKey(planeId) ||
         (editObject == null && !planeAvailable(planes[planeId]!))) {
       return;
@@ -1493,7 +1542,9 @@ class ProtoplaneController extends ChangeNotifier {
     final old = Map<String, CraftPlane>.of(planes);
     planes.removeWhere(
       (id, p) =>
-          !id.startsWith('ground-') && !id.startsWith('landscape-drawing-'),
+          !id.startsWith('ground-') &&
+          !id.startsWith('landscape-drawing-') &&
+          !id.startsWith('sticker-frame-'),
     );
     // Objects are inserted parent-first and IDs remain stable through saves.
     for (final object in objects.values) {
@@ -1685,12 +1736,16 @@ class ProtoplaneController extends ChangeNotifier {
   void _restore(String snapshot) {
     final j = jsonDecode(snapshot) as Map<String, dynamic>;
     final knownAreas = Set<String>.of(revealedAreas);
+    final knownParcels = parcels;
     final retainAreas = _discoveryEpoch == (j['discoveryEpoch'] ?? 0);
     _discoveryEpoch = j['discoveryEpoch'] ?? 0;
     final knowledge = Set<PencilMotif>.of(discoveredMotifs);
     _load(j['world']);
     discoveredMotifs.addAll(knowledge);
-    if (retainAreas) revealedAreas.addAll(knownAreas.where(areas.containsKey));
+    if (retainAreas) {
+      revealedAreas.addAll(knownAreas.where(areas.containsKey));
+      parcels = knownParcels;
+    }
     drafts
       ..clear()
       ..addAll({
@@ -1705,7 +1760,10 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   Map<String, dynamic> toJson() => {
-    'version': 9,
+    'version': 10,
+    'parcels': parcels.toJson(),
+    'drawingGraphs': drawingGraphs.values.map((g) => g.toJson()).toList(),
+    'assemblies': assemblies.values.map((a) => a.toJson()).toList(),
     'revealedAreas': revealedAreas.toList()..sort(),
     'pencilMarks': {
       for (final e in pencilMarks.entries)
@@ -1743,9 +1801,30 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   void _load(Map<String, dynamic> j) {
-    if (![3, 4, 5, 6, 7, 8, 9].contains(j['version'])) {
+    if (![3, 4, 5, 6, 7, 8, 9, 10].contains(j['version'])) {
       throw const FormatException('Unsupported world version');
     }
+    parcels = WorldParcels.fromJson(j['parcels']);
+    _drawingSurfaceKey = null;
+    drawingGraphs.clear();
+    assemblies.clear();
+    if (j['version'] >= 10) {
+      for (final raw in j['drawingGraphs'] as List) {
+        final graph = DrawingGraph.fromJson(raw);
+        if (drawingGraphs.containsKey(graph.key)) {
+          throw const FormatException('Duplicate graph');
+        }
+        drawingGraphs[graph.key] = graph;
+      }
+      for (final raw in j['assemblies'] as List) {
+        final assembly = ProgramAssembly.fromJson(raw);
+        if (assemblies.containsKey(assembly.id)) {
+          throw const FormatException('Duplicate assembly');
+        }
+        assemblies[assembly.id] = assembly;
+      }
+    }
+    drawingRevision++;
     if (j['preset'] != 'paper') {
       throw const FormatException('Only Paper worlds are supported');
     }
@@ -1843,6 +1922,29 @@ class ProtoplaneController extends ChangeNotifier {
   void _validateLoaded() {
     if (nextId < 1 || balances.values.any((b) => b < 0)) {
       throw const FormatException('Invalid world data');
+    }
+    for (final graph in drawingGraphs.values) {
+      final frame = graph.frame;
+      if (graph.surfaceId.isEmpty ||
+          !frame.region.valid ||
+          [
+            ...frame.origin.storage,
+            ...frame.u.storage,
+            ...frame.v.storage,
+          ].any((n) => !n.isFinite) ||
+          (frame.u.length - 1).abs() > 1e-5 ||
+          (frame.v.length - 1).abs() > 1e-5 ||
+          frame.u.dot(frame.v).abs() > 1e-5) {
+        throw const FormatException('Invalid drawing frame');
+      }
+    }
+    for (final assembly in assemblies.values) {
+      if (!assembly.footprint.valid ||
+          assembly.components.isEmpty ||
+          assembly.components.values.any((id) => !objects.containsKey(id)) ||
+          assembly.parameters.values.any((v) => !v.isFinite)) {
+        throw const FormatException('Invalid sticker assembly');
+      }
     }
     for (final p in planes.values) {
       if (!p.region.valid ||

@@ -42,8 +42,7 @@ void main() {
       await tester.tap(find.byType(ActionChip));
       await tester.pumpAndSettle();
       expect(find.textContaining('Comfort 40/100'), findsOneWidget);
-      await tester.tap(find.byTooltip('3D'));
-      await tester.pumpAndSettle();
+      expect(find.byTooltip('3D'), findsNothing);
       expect(
         scene.meshes.where((m) => m.id.startsWith('friend_')),
         hasLength(1),

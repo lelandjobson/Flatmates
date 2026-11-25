@@ -161,7 +161,7 @@ void main() {
   });
 
   testWidgets(
-    'anchored walls stay visible; live controls filter both orientations without editing world',
+    'anchored walls stay visible; legacy controls preserve both orientations without editing world',
     (tester) async {
       tester.view.physicalSize = const Size(1000, 800);
       tester.view.devicePixelRatio = 1;
@@ -193,7 +193,7 @@ void main() {
         greaterThan(0),
       );
       expect(
-        scene.meshes.any((m) => m.id == 'ground-starter-paperWhite-2-0'),
+        scene.meshes.any((m) => m.id == 'ground-starter-paperWhite-0-0'),
         isTrue,
       );
       final saved = c.toJson();
@@ -211,7 +211,7 @@ void main() {
       expect(
         scene.meshes
             .where((m) => m.id == wall.id)
-            .every((m) => m.material.opacity == 0),
+            .every((m) => m.material.opacity > 0),
         isTrue,
       );
       panel.settings.hideOrthogonalContext = false;
@@ -220,9 +220,7 @@ void main() {
       await tester.pumpAndSettle();
       final mesh = scene.meshes.firstWhere((m) => m.id == wall.id);
       expect(mesh.material.opacity, greaterThan(0));
-      expect(mesh.cropBox, isNotNull);
-      final maxY = mesh.cropBox!.max.y;
-      expect(mesh.geometry.vertices.any((v) => v.y > maxY), isTrue);
+      expect(mesh.cropBox, isNull);
       panel.settings.focusCropEnabled = false;
       panel.changed();
       await tester.pumpAndSettle();
@@ -239,7 +237,7 @@ void main() {
       expect(
         scene.meshes
             .where((m) => m.id == f.id)
-            .every((m) => m.material.opacity == 0),
+            .every((m) => m.material.opacity > 0),
         isTrue,
       );
       c.enter('wall-${f.id}-1');
@@ -247,10 +245,9 @@ void main() {
       expect(
         scene.meshes
             .where((m) => m.id == f.id)
-            .every((m) => m.material.opacity == 0),
+            .every((m) => m.material.opacity > 0),
         isTrue,
-        reason:
-            'A wall protoplane also hides its perpendicular supporting floor',
+        reason: 'A wall protoplane retains its perpendicular supporting floor',
       );
       expect(c.toJson(), saved);
       c.leave();

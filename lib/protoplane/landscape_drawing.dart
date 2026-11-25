@@ -55,6 +55,7 @@ extension LandscapeDrawing on ProtoplaneController {
         .where(
           (other) =>
               other.id != tileId &&
+              ownsTerrainTile(other.id) &&
               other.sheet.island == tile.sheet.island &&
               (other.sheet.elevation - tile.sheet.elevation).abs() <
                   geometryEpsilon,

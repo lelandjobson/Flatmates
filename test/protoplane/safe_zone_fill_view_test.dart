@@ -7,7 +7,7 @@ import 'construction_fixture.dart';
 
 void main() {
   testWidgets(
-    'safe zone fill adjusts the focused camera live without changing world',
+    'legacy fit setting does not move the in-place camera or change world',
     (tester) async {
       const size = Size(900, 700);
       tester.view.physicalSize = size;
@@ -69,8 +69,8 @@ void main() {
           .settings;
       final after = bounds();
       expect(settings.safeZoneFill, closeTo(.5, .02));
-      expect(after.width / before.width, closeTo(settings.safeZoneFill, .01));
-      expect(after.height / before.height, closeTo(settings.safeZoneFill, .01));
+      expect(after.width / before.width, closeTo(1, .01));
+      expect(after.height / before.height, closeTo(1, .01));
       expect((after.center - before.center).distance, lessThan(.1));
       expect(c.toJson(), world);
       expect(tester.takeException(), isNull);

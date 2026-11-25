@@ -284,6 +284,29 @@ void main() {
       );
     },
   );
+  test(
+    'backtracking preview follows the previous edge without extending forward',
+    () {
+      final grid = CraftGrid(
+        id: 'backtrack',
+        name: 'backtrack',
+        nodes: [Offset.zero, const Offset(1, 0), const Offset(2, 0)],
+        edges: [const GridEdge(0, 1), const GridEdge(1, 2)],
+        recipes: [],
+      );
+      final path = [0, 1];
+      final preview = liveStrokePreview(
+        grid: grid,
+        path: path,
+        pointer: const Offset(.6, 0),
+        project: (p) => p,
+        allowBacktracking: true,
+      );
+      expect(preview.first, const Offset(1, 0));
+      expect(preview.last, const Offset(.6, 0));
+      expect(path, [0, 1]);
+    },
+  );
   test('live curve follows the actual edge instead of its endpoint chord', () {
     final grid = CraftGrid(
       id: 'curve',

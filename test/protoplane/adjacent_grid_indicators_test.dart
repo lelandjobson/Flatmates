@@ -198,48 +198,47 @@ void main() {
   );
 
   for (final size in [const Size(390, 844), const Size(900, 700)]) {
-    testWidgets('adjacent dots are passive and switch off in 3D at $size', (
-      tester,
-    ) async {
-      tester.view.physicalSize = size;
-      tester.view.devicePixelRatio = 1;
-      final c = ProtoplaneController();
-      addTearDown(() {
-        c.dispose();
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-      });
-      await tester.pumpWidget(
-        MaterialApp(
-          home: ProtoplaneConceptView(controller: c, animateFog: false),
-        ),
-      );
-      await tester.pumpAndSettle();
-      c.enter(centerId(c, PaperMaterial.paperWhite));
-      await tester.pumpAndSettle();
-      final layer = find.byKey(const ValueKey('adjacent-grid-overlay'));
-      AdjacentGridPainter painter() =>
-          tester.widget<CustomPaint>(layer).painter! as AdjacentGridPainter;
-      expect(painter().enabled, isTrue);
-      expect(painter().opacity, 1);
-      expect(
-        tester
-            .widget<IgnorePointer>(
-              find
-                  .ancestor(of: layer, matching: find.byType(IgnorePointer))
-                  .first,
-            )
-            .ignoring,
-        isTrue,
-      );
-      await tester.tap(find.byTooltip('3D'));
-      await tester.pumpAndSettle();
-      expect(painter().enabled, isFalse);
-      await tester.tap(find.byTooltip('Grid'));
-      await tester.pumpAndSettle();
-      expect(painter().enabled, isTrue);
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox());
-    });
+    testWidgets(
+      'legacy adjacent dots are disabled in shared graph focus at $size',
+      (tester) async {
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1;
+        final c = ProtoplaneController();
+        addTearDown(() {
+          c.dispose();
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+        await tester.pumpWidget(
+          MaterialApp(
+            home: ProtoplaneConceptView(controller: c, animateFog: false),
+          ),
+        );
+        await tester.pumpAndSettle();
+        c.enter(centerId(c, PaperMaterial.paperWhite));
+        await tester.pumpAndSettle();
+        final layer = find.byKey(const ValueKey('adjacent-grid-overlay'));
+        AdjacentGridPainter painter() =>
+            tester.widget<CustomPaint>(layer).painter! as AdjacentGridPainter;
+        expect(painter().enabled, isFalse);
+        expect(painter().opacity, 1);
+        expect(
+          tester
+              .widget<IgnorePointer>(
+                find
+                    .ancestor(of: layer, matching: find.byType(IgnorePointer))
+                    .first,
+              )
+              .ignoring,
+          isTrue,
+        );
+        expect(
+          find.byKey(const ValueKey('drawing-graph-overlay')),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
   }
 }

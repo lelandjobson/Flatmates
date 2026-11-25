@@ -9,15 +9,23 @@ List<Offset> liveStrokePreview({
   required List<int> path,
   required Offset pointer,
   required Offset? Function(Offset) project,
+  bool allowBacktracking = false,
 }) {
-  if (path.isEmpty || (path.length > 2 && path.first == path.last)) return [];
+  if (path.isEmpty ||
+      (!allowBacktracking && path.length > 2 && path.first == path.last)) {
+    return [];
+  }
   final last = path.last;
   var bestDistance = double.infinity;
   var best = <Offset>[];
   for (final edge in grid.edges) {
     if (edge.a != last && edge.b != last) continue;
     final next = edge.a == last ? edge.b : edge.a;
-    if (path.contains(next) && !(next == path.first && path.length >= 3)) {
+    if (path.contains(next) &&
+        !(next == path.first && path.length >= 3) &&
+        !(allowBacktracking &&
+            path.length > 1 &&
+            next == path[path.length - 2])) {
       continue;
     }
     final points = edge.points(grid.nodes, reversed: edge.a != last);

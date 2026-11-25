@@ -1,3 +1,9 @@
+import '../protoplane/drawing_graph.dart';
+import '../protoplane/drawing_visibility.dart';
+import '../protoplane/sticker_program.dart';
+import '../protoplane/focus_tool_dock.dart';
+import '../protoplane/parcels.dart';
+import '../protoplane/parcel_overlay.dart';
 import '../protoplane/geometry_benchmark.dart';
 import '../protoplane/adjacent_grid_indicators.dart';
 import '../protoplane/crumpled_paper.dart';
@@ -52,6 +58,8 @@ import '../ui/game/game_tool_sidebar.dart';
 import '../ui/game/view_crosshair.dart';
 import '../ui/game/volume_transform_gizmo.dart' show axisDragDelta;
 
+part 'protoplane_focus_tools.dart';
+
 class ProtoplaneConceptView extends StatefulWidget {
   const ProtoplaneConceptView({
     super.key,
@@ -89,6 +97,22 @@ class _Hit {
 
 class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     with TickerProviderStateMixin {
+  final Map<int, Offset> _focusTouches = {};
+  final List<int> _focusPath = [];
+  Offset? _eraseStart, _eraseEnd, _focusDownAt, _focusLiveScreen;
+  String? _focusGestureSurface, _stickerPreviewKey;
+  bool _focusHadMultiple = false;
+  double _focusSpan = 0;
+  ProgramEvaluation? _stickerEvaluation;
+  StickerKind? _primedSticker;
+  FocusToolCard? _lastFocusCard;
+  bool get _focused => model.activePlane != null;
+  bool get _drawingFocused =>
+      _focused && model.focusCard == FocusToolCard.drawing;
+  bool get _stickerbookFocused =>
+      _focused && model.focusCard == FocusToolCard.stickerbook;
+  bool get _cameraUnlocked => !_drawingFocused;
+  void _updateFocusUi(VoidCallback action) => setState(action);
   late ProtoplaneController model;
   late ProtoplaneStorage storage;
   final devSettings = ProtoplaneSettings();
@@ -318,6 +342,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     controls = loadGameControls();
     unawaited(_loadLandscapePaper());
     model = widget.controller ?? ProtoplaneController();
+    devSettings.parcelSize = model.parcels.size;
     model.enableInPlaceDrawing();
     if (widget.controller == null) {
       model.setProtoplaneCells(devSettings.protoplaneCells);
@@ -491,11 +516,37 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       );
       if (!mounted) return;
       if (json != null) devSettings.load(json);
+      model.focusCard = devSettings.focusToolCard;
+      model.drawingImplement = devSettings.drawingImplement;
+      model.lastDrawingImplement = devSettings.lastDrawingImplement;
       settingsError = null;
       _applyDevSettings();
     } catch (_) {
       if (mounted) setState(() => settingsError = 'Could not load settings');
     }
+  }
+
+  bool get _parcelShopping =>
+      !_geometryBenchmark.active &&
+      model.activePlane == null &&
+      !transition.isAnimating &&
+      mapCamera.distance >= devSettings.parcelZoomNear &&
+      mapCamera.distance <= devSettings.parcelZoomFar;
+
+  ParcelId? _parcelAt(Offset screen) {
+    if (viewport.isEmpty) return null;
+    final ray = camera.unprojectRay(screen, viewport);
+    if (ray == null) return null;
+    final point = Camera.intersectPlane(
+      ray: ray,
+      point: Vector3.zero(),
+      normal: Vector3(0, 1, 0),
+    );
+    if (point == null) return null;
+    final id = model.parcels.at(Offset(point.x, -point.z));
+    return model.parcels.visible(model.landscape.terrain).contains(id)
+        ? id
+        : null;
   }
 
   Offset? _lastDiscoveryTarget;
@@ -569,6 +620,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   }
 
   void _applyDevSettings() {
+    if (!loading) model.setParcelSize(devSettings.parcelSize);
     model.setImpliedProtoplanes(devSettings.impliedProtoplanes);
     _configureOrbit();
     if (model.activePlane == null && !transition.isAnimating) {
@@ -629,6 +681,11 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       });
       if (!mounted) return;
       if (json != null) model.load(json);
+      if (json?['parcels'] != null) {
+        devSettings.parcelSize = model.parcels.size;
+      } else {
+        model.setParcelSize(devSettings.parcelSize);
+      }
       loadFailed = false;
       saveError = storage.recoveryMessage;
     } catch (_) {
@@ -741,6 +798,20 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
 
   void _modelChanged() {
     if (_disposed) return;
+    if (_lastFocusCard != model.focusCard) {
+      _lastFocusCard = model.focusCard;
+      _primedSticker = null;
+      _stickerEvaluation = null;
+      _stickerPreviewKey = null;
+      _cancelFocusStroke();
+      _focusTouches.clear();
+      pointers.clear();
+      controls.cancel();
+      mapCamera.pauseForHandoff();
+      focusZoom.stop();
+      if (_focused) worldPose = semiFocusPose = fullFocusPose = _Pose(camera);
+      _refreshScene();
+    }
     if ((model.tool != CraftTool.pencil || model.selectedMotif != null) &&
         pencilDwell.tail != null) {
       pencilDwell.cancel();
@@ -748,6 +819,10 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     if (model.pencilPreviewUpdate) {
       setState(() {});
       return;
+    }
+    if (_primedSticker != null) {
+      _stickerPreviewKey = null;
+      _previewPrimedSticker();
     }
     if (model.motifNotices.isNotEmpty) {
       final notices = List<PencilMotif>.of(model.motifNotices);
@@ -823,6 +898,10 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       }
     }
     if (_lastPlane != model.activePlaneId) {
+      _primedSticker = null;
+      _stickerEvaluation = null;
+      _stickerPreviewKey = null;
+      _cancelFocusStroke();
       final traversing =
           _lastPlane != null && model.activePlane != null && worldPose != null;
       contextTransitionFrom.clear();
@@ -879,11 +958,14 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
 
   void _controlsChanged() {
     if (_disposed) return;
+    _previewPrimedSticker();
     if (model.activePlane == null &&
         !viewport.isEmpty &&
         !transition.isAnimating) {
       _setHover(
-        controls.showReticle ? _pick(controls.worldAim(viewport)) : null,
+        controls.showReticle && !_parcelShopping
+            ? _pick(controls.worldAim(viewport))
+            : null,
       );
     }
     setState(() {});
@@ -891,6 +973,10 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
 
   void _cameraChanged() {
     if (_disposed) return;
+    if (_stickerbookFocused) {
+      worldPose = _Pose(camera);
+      _previewPrimedSticker();
+    }
     scene.markNeedsPaint();
     if (!_geometryBenchmark.active &&
         model.activePlane == null &&
@@ -907,7 +993,9 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
         !transition.isAnimating &&
         !viewport.isEmpty) {
       _setHover(
-        controls.showReticle ? _pick(controls.worldAim(viewport)) : null,
+        controls.showReticle && !_parcelShopping
+            ? _pick(controls.worldAim(viewport))
+            : null,
       );
     }
     if (mounted) setState(() {});
@@ -940,6 +1028,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     CraftPlane plane, {
     double opacity = 1,
   }) {
+    if (!_geometryBenchmark.active && !_ownsObject(object, plane)) return [];
     final surfaceId = 'surface-${object.id}';
     final canonical = model.surfaceFusion.canonical[surfaceId];
     // Editing a constituent still displays its original support geometry.
@@ -964,6 +1053,33 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       );
     }
     return meshes;
+  }
+
+  bool _ownsObject(CraftObject object, CraftPlane plane) {
+    final center = plane.point(object.region.bounds.center);
+    return model.parcels.owns(Offset(center.x, -center.z));
+  }
+
+  bool _parcelMeshVisible(Mesh mesh) {
+    if (model.landscape.terrain.tiles.containsKey(mesh.id)) {
+      return model.ownsTerrainTile(mesh.id);
+    }
+    if (mesh.id.startsWith('terrain-wall-')) {
+      final id = mesh.id.substring('terrain-wall-'.length);
+      if (model.landscape.terrain.tiles.containsKey(id)) {
+        return model.ownsTerrainTile(id);
+      }
+      // Sheet-wide side/bottom meshes must not expose hidden terrain.
+      return model.landscape.terrain.tiles.values
+          .where((tile) => tile.sheet.id == id)
+          .every((tile) => model.ownsTerrainTile(tile.id));
+    }
+    final plane = model.planes[mesh.id];
+    if (plane != null) {
+      final center = plane.point(plane.region.bounds.center);
+      return model.parcels.owns(Offset(center.x, -center.z));
+    }
+    return true;
   }
 
   void _refreshScene() {
@@ -1009,7 +1125,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
         if (p != null) meshes.addAll(_objectMeshes(o, p));
       }
     } else {
-      if (!model.sharedLandscapeFocus) {
+      if (_drawingFocused && !model.sharedLandscapeFocus) {
         meshes.add(_planeMesh(active)..groundPlane = true);
       }
       final edit = model.editId;
@@ -1120,8 +1236,28 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
         }
       }
     }
+    if (_stickerbookFocused) {
+      meshes.removeWhere(
+        (m) => model.planes.containsKey(m.id) && !model.isLandscapePaper(m.id),
+      );
+    }
     for (final mesh in meshes) {
       mesh.cropBox = null;
+    }
+    final sticker = _stickerEvaluation;
+    if (sticker != null && sticker.valid) {
+      for (final object in sticker.objects) {
+        meshes.addAll(
+          _objectMeshes(
+            object.copyWith(id: 'sticker-preview-${object.id}'),
+            sticker.frames[object.planeId]!,
+            opacity: .55,
+          ),
+        );
+      }
+    }
+    if (!_geometryBenchmark.active) {
+      meshes.removeWhere((mesh) => !_parcelMeshVisible(mesh));
     }
     if (_geometryBenchmark.active) {
       meshes.add(_geometryBenchmark.ground);
@@ -1135,7 +1271,16 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       ..addEntries(meshes.map((m) => MapEntry(m.id, m.material.color)));
     edgeShading.synchronize(meshes);
     scene.setMeshes(meshes);
-    residents.sync(scene, model.bedrooms, model.objects, model.planes);
+    residents.sync(
+      scene,
+      model.bedrooms.where((room) {
+        final floor = model.objects[room.floorId];
+        final plane = floor == null ? null : model.planes[floor.planeId];
+        return floor != null && plane != null && _ownsObject(floor, plane);
+      }).toList(),
+      model.objects,
+      model.planes,
+    );
     final craftedIds = meshes.map((m) => m.id).toSet();
     for (final m in scene.meshes) {
       if (!craftedIds.contains(m.id)) {
@@ -1384,9 +1529,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       );
       if (p == null || !region.contains(plane.local(p))) return;
       if (!_geometryBenchmark.active &&
-          devSettings.fog.enabled &&
-          model.discoveryDistance(Offset(p.x, -p.z)) >=
-              devSettings.fog.style.margin + devSettings.fog.style.softness) {
+          !model.parcels.owns(Offset(p.x, -p.z))) {
         return;
       }
       if (object == null && best?.object != null) {
@@ -1434,6 +1577,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     }
     for (final plane in model.planes.values) {
       if (!plane.id.startsWith('surface-') &&
+          (!_stickerbookFocused || model.isLandscapePaper(plane.id)) &&
           model.planeAvailable(plane) &&
           (model.surfaceFusion.canonical[plane.id] ?? plane.id) == plane.id) {
         for (final region in model.surfaceRegions(plane)) {
@@ -1480,6 +1624,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   }
 
   void _down(PointerDownEvent e) {
+    if (_focusPointerDown(e)) return;
     if (_disposed) return;
     if (devSettings.showGestureDebug) {
       gestureDebug.down(
@@ -1527,7 +1672,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     down = previous = e.localPosition;
     moved = multi = false;
     secondary = e.buttons & (kSecondaryMouseButton | kMiddleMouseButton) != 0;
-    if (model.activePlane == null) return;
+    if (_cameraUnlocked) return;
     if (devToolsOpen) {
       focusZoom.stop();
       focusScale = displayedFocusScale;
@@ -1614,6 +1759,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   }
 
   void _move(PointerMoveEvent e) {
+    if (_focusPointerMove(e)) return;
     if (_disposed) return;
     if (devSettings.showGestureDebug) {
       gestureDebug.move(e.pointer, e.localPosition);
@@ -1657,7 +1803,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       return;
     }
     if (pointers.length >= 2) {
-      if (model.activePlane != null) {
+      if (_drawingFocused) {
         multiMoved.add(e.pointer);
         if (pointers.length != 2 || multiMoved.length < 2) return;
         multiMoved.clear();
@@ -1676,17 +1822,17 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
           consumed: planeSwipe.consumed,
         );
       }
-      if (swipe != null && model.activePlane != null) {
+      if (swipe != null && _drawingFocused) {
         _navigatePlane(swipe);
       } else if (!planeSwipe.consumed &&
           !transition.isAnimating &&
-          (model.activePlane == null || planeSwipe.zooming)) {
+          (_cameraUnlocked || planeSwipe.zooming)) {
         _navigateMulti(ratio);
-      } else if (model.activePlane == null && !transition.isAnimating) {
+      } else if (_cameraUnlocked && !transition.isAnimating) {
         _navigateMulti(ratio);
       }
-      if (model.activePlane == null || planeSwipe.zooming) lastSpan = span;
-    } else if (!multi && model.activePlane == null) {
+      if (_cameraUnlocked || planeSwipe.zooming) lastSpan = span;
+    } else if (!multi && _cameraUnlocked) {
       if (controls.profile.worldDrag(
             pointers: 1,
             buttons: e.buttons,
@@ -1703,7 +1849,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       } else {
         mapCamera.pan(delta);
       }
-    } else if (!multi && devToolsOpen && model.activePlane != null) {
+    } else if (!multi && devToolsOpen && _drawingFocused) {
       _panFocused(previous ?? e.localPosition, e.localPosition);
     } else if (drawing) {
       livePointer = controls.craftingAim(e.localPosition);
@@ -1847,6 +1993,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   }
 
   void _up(PointerUpEvent e) {
+    if (_focusPointerUp(e)) return;
     if (_disposed) return;
     if (devSettings.showGestureDebug) {
       gestureDebug.end(e.pointer, at: e.localPosition);
@@ -1924,19 +2071,24 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       );
     }
     if (!moved && !multi && !drawing && !pulling && !secondary) {
-      if (!devToolsOpen || model.activePlane == null) _tap(e.localPosition);
+      if (_stickerbookFocused) {
+        if (!devToolsOpen) _placePrimedSticker();
+      } else if (!devToolsOpen || model.activePlane == null) {
+        _tap(e.localPosition);
+      }
     }
     drawing = pulling = false;
     multi = secondary = false;
     setState(() {
       livePointer = null;
     });
-    if (model.activePlane == null && !transition.isAnimating) {
+    if (_cameraUnlocked && !transition.isAnimating) {
       mapCamera.endZoom();
     }
   }
 
   void _cancel(PointerCancelEvent e) {
+    if (_focusPointerCancel(e)) return;
     if (_disposed) return;
     if (devSettings.showGestureDebug) gestureDebug.cancel();
     pencilDwell.cancel();
@@ -1978,7 +2130,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   }
 
   void _navigateMulti(double ratio) {
-    if (model.activePlane == null) {
+    if (_cameraUnlocked) {
       if ((ratio - 1).abs() > .004) mapCamera.zoomByScale(ratio);
     } else {
       _zoomCrafting(ratio);
@@ -2020,7 +2172,8 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       return;
     }
     controls.move(event.kind, event.localPosition);
-    if (model.activePlane == null) {
+    if (_cameraUnlocked) {
+      if (_stickerbookFocused) mapCamera.pan(event.panDelta);
       _navigateMulti(event.scale / trackpadScale);
     } else {
       final swipe = planeSwipe.updateTrackpad(
@@ -2042,7 +2195,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
         _navigateMulti(event.scale / trackpadScale);
       }
     }
-    if (model.activePlane == null || planeSwipe.zooming) {
+    if (_cameraUnlocked || planeSwipe.zooming) {
       trackpadScale = event.scale;
     }
   }
@@ -2051,12 +2204,17 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     if (devSettings.showGestureDebug) gestureDebug.end(event.pointer);
     trackpadActive = false;
     controls.end();
-    if (model.activePlane == null && !transition.isAnimating) {
+    if (_cameraUnlocked && !transition.isAnimating) {
       mapCamera.endZoom();
     }
   }
 
   void _tap(Offset point) {
+    if (_parcelShopping) {
+      final parcel = _parcelAt(point);
+      if (parcel != null) model.buyParcel(parcel);
+      return;
+    }
     if (model.activePlane == null) {
       final hit = _pick(controls.worldAim(viewport));
       if (hit != null) _enter(hit);
@@ -2144,7 +2302,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     }
     if (e is! PointerScrollEvent || transition.isAnimating) return;
     controls.hover(e.kind, e.localPosition);
-    if (model.activePlane == null) {
+    if (_cameraUnlocked) {
       mapCamera.zoomByScroll(e.scrollDelta.dy);
     } else {
       _zoomCrafting(math.exp(-e.scrollDelta.dy * .002));
@@ -2270,7 +2428,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                               subtilesPerTile: BedroomResidents.subtiles,
                               listenable: scene,
                             ),
-                            if (!_geometryBenchmark.active)
+                            if (!_geometryBenchmark.active && !_parcelShopping)
                               FogOverlay(
                                 key: const ValueKey('paper-fog'),
                                 model: model,
@@ -2278,6 +2436,29 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                                 settings: devSettings.fog,
                                 cameraChanges: scene,
                                 animate: widget.animateFog,
+                              ),
+                            if (!_geometryBenchmark.active)
+                              IgnorePointer(
+                                child: CustomPaint(
+                                  key: const ValueKey('parcel-overlay'),
+                                  painter: ParcelPainter(
+                                    parcels: model.parcels,
+                                    available: model.parcels.visible(
+                                      model.landscape.terrain,
+                                    ),
+                                    camera: camera,
+                                    shopping: _parcelShopping,
+                                    hovered:
+                                        _parcelShopping && controls.showReticle
+                                        ? _parcelAt(
+                                            pointers.length == 1
+                                                ? pointers.values.first
+                                                : controls.worldAim(viewport),
+                                          )
+                                        : null,
+                                    repaint: scene,
+                                  ),
+                                ),
                               ),
                             if (model.activePlane != null)
                               IgnorePointer(
@@ -2288,12 +2469,34 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                                       radius: .85,
                                       colors: [
                                         Colors.transparent,
-                                        Color(0x667e8999),
+                                        Color(0x50000000),
                                       ],
                                       stops: [.5, 1],
                                     ),
                                   ),
                                   child: SizedBox.expand(),
+                                ),
+                              ),
+                            if (model.activePlane != null)
+                              Positioned(
+                                left: 0,
+                                right: 0,
+                                bottom: 0,
+                                height: viewport.height * .25,
+                                child: const IgnorePointer(
+                                  child: DecoratedBox(
+                                    key: ValueKey('focus-tools-gradient'),
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: [
+                                          Colors.transparent,
+                                          Colors.black,
+                                        ],
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
                             IgnorePointer(
@@ -2304,7 +2507,9 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                                   camera,
                                   scene,
                                   enabled:
-                                      !preview && !model.sharedLandscapeFocus,
+                                      _drawingFocused &&
+                                      !preview &&
+                                      !model.sharedLandscapeFocus,
                                   opacity: Curves.easeInOutSine.transform(
                                     contextFade.value,
                                   ),
@@ -2313,54 +2518,73 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                             ),
                             IgnorePointer(
                               child: CustomPaint(
-                                key: const ValueKey('craft-grid-overlay'),
-                                painter: _GridPainter(
+                                key: const ValueKey('drawing-graph-overlay'),
+                                painter: _DrawingGraphPainter(
                                   model,
                                   camera,
-                                  preview: preview,
-                                  acetate: acetate.value,
-                                  outgoingGrid: outgoingGrid,
-                                  livePointer: drawing ? livePointer : null,
-                                  ready: _drawingReady,
-                                  segmentPulse: 1 - segmentGlow.value,
-                                  completedTrace: completedTrace,
-                                  traceOverride:
-                                      drawing ||
-                                          model.tool == CraftTool.lightPencil ||
-                                          model.tool == CraftTool.volume
-                                      ? null
-                                      : releasedTrace,
-                                  lineOpacity:
-                                      drawing ||
-                                          model.tool == CraftTool.lightPencil ||
-                                          model.tool == CraftTool.volume
-                                      ? 1
-                                      : 1 -
-                                            Curves.easeOut.transform(
-                                              releaseFade.value,
-                                            ),
-                                  whiteMix: drawing
-                                      ? closureWhite.value
-                                      : releasedWhite,
-                                  lineColor: model.tool == CraftTool.pencil
-                                      ? const Color(0xff00cfee)
-                                      : model.tool == CraftTool.scissors
-                                      ? devSettings.cutLineColor
-                                      : devSettings.lineColor,
-                                  dotSelection: model.tool == CraftTool.pencil
-                                      ? _pencilDotSelection
-                                      : dotSelection,
-                                  showGridLines: devSettings.gridLines,
-                                  tileGridOpacity: devSettings.tileGridOpacity,
-                                  hover: hover?.id,
-                                  previousHover: previousHover,
-                                  hoverFade: glow.value,
-                                  focusFade: Curves.easeInOutSine.transform(
-                                    contextFade.value,
-                                  ),
+                                  scene,
+                                  List.of(_focusPath),
+                                  _eraseStart,
+                                  _eraseEnd,
+                                  _stickerEvaluation,
+                                  _focusLiveScreen,
                                 ),
                               ),
                             ),
+                            if (model.activePlane == null)
+                              IgnorePointer(
+                                child: CustomPaint(
+                                  key: const ValueKey('craft-grid-overlay'),
+                                  painter: _GridPainter(
+                                    model,
+                                    camera,
+                                    preview: preview,
+                                    acetate: acetate.value,
+                                    outgoingGrid: outgoingGrid,
+                                    livePointer: drawing ? livePointer : null,
+                                    ready: _drawingReady,
+                                    segmentPulse: 1 - segmentGlow.value,
+                                    completedTrace: completedTrace,
+                                    traceOverride:
+                                        drawing ||
+                                            model.tool ==
+                                                CraftTool.lightPencil ||
+                                            model.tool == CraftTool.volume
+                                        ? null
+                                        : releasedTrace,
+                                    lineOpacity:
+                                        drawing ||
+                                            model.tool ==
+                                                CraftTool.lightPencil ||
+                                            model.tool == CraftTool.volume
+                                        ? 1
+                                        : 1 -
+                                              Curves.easeOut.transform(
+                                                releaseFade.value,
+                                              ),
+                                    whiteMix: drawing
+                                        ? closureWhite.value
+                                        : releasedWhite,
+                                    lineColor: model.tool == CraftTool.pencil
+                                        ? const Color(0xff00cfee)
+                                        : model.tool == CraftTool.scissors
+                                        ? devSettings.cutLineColor
+                                        : devSettings.lineColor,
+                                    dotSelection: model.tool == CraftTool.pencil
+                                        ? _pencilDotSelection
+                                        : dotSelection,
+                                    showGridLines: devSettings.gridLines,
+                                    tileGridOpacity:
+                                        devSettings.tileGridOpacity,
+                                    hover: hover?.id,
+                                    previousHover: previousHover,
+                                    hoverFade: glow.value,
+                                    focusFade: Curves.easeInOutSine.transform(
+                                      contextFade.value,
+                                    ),
+                                  ),
+                                ),
+                              ),
                             IgnorePointer(
                               child: CustomPaint(
                                 key: const ValueKey('pencil-ink-overlay'),
@@ -2404,11 +2628,16 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                     ),
                   ),
                 ),
-                if (model.activePlane == null && controls.showReticle)
+                if (_stickerbookFocused ||
+                    (model.activePlane == null && controls.showReticle))
                   Positioned.fill(
                     child: ViewCrosshair(
-                      position: controls.worldAim(viewport),
-                      selectable: hover != null,
+                      position: _stickerbookFocused
+                          ? viewport.center(Offset.zero)
+                          : controls.worldAim(viewport),
+                      selectable: _primedSticker != null
+                          ? _stickerEvaluation?.valid == true
+                          : hover != null,
                     ),
                   ),
                 SafeArea(
@@ -2532,40 +2761,35 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                     ),
                   ),
                 ),
-                if (model.activePlane != null && !loading && !loadFailed) ...[
-                  if (!devToolsOpen)
-                    Positioned(
-                      left: 10,
-                      top: math.max(130, viewport.height * .35),
-                      bottom: viewport.height < 500 ? 80 : 120,
-                      width: viewport.height < 500 ? 104 : 52,
-                      child: SingleChildScrollView(
-                        key: _leftToolsKey,
-                        child: _tools(),
-                      ),
-                    ),
-                  Positioned(
-                    right: 10,
-                    top: math.max(130, viewport.height * .35),
-                    bottom: 120,
-                    width: model.paperSurface && model.tool == CraftTool.pencil
-                        ? 112
-                        : 64,
-                    child: SingleChildScrollView(
-                      key: _rightToolsKey,
-                      child:
-                          model.paperSurface && model.tool == CraftTool.pencil
-                          ? _pencilSidebar()
-                          : _paperSelector(),
-                    ),
-                  ),
+                if (model.activePlane != null &&
+                    !loading &&
+                    !loadFailed &&
+                    !devToolsOpen)
                   Positioned(
                     bottom: 12 + MediaQuery.paddingOf(context).bottom,
-                    left: 76,
-                    right: 76,
-                    child: SizedBox(key: _footerKey, child: _bottomControls()),
+                    left: 12,
+                    right: 12,
+                    child: Center(
+                      child: SizedBox(
+                        key: _footerKey,
+                        width: 640,
+                        child: _focusDock(),
+                      ),
+                    ),
                   ),
-                ],
+                if (_stickerEvaluation?.issue != null)
+                  Positioned(
+                    bottom: viewport.height < 500 ? 140 : 180,
+                    left: 16,
+                    right: 16,
+                    child: IgnorePointer(
+                      child: Text(
+                        _stickerEvaluation!.issue!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.orangeAccent),
+                      ),
+                    ),
+                  ),
                 if (devToolsOpen && _devToolsRect != null)
                   Positioned.fromRect(
                     key: const ValueKey('protoplane-devtools-dock'),
@@ -2702,386 +2926,6 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
           ),
         ],
       ),
-    );
-  }
-
-  Widget _tools() {
-    final buttons = <Widget>[
-      _button(
-        'Light pencil',
-        Icons.draw_outlined,
-        () => model.selectTool(CraftTool.lightPencil),
-        active: model.tool == CraftTool.lightPencil,
-      ),
-      const SizedBox(height: 8),
-      _button(
-        'Scissors',
-        Icons.content_cut,
-        () => model.selectTool(CraftTool.scissors),
-        active: model.tool == CraftTool.scissors,
-      ),
-      if (model.paperSurface) ...[
-        const SizedBox(height: 8),
-        _button('Graphite pencil', Icons.edit_outlined, () {
-          model.selectedMotif = null;
-          model.selectTool(CraftTool.pencil);
-        }, active: model.tool == CraftTool.pencil),
-      ],
-      if (model.paperSurface || model.graphitePlane != null) ...[
-        const SizedBox(height: 8),
-        _button(
-          'Eraser',
-          Icons.cleaning_services_outlined,
-          () => model.selectTool(CraftTool.eraser),
-          active: model.tool == CraftTool.eraser,
-        ),
-      ],
-      ...[
-        const SizedBox(height: 8),
-        _button(
-          'Place',
-          Icons.add_box_outlined,
-          () => model.selectTool(CraftTool.place),
-          active: model.tool == CraftTool.place,
-        ),
-      ],
-      const SizedBox(height: 8),
-      _button(
-        'Volume',
-        Icons.open_in_full,
-        () => model.selectTool(CraftTool.volume),
-        active: model.tool == CraftTool.volume,
-      ),
-      const SizedBox(height: 8),
-      _button(
-        preview ? 'Grid' : '3D',
-        preview ? Icons.grid_on : Icons.view_in_ar,
-        _togglePreview,
-        active: preview,
-      ),
-      if (selectedObject != null && model.editId == null) ...[
-        const SizedBox(height: 8),
-        if (model.transformations(selectedObject!).isNotEmpty)
-          _button('Transform', Icons.transform, () async {
-            final id = selectedObject!;
-            final kind = await showModalBottomSheet<CraftKind>(
-              context: context,
-              builder: (context) => SafeArea(
-                child: ListView(
-                  shrinkWrap: true,
-                  children: [
-                    for (final kind in model.transformations(id))
-                      ListTile(
-                        title: Text(kind.label),
-                        trailing: Text(
-                          '${model.transformationQuote(id, kind)}',
-                        ),
-                        onTap: () => Navigator.pop(context, kind),
-                      ),
-                  ],
-                ),
-              ),
-            );
-            if (kind != null && mounted) model.transformObject(id, kind);
-          }),
-        _button('Edit', Icons.edit, () {
-          final o = model.objects[selectedObject];
-          if (o != null) model.enter(o.planeId, editObject: o.id);
-        }),
-      ],
-    ];
-    if (viewport.height < 500) {
-      return Wrap(
-        spacing: 4,
-        runSpacing: 4,
-        alignment: WrapAlignment.center,
-        children: buttons.where((w) => w is! SizedBox).toList(),
-      );
-    }
-    return Column(mainAxisSize: MainAxisSize.min, children: buttons);
-  }
-
-  Widget _pencilSidebar() => Column(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Text(
-        '${((model.balances[PaperMaterial.graphite] ?? 0) + model.graphiteMilli / 1000).toStringAsFixed(3)} graphite',
-        textAlign: TextAlign.center,
-      ),
-      for (final motif in model.discoveredMotifs)
-        TextButton(
-          onPressed: () => model.selectMotif(motif),
-          child: Column(
-            children: [
-              CustomPaint(
-                size: const Size(24, 24),
-                painter: _MotifThumbnail(motif),
-              ),
-              Text(motif.label, textAlign: TextAlign.center),
-            ],
-          ),
-        ),
-      if (model.selectedMotif != null)
-        _button('Rotate', Icons.rotate_right, model.rotateMotif),
-      if (model.error != null && model.previewMarks.isNotEmpty)
-        _button('Retry', Icons.check, model.commitPencil),
-    ],
-  );
-
-  Widget _paperSelector() => (Column(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      for (final material in model.materials)
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 5),
-          child: Tooltip(
-            message: material.label,
-            child: Container(
-              width: 58,
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: material.base,
-                borderRadius: BorderRadius.circular(8),
-                border: material.craftable
-                    ? Border.all(color: Colors.white, width: 2)
-                    : null,
-              ),
-              child: Column(
-                children: [
-                  Text(
-                    material.label,
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: material == PaperMaterial.graphite
-                          ? Colors.white
-                          : Colors.black,
-                    ),
-                  ),
-                  Text(
-                    '${model.balances[material]}',
-                    style: TextStyle(
-                      color: material == PaperMaterial.graphite
-                          ? Colors.white
-                          : Colors.black,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-    ],
-  ));
-
-  Widget _bottomControls() {
-    final selected = model.objects[model.editId ?? model.activePlane?.owner];
-    final linear = selected?.linear;
-    final candidate = model.previewObject;
-    final harvest = model.harvestPreview;
-    final yields = harvest?.units;
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (selected != null && linear != null && model.draft.path.isEmpty)
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: const Color(0xe6222222),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Wrap(
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                IconButton(
-                  tooltip: 'Decrease extent',
-                  onPressed: linear.extent > .25
-                      ? () => model.resizeLinear(
-                          selected.id,
-                          extent: linear.extent - .25,
-                        )
-                      : null,
-                  icon: const Icon(Icons.remove),
-                ),
-                Text(
-                  '${selected.kind == CraftKind.wall ? 'Height' : 'Reach'} ${linear.extent.toStringAsFixed(2)}',
-                ),
-                IconButton(
-                  tooltip: 'Increase extent',
-                  onPressed: () => model.resizeLinear(
-                    selected.id,
-                    extent: linear.extent + .25,
-                  ),
-                  icon: const Icon(Icons.add),
-                ),
-                if (selected.kind == CraftKind.floor)
-                  TextButton(
-                    onPressed: () =>
-                        model.resizeLinear(selected.id, flip: true),
-                    child: const Text('Flip'),
-                  ),
-              ],
-            ),
-          ),
-
-        if (yields != null || harvestNotice != null)
-          Container(
-            key: const ValueKey('harvest-yield'),
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: (const Color(0xe6222222)),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Wrap(
-              spacing: 12,
-              runSpacing: 4,
-              children: [
-                for (final color in model.materials)
-                  if ((yields?[color] ?? harvestNotice?[color] ?? 0) > 0)
-                    Text(
-                      '${color.label} +${yields != null ? ((yields[color] ?? 0) + model.landscape.remainders[color]! + 1e-9).floor() : harvestNotice![color]}',
-                      style: TextStyle(
-                        color: color == PaperMaterial.graphite
-                            ? Colors.white70
-                            : paperColors[color],
-                        fontSize: 12,
-                      ),
-                    ),
-              ],
-            ),
-          ),
-        if (candidate != null &&
-            (model.drawingReady ||
-                (model.tool == CraftTool.volume &&
-                    model.editId != null &&
-                    model.draft.path.isEmpty)))
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: (const Color(0xe6222222)),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    if (viewport.width > 420 && viewport.height > 520)
-                      SizedBox(
-                        width: 86,
-                        height: 64,
-                        child: _ObjectPreview(
-                          object: candidate,
-                          plane: model.objectPlane(candidate),
-                        ),
-                      ),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            candidate.kind.label,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          Text(
-                            '${model.quote} units',
-                            style: const TextStyle(
-                              color: Colors.white54,
-                              fontSize: 11,
-                            ),
-                          ),
-                          if (model.tool == CraftTool.volume)
-                            Text(
-                              'Depth ${model.previewDepth.toStringAsFixed(2)}',
-                              style: const TextStyle(
-                                color: Colors.white54,
-                                fontSize: 11,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'Clear',
-                      onPressed: model.clearDraft,
-                      icon: const Icon(Icons.close, size: 18),
-                    ),
-                    if (model.editId == null &&
-                        !model.closed &&
-                        !devSettings.resetDrawingOnRelease)
-                      FilledButton(
-                        onPressed: () => _completeDrawing(allowOpen: true),
-                        child: const Text('Finish'),
-                      ),
-                    if (model.editId == null &&
-                        model.closed &&
-                        [
-                          CraftTool.lightPencil,
-                          CraftTool.volume,
-                        ].contains(model.tool))
-                      FilledButton(
-                        onPressed: () => _completeDrawing(),
-                        child: const Text('Create'),
-                      ),
-                    if (model.editId != null)
-                      FilledButton(
-                        onPressed: () {
-                          if (model.draft.path.isNotEmpty) {
-                            _completeDrawing(allowOpen: true);
-                          } else {
-                            model.applyEdit();
-                          }
-                        },
-                        child: const Text('Apply'),
-                      ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        if (candidate == null && model.draft.path.isNotEmpty)
-          Align(
-            alignment: Alignment.centerRight,
-            child: _button('Clear', Icons.close, model.clearDraft),
-          ),
-        const SizedBox(height: 8),
-        if (!model.paperSurface)
-          SizedBox(
-            height: 46,
-            child: PageView.builder(
-              key: ValueKey(model.activePlaneId),
-              controller: gridPager,
-              itemCount: model.activePlane!.grids.length,
-              onPageChanged: (i) {
-                outgoingGrid = model.grid;
-                model.selectGrid(i);
-                acetate.forward(from: 0);
-              },
-              itemBuilder: (context, i) => Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 5),
-                child: Container(
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: model.gridIndex == i
-                        ? ((const Color(0xcc555555)))
-                        : ((const Color(0x99292929))),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white12),
-                  ),
-                  child: Text(
-                    model.terrainColumn.isNotEmpty
-                        ? 'Ground'
-                        : model.activePlane!.grids[i].name,
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
     );
   }
 
@@ -3522,59 +3366,6 @@ class _GridPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _GridPainter oldDelegate) => true;
-}
-
-class _ObjectPreview extends StatefulWidget {
-  const _ObjectPreview({required this.object, required this.plane});
-  final CraftObject object;
-  final CraftPlane plane;
-  @override
-  State<_ObjectPreview> createState() => _ObjectPreviewState();
-}
-
-class _ObjectPreviewState extends State<_ObjectPreview> {
-  late final Scene scene;
-  @override
-  void initState() {
-    super.initState();
-    scene = Scene(globalIllumination: .8);
-    _update();
-  }
-
-  @override
-  void didUpdateWidget(covariant _ObjectPreview oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _update();
-  }
-
-  void _update() {
-    final p = widget.plane, o = widget.object;
-    final center = p.point(o.region.bounds.center, o.depth * .5);
-    final extent = math.max(
-      math.max(o.region.bounds.width, o.region.bounds.height),
-      o.depth,
-    );
-    scene.camera = Camera(
-      name: 'Craft preview',
-      position:
-          center +
-          (p.normal * 1.6 + p.u - p.v * .6).normalized() *
-              math.max(.2, extent * 2.7),
-      target: center,
-      up: p.v,
-      fovDegrees: 40,
-      near: .001,
-    );
-    scene.setMeshes(objectMeshes(o, p));
-  }
-
-  @override
-  Widget build(BuildContext context) => SceneView(scene: scene);
-  @override
-  void dispose() {
-    scene.dispose();
-    super.dispose();
-  }
 }
 
 class _MotifThumbnail extends CustomPainter {
