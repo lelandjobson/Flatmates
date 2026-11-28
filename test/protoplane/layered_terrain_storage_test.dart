@@ -32,7 +32,7 @@ void main() {
       final saved = snapshot(paper);
       await storage.save(saved);
       paper.undo();
-      expect(paper.balances[PaperMaterial.paperWhite], 256);
+      expect(paper.balances[PaperMaterial.paperWhite], 32);
       paper.redo();
       expect(snapshot(paper), saved);
       await storage.save(saved);

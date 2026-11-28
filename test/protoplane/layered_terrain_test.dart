@@ -72,10 +72,10 @@ void main() {
       final c = ProtoplaneController();
       addTearDown(c.dispose);
       expect(c.balances, {
-        PaperMaterial.paperWhite: 256,
+        PaperMaterial.paperWhite: 32,
         PaperMaterial.graphite: 0,
         PaperMaterial.cork: 0,
-        PaperMaterial.paperGreen: 0,
+        PaperMaterial.paperGreen: 8,
       });
       final before = snapshot(c);
       final white = centerId(c, PaperMaterial.paperWhite);
@@ -109,10 +109,10 @@ void main() {
         expect(c.landscape.remaining(c.planes[id]!), isEmpty);
       }
       expect(c.balances, {
-        PaperMaterial.paperWhite: 384,
+        PaperMaterial.paperWhite: 160,
         PaperMaterial.graphite: 128,
         PaperMaterial.cork: 128,
-        PaperMaterial.paperGreen: 0,
+        PaperMaterial.paperGreen: 8,
       });
       drawTile(c);
       expect(c.drawingReady, isFalse);
@@ -177,7 +177,8 @@ void main() {
   test(
     'place mode spends paper on support; resources and unsupported placements rejected',
     () {
-      final c = ProtoplaneController();
+      final c = ProtoplaneController()
+        ..balances[PaperMaterial.paperWhite] = 256;
       addTearDown(c.dispose);
       final id = centerId(c, PaperMaterial.paperWhite);
       c.enter(id);

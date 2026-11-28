@@ -4,6 +4,7 @@ import 'package:vector_math/vector_math_64.dart';
 
 import 'geometry.dart';
 import 'models.dart';
+import 'room_geometry.dart';
 
 /// Convex triangular prisms, tested with the separating-axis theorem. Curved
 /// outlines and holes use the same triangulation as the visible surface.
@@ -26,6 +27,22 @@ bool solidsOverlap(CraftObject a, CraftPlane ap, CraftObject b, CraftPlane bp) {
 List<List<Vector3>> _cells(CraftObject o, CraftPlane plane) {
   // Flat paper has a small picking/rendering thickness too; it must not be
   // placed through an unrelated solid merely because its paid depth is zero.
+  if (o.kind == CraftKind.room) {
+    return [
+      for (final panel in roomPanels(o, plane))
+        for (final region in panel.regions)
+          ..._cells(
+            CraftObject(
+              id: o.id,
+              planeId: panel.frame.id,
+              kind: CraftKind.paperSheet,
+              region: region,
+              depth: roomThickness,
+            ),
+            panel.frame,
+          ),
+    ];
+  }
   final depth = math.max(.002, o.depth);
   if (o.kind == CraftKind.screen) {
     final result = <List<Vector3>>[];

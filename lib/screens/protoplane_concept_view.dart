@@ -48,6 +48,8 @@ import '../protoplane/dev_settings.dart';
 import '../ui/game/dev_tools_button.dart';
 import '../protoplane/bedrooms.dart';
 import '../protoplane/residents.dart';
+import '../protoplane/housing.dart';
+import '../protoplane/room_geometry.dart';
 import '../ui/game/friend_eye_overlay.dart';
 import '../gameplay/day_night/day_night_lighting.dart';
 import '../rendering/mesh.dart';
@@ -105,14 +107,48 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   bool _focusHadMultiple = false;
   ConstructionEvaluation? _constructionEvaluation;
   String? _createdEntityId, _aimedEntityName;
-  Timer? _entityNameTimer;
+  Timer? _entityNameTimer, _residentTimer;
+  String? _roomFocus;
+  String? _targetCacheKey;
+  ({String planeId, DrawingSurface surface, Offset point})? _targetCache;
+  CraftObject? _panelRoom;
+  CraftPlane? _panelSource;
+  List<RoomPanel> _panelCache = const [];
+  List<RoomPanel> _focusedRoomPanels() {
+    final room = model.objects[_roomFocus];
+    if (room == null) return const [];
+    final source = model.objectPlane(room);
+    if (!identical(room, _panelRoom) || !identical(source, _panelSource)) {
+      _panelRoom = room;
+      _panelSource = source;
+      _panelCache = roomPanels(room, source);
+    }
+    return _panelCache;
+  }
+
+  Timer? _backgroundTapTimer;
+  Offset? _backgroundTapPoint;
+  bool _exitingRoom = false;
+  _Pose? _beforeRoom;
+  ({Vector3 lookAt, double distance, double yaw})? _roomMapPose;
+  late final AnimationController _roomReveal =
+      AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 350),
+      )..addListener(() {
+        if (!_disposed) {
+          _applyHighlight();
+          _paintChanged();
+        }
+      });
 
   bool get _focused => model.activePlane != null;
   bool get _drawingFocused =>
       _focused && model.constructionTool == ConstructionTool.pencil;
   bool get _placingConstruction =>
       model.constructionTool == ConstructionTool.volume ||
-      model.constructionTool == ConstructionTool.paper;
+      model.constructionTool == ConstructionTool.paper ||
+      model.constructionTool == ConstructionTool.scissors;
   bool get _cameraUnlocked => !_drawingFocused;
   void _updateFocusUi(VoidCallback action) => setState(action);
   late ProtoplaneController model;
@@ -477,6 +513,12 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
               _refreshScene();
             }
           });
+    _residentTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      if (_disposed || model.housing.tenants.isEmpty) return;
+      residents.tickHousing(scene, .1);
+      _applyHighlight();
+      scene.markNeedsPaint();
+    });
     model.onCommitted = _save;
     _configureOrbit();
     _lastDiscoveryTarget = Offset(mapCamera.lookAt.x, -mapCamera.lookAt.z);
@@ -703,6 +745,39 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     }
   }
 
+  Future<void> _clearSavedWorld() async {
+    if (loading) return;
+    setState(() {
+      loading = true;
+      saveError = null;
+    });
+    _resetPointGestures();
+    _cancelFocusStroke();
+    drawing = pulling = false;
+    livePointer = null;
+    model.constructionTool = null;
+    final committed = model.onCommitted;
+    model.onCommitted = null;
+    try {
+      model.clearWorld();
+      if (widget.controller == null || widget.storage != null) {
+        await storage.reset(model.toJson());
+      }
+      if (!mounted) return;
+      loadFailed = false;
+      saveError = null;
+    } catch (_) {
+      if (!mounted) return;
+      loadFailed = true;
+      saveError = 'Could not clear saved world. Try Clear world again.';
+    } finally {
+      if (mounted) {
+        model.onCommitted = committed;
+        setState(() => loading = false);
+      }
+    }
+  }
+
   int pendingSaves = 0;
   void _save(Map<String, dynamic> json) {
     pendingSaves++;
@@ -801,6 +876,29 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
 
   void _modelChanged() {
     if (_disposed) return;
+    _targetCacheKey = null;
+    if (_roomFocus != null &&
+        model.objects[_roomFocus]?.kind != CraftKind.room) {
+      _roomFocus = null;
+      _roomReveal.stop();
+      _roomReveal.value = 0;
+      final map = _roomMapPose, pose = _beforeRoom;
+      if (map != null) {
+        mapCamera.restorePose(
+          lookAt: map.lookAt,
+          distance: map.distance,
+          yaw: map.yaw,
+        );
+      }
+      if (pose != null) {
+        camera.setPosition(pose.position);
+        camera.setTarget(pose.target);
+        camera.setUp(pose.up);
+        camera.fovDegrees = pose.fov;
+      }
+      _constructionEvaluation = null;
+      _constructionPreviewKey = null;
+    }
     if ((model.tool != CraftTool.pencil || model.selectedMotif != null) &&
         pencilDwell.tail != null) {
       pencilDwell.cancel();
@@ -950,6 +1048,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
 
   void _controlsChanged() {
     if (_disposed) return;
+    if (_roomFocus != null) _applyHighlight();
     _previewConstruction();
     _updateEntityHover();
     if (model.activePlane == null &&
@@ -966,6 +1065,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
 
   void _cameraChanged() {
     if (_disposed) return;
+    _applyHighlight();
     if (_placingConstruction) {
       worldPose = _Pose(camera);
       _previewConstruction();
@@ -982,7 +1082,6 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
         model.discoverAt(target);
       }
     }
-    _applyHighlight();
     if (model.activePlane == null &&
         !transition.isAnimating &&
         !viewport.isEmpty) {
@@ -1076,7 +1175,26 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     return true;
   }
 
+  void _applyPhaseLighting() {
+    final light = DayNightLighting.day().copyWith(
+      globalIllumination:
+          devSettings.ambient *
+          (model.housing.phase == DayPhase.evening ? .57 : 1),
+      keyIntensity: devSettings.sun,
+      keyColor: model.housing.phase == DayPhase.evening
+          ? const Color(0xffffbd80)
+          : const Color(0xffffffff),
+      keyDirection: model.housing.phase == DayPhase.afternoon
+          ? Vector3(.6, -1, -.4)
+          : Vector3(-.6, -1, -.4),
+    );
+    scene.globalIllumination = light.globalIllumination;
+    scene.setLights(light.lights);
+  }
+
   void _refreshScene() {
+    _targetCacheKey = null;
+    _applyPhaseLighting();
     pencilTextures.beginFrame();
     harvestAtlas.configureStyle(
       fill: devSettings.landscapeAppearance,
@@ -1241,7 +1359,9 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       mesh.cropBox = null;
     }
     final construction = _constructionEvaluation;
-    if (construction != null && construction.valid) {
+    if (construction != null &&
+        construction.valid &&
+        construction.tool != ConstructionTool.scissors) {
       for (final object in [construction.object!]) {
         meshes.addAll(
           _objectMeshes(
@@ -1251,6 +1371,28 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
           ),
         );
       }
+    }
+    if (construction?.valid == true &&
+        construction!.tool == ConstructionTool.scissors) {
+      final room = construction.object!;
+      meshes.removeWhere(
+        (m) => m.id == room.id || m.id.startsWith('${room.id}-'),
+      );
+      meshes.addAll(_objectMeshes(room, construction.frame!));
+      final target = construction.target!;
+      meshes.addAll(
+        objectMeshes(
+          CraftObject(
+            id: 'sticker-preview-cut',
+            planeId: target.planeId,
+            kind: CraftKind.paperSheet,
+            region: target.region,
+            depth: .002,
+          ),
+          target.surface.frame,
+          opacity: .4,
+        ),
+      );
     }
     if (!_geometryBenchmark.active) {
       meshes.removeWhere((mesh) => !_parcelMeshVisible(mesh));
@@ -1267,16 +1409,20 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       ..addEntries(meshes.map((m) => MapEntry(m.id, m.material.color)));
     edgeShading.synchronize(meshes);
     scene.setMeshes(meshes);
-    residents.sync(
-      scene,
-      model.bedrooms.where((room) {
-        final floor = model.objects[room.floorId];
-        final plane = floor == null ? null : model.planes[floor.planeId];
-        return floor != null && plane != null && _ownsObject(floor, plane);
-      }).toList(),
-      model.objects,
-      model.planes,
-    );
+    if (model.housing.tenants.isNotEmpty) {
+      residents.syncHousing(scene, model);
+    } else {
+      residents.sync(
+        scene,
+        model.bedrooms.where((room) {
+          final floor = model.objects[room.floorId];
+          final plane = floor == null ? null : model.planes[floor.planeId];
+          return floor != null && plane != null && _ownsObject(floor, plane);
+        }).toList(),
+        model.objects,
+        model.planes,
+      );
+    }
     final craftedIds = meshes.map((m) => m.id).toSet();
     for (final m in scene.meshes) {
       if (!craftedIds.contains(m.id)) {
@@ -1298,6 +1444,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   }
 
   void _applyHighlight() {
+    final focusedPanels = _focusedRoomPanels();
     for (final mesh in scene.meshes) {
       final current =
           mesh.id == hover?.id || mesh.id.startsWith('${hover?.id}-');
@@ -1323,7 +1470,42 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
           ? devSettings.craftedAppearance.filter
           : null;
       final original = mesh.material;
-      var opacity = baseOpacity[mesh.id] ?? original.opacity;
+      var opacity = mesh.id.startsWith('friend_')
+          ? 1.0
+          : baseOpacity[mesh.id] ?? original.opacity;
+      if (_roomFocus != null && _roomReveal.value > 0) {
+        var belongs = mesh.id.startsWith('sticker-preview-');
+        final object = model.objects.values
+            .where((o) => mesh.id == o.id || mesh.id.startsWith('${o.id}-'))
+            .firstOrNull;
+        if (object != null) {
+          belongs =
+              object.id == _roomFocus ||
+              model.objectPlane(object).roomId == _roomFocus;
+        }
+        for (final tenant in model.housing.tenants.values) {
+          if (tenant.roomId == _roomFocus &&
+              mesh.id.startsWith('friend_${tenant.id}_')) {
+            belongs = true;
+          }
+        }
+        var hidden = !belongs;
+        final room = model.objects[_roomFocus];
+        if (room != null && object?.id == room.id) {
+          for (final panel in focusedPanels) {
+            if (mesh.id.startsWith('${room.id}-${panel.key}-')) {
+              hidden =
+                  panel.key == 'roof' ||
+                  (panel.key.startsWith('wall-') &&
+                      panel.frame.normal.dot(
+                            camera.position - panel.frame.origin,
+                          ) >
+                          0);
+            }
+          }
+        }
+        if (hidden) opacity *= 1 - _roomReveal.value;
+      }
       {
         final object = model.objects[mesh.id];
         if (object != null &&
@@ -1769,7 +1951,10 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     controls.move(e.kind, e.localPosition);
     pointers[e.pointer] = e.localPosition;
     final delta = e.localPosition - (previous ?? e.localPosition);
-    if (down != null && (e.localPosition - down!).distance > 6) moved = true;
+    if (down != null && (e.localPosition - down!).distance > 6) {
+      moved = true;
+      _backgroundTapTimer?.cancel();
+    }
     if (pointers.length == 1 && pencilDragging) {
       if (model.selectedMotif != null) {
         final p = _local(e.localPosition, .008);
@@ -2054,7 +2239,9 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       );
     }
     if (!moved && !multi && !drawing && !pulling && !secondary) {
-      if (_placingConstruction) {
+      if (_handleRoomBackgroundTap(e.localPosition)) {
+        // A second background tap exits; defer single-tap construction.
+      } else if (_placingConstruction) {
         if (!devToolsOpen) {
           if (_parcelShopping) {
             _tap(e.localPosition);
@@ -2127,6 +2314,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   }
 
   void _trackpadStart(PointerPanZoomStartEvent event) {
+    _backgroundTapTimer?.cancel();
     if (_drawingFocused) return;
     if (devSettings.showGestureDebug) {
       gestureDebug.down(
@@ -2206,6 +2394,11 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       return;
     }
     if (model.activePlane == null) {
+      if (model.constructionTool == null && _roomFocus == null) {
+        final hit = _pick(point);
+        final room = model.objects[hit?.object];
+        if (room?.kind == CraftKind.room) _enterRoom(room!);
+      }
       return;
     }
     if (model.draft.path.isEmpty && model.editId == null) {
@@ -2285,6 +2478,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   }
 
   void _scroll(PointerSignalEvent e) {
+    _backgroundTapTimer?.cancel();
     if (!_disposed && devSettings.showGestureDebug && e is PointerScrollEvent) {
       gestureDebug.scrollEvent(e.pointer, e.localPosition, e.scrollDelta);
     }
@@ -2353,6 +2547,19 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                       key: const ValueKey('protoplane-background'),
                       decoration: BoxDecoration(
                         gradient: devSettings.backgroundGradient,
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: AnimatedBuilder(
+                      animation: _roomReveal,
+                      builder: (context, _) => ColoredBox(
+                        key: const ValueKey('room-background-shade'),
+                        color: Colors.black.withValues(
+                          alpha: .16 * _roomReveal.value,
+                        ),
                       ),
                     ),
                   ),
@@ -2518,6 +2725,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                                   _eraseEnd,
                                   _constructionEvaluation,
                                   _focusLiveScreen,
+                                  _roomFocus,
                                 ),
                               ),
                             ),
@@ -2618,12 +2826,10 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                     ),
                   ),
                 ),
-                if (!_drawingFocused)
+                if (!_drawingFocused && controls.showReticle)
                   Positioned.fill(
                     child: ViewCrosshair(
-                      position: _parcelShopping
-                          ? controls.worldAim(viewport)
-                          : viewport.center(Offset.zero),
+                      position: controls.worldAim(viewport),
                       selectable: _placingConstruction
                           ? _constructionEvaluation?.valid == true
                           : hover != null,
@@ -2643,62 +2849,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                         key: _headerKey,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Row(
-                            children: [
-                              DevToolsButton(
-                                active: devToolsOpen,
-                                onPressed: _toggleDevTools,
-                              ),
-                              _button('Back', Icons.arrow_back, () {
-                                if (model.activePlane != null) {
-                                  model.leave();
-                                } else {
-                                  context.goNamed('dev_routes');
-                                }
-                              }),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  model.editId != null
-                                      ? 'Edit ${model.objects[model.editId]?.kind.label ?? ''}'
-                                      : model.activePlane == null
-                                      ? 'protoplane_concept'
-                                      : model.activePlane!.wallCandidate
-                                      ? 'Wall protoplane'
-                                      : model.activePlane!.owner == null
-                                      ? 'Ground protoplane'
-                                      : model
-                                                .objects[model
-                                                    .activePlane!
-                                                    .owner]
-                                                ?.kind
-                                                .label ??
-                                            'Protoplane',
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 13,
-                                  ),
-                                  maxLines: 2,
-                                ),
-                              ),
-                              if (saving)
-                                const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                ),
-                              GameViewUndoRedoBar(
-                                canUndo:
-                                    model.canUndo && !loading && !loadFailed,
-                                canRedo:
-                                    model.canRedo && !loading && !loadFailed,
-                                onUndo: model.undo,
-                                onRedo: model.redo,
-                              ),
-                            ],
-                          ),
+                          _housingHud(),
                           if (model.error == null && saveError == null)
                             _bedroomStatus(),
                           if (model.error != null || saveError != null)
@@ -2775,6 +2926,11 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                             setState(() {});
                           },
                           onSelect: _selectConstructionTool,
+                          stock:
+                              model.balances[model.constructionPaper.material],
+                          price: model.constructionPaper.material.purchasePrice,
+                          onBuy: () =>
+                              model.buyPaper(model.constructionPaper.material),
                         ),
                       ),
                     ),
@@ -2800,14 +2956,9 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                       onClose: _toggleDevTools,
                       initialError: settingsError,
                       revealAllAreas: (model.revealAllAreas),
-                      clearWorld: loading || loadFailed
+                      clearWorld: loading
                           ? null
-                          : () {
-                              _resetPointGestures();
-                              drawing = pulling = false;
-                              livePointer = null;
-                              model.clearWorld();
-                            },
+                          : () => unawaited(_clearSavedWorld()),
                     ),
                   ),
                 if (devSettings.showSafeZone && _safeZone != null)
@@ -2864,6 +3015,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   );
 
   Widget _bedroomStatus() {
+    if (model.bedrooms.isEmpty) return const SizedBox.shrink();
     final room = model.activeBedroom;
     if (model.activePlane != null) {
       if (room == null) return const SizedBox.shrink();
@@ -2932,6 +3084,9 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   @override
   void dispose() {
     _entityNameTimer?.cancel();
+    _residentTimer?.cancel();
+    _backgroundTapTimer?.cancel();
+    _roomReveal.dispose();
     harvestNoticeTimer?.cancel();
     harvestAtlas.dispose();
     landscapePaperTexture?.dispose();

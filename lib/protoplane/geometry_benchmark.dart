@@ -178,6 +178,9 @@ class _GeometryBenchmarkPanelState extends State<GeometryBenchmarkPanel> {
         Text('Submitted faces: ${stats?.faces ?? 0}'),
         Text('Draw calls: ${stats?.drawCalls ?? 0}'),
         Text('Paint: ${stats?.paintMs.toStringAsFixed(2) ?? "—"} ms'),
+        Text(
+          'Ink overlay: ${widget.scene.overlayPaintMs.toStringAsFixed(2)} ms',
+        ),
       ],
     );
   }

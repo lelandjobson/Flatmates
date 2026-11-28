@@ -111,10 +111,10 @@ void main() {
       final c = ProtoplaneController();
       addTearDown(c.dispose);
       expect(c.balances, {
-        PaperMaterial.paperWhite: 256,
+        PaperMaterial.paperWhite: 32,
         PaperMaterial.graphite: 0,
         PaperMaterial.cork: 0,
-        PaperMaterial.paperGreen: 0,
+        PaperMaterial.paperGreen: 8,
       });
       c.enter('ground-starter-paperWhite-0-0');
       expect(c.grid!.nodes.length, 9);
@@ -129,7 +129,7 @@ void main() {
       c.finishGesture();
       for (final color in expected.keys) {
         expect(
-          c.balances[color]! - 256 + c.landscape.remainders[color]!,
+          c.balances[color]! - color.starterUnits + c.landscape.remainders[color]!,
           closeTo(expected[color]!, 1e-7),
         );
       }
@@ -138,10 +138,10 @@ void main() {
       final harvested = c.toJson();
       c.undo();
       expect(c.balances, {
-        PaperMaterial.paperWhite: 256,
+        PaperMaterial.paperWhite: 32,
         PaperMaterial.graphite: 0,
         PaperMaterial.cork: 0,
-        PaperMaterial.paperGreen: 0,
+        PaperMaterial.paperGreen: 8,
       });
       expect(c.landscape.remaining(c.activePlane!), isNotEmpty);
       expect(c.draft.path, isEmpty);
@@ -262,10 +262,10 @@ void main() {
       expect(() => restored.load(invalid), throwsFormatException);
       c.clearWorld();
       expect(c.balances, {
-        PaperMaterial.paperWhite: 256,
+        PaperMaterial.paperWhite: 32,
         PaperMaterial.graphite: 0,
         PaperMaterial.cork: 0,
-        PaperMaterial.paperGreen: 0,
+        PaperMaterial.paperGreen: 8,
       });
       expect(
         c.landscape.terrain.tiles['ground-starter-paperWhite-0-0']!.sheet.cuts,

@@ -15,7 +15,8 @@ void main() {
   testWidgets('committed lines still paint after leaving focus', (
     tester,
   ) async {
-    final model = ProtoplaneController();
+    final model = ProtoplaneController()
+      ..balances[PaperMaterial.paperWhite] = 64;
     addTearDown(model.dispose);
     await tester.pumpWidget(
       MaterialApp(
@@ -54,7 +55,8 @@ void main() {
   testWidgets('paper preview follows camera and a drag never places', (
     tester,
   ) async {
-    final model = ProtoplaneController();
+    final model = ProtoplaneController()
+      ..balances[PaperMaterial.paperWhite] = 64;
     addTearDown(model.dispose);
     await tester.pumpWidget(
       MaterialApp(
@@ -95,7 +97,8 @@ void main() {
     testWidgets(
       'volume navigates with $kind and drawing locks the resulting pose',
       (tester) async {
-        final model = ProtoplaneController();
+        final model = ProtoplaneController()
+          ..balances[PaperMaterial.paperWhite] = 64;
         addTearDown(model.dispose);
         await tester.pumpWidget(
           MaterialApp(
@@ -137,6 +140,17 @@ void main() {
         expect(model.activePlaneId, isNull);
         expect(model.assemblies, isEmpty);
         final moved = camera.position.clone();
+        if (kind == PointerDeviceKind.mouse) {
+          final ground =
+              model.planes[centerId(model, PaperMaterial.paperWhite)]!;
+          await drag.moveTo(
+            camera.projectToScreen(
+              ground.point(const Offset(.5, .5)),
+              const Size(800, 600),
+            )!,
+          );
+          await tester.pumpAndSettle();
+        }
         await tester.tap(find.byKey(const ValueKey('construction-pencil')));
         await tester.pumpAndSettle();
         expect(camera.position, moved);

@@ -4,6 +4,7 @@ import '../rendering/ground_occlusion.dart';
 import '../rendering/scene/camera.dart';
 import '../rendering/scene/scene.dart';
 import 'models.dart';
+import '../geometry/polygon_union.dart' show polygonSignedArea;
 
 /// Screen-space visibility of ink on a plane. Reuses the renderer's face
 /// clipping, including crop boxes and ground openings, before projecting masks.
@@ -13,7 +14,17 @@ Path drawingVisibility(
   Size size,
   CraftPlane plane,
 ) {
-  var visible = Path()..addRect(Offset.zero & size);
+  return Path.combine(
+    PathOperation.difference,
+    Path()..addRect(Offset.zero & size),
+    drawingOcclusion(scene, camera, size, plane),
+  );
+}
+
+/// Same occluders as the visibility mask, without CPU polygon booleans.
+/// Erase this path from an isolated ink layer; nonzero fill unions overlaps.
+Path drawingOcclusion(Scene scene, Camera camera, Size size, CraftPlane plane) {
+  final covers = Path()..fillType = PathFillType.nonZero;
   final inkOrigin = plane.origin + plane.normal * .009;
   final towardCamera = plane.normal.dot(camera.position - inkOrigin) >= 0
       ? plane.normal
@@ -66,10 +77,14 @@ Path drawingVisibility(
           for (final vertex in front) camera.projectToScreen(vertex, size),
         ];
         if (points.any((p) => p == null)) continue;
-        final cover = Path()..addPolygon(points.cast<Offset>(), true);
-        visible = Path.combine(PathOperation.difference, visible, cover);
+        final polygon = points.cast<Offset>();
+        // One winding unions overlapping double-sided faces when rasterized.
+        covers.addPolygon(
+          polygonSignedArea(polygon) < 0 ? polygon.reversed.toList() : polygon,
+          true,
+        );
       }
     }
   }
-  return visible;
+  return covers;
 }

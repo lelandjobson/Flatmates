@@ -4,47 +4,122 @@ Open `protoplane_concept` in the developer menu (`/protoplane-concept`). This
 prototype has its own world, paper inventory, history, and local save. It does
 not change GameView or the grid-puzzle rules.
 
-## Current construction toolbar and inflation
+## Current playable housing loop
 
-The bottom toolbar has Pencil, Inflate, and Paper. No tool is selected at launch;
-selecting the active tool again restores navigation. Legacy drawing implements
-and sticker programs remain readable in saved worlds but have no selector here.
+The toolbar has Pencil, Inflate, Paper, and Scissors. No tool is selected at
+launch. Selecting the active tool again restores navigation. Mouse input uses
+the pointer location for the reticle, previews, placement, and hover labels; touch
+input keeps the reticle fixed at the center. Leaving the world view with a mouse
+hides its reticle and clears its preview. Pencil locks the targeted surface; cursor/finger strokes connect orthogonal
+dots and support backtracking. Ground uses tile corners; room faces and their
+attached layers use quarter-unit spacing. Other tools retain navigation and
+commit only on a click/tap without a drag. Parcel shopping suppresses construction.
 
-Pencil locks the surface under the centered reticle and keeps the incoming camera
-pose. The reticle disappears and cursor/finger strokes connect orthogonal dots,
-including retracing and between-dot feedback. Ground uses tile corners; volume
-faces use quarter-unit spacing. Committed lines remain visible outside focus,
-clipped by foreground geometry together with their glow. Switching tools cancels
-an unfinished stroke. Pinches, wheel input, and trackpads do not move Pencil's camera.
+Draw a closed ground boundary of at least one square tile, place a white building
+mat, and inflate it into a hollow one-unit room. Click the room with no tool
+selected to isolate it and reveal its interior. Focus hides the roof and near
+walls, frames the room, darkens the background by 16%, and keeps navigation
+available. Exit or a double tap on empty background restores the prior camera
+pose. A construction tap on empty background waits 300 ms to distinguish it
+from a focus-exit double tap. Draw on a wall, then use Scissors to cut that region. A clear
+quarter-unit-wide, half-unit-high floor opening becomes a door; an enclosed
+opening becomes a window. Cuts preserve holes and reject removal of attached
+supports. Rendering, collision, and exposed surfaces share the room panels.
 
-Paper and Inflate keep normal navigation with a centered reticle. On grey
-construction-paper ground, draw a closed boundary before placing a sheet. The
-smallest containing drawn region wins; on existing objects, their exposed face
-is the fallback. Region holes remain holes. Valid targets have a yellow fill
-and a ghost preview. Only a click/tap without a navigation drag commits; the
-tool remains selected. Parcel shopping suppresses construction previews and placement.
+Paper has a five-slot material wheel with live center selection and a compact
+stock/purchase control. Lists with fewer than five materials have finite ends;
+larger lists wrap. Tapping a swatch centers and selects it. Building paper is outdoor-only; green cloth is
+indoor-only. Surface context is physical and inherited by layers, independent
+of focus, doors, and visual cutaways. Invalid placement shows no ghost or yellow
+fill and consumes nothing. The smallest drawn region wins; exposed faces are
+the fallback. Bare ground requires a drawn boundary. Valid previews revalidate
+before committing.
 
-Paper opens a fixed-height horizontal material wheel above the tools. Five slots
-are visible, the center item is selected live, and the list loops through Building
-and Cloth. The wheel reveals from the center outward. Building paper is white;
-cloth is green. Each sheet starts .01 units thick and inherits its support's grid.
-Ground-backed sheets use tile corners until inflated.
+Inflation replaces the sheet atomically. Cloth becomes .05-unit padding: a
+region containing a .25 × .5 rectangle is a small blanket, and one containing a
+.5 × .5 square is a large blanket. Each accessible blanket on an interior floor
+supports one Cube Boy. Residents wander on the reachable floor and never advance
+game time. Doors, clearance, holes, and furnishings constrain access. Multiple
+blankets can support multiple renters. The resident inspector shows rating
+contributions, daily rent, and departure risk.
 
-Inflate transforms a building mat into a one-unit building volume, or a cloth
-sheet into a .05-unit blanket. It replaces the sheet in one undo transaction,
-keeping its ID and moving any local drawing to the new exposed surface. Attached
-objects and collisions prevent inflation. New volume tops and sides, including
-hole walls, have stable quarter-unit drawing surfaces. Bare ground and already
-inflated entities cannot inflate directly. Creation and reticle hover show the
-entity names: building mat, cloth sheet, building volume, and blanket.
+The top HUD advances Morning → Afternoon → Evening → next Morning manually.
+Building is unlimited within a phase. Overnight pays rent and resolves departures
+in one persisted transaction. Ratings award 40 for a usable sleeping place,
+20 for a large blanket, 20 for a window, and 20 for .5 square units of accessible
+floor per resident. Rent is 4 + floor(rating / 20). Below 60, departure probability
+is (60 − rating) / 100. Unusable housing pays nothing and its resident leaves
+at the next overnight unless repaired. A departed renter's vacancy requires
+an improved rating before replacement; recreating the blanket does not reset it.
 
-Grey ground uses the natural terrain rendering path, retaining existing terrain
-IDs and save compatibility; placed building paper stays white. Construction is
-free. Version 11 adds solidVolume, paperSheet, inflatedCloth, paper.green, and
-inherited drawingSpacing; versions 3–10 remain readable.
+New games start with 32 building-paper units, 8 cloth units, and no coins. Paper
+costs ceil(area × 16) units, excluding holes. Inflation and cutting are free.
+Packs contain 16 units and cost 20 coins for building paper or 12 for cloth.
+Emergency supplies top stocks up to 16/8 when there are no renters and fewer
+than 12 coins. Parcel purchases charge the displayed price. Balance constants
+live in `lib/protoplane/housing_balance.dart`.
+
+World version 12 adds explicit rooms/openings, surface context, residents,
+vacancy history, phase/day, currency, and deterministic departure state. Versions
+3–11 remain readable; old solid volumes and outdoor cloth are not reinterpreted
+or deleted. New construction and inflation obey current material rules. Tool
+commits and purchases are undoable; advancing a phase establishes a history
+boundary so rent and departures cannot be replayed through undo.
+
+The approved feature specification is [First playable loop plan](first_playable_loop_plan.md).
 
 The following sections retain details of the legacy construction systems and
 supporting rendering infrastructure.
+
+## Construction performance (November 2026)
+
+The four-room macOS profile scenario exposed two independent costs: ink
+occlusion dominated frame CPU time through repeated polygon subtraction, and
+construction validation rebuilt all terrain lattices by saving/loading a staged
+world for each preview and commit.
+
+Ink now renders into isolated layers and erases projected occluders with a
+nonzero-winding mask. This preserves overlapping covers, holes, and the world
+behind the ink without CPU path booleans in the paint loop. Inactive lines retain
+their color and width but omit blurred glow; active Pencil and selected eraser
+lines retain it. The tradeoff is an offscreen layer per drawn surface, which
+should be measured on mobile GPUs as world size grows.
+
+Construction staging now copies mutable containers and shares immutable world
+geometry and read-only terrain. It still derives and validates staged surfaces,
+and commits still revalidate the current target. Navigation reuses housing
+reviews, focused-room panels, and matching target picks. Preview geometry only
+changes when its bounded region, surface, material, or world changes, rather
+than for every small movement within the same region.
+
+On this development Mac, the four-room/four-resident profile scenario improved
+from 21.05 ms median frame total (22.93 ms p95) to 4.71 ms (6.73 ms p95).
+Median UI work fell from 15.26 to 3.05 ms; raster work from 5.43 to 1.51 ms.
+Construction evaluation plus atomic application fell from 140.73 ms median to
+16.54 ms (25.20 ms p95). These are local scenario measurements, not universal
+FPS guarantees. The harness disables animated fog and uses a fresh unsaved
+world; it does not exercise arbitrary old saves or mobile hardware.
+
+Repeatable tools:
+
+- `flutter run -d macos --profile --dart-define=ROOMS=4 -t tool/construction_profile.dart`
+  creates four occupied rooms and measures unfocused navigation, room navigation,
+  Paper targeting, and idle residents. Omit `ROOMS=4` for one room. Reports go to
+  `/tmp/construction-profile-4.json` or `/tmp/construction-profile-1.json`.
+  Reports separate input CPU, ink CPU, UI, raster, and construction timings.
+- `flutter test test/protoplane/construction_performance_test.dart --reporter expanded`
+  measures CPU/widget update cost. Run alone, without parallel tests or builds;
+  these timings include test overhead and are not device frame timings.
+- Devtools' existing geometry benchmark now includes **Ink overlay** alongside
+  **Paint**. Scene paint timing alone excludes the ink overlay and can conceal
+  its cost. Existing wall/volume batches remain useful for renderer stress.
+- `tool/fog_profile.dart` measures animated-fog overhead separately.
+
+Next scaling targets are bounding ink layers to visible stroke extents, sharing
+projected occluders across coplanar ink, spatially indexing surface picking, and
+validating only changed support dependencies. Prefer these to relaxing collision,
+material eligibility, or occlusion. Profile portrait mobile and larger saved
+worlds before making further visual cuts.
 
 ## In-place focus and landscape drawing
 

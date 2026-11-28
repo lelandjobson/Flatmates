@@ -27,6 +27,7 @@ enum CraftKind {
   solidVolume,
   paperSheet,
   inflatedCloth,
+  room,
 }
 
 enum CraftTool { scissors, volume, place, eraser, pencil, lightPencil }
@@ -215,6 +216,9 @@ class CraftPlane {
     required this.grids,
     this.owner,
     this.wallCandidate = false,
+    this.roomId,
+    this.roomFace,
+    this.interior = false,
     this.supports = const [],
   });
   final String id;
@@ -223,6 +227,8 @@ class CraftPlane {
   final List<CraftGrid> grids;
   final String? owner;
   final bool wallCandidate;
+  final String? roomId, roomFace;
+  final bool interior;
   final List<String> supports;
   CraftPlane withGrids(List<CraftGrid> value) => CraftPlane(
     id: id,
@@ -233,6 +239,9 @@ class CraftPlane {
     grids: value,
     owner: owner,
     wallCandidate: wallCandidate,
+    roomId: roomId,
+    roomFace: roomFace,
+    interior: interior,
     supports: supports,
   );
   Vector3 get normal => u.cross(v).normalized();
@@ -249,6 +258,9 @@ class CraftPlane {
     'region': region.toJson(),
     'owner': owner,
     'wallCandidate': wallCandidate,
+    if (roomId != null) 'roomId': roomId,
+    if (roomFace != null) 'roomFace': roomFace,
+    if (interior) 'interior': true,
     'supports': supports,
     'grids': grids.map((g) => g.toJson()).toList(),
   };
@@ -260,6 +272,9 @@ class CraftPlane {
     region: Region.fromJson(j['region']),
     owner: j['owner'],
     wallCandidate: j['wallCandidate'],
+    roomId: j['roomId'],
+    roomFace: j['roomFace'],
+    interior: j['interior'] == true,
     supports: (j['supports'] as List).cast<String>(),
     grids: (j['grids'] as List).map((g) => CraftGrid.fromJson(g)).toList(),
   );
@@ -351,9 +366,11 @@ class CraftObject {
     this.attachmentIds = const [],
     this.linear,
     this.drawingSpacing,
+    this.openings = const [],
   }) : material = material ?? color ?? PaperMaterial.paperWhite;
   final String id, planeId;
   final double? drawingSpacing;
+  final List<RoomOpening> openings;
   final CraftKind kind;
   final Region region;
   final PaperMaterial material;
@@ -365,8 +382,8 @@ class CraftObject {
   String? get constructionName => switch (kind) {
     CraftKind.paperSheet =>
       material == PaperMaterial.paperGreen ? 'cloth sheet' : 'building mat',
-    CraftKind.solidVolume => 'building volume',
-    CraftKind.inflatedCloth => 'blanket',
+    CraftKind.solidVolume || CraftKind.room => 'building volume',
+    CraftKind.inflatedCloth => blanketSize(region),
     _ => null,
   };
   CraftObject copyWith({
@@ -379,11 +396,13 @@ class CraftObject {
     String? planeId,
     LinearAttachment? linear,
     double? drawingSpacing,
+    List<RoomOpening>? openings,
   }) => CraftObject(
     id: id ?? this.id,
     planeId: planeId ?? this.planeId,
     linear: linear ?? this.linear,
     drawingSpacing: drawingSpacing ?? this.drawingSpacing,
+    openings: openings ?? this.openings,
     kind: kind ?? this.kind,
     region: region ?? this.region,
     color: color,
@@ -399,6 +418,8 @@ class CraftObject {
     'planeId': planeId,
     'kind': kind.name,
     if (drawingSpacing != null) 'drawingSpacing': drawingSpacing,
+    if (openings.isNotEmpty)
+      'openings': openings.map((o) => o.toJson()).toList(),
     'region': region.toJson(),
     'material': material.id,
     'depth': depth,
@@ -411,6 +432,9 @@ class CraftObject {
     planeId: j['planeId'],
     kind: CraftKind.values.byName(j['kind']),
     drawingSpacing: (j['drawingSpacing'] as num?)?.toDouble(),
+    openings: ((j['openings'] ?? []) as List)
+        .map((o) => RoomOpening.fromJson(o))
+        .toList(),
     region: Region.fromJson(j['region']),
     material: PaperMaterial.decode(j['material'] ?? j['color']),
     depth: (j['depth'] as num).toDouble(),
@@ -581,4 +605,42 @@ Region hollowRegion(Region region) {
     inner = rectangle(box.width, box.height, origin: box.topLeft);
   }
   return Region(region.outer, [...region.holes, inner.outer]);
+}
+
+/// Opening coordinates are authored in the wall's outward-facing frame.
+class RoomOpening {
+  const RoomOpening(this.wall, this.region, this.kind);
+  final String wall;
+  final Region region;
+  final String kind;
+  Map<String, dynamic> toJson() => {
+    'wall': wall,
+    'region': region.toJson(),
+    'kind': kind,
+  };
+  factory RoomOpening.fromJson(Map<String, dynamic> j) {
+    final r = Region.fromJson(j['region']);
+    if (!r.valid || !['door', 'window', 'opening'].contains(j['kind'])) {
+      throw const FormatException('Invalid room opening');
+    }
+    return RoomOpening(j['wall'], r, j['kind']);
+  }
+}
+
+String blanketSize(Region region) {
+  bool fits(double w, double h) {
+    final b = region.bounds;
+    for (var x = (b.left * 4).ceil() / 4; x + w <= b.right + 1e-7; x += .25) {
+      for (var y = (b.top * 4).ceil() / 4; y + h <= b.bottom + 1e-7; y += .25) {
+        if (region.containsRegion(rectangle(w, h, origin: Offset(x, y)))) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  if (fits(.5, .5)) return 'large blanket';
+  if (fits(.25, .5) || fits(.5, .25)) return 'small blanket';
+  return 'cloth padding';
 }

@@ -6,6 +6,7 @@ import '../geometry/geometry.dart';
 import '../rendering/mesh.dart';
 import 'geometry.dart';
 import 'models.dart';
+import 'room_geometry.dart';
 
 final paperColors = <PaperMaterial, Color>{
   for (final material in PaperMaterial.values) material: material.base,
@@ -100,6 +101,21 @@ List<Mesh> objectMeshes(
     ),
   );
   final depth = object.depth * growth;
+  if (object.kind == CraftKind.room) {
+    return [
+      for (final panel in roomPanels(object.copyWith(depth: depth), plane))
+        for (final (index, region) in panel.regions.indexed)
+          mesh(
+            '-${panel.key}-$index',
+            regionGeometry(
+              '${object.id}-${panel.key}-$index',
+              panel.frame,
+              region,
+              roomThickness,
+            ),
+          ),
+    ];
+  }
   if (object.kind == CraftKind.screen) {
     final points = <Vector3>[];
     final faces = <List<int>>[];

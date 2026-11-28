@@ -1,6 +1,272 @@
 part of 'protoplane_concept_view.dart';
 
 extension _FocusTools on _ProtoplaneConceptViewState {
+  void _enterRoom(CraftObject room) {
+    _backgroundTapTimer?.cancel();
+    _backgroundTapPoint = null;
+    _beforeRoom = _Pose(camera);
+    _roomMapPose = (
+      lookAt: mapCamera.lookAt.clone(),
+      distance: mapCamera.distance,
+      yaw: mapCamera.yaw,
+    );
+    _roomFocus = room.id;
+    _roomReveal.duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 350);
+    final center = model.objectPlane(room).point(room.region.bounds.center);
+    final distance =
+        (math.max(room.region.bounds.width, room.region.bounds.height) *
+                (viewport.aspectRatio > 1.6 ? 6 : 5))
+            .clamp(3.0, 12.0);
+    if (MediaQuery.disableAnimationsOf(context)) {
+      mapCamera.restorePose(
+        lookAt: center,
+        distance: distance,
+        yaw: mapCamera.yaw,
+      );
+    } else {
+      mapCamera.animateLookAt(center);
+      mapCamera.animateDistance(distance);
+    }
+    _roomReveal.forward(from: 0);
+    _constructionPreviewKey = null;
+    _refreshScene();
+    _updateFocusUi(() {});
+  }
+
+  bool _handleRoomBackgroundTap(Offset point) {
+    if (_roomFocus == null ||
+        _drawingFocused ||
+        devToolsOpen ||
+        _parcelShopping) {
+      return false;
+    }
+    final hits =
+        SceneHitTester(
+          scene: scene,
+          camera: camera,
+          viewportSize: viewport,
+        ).hitTestAll(
+          point,
+          includeMesh: (mesh) =>
+              mesh.visible &&
+              mesh.material.opacity > .05 &&
+              !mesh.id.startsWith('sticker-preview-'),
+        );
+    if (hits.isNotEmpty) {
+      _backgroundTapTimer?.cancel();
+      _backgroundTapPoint = null;
+      return false;
+    }
+    if (_backgroundTapTimer?.isActive == true &&
+        _backgroundTapPoint != null &&
+        (point - _backgroundTapPoint!).distance < 28) {
+      _backgroundTapTimer!.cancel();
+      _backgroundTapPoint = null;
+      _exitRoom();
+      return true;
+    }
+    _backgroundTapTimer?.cancel();
+    _backgroundTapPoint = point;
+    final pose = _Pose(camera);
+    final tool = model.constructionTool;
+    final room = _roomFocus;
+    _backgroundTapTimer = Timer(const Duration(milliseconds: 300), () {
+      _backgroundTapPoint = null;
+      if (!mounted ||
+          _roomFocus != room ||
+          pointers.isNotEmpty ||
+          model.constructionTool != tool ||
+          devToolsOpen ||
+          _parcelShopping ||
+          (camera.position - pose.position).length > .0001 ||
+          (camera.target - pose.target).length > .0001) {
+        return;
+      }
+      if (_placingConstruction) _placeConstruction();
+    });
+    return true;
+  }
+
+  Future<void> _exitRoom() async {
+    if (_roomFocus == null || _exitingRoom) return;
+    _exitingRoom = true;
+    _backgroundTapTimer?.cancel();
+    _backgroundTapPoint = null;
+    controls.cancel();
+    pointers.clear();
+    mapCamera.pauseForHandoff();
+    _cancelFocusStroke();
+    model.constructionTool = null;
+    if (model.activePlane != null) model.leave();
+    _constructionEvaluation = null;
+    _constructionPreviewKey = null;
+    await _roomReveal.reverse();
+    if (!mounted) return;
+    final pose = _beforeRoom, map = _roomMapPose;
+    _roomFocus = null;
+    _exitingRoom = false;
+    if (map != null) {
+      mapCamera.restorePose(
+        lookAt: map.lookAt,
+        distance: map.distance,
+        yaw: map.yaw,
+      );
+    }
+    if (pose != null) {
+      camera.setPosition(pose.position);
+      camera.setTarget(pose.target);
+      camera.setUp(pose.up);
+      camera.fovDegrees = pose.fov;
+    }
+    _refreshScene();
+    _updateFocusUi(() {});
+  }
+
+  Widget _housingHud() => Wrap(
+    key: const ValueKey('housing-hud'),
+    alignment: WrapAlignment.center,
+    crossAxisAlignment: WrapCrossAlignment.center,
+    spacing: 8,
+    children: [
+      DevToolsButton(active: devToolsOpen, onPressed: _toggleDevTools),
+      _button('Back', Icons.arrow_back, () {
+        if (_roomFocus != null) {
+          _exitRoom();
+        } else if (model.activePlane != null) {
+          _selectConstructionTool(ConstructionTool.pencil);
+        } else {
+          context.goNamed('dev_routes');
+        }
+      }),
+      Text(
+        'Day ${model.housing.day} · ${model.housing.phase.name[0].toUpperCase()}${model.housing.phase.name.substring(1)}',
+        style: const TextStyle(color: Colors.white),
+      ),
+      Text(
+        '${model.housing.coins} coins',
+        style: const TextStyle(color: Colors.white),
+      ),
+      IconButton(
+        key: const ValueKey('advance-phase'),
+        tooltip: 'Advance time',
+        onPressed: loading || loadFailed
+            ? null
+            : () {
+                _cancelFocusStroke();
+                model.advancePhase();
+              },
+        icon: const Icon(Icons.skip_next, color: Colors.white),
+      ),
+      IconButton(
+        key: const ValueKey('resident-inspection'),
+        tooltip: 'Residents',
+        onPressed: _inspectResidents,
+        icon: const Icon(Icons.people, color: Colors.white),
+      ),
+      GameViewUndoRedoBar(
+        canUndo: model.canUndo && !loading && !loadFailed,
+        canRedo: model.canRedo && !loading && !loadFailed,
+        onUndo: model.undo,
+        onRedo: model.redo,
+      ),
+      if (saving)
+        const SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      if (_roomFocus != null)
+        IconButton(
+          key: const ValueKey('exit-room'),
+          tooltip: 'Exit room',
+          onPressed: _exitRoom,
+          icon: const Icon(Icons.close_fullscreen, color: Colors.white),
+        ),
+      if (model.canClaimSupplies)
+        TextButton(
+          key: const ValueKey('emergency-supplies'),
+          onPressed: model.claimSupplies,
+          child: const Text('Emergency supplies'),
+        ),
+      if (model.housing.result != null)
+        Text(
+          model.housing.result!,
+          style: const TextStyle(color: Colors.white70),
+        ),
+    ],
+  );
+
+  void _inspectResidents() {
+    final reviews = {for (final r in model.roomReviews) r.room.id: r};
+    Widget details(Tenant tenant) {
+      final review = reviews[tenant.roomId];
+      final count = model.housing.tenants.values
+          .where((t) => t.roomId == tenant.roomId)
+          .length;
+      final name =
+          model.objects[tenant.blanketId]?.constructionName ?? 'No blanket';
+      final space =
+          review != null &&
+          review.reachable.length * RoomReview.step * RoomReview.step >=
+              count * .5;
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Cube Boy · ${tenant.id}',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            Text(
+              '${tenant.rating}/100 · ${tenant.usable ? HousingBalance.rent(tenant.rating) : 0} coins/day',
+            ),
+            Text('$name · Sleeping place +${tenant.usable ? 40 : 0}'),
+            Text(
+              'Blanket +${tenant.usable && name == "large blanket" ? 20 : 0} · Window +${tenant.usable && review?.hasWindow == true ? 20 : 0} · Space +${tenant.usable && space ? 20 : 0}',
+            ),
+            Text(
+              'Departure risk ${tenant.usable ? (HousingBalance.departure(tenant.rating) * 100).round() : 100}%',
+            ),
+          ],
+        ),
+      );
+    }
+
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Residents · ${model.housing.tenants.length}'),
+        content: SizedBox(
+          width: 320,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * .55,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final tenant in model.housing.tenants.values)
+                    details(tenant),
+                ],
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _cancelFocusStroke() {
     _focusPath.clear();
     _focusLiveScreen = null;
@@ -133,6 +399,7 @@ extension _FocusTools on _ProtoplaneConceptViewState {
   }
 
   void _selectConstructionTool(ConstructionTool requested) {
+    _backgroundTapTimer?.cancel();
     if (loading || loadFailed || devToolsOpen) return;
     final next = model.constructionTool == requested ? null : requested;
     final target = next == ConstructionTool.pencil && !_parcelShopping
@@ -174,17 +441,38 @@ extension _FocusTools on _ProtoplaneConceptViewState {
   }
 
   ({String planeId, DrawingSurface surface, Offset point})?
-  _constructionTarget() {
+  _constructionTarget({bool fresh = false}) {
+    final key =
+        '${controls.worldAim(viewport)}/$viewport/${camera.position}/${camera.target}/${camera.up}/${camera.fovDegrees}/${camera.projection}/${camera.orthographicScale}/$_roomFocus/${_roomReveal.value}';
+    if (!fresh && _targetCacheKey == key) return _targetCache;
+    _targetCacheKey = key;
+    return _targetCache = _resolveConstructionTarget();
+  }
+
+  ({String planeId, DrawingSurface surface, Offset point})?
+  _resolveConstructionTarget() {
     if (viewport.isEmpty) return null;
-    final aim = viewport.center(Offset.zero);
+    final aim = controls.worldAim(viewport);
     final ray = camera.unprojectRay(aim, viewport);
     if (ray == null) return null;
+    final panels = _focusedRoomPanels();
     CraftPlane? best;
     var distance = double.infinity;
     for (final plane in model.planes.values) {
       final terrain = model.landscape.terrain.tiles.containsKey(plane.id);
       if (!terrain && !plane.id.startsWith('surface-')) continue;
       if (terrain && !model.ownsTerrainTile(plane.id)) continue;
+      if (_roomFocus != null) {
+        if (plane.roomId != _roomFocus) continue;
+        if (plane.roomFace == 'roof') continue;
+        if (plane.roomFace?.startsWith('wall-') == true) {
+          final panel = panels.firstWhere((p) => p.key == plane.roomFace);
+          if (panel.frame.normal.dot(camera.position - panel.frame.origin) >
+              0) {
+            continue;
+          }
+        }
+      }
       if (plane.normal.dot(camera.position - plane.origin) <= 0) continue;
       final world = Camera.intersectPlane(
         ray: ray,
@@ -246,7 +534,11 @@ extension _FocusTools on _ProtoplaneConceptViewState {
 
   void _previewConstruction() {
     final tool = model.constructionTool;
-    final target = _placingConstruction && !_parcelShopping && !devToolsOpen
+    final target =
+        _placingConstruction &&
+            controls.showReticle &&
+            !_parcelShopping &&
+            !devToolsOpen
         ? _constructionTarget()
         : null;
     if (target == null || tool == null) {
@@ -271,7 +563,10 @@ extension _FocusTools on _ProtoplaneConceptViewState {
   }
 
   void _updateEntityHover() {
-    if (_parcelShopping || _drawingFocused || viewport.isEmpty) {
+    if (_parcelShopping ||
+        _drawingFocused ||
+        !controls.showReticle ||
+        viewport.isEmpty) {
       _aimedEntityName = null;
       return;
     }
@@ -282,7 +577,7 @@ extension _FocusTools on _ProtoplaneConceptViewState {
 
   void _placeConstruction() {
     if (!_placingConstruction || _parcelShopping) return;
-    final target = _constructionTarget();
+    final target = _constructionTarget(fresh: true);
     if (target == null) {
       model.report('Aim at a paper surface');
       return;
@@ -317,8 +612,10 @@ class _DrawingGraphPainter extends CustomPainter {
     this.eraseB,
     this.evaluation,
     this.liveScreen,
+    this.roomFocus,
   );
   final ProtoplaneController model;
+  final String? roomFocus;
   final Camera camera;
   final Scene scene;
   final List<int> path;
@@ -326,14 +623,29 @@ class _DrawingGraphPainter extends CustomPainter {
   final ConstructionEvaluation? evaluation;
   @override
   void paint(Canvas canvas, Size size) {
+    final watch = Stopwatch()..start();
+    try {
+      _paint(canvas, size);
+    } finally {
+      scene.overlayPaintMs = watch.elapsedMicroseconds / 1000;
+    }
+  }
+
+  void _paint(Canvas canvas, Size size) {
     final surface = model.drawingSurface;
-    final visibility = <CraftPlane, Path>{};
-    void clip(CraftPlane frame) => canvas.clipPath(
-      visibility.putIfAbsent(
-        frame,
-        () => drawingVisibility(scene, camera, size, frame),
-      ),
-    );
+    final occlusion = <CraftPlane, Path>{};
+    void beginInk() => canvas.saveLayer(Offset.zero & size, Paint());
+    void endInk(CraftPlane frame) {
+      canvas.drawPath(
+        occlusion.putIfAbsent(
+          frame,
+          () => drawingOcclusion(scene, camera, size, frame),
+        ),
+        Paint()..blendMode = BlendMode.clear,
+      );
+      canvas.restore();
+    }
+
     Offset? screen(Offset p) => surface == null
         ? null
         : camera.projectToScreen(surface.frame.point(p, .009), size);
@@ -348,8 +660,6 @@ class _DrawingGraphPainter extends CustomPainter {
       final x = camera.projectToScreen(lineFrame!.point(a, .009), size),
           y = camera.projectToScreen(lineFrame.point(b, .009), size);
       if (x == null || y == null) return;
-      canvas.save();
-      clip(lineFrame);
       if (glow) {
         canvas.drawLine(
           x,
@@ -368,13 +678,27 @@ class _DrawingGraphPainter extends CustomPainter {
           ..strokeWidth = width
           ..strokeCap = StrokeCap.round,
       );
-      canvas.restore();
     }
 
     final hits = eraseA != null && eraseB != null
         ? model.eraserIntersections(eraseA!, eraseB!)
         : <String, Set<String>>{};
     for (final graph in model.drawingGraphs.values) {
+      if (roomFocus != null) {
+        final p = model.planes[graph.surfaceId];
+        if (p?.roomId != roomFocus || p?.roomFace == 'roof') continue;
+        final room = model.objects[roomFocus];
+        if (room != null && p?.roomFace?.startsWith('wall-') == true) {
+          final panel = roomPanels(
+            room,
+            model.objectPlane(room),
+          ).firstWhere((panel) => panel.key == p!.roomFace);
+          if (panel.frame.normal.dot(camera.position - panel.frame.origin) >
+              0) {
+            continue;
+          }
+        }
+      }
       lineFrame = graph.frame;
       final color = switch (graph.implement) {
         DrawingImplement.pencil => const Color(0xffff9b32),
@@ -383,6 +707,7 @@ class _DrawingGraphPainter extends CustomPainter {
         DrawingImplement.crookedPencil => const Color(0xffd9b6ec),
         DrawingImplement.eraser => Colors.red,
       };
+      beginInk();
       for (final edge in graph.edges) {
         for (final part
             in surface != null && graph.surfaceId == surface.id
@@ -395,10 +720,14 @@ class _DrawingGraphPainter extends CustomPainter {
             part.b,
             selected ? Colors.orangeAccent : color,
             graph.implement == DrawingImplement.marker ? 8 : 6,
-            glow: true,
+            glow:
+                selected ||
+                (model.constructionTool == ConstructionTool.pencil &&
+                    graph.surfaceId == surface?.id),
           );
         }
       }
+      endInk(graph.frame);
     }
     final region = evaluation?.target?.region;
     final targetSurface = evaluation?.target?.surface;
@@ -421,10 +750,9 @@ class _DrawingGraphPainter extends CustomPainter {
         }
         p.close();
       }
-      canvas.save();
-      clip(targetSurface.frame);
+      beginInk();
       canvas.drawPath(p, Paint()..color = Colors.yellow.withValues(alpha: .22));
-      canvas.restore();
+      endInk(targetSurface.frame);
     }
     if (surface == null || model.constructionTool != ConstructionTool.pencil) {
       return;
@@ -440,6 +768,7 @@ class _DrawingGraphPainter extends CustomPainter {
         ? 8.0
         : 6.0;
     lineFrame = surface.frame;
+    beginInk();
     if (model.constructionTool == ConstructionTool.pencil) {
       final grid = model.focusDrawingGrid!;
       final preview = liveScreen == null
@@ -461,8 +790,6 @@ class _DrawingGraphPainter extends CustomPainter {
             grid.nodes[path.last],
           );
       final selected = path.take(path.length - (reversing ? 1 : 0)).toSet();
-      canvas.save();
-      clip(surface.frame);
       for (final (i, node) in grid.nodes.indexed) {
         final p = screen(node);
         if (p != null) {
@@ -481,7 +808,6 @@ class _DrawingGraphPainter extends CustomPainter {
           );
         }
       }
-      canvas.restore();
       for (var i = 1; i < path.length - (reversing ? 1 : 0); i++) {
         line(
           grid.nodes[path[i - 1]],
@@ -514,6 +840,7 @@ class _DrawingGraphPainter extends CustomPainter {
     if (eraseA != null && eraseB != null) {
       line(eraseA!, eraseB!, Colors.redAccent, 2.5);
     }
+    endInk(surface.frame);
   }
 
   @override

@@ -6,8 +6,9 @@ import 'package:flatmates/protoplane/models.dart';
 import 'layered_terrain_test.dart' show centerId;
 
 void main() {
-  ProtoplaneController world() =>
-      ProtoplaneController()..enableInPlaceDrawing();
+  ProtoplaneController world() => ProtoplaneController()
+    ..enableInPlaceDrawing()
+    ..balances[PaperMaterial.paperWhite] = 256;
   String ground(ProtoplaneController c) =>
       centerId(c, PaperMaterial.paperWhite);
   void drawGround(ProtoplaneController c, [double size = 1]) {
@@ -94,17 +95,24 @@ void main() {
       expect(c.commitDrawingPath([Offset.zero, const Offset(1, 0)]), isTrue);
       final volume = inflate(c, mat);
       expect(c.objects.length, 1);
-      expect(volume.kind, CraftKind.solidVolume);
+      expect(volume.kind, CraftKind.room);
       expect(volume.depth, 1);
       expect(volume.constructionName, 'building volume');
-      expect(c.drawingSpacingFor('surface-${volume.id}'), .25);
+      expect(c.drawingSpacingFor('surface-${volume.id}-roof-out-0'), .25);
       final drawing = c.drawingGraphs.values.firstWhere(
-        (g) => g.surfaceId == 'surface-${volume.id}',
+        (g) => g.surfaceId == 'surface-${volume.id}-roof-out-0',
       );
-      expect(drawing.frame.origin, c.planes['surface-${volume.id}']!.origin);
+      expect(
+        drawing.frame.origin,
+        c.planes['surface-${volume.id}-roof-out-0']!.origin,
+      );
       expect(
         c.planes.keys
-            .where((id) => id.startsWith('surface-${volume.id}-side-'))
+            .where(
+              (id) =>
+                  id.startsWith('surface-${volume.id}-wall-') &&
+                  id.contains('-out-'),
+            )
             .length,
         4,
       );
@@ -121,9 +129,16 @@ void main() {
       addTearDown(c.dispose);
       drawGround(c);
       final volume = inflate(c, sheet(c, ground(c), const Offset(.5, .5)));
+      c.balances[PaperMaterial.paperGreen] = 32;
+      c.enter('surface-${volume.id}-floor-in-0');
+      final bedding = rectangle(.5, .5, origin: const Offset(.25, .25));
+      expect(
+        c.commitDrawingPath([...bedding.outer, bedding.outer.first]),
+        isTrue,
+      );
       final cloth = sheet(
         c,
-        'surface-${volume.id}',
+        'surface-${volume.id}-floor-in-0',
         const Offset(.5, .5),
         ConstructionPaper.cloth,
       );
@@ -133,9 +148,10 @@ void main() {
       final blanket = inflate(c, cloth);
       expect(blanket.kind, CraftKind.inflatedCloth);
       expect(blanket.depth, .05);
-      expect(blanket.constructionName, 'blanket');
+      expect(blanket.constructionName, 'large blanket');
       final side = c.planes.keys.firstWhere(
-        (id) => id.startsWith('surface-${volume.id}-side-'),
+        (id) =>
+            id.startsWith('surface-${volume.id}-wall-') && id.contains('-out-'),
       );
       final sideMat = sheet(c, side, c.planes[side]!.region.bounds.center);
       final sideVolume = inflate(c, sideMat);
@@ -143,9 +159,9 @@ void main() {
       final saved = jsonDecode(jsonEncode(c.toJson())) as Map<String, dynamic>;
       final loaded = world()..load(saved);
       addTearDown(loaded.dispose);
-      expect(saved['version'], 11);
+      expect(saved['version'], 12);
       expect(loaded.objects.length, 3);
-      expect(loaded.objects[blanket.id]!.constructionName, 'blanket');
+      expect(loaded.objects[blanket.id]!.constructionName, 'large blanket');
       expect(loaded.planes[side]!.normal, c.planes[side]!.normal);
     },
   );
@@ -160,7 +176,7 @@ void main() {
         c,
         'surface-${mat.id}',
         const Offset(.5, .5),
-        ConstructionPaper.cloth,
+        ConstructionPaper.building,
       );
       final before = jsonEncode(c.toJson());
       final e = c.evaluateConstruction(
@@ -179,7 +195,7 @@ void main() {
       );
       expect(c.applyConstruction(valid), isTrue);
       expect(c.applyConstruction(valid), isFalse);
-      expect(c.objects[mat.id]!.kind, CraftKind.solidVolume);
+      expect(c.objects[mat.id]!.kind, CraftKind.room);
     },
   );
   test('inflated region preserves holes and hole walls face the opening', () {
@@ -196,7 +212,9 @@ void main() {
     final volume = inflate(c, mat, const Offset(.25, .25));
     expect(volume.region.holes, hasLength(1));
     final sides = c.planes.values.where(
-      (p) => p.id.startsWith('surface-${volume.id}-side-1-'),
+      (p) =>
+          p.id.startsWith('surface-${volume.id}-wall-1-') &&
+          p.id.contains('-out-'),
     );
     expect(sides, hasLength(4));
     final frame = c.objectPlane(volume),

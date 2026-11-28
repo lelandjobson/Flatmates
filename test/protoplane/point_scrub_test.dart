@@ -50,10 +50,10 @@ void main() {
       expect(c.activePlane, isNull);
       expect(c.drafts, isEmpty);
       expect(c.balances, {
-        PaperMaterial.paperWhite: 256,
+        PaperMaterial.paperWhite: 32,
         PaperMaterial.graphite: 0,
         PaperMaterial.cork: 0,
-        PaperMaterial.paperGreen: 0,
+        PaperMaterial.paperGreen: 8,
       });
       expect(saved, c.toJson());
       c.undo();

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'housing_test.dart' show cutDoor, draw;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
@@ -72,7 +73,10 @@ void main() {
       expect(c.drawingGraphs.values.single.faces, hasLength(1));
       expect(camera.position, pose);
       Future<void> aimAt(CraftObject object) async {
-        final top = c.planes['surface-${object.id}']!;
+        final top =
+            c.planes[object.kind == CraftKind.room
+                ? 'surface-${object.id}-floor-in-0'
+                : 'surface-${object.id}']!;
         final center = top.point(top.region.bounds.center);
         for (var i = 0; i < 4; i++) {
           final at = camera.projectToScreen(center, size)!;
@@ -109,6 +113,7 @@ void main() {
         image.dispose();
       });
       await tester.tapAt(Offset(16, size.height * .4));
+      await tester.pump(const Duration(milliseconds: 310));
       await tester.pumpAndSettle();
       expect(
         c.objects.values.single.constructionName,
@@ -124,22 +129,34 @@ void main() {
         isTrue,
       );
       await tester.tapAt(Offset(16, size.height * .4));
+      await tester.pump(const Duration(milliseconds: 310));
       await tester.pumpAndSettle();
-      expect(
-        c.objects.values.single.kind,
-        CraftKind.solidVolume,
-        reason: c.error,
-      );
+      expect(c.objects.values.single.kind, CraftKind.room, reason: c.error);
       expect(find.text('building volume'), findsOneWidget);
-      await aimAt(c.objects.values.single);
+      final room = c.objects.values.single;
+      cutDoor(c, room);
+      c.constructionTool = null;
+      c.leave();
+      await tester.pumpAndSettle();
+      final roomEntryPose = camera.position.clone();
+      final roof = c.planes['surface-${room.id}-roof-out-0']!;
+      await tester.tapAt(
+        camera.projectToScreen(roof.point(roof.region.bounds.center), size)!,
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('exit-room')), findsOneWidget);
+      final floor = 'surface-${room.id}-floor-in-0';
+      draw(c, floor, rectangle(.5, .5, origin: const Offset(.25, .25)));
       await tester.tap(find.byKey(const ValueKey('construction-paper')));
       await tester.pumpAndSettle();
+      await aimAt(room);
       await tester.drag(
         find.byKey(const ValueKey('paper-material-wheel')),
         const Offset(-64, 0),
       );
       await tester.pumpAndSettle();
       await tester.tapAt(Offset(16, size.height * .4));
+      await tester.pump(const Duration(milliseconds: 310));
       await tester.pumpAndSettle();
       expect(
         c.objects.values.last.constructionName,
@@ -151,6 +168,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('construction-volume')));
       await tester.pumpAndSettle();
       await tester.tapAt(Offset(16, size.height * .4));
+      await tester.pump(const Duration(milliseconds: 310));
       await tester.pumpAndSettle();
       expect(
         c.objects.values.last.kind,
@@ -158,10 +176,10 @@ void main() {
         reason: c.error,
       );
       expect(c.objects.values.last.depth, .05);
-      expect(find.text('blanket'), findsOneWidget);
+      expect(find.text('large blanket'), findsOneWidget);
       await aimAt(c.objects.values.last);
       await tester.pump(const Duration(seconds: 3));
-      expect(find.text('blanket'), findsOneWidget);
+      expect(find.text('large blanket'), findsOneWidget);
       final capture = tester.renderObject<RenderRepaintBoundary>(
         find.byKey(const ValueKey('capture')),
       );
@@ -190,7 +208,37 @@ void main() {
       expect(c.objects.values.last.constructionName, 'cloth sheet');
       c.redo();
       await tester.pumpAndSettle();
-      expect(c.objects.values.last.constructionName, 'blanket');
+      expect(c.objects.values.last.constructionName, 'large blanket');
+      expect(c.housing.tenants.length, 1);
+      expect(
+        scene.meshes
+            .where((m) => m.id.startsWith('${room.id}-roof-'))
+            .every((m) => m.material.opacity == 0),
+        isTrue,
+      );
+      await tester.tap(find.byKey(const ValueKey('resident-inspection')));
+      await tester.pumpAndSettle();
+      expect(find.text('Residents · 1'), findsOneWidget);
+      expect(find.textContaining('Departure risk'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      for (var i = 0; i < 3; i++) {
+        await tester.tap(find.byKey(const ValueKey('advance-phase')));
+        await tester.pumpAndSettle();
+      }
+      expect(c.housing.day, 2);
+      expect(c.housing.coins, greaterThan(0));
+      await tester.tap(find.byKey(const ValueKey('exit-room')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('exit-room')), findsNothing);
+      expect((camera.position - roomEntryPose).length, lessThan(.0001));
+      expect(
+        scene.meshes
+            .where((m) => m.id.startsWith('${room.id}-roof-'))
+            .every((m) => m.material.opacity == 1),
+        isTrue,
+      );
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
     });

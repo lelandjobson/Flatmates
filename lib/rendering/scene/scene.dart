@@ -14,6 +14,9 @@ class Scene extends ChangeNotifier {
 
   ScenePaintStats? paintStats;
 
+  /// CPU time for the construction ink/highlight overlay, outside SceneView.
+  double overlayPaintMs = 0;
+
   final List<Mesh> _meshes = [];
   final List<DirectionalLight> _lights = [];
   final List<SceneAnimatable> _animatables = [];

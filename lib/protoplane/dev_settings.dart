@@ -531,15 +531,18 @@ class _ProtoplaneDevToolsPanelState extends State<ProtoplaneDevToolsPanel> {
                                   changed();
                                 },
                               ),
-                              if (clearWorld != null)
-                                ListTile(
-                                  title: const Text('Clear world'),
-                                  leading: const Icon(Icons.delete_outline),
-                                  onTap: () {
-                                    clearWorld!();
-                                    widget.onClose();
-                                  },
-                                ),
+                              ListTile(
+                                key: const ValueKey('clear-world'),
+                                title: const Text('Clear world'),
+                                leading: const Icon(Icons.delete_outline),
+                                enabled: clearWorld != null,
+                                onTap: clearWorld == null
+                                    ? null
+                                    : () {
+                                        clearWorld!();
+                                        widget.onClose();
+                                      },
+                              ),
                               Padding(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 16,

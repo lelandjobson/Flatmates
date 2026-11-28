@@ -20,6 +20,8 @@ extension Construction on ProtoplaneController {
       point,
       face?.region ?? fallback,
       drawingSpacingFor(planeId),
+      context: contextFor(planeId),
+      roomId: plane.roomId,
     );
   }
 
@@ -45,6 +47,74 @@ extension Construction on ProtoplaneController {
     CraftPlane frame;
     CraftObject object;
     String? replacement;
+    if (tool == ConstructionTool.scissors) {
+      if (owner?.kind != CraftKind.room ||
+          plane.roomFace?.startsWith('wall-') != true) {
+        return fail('Aim at a drawn wall region');
+      }
+      final face = drawingFaceAt(point, surface: target.surface);
+      if (face == null) return fail('Draw a closed wall boundary first');
+      final panel = roomPanels(
+        owner!,
+        objectPlane(owner),
+      ).firstWhere((p) => p.key == plane.roomFace);
+      final cut = _inFrame(face.region, target.surface.frame, panel.frame);
+      if (!panel.frame.region.containsRegion(cut) ||
+          owner.openings.any(
+            (o) => o.wall == panel.key && o.region.overlaps(cut),
+          )) {
+        return fail('Keep the cut within intact wall paper');
+      }
+      final remains = panel.regions.expand((r) => r.subtract(cut)).toList();
+      if (remains.isEmpty) return fail('Keep part of the wall intact');
+      for (final child in objects.values) {
+        final p = objectPlane(child);
+        if (p.roomId == owner.id &&
+            p.roomFace == panel.key &&
+            _inFrame(child.region, p, panel.frame).overlaps(cut)) {
+          return fail('Remove attached objects before cutting');
+        }
+      }
+      final b = cut.bounds, extent = panel.frame.region.bounds;
+      final door = doorwayCenter(cut) != null;
+      final enclosed =
+          b.left > geometryEpsilon &&
+          b.top > geometryEpsilon &&
+          b.right < extent.right - geometryEpsilon &&
+          b.bottom < extent.bottom - geometryEpsilon;
+      object = owner.copyWith(
+        openings: [
+          ...owner.openings,
+          RoomOpening(
+            panel.key,
+            cut,
+            door
+                ? 'door'
+                : enclosed
+                ? 'window'
+                : 'opening',
+          ),
+        ],
+      );
+      return ConstructionEvaluation(
+        tool,
+        target,
+        object: object,
+        frame: objectPlane(owner),
+        replacementId: owner.id,
+        paper: selectedPaper,
+      );
+    }
+    final material = tool == ConstructionTool.volume
+        ? owner?.material
+        : selectedPaper.material;
+    if (material != null && !material.allows(target.context)) {
+      return fail(
+        material == PaperMaterial.paperWhite
+            ? 'Building paper requires an outdoor surface'
+            : 'Cloth requires an indoor surface',
+      );
+    }
     if (tool == ConstructionTool.volume) {
       if (owner == null || owner.kind != CraftKind.paperSheet) {
         return fail('Aim at a building mat or cloth sheet');
@@ -63,9 +133,11 @@ extension Construction on ProtoplaneController {
         point,
         _inFrame(owner.region, frame, target.surface.frame),
         target.spacing,
+        context: target.context,
+        roomId: target.roomId,
       );
       object = owner.copyWith(
-        kind: cloth ? CraftKind.inflatedCloth : CraftKind.solidVolume,
+        kind: cloth ? CraftKind.inflatedCloth : CraftKind.room,
         depth: cloth ? .05 : 1,
         drawingSpacing: .25,
       );
@@ -77,6 +149,15 @@ extension Construction on ProtoplaneController {
       if (!drawingSupported(target.surface, target.region)) {
         return fail('The region needs intact support');
       }
+      if (plane.owner == null && target.region.area < 1 - geometryEpsilon) {
+        return fail('Draw a boundary of at least one tile');
+      }
+      final cost =
+          (target.region.area * HousingBalance.unitsPerTile - geometryEpsilon)
+              .ceil();
+      if (balances[selectedPaper.material]! < cost) {
+        return fail('Buy more ${selectedPaper.name} paper');
+      }
       final basis = target.surface.frame;
       final frameId = 'sticker-frame-construction-$nextId';
       frame = CraftPlane(
@@ -86,6 +167,9 @@ extension Construction on ProtoplaneController {
         v: basis.v,
         region: target.region,
         owner: plane.owner,
+        roomId: plane.roomId,
+        roomFace: plane.roomFace,
+        interior: plane.interior,
         grids: [lattice(frameId, target.region)],
       );
       object = CraftObject(
@@ -104,13 +188,15 @@ extension Construction on ProtoplaneController {
     }
     for (final old in objects.values) {
       if (old.id == replacement) continue;
-      if (solidsOverlap(object, frame, old, objectPlane(old))) {
+      final occupied = object.kind == CraftKind.room
+          ? object.copyWith(kind: CraftKind.solidVolume)
+          : object;
+      if (solidsOverlap(occupied, frame, old, objectPlane(old))) {
         return fail('Another object occupies this space');
       }
     }
-    final staged = ProtoplaneController();
+    final staged = ProtoplaneController._constructionStage(this);
     try {
-      staged._load(toJson());
       staged.planes[frame.id] = frame;
       staged.objects[object.id] = object;
       if (replacement == null) staged.nextId++;
@@ -152,24 +238,60 @@ extension Construction on ProtoplaneController {
     final before = _snapshot();
     planes[fresh.frame!.id] = fresh.frame!;
     objects[fresh.object!.id] = fresh.object!;
-    if (fresh.replacementId == null) nextId++;
+    if (fresh.replacementId == null) {
+      nextId++;
+      balances[fresh.paper.material] =
+          balances[fresh.paper.material]! -
+          (fresh.target!.region.area * HousingBalance.unitsPerTile -
+                  geometryEpsilon)
+              .ceil();
+    }
     _derivePlanes();
     // Inflation keeps the sheet's identity and local drawing coordinates while
     // moving its exposed top surface. Attached objects are rejected above.
     if (fresh.replacementId != null) {
       for (final graph in drawingGraphs.values.toList()) {
-        final newFrame = planes[graph.surfaceId];
+        final newFrame =
+            planes[graph.surfaceId] ??
+            (fresh.object!.kind == CraftKind.room &&
+                    graph.surfaceId == 'surface-${fresh.object!.id}'
+                ? planes['surface-${fresh.object!.id}-roof-out-0']
+                : null);
         if (newFrame?.owner == fresh.replacementId) {
+          drawingGraphs.remove(graph.key);
+          final moved = DrawingGraph(
+            newFrame!.id,
+            graph.implement,
+            newFrame,
+            graph.edges,
+          );
+          drawingGraphs[moved.key] = moved;
+        }
+      }
+      drawingRevision++;
+    }
+    if (fresh.tool == ConstructionTool.scissors) {
+      for (final graph in drawingGraphs.values.toList()) {
+        if (graph.surfaceId == target.surface.id) {
+          final cut = _inFrame(
+            target.region,
+            target.surface.frame,
+            graph.frame,
+          );
+          final kept = graph.edges
+              .where((e) => !cut.contains((e.a + e.b) / 2))
+              .toList();
           drawingGraphs[graph.key] = DrawingGraph(
             graph.surfaceId,
             graph.implement,
-            newFrame!,
-            graph.edges,
+            graph.frame,
+            kept,
           );
         }
       }
       drawingRevision++;
     }
+    syncHousing();
     error = null;
     _record(before, committed: true);
     _notifyPencil();
@@ -198,6 +320,9 @@ extension Construction on ProtoplaneController {
           v: source.normal * sign,
           region: region,
           owner: object.id,
+          roomId: source.roomId,
+          roomFace: source.roomFace,
+          interior: source.interior,
           grids: [lattice(id, region)],
         );
       }

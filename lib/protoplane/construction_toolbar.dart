@@ -10,12 +10,17 @@ class ConstructionToolbar extends StatelessWidget {
     required this.paper,
     required this.onPaper,
     this.entityName,
+    this.stock,
+    this.price,
+    this.onBuy,
   });
   final ConstructionTool? selected;
   final ValueChanged<ConstructionTool> onSelect;
   final ConstructionPaper paper;
   final ValueChanged<ConstructionPaper> onPaper;
   final String? entityName;
+  final int? stock, price;
+  final VoidCallback? onBuy;
   @override
   Widget build(BuildContext context) => Column(
     mainAxisSize: MainAxisSize.min,
@@ -55,6 +60,9 @@ class ConstructionToolbar extends StatelessWidget {
                 child: ConstructionMaterialWheel(
                   selected: paper,
                   onSelected: onPaper,
+                  stock: stock,
+                  price: price,
+                  onBuy: onBuy,
                 ),
               )
             : const SizedBox.shrink(key: ValueKey('no-paper-palette')),
@@ -75,6 +83,7 @@ class ConstructionToolbar extends StatelessWidget {
                     ConstructionTool.pencil => 'Pencil',
                     ConstructionTool.volume => 'Inflate',
                     ConstructionTool.paper => 'Paper',
+                    ConstructionTool.scissors => 'Scissors',
                   },
                   isSelected: selected == tool,
                   style: IconButton.styleFrom(
@@ -89,6 +98,7 @@ class ConstructionToolbar extends StatelessWidget {
                     ConstructionTool.pencil => Icons.edit,
                     ConstructionTool.volume => Icons.view_in_ar,
                     ConstructionTool.paper => Icons.layers,
+                    ConstructionTool.scissors => Icons.content_cut,
                   }),
                 ),
               ),
@@ -99,45 +109,99 @@ class ConstructionToolbar extends StatelessWidget {
   );
 }
 
-/// Five visible slots, fixed height, and an infinite looping center selection.
+/// Five visible slots; short material lists have finite ends.
 class ConstructionMaterialWheel extends StatefulWidget {
   const ConstructionMaterialWheel({
     super.key,
     required this.selected,
     required this.onSelected,
+    this.stock,
+    this.price,
+    this.onBuy,
   });
   final ConstructionPaper selected;
   final ValueChanged<ConstructionPaper> onSelected;
+  final int? stock, price;
+  final VoidCallback? onBuy;
   @override
   State<ConstructionMaterialWheel> createState() =>
       _ConstructionMaterialWheelState();
 }
 
 class _ConstructionMaterialWheelState extends State<ConstructionMaterialWheel> {
+  bool get wraps => ConstructionPaper.values.length >= 5;
   late final controller = FixedExtentScrollController(
-    initialItem: ConstructionPaper.values.length * 1000 + widget.selected.index,
+    initialItem:
+        (wraps ? ConstructionPaper.values.length * 1000 : 0) +
+        widget.selected.index,
   );
+  int itemFor(ConstructionPaper paper) {
+    if (!wraps) return paper.index;
+    final count = ConstructionPaper.values.length;
+    final current = controller.selectedItem;
+    var delta = (paper.index - current % count) % count;
+    if (delta > count / 2) delta -= count;
+    return current + delta;
+  }
+
   @override
   void didUpdateWidget(ConstructionMaterialWheel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (controller.hasClients &&
         controller.selectedItem % ConstructionPaper.values.length !=
             widget.selected.index) {
-      final current = controller.selectedItem;
-      final delta =
-          (widget.selected.index - current % ConstructionPaper.values.length) %
-          ConstructionPaper.values.length;
-      controller.jumpToItem(current + delta);
+      controller.jumpToItem(itemFor(widget.selected));
     }
   }
 
-  void cycle(int direction) => controller.animateToItem(
-    controller.selectedItem + direction,
-    duration: MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : const Duration(milliseconds: 160),
-    curve: Curves.easeOut,
-  );
+  void centerItem(int index) {
+    if (!wraps) index = index.clamp(0, ConstructionPaper.values.length - 1);
+    if (MediaQuery.disableAnimationsOf(context)) {
+      controller.jumpToItem(index);
+    } else {
+      controller.animateToItem(
+        index,
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  void cycle(int direction) => centerItem(controller.selectedItem + direction);
+  ListWheelChildDelegate materialDelegate(double width) {
+    final children = [
+      for (final paper in ConstructionPaper.values)
+        RotatedBox(
+          quarterTurns: 1,
+          child: GestureDetector(
+            key: ValueKey('paper-material-${paper.name}'),
+            behavior: HitTestBehavior.opaque,
+            onTap: () => centerItem(itemFor(paper)),
+            child: Center(
+              child: Container(
+                width: width / 5 - 12,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: paper.material.base,
+                  borderRadius: BorderRadius.circular(3),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black38,
+                      blurRadius: 4,
+                      offset: Offset(0, 3),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+    ];
+    return wraps
+        ? ListWheelChildLoopingListDelegate(children: children)
+        : ListWheelChildListDelegate(children: children);
+  }
+
   @override
   void dispose() {
     controller.dispose();
@@ -152,14 +216,50 @@ class _ConstructionMaterialWheelState extends State<ConstructionMaterialWheel> {
       height: 64,
       child: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 5),
-            child: Text(
-              widget.selected == ConstructionPaper.building
-                  ? 'Building'
-                  : 'Cloth',
-              key: const ValueKey('paper-material-name'),
-              style: const TextStyle(color: Colors.white, fontSize: 12),
+          SizedBox(
+            height: 24,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    widget.selected == ConstructionPaper.building
+                        ? 'Building'
+                        : 'Cloth',
+                    key: const ValueKey('paper-material-name'),
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                  if (widget.stock != null) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      '${widget.stock} units',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    InkWell(
+                      key: const ValueKey('buy-paper'),
+                      onTap: widget.onBuy,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 4,
+                        ),
+                        child: Text(
+                          '+16 / ${widget.price} coins',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
           Expanded(
@@ -175,8 +275,15 @@ class _ConstructionMaterialWheelState extends State<ConstructionMaterialWheel> {
                 decreasedValue: widget.selected == ConstructionPaper.building
                     ? 'Cloth'
                     : 'Building',
-                onIncrease: () => cycle(1),
-                onDecrease: () => cycle(-1),
+                onIncrease:
+                    wraps ||
+                        widget.selected.index <
+                            ConstructionPaper.values.length - 1
+                    ? () => cycle(1)
+                    : null,
+                onDecrease: wraps || widget.selected.index > 0
+                    ? () => cycle(-1)
+                    : null,
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
@@ -200,31 +307,7 @@ class _ConstructionMaterialWheelState extends State<ConstructionMaterialWheel> {
                           ConstructionPaper.values[index %
                               ConstructionPaper.values.length],
                         ),
-                        childDelegate: ListWheelChildLoopingListDelegate(
-                          children: [
-                            for (final paper in ConstructionPaper.values)
-                              RotatedBox(
-                                quarterTurns: 1,
-                                child: Center(
-                                  child: Container(
-                                    width: constraints.maxWidth / 5 - 12,
-                                    height: 30,
-                                    decoration: BoxDecoration(
-                                      color: paper.material.base,
-                                      borderRadius: BorderRadius.circular(3),
-                                      boxShadow: const [
-                                        BoxShadow(
-                                          color: Colors.black38,
-                                          blurRadius: 4,
-                                          offset: Offset(0, 3),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
+                        childDelegate: materialDelegate(constraints.maxWidth),
                       ),
                     ),
                     IgnorePointer(

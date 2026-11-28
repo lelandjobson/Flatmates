@@ -204,7 +204,8 @@ extension FocusDrawing on ProtoplaneController {
       if (p == null) continue;
       final regions = p.owner != null
           ? [
-              p.id.contains('-side-')
+              (p.id.contains('-side-') ||
+                      objects[p.owner]?.kind == CraftKind.room)
                   ? p.region
                   : (objects[p.owner]?.region ?? p.region),
             ]

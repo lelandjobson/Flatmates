@@ -1,4 +1,6 @@
 import 'drawing_graph.dart';
+import 'room_geometry.dart';
+import 'housing.dart';
 import 'construction.dart';
 import 'parcels.dart';
 import 'sticker_program.dart';
@@ -31,9 +33,13 @@ part 'linear_placement.dart';
 part 'landscape_drawing.dart';
 part 'drawing_controller.dart';
 part 'construction_controller.dart';
+part 'housing_controller.dart';
 part 'sticker_controller.dart';
 
 class ProtoplaneController extends ChangeNotifier {
+  HousingState housing = HousingState();
+  List<RoomReview>? _roomReviewsCache;
+  List<CraftObject> _reviewObjects = const [];
   ConstructionTool? constructionTool;
   ConstructionPaper constructionPaper = ConstructionPaper.building;
   FocusToolCard focusCard = FocusToolCard.drawing;
@@ -83,9 +89,38 @@ class ProtoplaneController extends ChangeNotifier {
     _ground();
     _resetDiscovery();
   }
+
+  /// Geometry-validation sandbox. Construction changes its own maps and
+  /// replaces immutable objects/planes; it never edits terrain or live state.
+  /// Avoid round-tripping the entire terrain and rebuilding every tile lattice
+  /// for each preview and again for its atomic commit.
+  ProtoplaneController._constructionStage(ProtoplaneController source) {
+    landscape = source.landscape;
+    paper = source.paper;
+    nextId = source.nextId;
+    housing = HousingState.fromJson(source.housing.toJson());
+    parcels = WorldParcels(
+      size: source.parcels.size,
+      purchased: source.parcels.purchased,
+    );
+    planes.addAll(source.planes);
+    objects.addAll(source.objects);
+    balances.addAll(source.balances);
+    drawingGraphs.addAll(source.drawingGraphs);
+    assemblies.addAll(source.assemblies);
+    pencilMarks.addAll({
+      for (final e in source.pencilMarks.entries) e.key: List.of(e.value),
+    });
+  }
   WorldParcels parcels = WorldParcels();
   bool buyParcel(ParcelId id) {
+    if (housing.coins < parcels.price) {
+      report('Not enough coins');
+      return false;
+    }
+    final before = _snapshot();
     if (!parcels.buy(id, landscape.terrain)) return false;
+    housing.coins -= parcels.price;
     for (final tile in landscape.terrain.tiles.values) {
       if (parcels.at(tile.origin + const Offset(.5, .5)) == id &&
           revealedAreas.add(tile.sheet.island)) {
@@ -93,7 +128,7 @@ class ProtoplaneController extends ChangeNotifier {
         onAreaRevealed?.call(AreaRevealed(tile.sheet.island, 'parcel'));
       }
     }
-    onCommitted?.call(toJson());
+    _record(before, committed: true);
     notifyListeners();
     return true;
   }
@@ -389,7 +424,10 @@ class ProtoplaneController extends ChangeNotifier {
         },
       );
 
-  void _invalidateNavigation() => _navigationGraph = null;
+  void _invalidateNavigation() {
+    _navigationGraph = null;
+    _roomReviewsCache = null;
+  }
 
   final surfaceFusion = CraftSurfaceFusion();
   final Map<String, CraftDraft> drafts = {};
@@ -572,6 +610,7 @@ class ProtoplaneController extends ChangeNotifier {
     planes.clear();
     drafts.clear();
     bedrooms = [];
+    housing = HousingState();
     for (final color in materials) {
       balances[color] = color.starterUnits;
     }
@@ -1542,6 +1581,7 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   void _derivePlanes() {
+    _roomReviewsCache = null;
     _paperGrids.clear();
     final old = Map<String, CraftPlane>.of(planes);
     planes.removeWhere(
@@ -1563,6 +1603,12 @@ class ProtoplaneController extends ChangeNotifier {
       }
       final source = planes[object.planeId] ?? old[object.planeId];
       if (source == null) continue;
+      if (object.kind == CraftKind.room) {
+        for (final p in roomSurfaces(object, source)) {
+          planes[p.id] = p;
+        }
+        continue;
+      }
       final ownId = 'surface-${object.id}';
       final isWall = object.kind == CraftKind.wall;
       final available = surfaceRecipes(object.kind);
@@ -1587,6 +1633,9 @@ class ProtoplaneController extends ChangeNotifier {
         v: source.v,
         region: workRegion,
         owner: object.id,
+        roomId: source.roomId,
+        roomFace: source.roomFace,
+        interior: source.interior,
         grids: sameOutline || (isWall && prior != null)
             ? prior.grids
             : [
@@ -1703,6 +1752,7 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   void _record(String before, {bool committed = false}) {
+    syncHousing();
     _undo.add(before);
     _redo.clear();
     error = null;
@@ -1768,7 +1818,8 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   Map<String, dynamic> toJson() => {
-    'version': 11,
+    'version': 12,
+    'housing': housing.toJson(),
     'parcels': parcels.toJson(),
     'drawingGraphs': drawingGraphs.values.map((g) => g.toJson()).toList(),
     'assemblies': assemblies.values.map((a) => a.toJson()).toList(),
@@ -1809,9 +1860,13 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   void _load(Map<String, dynamic> j) {
-    if (![3, 4, 5, 6, 7, 8, 9, 10, 11].contains(j['version'])) {
+    if (![3, 4, 5, 6, 7, 8, 9, 10, 11, 12].contains(j['version'])) {
       throw const FormatException('Unsupported world version');
     }
+    if (j['version'] >= 12 && j['housing'] is! Map) {
+      throw const FormatException('Missing housing state');
+    }
+    housing = HousingState.fromJson(j['version'] >= 12 ? j['housing'] : null);
     parcels = WorldParcels.fromJson(j['parcels']);
     _drawingSurfaceKey = null;
     drawingGraphs.clear();
@@ -1998,7 +2053,8 @@ class ProtoplaneController extends ChangeNotifier {
           !o.depth.isFinite ||
           o.depth < 0 ||
           o.depth > 1 ||
-          ((o.kind == CraftKind.solidVolume ||
+          ((o.kind == CraftKind.room ||
+                  o.kind == CraftKind.solidVolume ||
                   o.kind == CraftKind.inflatedCloth ||
                   o.kind == CraftKind.paperSheet) &&
               o.drawingSpacing == null) ||
@@ -2013,6 +2069,7 @@ class ProtoplaneController extends ChangeNotifier {
         throw const FormatException('Invalid object');
       }
     }
+    validateHousing();
   }
 }
 

@@ -8,7 +8,7 @@ void main() {
   test(
     'only edge neighbors are visible and purchasable, buying expands the frontier',
     () {
-      final model = ProtoplaneController();
+      final model = ProtoplaneController()..housing.coins = 10000;
       addTearDown(model.dispose);
       final parcels = model.parcels;
       final terrain = model.landscape.terrain;
@@ -38,7 +38,7 @@ void main() {
   test(
     'clearing resets purchases, and undo restores the previous parcel world',
     () {
-      final model = ProtoplaneController();
+      final model = ProtoplaneController()..housing.coins = 10000;
       addTearDown(model.dispose);
       model.setParcelSize(4);
       model.buyParcel(const ParcelId(1, 0));
@@ -62,9 +62,9 @@ void main() {
     expect(p.price, 900);
   });
   test(
-    'purchases persist, cost no funds, and cannot be repeated or fabricated',
+    'purchases charge coins, persist, and cannot be repeated or fabricated',
     () {
-      final model = ProtoplaneController();
+      final model = ProtoplaneController()..housing.coins = 10000;
       final loaded = ProtoplaneController();
       addTearDown(model.dispose);
       addTearDown(loaded.dispose);
@@ -75,6 +75,7 @@ void main() {
       expect(model.buyParcel(const ParcelId(1, 0)), isFalse);
       expect(model.buyParcel(const ParcelId(500, 500)), isFalse);
       expect(model.balances, balance);
+      expect(model.housing.coins, 10000 - model.parcels.price);
       loaded.load(saved!);
       expect(loaded.parcels.purchased, model.parcels.purchased);
       expect(loaded.parcels.size, 3);
@@ -83,7 +84,7 @@ void main() {
   test(
     'parcel resizing also resizes starter and survives settings roundtrip',
     () {
-      final model = ProtoplaneController();
+      final model = ProtoplaneController()..housing.coins = 10000;
       addTearDown(model.dispose);
       model.buyParcel(const ParcelId(1, 0));
       model.setParcelSize(5);
@@ -113,6 +114,7 @@ void main() {
     'unowned terrain cannot focus and shared drawing stays in owned tiles',
     () {
       final model = ProtoplaneController()..enableInPlaceDrawing();
+      model.housing.coins = 10000;
       addTearDown(model.dispose);
       final locked = model.landscape.terrain.tiles.values.firstWhere(
         (t) => t.x == 2 && t.y == 0 && t.sheet.island == 'starter',

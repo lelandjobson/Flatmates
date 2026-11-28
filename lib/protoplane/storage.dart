@@ -6,7 +6,7 @@ import 'package:path_provider/path_provider.dart';
 typedef WorldValidator = void Function(Map<String, dynamic>);
 
 /// Native application-local storage. Tests supply a temporary directory.
-/// A failed load locks writes until an explicit successful reload; malformed
+/// A failed load locks writes until an explicit successful reload or reset; malformed
 /// data is never replaced by a fresh empty world as a side effect of startup.
 class ProtoplaneStorage {
   ProtoplaneStorage({
@@ -79,6 +79,32 @@ class ProtoplaneStorage {
       _lastValid = raw;
     });
     // One failed write must not poison later explicit retries.
+    _pending = next.catchError((Object _) {});
+    return next;
+  }
+
+  /// Explicit user reset: retain recovery copies, then replace both load candidates.
+  Future<void> reset(Map<String, dynamic> json) {
+    final raw = jsonEncode(json);
+    final next = _pending.then((_) async {
+      _writable = false;
+      final file = await _file();
+      final backup = File('${file.path}.backup');
+      final stamp = DateTime.now().microsecondsSinceEpoch;
+      for (final candidate in [file, backup]) {
+        if (await candidate.exists()) {
+          await candidate.copy('${candidate.path}.reset-$stamp');
+        }
+      }
+      for (final destination in [file, backup]) {
+        final temp = File('${destination.path}.reset.tmp');
+        await temp.writeAsString(raw, flush: true);
+        await temp.rename(destination.path);
+      }
+      _lastValid = raw;
+      recoveryMessage = null;
+      _writable = true;
+    });
     _pending = next.catchError((Object _) {});
     return next;
   }

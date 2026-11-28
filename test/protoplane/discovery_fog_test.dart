@@ -17,7 +17,8 @@ void main() {
   test(
     'loading current saves retains discovery independently of remote objects',
     () {
-      final c = ProtoplaneController();
+      final c = ProtoplaneController()
+        ..balances[PaperMaterial.paperWhite] = 256;
       addTearDown(c.dispose);
       final tile = c.landscape.terrain.tiles.values.firstWhere(
         (t) =>
@@ -44,7 +45,8 @@ void main() {
   test(
     'camera entry reveals whole island exactly once; loading replays no events',
     () {
-      final c = ProtoplaneController();
+      final c = ProtoplaneController()
+        ..balances[PaperMaterial.paperWhite] = 256;
       addTearDown(c.dispose);
       final target = c.areas.values.firstWhere((a) => a.id != 'starter');
       expect(c.revealedAreas, {'starter'});
@@ -70,7 +72,8 @@ void main() {
   test(
     'discovery survives crafting undo and cancellation; clear undo restores it',
     () {
-      final c = ProtoplaneController();
+      final c = ProtoplaneController()
+        ..balances[PaperMaterial.paperWhite] = 256;
       addTearDown(c.dispose);
       final other = c.areas.keys.firstWhere((id) => id != 'starter');
       c.enter(centerId(c, PaperMaterial.paperWhite));
@@ -95,7 +98,8 @@ void main() {
   test(
     'migration reveals worked islands and rejects malformed discovery atomically',
     () {
-      final c = ProtoplaneController();
+      final c = ProtoplaneController()
+        ..balances[PaperMaterial.paperWhite] = 256;
       addTearDown(c.dispose);
       final other = c.areas.keys.firstWhere((id) => id != 'starter');
       final tile = c.landscape.terrain.tiles.values.firstWhere(
@@ -125,7 +129,7 @@ void main() {
     },
   );
   test('area distances show northeast corner but hide its interior', () {
-    final c = ProtoplaneController();
+    final c = ProtoplaneController()..balances[PaperMaterial.paperWhite] = 256;
     addTearDown(c.dispose);
     final island = c.areas.values.firstWhere((a) => a.id != 'starter');
     final corner = island.footprints
@@ -146,7 +150,7 @@ void main() {
       directory: () async => dir,
       fileName: 'world-paper.json',
     );
-    final c = ProtoplaneController();
+    final c = ProtoplaneController()..balances[PaperMaterial.paperWhite] = 256;
     addTearDown(c.dispose);
     c.revealAllAreas();
     await store.load((_) {});

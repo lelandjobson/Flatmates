@@ -3,7 +3,7 @@ import 'drawing_graph.dart';
 import 'models.dart';
 import 'geometry.dart';
 
-enum ConstructionTool { pencil, volume, paper }
+enum ConstructionTool { pencil, volume, paper, scissors }
 
 enum ConstructionPaper { building, cloth }
 
@@ -19,8 +19,12 @@ class ConstructionTarget {
     this.surface,
     this.point,
     this.region,
-    this.spacing,
-  );
+    this.spacing, {
+    this.context = MaterialContext.outdoor,
+    this.roomId,
+  });
+  final MaterialContext context;
+  final String? roomId;
   final String planeId;
   final DrawingSurface surface;
   final Offset point;

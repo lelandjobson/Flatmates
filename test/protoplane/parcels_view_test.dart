@@ -61,7 +61,7 @@ void main() {
   testWidgets('devtools parcel slider resizes the starting parcel on release', (
     tester,
   ) async {
-    final model = ProtoplaneController();
+    final model = ProtoplaneController()..housing.coins = 10000;
     final settings = ProtoplaneSettings();
     addTearDown(model.dispose);
     await tester.pumpWidget(
@@ -95,7 +95,7 @@ void main() {
     testWidgets(
       'zoom range exposes parcels, hover price, tap purchase, and zoom exits ($kind)',
       (tester) async {
-        final model = ProtoplaneController();
+        final model = ProtoplaneController()..housing.coins = 10000;
         tester.view.physicalSize = const Size(1000, 800);
         tester.view.devicePixelRatio = 1;
         addTearDown(() {

@@ -8,7 +8,7 @@ void main() {
   test(
     'fused constituent ownership, alias coordinates and one atomic charge',
     () {
-      final c = paperWorld();
+      final c = paperWorld()..balances[PaperMaterial.paperWhite] = 256;
       addTearDown(c.dispose);
       final source = c.planes['test-support']!;
       c.planes['other-support'] = CraftPlane(
@@ -74,7 +74,7 @@ void main() {
     },
   );
   test('splits and extrusion retain local lattice and clip marks', () {
-    final c = paperWorld();
+    final c = paperWorld()..balances[PaperMaterial.paperWhite] = 256;
     addTearDown(c.dispose);
     c.commitMarks(PencilMotif.parallel.segments());
     c.enter('test-support', editObject: 'paper');
@@ -116,7 +116,7 @@ void main() {
     expect(c.pencilMarks.keys.every(c.objects.containsKey), isTrue);
   });
   test('v5 migration preserves world content and resets marks/discoveries', () {
-    final c = paperWorld();
+    final c = paperWorld()..balances[PaperMaterial.paperWhite] = 256;
     addTearDown(c.dispose);
     final json = c.toJson()..['version'] = 5;
     for (final key in [
