@@ -1,3 +1,4 @@
+import 'surface_fixture.dart';
 import 'construction_fixture.dart';
 import 'dart:ui' as ui;
 
@@ -39,7 +40,7 @@ void main() {
     tester.view.resetDevicePixelRatio();
   }
 
-  testWidgets('world touch regions orbit and pan while pinch only zooms', (
+  testWidgets('empty-world touch drags pan without rotating and pinch zooms', (
     tester,
   ) async {
     final model = constructionWorld();
@@ -57,7 +58,7 @@ void main() {
     final orbit = await tester.startGesture(const Offset(800, 610));
     await orbit.moveBy(const Offset(60, -250));
     await orbit.up();
-    expect(camera.target, target);
+    expect((camera.target - target).length, greaterThan(.01));
     expect((camera.position - position).length, greaterThan(.01));
     final bottom = await tester.startGesture(const Offset(600, 500));
     await bottom.moveBy(const Offset(60, -200));
@@ -121,7 +122,7 @@ void main() {
   testWidgets('pencil ignores scroll and deselects through toolbar', (
     tester,
   ) async {
-    final model = constructionWorld();
+    final model = surfaceRoomWorld();
     addTearDown(() {
       resetView(tester);
       model.dispose();
@@ -303,10 +304,10 @@ void main() {
     );
   }
 
-  testWidgets('touch pinch preserves pencil pose until deselected', (
+  testWidgets('touch pinch cancels Pencil before entering a fitted overview', (
     tester,
   ) async {
-    final model = constructionWorld();
+    final model = surfaceRoomWorld();
     addTearDown(() {
       resetView(tester);
       model.dispose();
@@ -325,11 +326,9 @@ void main() {
     await a.up();
     await b.up();
     await tester.pumpAndSettle();
-    expect(model.activePlane, isNotNull);
-    await tester.tap(find.byKey(const ValueKey('construction-pencil')));
-    await tester.pumpAndSettle();
     expect(model.activePlane, isNull);
-    expect(scene.camera!.position.distanceTo(original), lessThan(.00001));
+    expect(scene.camera!.position.distanceTo(original), greaterThan(.01));
+    expect(model.drawingGraphs, isEmpty);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });

@@ -367,8 +367,12 @@ class CraftObject {
     this.linear,
     this.drawingSpacing,
     this.openings = const [],
+    this.roomName,
+    this.roomColor,
   }) : material = material ?? color ?? PaperMaterial.paperWhite;
   final String id, planeId;
+  final String? roomName;
+  final int? roomColor;
   final double? drawingSpacing;
   final List<RoomOpening> openings;
   final CraftKind kind;
@@ -397,12 +401,16 @@ class CraftObject {
     LinearAttachment? linear,
     double? drawingSpacing,
     List<RoomOpening>? openings,
+    String? roomName,
+    int? roomColor,
   }) => CraftObject(
     id: id ?? this.id,
     planeId: planeId ?? this.planeId,
     linear: linear ?? this.linear,
     drawingSpacing: drawingSpacing ?? this.drawingSpacing,
     openings: openings ?? this.openings,
+    roomName: roomName ?? this.roomName,
+    roomColor: roomColor ?? this.roomColor,
     kind: kind ?? this.kind,
     region: region ?? this.region,
     color: color,
@@ -418,6 +426,8 @@ class CraftObject {
     'planeId': planeId,
     'kind': kind.name,
     if (drawingSpacing != null) 'drawingSpacing': drawingSpacing,
+    if (roomName != null) 'roomName': roomName,
+    if (roomColor != null) 'roomColor': roomColor,
     if (openings.isNotEmpty)
       'openings': openings.map((o) => o.toJson()).toList(),
     'region': region.toJson(),
@@ -430,6 +440,8 @@ class CraftObject {
   factory CraftObject.fromJson(Map<String, dynamic> j) => CraftObject(
     id: j['id'],
     planeId: j['planeId'],
+    roomName: j['roomName'],
+    roomColor: j['roomColor'],
     kind: CraftKind.values.byName(j['kind']),
     drawingSpacing: (j['drawingSpacing'] as num?)?.toDouble(),
     openings: ((j['openings'] ?? []) as List)
@@ -609,21 +621,52 @@ Region hollowRegion(Region region) {
 
 /// Opening coordinates are authored in the wall's outward-facing frame.
 class RoomOpening {
-  const RoomOpening(this.wall, this.region, this.kind);
+  const RoomOpening(
+    this.wall,
+    this.region,
+    this.kind, {
+    this.id,
+    this.hinge,
+    this.swingSide = 1,
+  });
   final String wall;
   final Region region;
   final String kind;
+  final String? id;
+  final double? hinge;
+  final int swingSide;
+  bool get isFlap => hinge != null;
+  RoomOpening folded(int side) =>
+      RoomOpening(wall, region, 'door', id: id, hinge: hinge, swingSide: side);
   Map<String, dynamic> toJson() => {
     'wall': wall,
     'region': region.toJson(),
     'kind': kind,
+    if (id != null) 'id': id,
+    if (hinge != null) 'hinge': hinge,
+    'swingSide': swingSide,
   };
   factory RoomOpening.fromJson(Map<String, dynamic> j) {
     final r = Region.fromJson(j['region']);
-    if (!r.valid || !['door', 'window', 'opening'].contains(j['kind'])) {
+    final hinge = (j['hinge'] as num?)?.toDouble(), side = j['swingSide'] ?? 1;
+    if (!r.valid ||
+        !['door', 'window', 'opening', 'flap'].contains(j['kind']) ||
+        ![-1, 1].contains(side) ||
+        (hinge != null &&
+            (!hinge.isFinite ||
+                ((hinge - r.bounds.left).abs() > geometryEpsilon &&
+                    (hinge - r.bounds.right).abs() > geometryEpsilon))) ||
+        j['kind'] == 'flap' && hinge == null) {
       throw const FormatException('Invalid room opening');
     }
-    return RoomOpening(j['wall'], r, j['kind']);
+    return RoomOpening(
+      j['wall'],
+      r,
+      j['kind'],
+      id: j['id'],
+      hinge: hinge,
+      swingSide: side,
+    );
   }
 }
 

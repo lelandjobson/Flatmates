@@ -31,6 +31,10 @@ extension Construction on ProtoplaneController {
     Offset point, {
     ConstructionPaper? paper,
   }) {
+    if (tool == ConstructionTool.fold &&
+        objects[planes[planeId]?.owner]?.kind == CraftKind.room) {
+      return _evaluateDoorFold(planeId, point);
+    }
     final selectedPaper = paper ?? constructionPaper;
     var target = constructionTarget(planeId, point);
     ConstructionEvaluation fail(String issue) => ConstructionEvaluation(
@@ -105,7 +109,8 @@ extension Construction on ProtoplaneController {
         paper: selectedPaper,
       );
     }
-    final material = tool == ConstructionTool.volume
+    final material =
+        (tool == ConstructionTool.volume || tool == ConstructionTool.fold)
         ? owner?.material
         : selectedPaper.material;
     if (material != null && !material.allows(target.context)) {
@@ -115,7 +120,7 @@ extension Construction on ProtoplaneController {
             : 'Cloth requires an indoor surface',
       );
     }
-    if (tool == ConstructionTool.volume) {
+    if (tool == ConstructionTool.volume || tool == ConstructionTool.fold) {
       if (owner == null || owner.kind != CraftKind.paperSheet) {
         return fail('Aim at a building mat or cloth sheet');
       }
@@ -218,6 +223,13 @@ extension Construction on ProtoplaneController {
   }
 
   bool applyConstruction(ConstructionEvaluation evaluation) {
+    if (evaluation.stroke != null) {
+      final id = evaluation.target?.planeId;
+      return id != null &&
+          (evaluation.tool == ConstructionTool.scissors
+              ? cutSurfaceStroke(id, evaluation.stroke!)
+              : applyVolumeStroke(id, evaluation.stroke!));
+    }
     final target = evaluation.target;
     if (target == null || !evaluation.valid) return false;
     final fresh = evaluateConstruction(
@@ -236,6 +248,24 @@ extension Construction on ProtoplaneController {
       return false;
     }
     final before = _snapshot();
+    if (fresh.tool == ConstructionTool.fold &&
+        fresh.object!.kind == CraftKind.room) {
+      final opening = fresh.object!.openings.last;
+      final changes = _wallChange(
+        objects[fresh.object!.id]!,
+        opening,
+        replace: true,
+      );
+      if (changes == null) {
+        report('The wall has changed');
+        return false;
+      }
+      objects.addAll(changes);
+      _derivePlanes();
+      _record(before, committed: true);
+      _notifyPencil();
+      return true;
+    }
     planes[fresh.frame!.id] = fresh.frame!;
     objects[fresh.object!.id] = fresh.object!;
     if (fresh.replacementId == null) {

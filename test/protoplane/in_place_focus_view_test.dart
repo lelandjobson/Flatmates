@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'surface_construction_test.dart' show loop;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flatmates/protoplane/controller.dart';
 import 'package:flatmates/protoplane/drawing_graph.dart';
@@ -11,6 +12,9 @@ void main() {
     (tester) async {
       final c = ProtoplaneController();
       addTearDown(c.dispose);
+      if (c.objects.isEmpty) {
+        expect(c.applyVolumeStroke(c.startingTile, loop(0, 0)), isTrue);
+      }
       await tester.pumpWidget(
         MaterialApp(
           home: ProtoplaneConceptView(controller: c, animateFog: false),
@@ -35,7 +39,8 @@ void main() {
       for (final implement in [DrawingImplement.pencil]) {
         c.selectDrawingImplement(implement);
         await tester.pumpAndSettle();
-        Offset point(double x, double y) => implement.toSurface(Offset(x, y));
+        Offset point(double x, double y) =>
+            implement.toSurface(Offset(.25 + x * .5, .25 + y * .5));
         final drag = await tester.startGesture(screen(point(0, 0)));
         await drag.moveTo(screen(point(1, 0)));
         await drag.moveTo(screen(point(1, 1)));
@@ -50,15 +55,15 @@ void main() {
         await drag.up();
         await tester.pumpAndSettle();
         expect(c.surfaceGraphs.single.edges.length, 1);
-        expect(c.surfaceGraphs.single.edges.single.length, closeTo(1, 1e-6));
+        expect(c.surfaceGraphs.single.edges.single.length, closeTo(.5, 1e-6));
         c.undo();
         await tester.pumpAndSettle();
         expect(c.surfaceGraphs, isEmpty);
       }
-      c.selectDrawingImplement(DrawingImplement.marker);
+      c.selectDrawingImplement(DrawingImplement.pencil);
       await tester.pumpAndSettle();
-      final partial = await tester.startGesture(screen(Offset.zero));
-      final between = screen(const Offset(.35, 0));
+      final partial = await tester.startGesture(screen(const Offset(.25, .25)));
+      final between = screen(const Offset(.28, .25));
       await partial.moveTo(between);
       await tester.pump();
       expect(feedback().liveScreen, between); // Feedback updates between pips.
@@ -74,6 +79,7 @@ void main() {
   ) async {
     final c = ProtoplaneController();
     addTearDown(c.dispose);
+    expect(c.applyVolumeStroke(c.startingTile, loop(0, 0)), isTrue);
     await tester.pumpWidget(
       MaterialApp(
         home: ProtoplaneConceptView(controller: c, animateFog: false),
@@ -90,14 +96,17 @@ void main() {
       c.drawingSurface!.frame.point(p, .009),
       const Size(800, 600),
     )!;
-    final a = await tester.startGesture(screen(Offset.zero), pointer: 1);
+    final a = await tester.startGesture(
+      screen(const Offset(.25, .25)),
+      pointer: 1,
+    );
     await a.moveTo(screen(const Offset(1, 0)));
     final b = await tester.startGesture(screen(const Offset(1, 1)), pointer: 2);
     await a.up();
     await b.up();
     await tester.pumpAndSettle();
     expect(c.drawingGraphs, isEmpty);
-    expect(c.objects, isEmpty);
+    expect(c.objects, hasLength(1));
     await tester.pumpWidget(const SizedBox());
   });
 }

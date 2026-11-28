@@ -50,93 +50,81 @@ void main() {
     expect(visible('ground-starter-paperWhite-2-0', 2), isTrue);
     expect(visible('ground-starter-paperWhite-1-0', 0), isFalse);
   });
+  testWidgets('invisible terrain retains adjacent physical context', (
+    tester,
+  ) async {
+    final c = ProtoplaneController()..openingComplete = true;
+    addTearDown(c.dispose);
+    final terrain = c.landscape.terrain;
+    String tile(PaperMaterial material, int x) => terrain.tiles.values
+        .firstWhere(
+          (t) =>
+              t.sheet.island == 'starter' &&
+              t.x == x &&
+              t.y == 0 &&
+              t.sheet.material == material,
+        )
+        .id;
+    for (final material in [PaperMaterial.paperWhite, PaperMaterial.graphite]) {
+      c.landscape.deplete(tile(material, 1), rectangle(1, 1));
+    }
+    final cork = tile(PaperMaterial.cork, 1);
+    final white = centerId(c, PaperMaterial.paperWhite);
+    expect(
+      adjacentFocusContext(
+        c.planes[white]!,
+        c.planes[cork]!,
+        c.objects,
+        c.planes,
+        terrain: terrain,
+      ),
+      isTrue,
+    );
+    expect(
+      adjacentFocusContext(
+        c.planes[white]!,
+        c.planes[cork]!,
+        c.objects,
+        c.planes,
+        terrain: terrain,
+        tiles: 0,
+      ),
+      isFalse,
+    );
+    expect(
+      adjacentFocusContext(
+        c.planes[cork]!,
+        c.planes[white]!,
+        c.objects,
+        c.planes,
+        terrain: terrain,
+      ),
+      isTrue,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ProtoplaneConceptView(
+          animateFog: false,
+          controller: c,
+          entryFocusLevel: 0,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    c.enter(white);
+    await tester.pumpAndSettle();
+    final scene = tester.widget<SceneView>(find.byType(SceneView).first).scene;
+    expect(scene.meshes.where((m) => m.id == cork), isEmpty);
+    c.leave();
+    await tester.pumpAndSettle();
+    expect(scene.meshes.where((m) => m.id == cork), isEmpty);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
   testWidgets(
-    'focused terrain includes adjacent exposed cork at normal opacity',
+    'terrain stays invisible while physical traversal preserves the camera',
     (tester) async {
-      final c = ProtoplaneController();
-      addTearDown(c.dispose);
-      final terrain = c.landscape.terrain;
-      String tile(PaperMaterial material, int x) => terrain.tiles.values
-          .firstWhere(
-            (t) =>
-                t.sheet.island == 'starter' &&
-                t.x == x &&
-                t.y == 0 &&
-                t.sheet.material == material,
-          )
-          .id;
-      for (final material in [
-        PaperMaterial.paperWhite,
-        PaperMaterial.graphite,
-      ]) {
-        c.landscape.deplete(tile(material, 1), rectangle(1, 1));
-      }
-      final cork = tile(PaperMaterial.cork, 1);
-      final white = centerId(c, PaperMaterial.paperWhite);
-      expect(
-        adjacentFocusContext(
-          c.planes[white]!,
-          c.planes[cork]!,
-          c.objects,
-          c.planes,
-          terrain: terrain,
-        ),
-        isTrue,
-      );
-      expect(
-        adjacentFocusContext(
-          c.planes[white]!,
-          c.planes[cork]!,
-          c.objects,
-          c.planes,
-          terrain: terrain,
-          tiles: 0,
-        ),
-        isFalse,
-      );
-      expect(
-        adjacentFocusContext(
-          c.planes[cork]!,
-          c.planes[white]!,
-          c.objects,
-          c.planes,
-          terrain: terrain,
-        ),
-        isTrue,
-      );
-      await tester.pumpWidget(
-        MaterialApp(
-          home: ProtoplaneConceptView(
-            animateFog: false,
-            controller: c,
-            entryFocusLevel: 0,
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      c.enter(white);
-      await tester.pumpAndSettle();
-      final scene = tester
-          .widget<SceneView>(find.byType(SceneView).first)
-          .scene;
-      expect(
-        scene.meshes.firstWhere((m) => m.id == cork).material.opacity,
-        closeTo(1, 1e-6),
-      );
-      c.leave();
-      await tester.pumpAndSettle();
-      expect(
-        scene.meshes.firstWhere((m) => m.id == cork).material.opacity,
-        closeTo(1, 1e-6),
-      );
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox());
-    },
-  );
-  testWidgets(
-    'neighbor remains visible without fading or moving the camera during traversal',
-    (tester) async {
-      final c = ProtoplaneController();
+      final c = ProtoplaneController()..openingComplete = true;
       addTearDown(c.dispose);
       await tester.pumpWidget(
         MaterialApp(
@@ -154,19 +142,20 @@ void main() {
           .widget<SceneView>(find.byType(SceneView).first)
           .scene;
       double opacity(String id) =>
-          scene.meshes.firstWhere((m) => m.id == id).material.opacity;
-      expect(opacity('ground-starter-paperWhite-1-0'), closeTo(1, 1e-6));
+          scene.meshes.where((m) => m.id == id).firstOrNull?.material.opacity ??
+          0;
+      expect(opacity('ground-starter-paperWhite-1-0'), closeTo(0, 1e-6));
       final start = scene.camera!.position.clone();
       c.enter('ground-starter-paperWhite-1-0');
-      expect(opacity('ground-starter-paperWhite-1-0'), closeTo(1, 1e-6));
+      expect(opacity('ground-starter-paperWhite-1-0'), closeTo(0, 1e-6));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 325));
-      expect(opacity('ground-starter-paperWhite-1-0'), closeTo(1, 1e-6));
-      expect(opacity('ground-starter-paperWhite-1-0'), closeTo(1, 1e-6));
+      expect(opacity('ground-starter-paperWhite-1-0'), closeTo(0, 1e-6));
+      expect(opacity('ground-starter-paperWhite-1-0'), closeTo(0, 1e-6));
       expect(scene.camera!.position.distanceTo(start), lessThan(1e-6));
       await tester.pumpAndSettle();
-      expect(opacity('ground-starter-paperWhite-1-0'), closeTo(1, 1e-6));
-      expect(opacity('ground-starter-paperWhite-0-0'), closeTo(1, 1e-6));
+      expect(opacity('ground-starter-paperWhite-1-0'), closeTo(0, 1e-6));
+      expect(opacity('ground-starter-paperWhite-0-0'), closeTo(0, 1e-6));
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
     },

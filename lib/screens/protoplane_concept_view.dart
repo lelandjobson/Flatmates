@@ -1,4 +1,6 @@
 import '../protoplane/drawing_graph.dart';
+import '../asmr/asmr_desk_chrome.dart' show AsmrMarqueePainter;
+import '../gridcraft/edit.dart' show marqueePick;
 import '../protoplane/drawing_visibility.dart';
 import '../protoplane/construction.dart';
 import '../rendering/scene/scene_hit_tester.dart';
@@ -62,6 +64,8 @@ import '../ui/game/view_crosshair.dart';
 import '../ui/game/volume_transform_gizmo.dart' show axisDragDelta;
 
 part 'protoplane_focus_tools.dart';
+part 'protoplane_surface_view.dart';
+part 'protoplane_room_camera.dart';
 
 class ProtoplaneConceptView extends StatefulWidget {
   const ProtoplaneConceptView({
@@ -109,6 +113,44 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   String? _createdEntityId, _aimedEntityName;
   Timer? _entityNameTimer, _residentTimer;
   String? _roomFocus;
+  final Map<String, Set<String>> _sharedMeshRooms = {};
+  String? _pinnedSurface;
+  bool _selecting = false, _selectObjects = false;
+  final List<_SurfacePick> _selection = [];
+  Map<String, Path> _selectedPaths = {};
+  String? _visiblePathsKey;
+  Map<String, Path> _visiblePathsCache = {};
+  final List<_SurfaceFocus> _surfaceFocus = [];
+  Offset? _marqueeStart, _marqueeEnd;
+  bool _surfaceMulti = false, _zoomExitConsumed = false;
+  bool _isolateNavigation = false;
+  List<Offset> _surfacePath = [], _fadingSurfacePath = [];
+  String? _strokeSurface;
+  Timer? _strokeFadeTimer, _zoomExitTimer;
+  late final AnimationController _strokeFade = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 180),
+  )..addListener(_paintChanged);
+  late final AnimationController _doorSwing = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 350),
+  )..addListener(_paintDoorSwing);
+  Set<String> _openDoorIds = {};
+  Set<String> _swingingDoorIds = {};
+  late final AnimationController _surfaceTransition = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 350),
+  );
+  String? _currentRoom;
+  int _roomZoomLevel = 0;
+  bool _roomFrameScheduled = false, _roomZoomConsumed = false;
+  double _roomPinch = 1;
+  Timer? _roomWheelTimer;
+  bool get _opening => !model.openingComplete && model.objects.isEmpty;
+  bool get _surfaceDrawing =>
+      model.constructionTool == ConstructionTool.volume ||
+      model.constructionTool == ConstructionTool.scissors;
+
   String? _targetCacheKey;
   ({String planeId, DrawingSurface surface, Offset point})? _targetCache;
   CraftObject? _panelRoom;
@@ -146,10 +188,10 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   bool get _drawingFocused =>
       _focused && model.constructionTool == ConstructionTool.pencil;
   bool get _placingConstruction =>
-      model.constructionTool == ConstructionTool.volume ||
       model.constructionTool == ConstructionTool.paper ||
-      model.constructionTool == ConstructionTool.scissors;
-  bool get _cameraUnlocked => !_drawingFocused;
+      model.constructionTool == ConstructionTool.fold;
+  bool get _cameraUnlocked =>
+      !_opening && !_drawingFocused && _surfacePath.isEmpty;
   void _updateFocusUi(VoidCallback action) => setState(action);
   late ProtoplaneController model;
   late ProtoplaneStorage storage;
@@ -382,16 +424,15 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     model = widget.controller ?? ProtoplaneController();
     devSettings.parcelSize = model.parcels.size;
     model.enableInPlaceDrawing();
-    model.constructionTool = null;
-    model.activePlaneId = null;
-    if (widget.controller == null) {
-      model.setProtoplaneCells(devSettings.protoplaneCells);
-    }
+    model.constructionTool = _opening ? ConstructionTool.volume : null;
+    model.activePlaneId = _opening ? model.startingTile : null;
+    _pinnedSurface = model.activePlaneId;
     storage = widget.storage ?? ProtoplaneStorage();
     camera = Camera(
       name: 'Protoplane',
-      position: Vector3(7, 9, 7),
-      target: Vector3.zero(),
+      position: Vector3(.5, 4, -.5),
+      target: Vector3(.5, 0, -.5),
+      up: Vector3(0, 0, -1),
       fovDegrees: 50,
       near: .01,
     );
@@ -402,8 +443,13 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     mapCamera = MapLookCameraController(
       camera: camera,
       vsync: this,
-      distance: 11,
-      minDistance: 2,
+      distance: _opening ? 2.5 : 8,
+      lookAt: Vector3(.5, 0, -.5),
+      pitch: math.pi / 2,
+      minPitch: math.pi / 2,
+      maxPitch: math.pi / 2,
+      yaw: math.pi / 2,
+      minDistance: 1.5,
       maxDistance: 25,
       ladderZoom: false,
       strictZoomBounds: true,
@@ -598,7 +644,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   void _configureOrbit() {
     mapCamera.strictZoomBounds = true;
     mapCamera.setDistanceLimits(
-      devSettings.nearestDistance,
+      1.5,
       devSettings.farthestDistance,
       applyPose: false,
     );
@@ -726,6 +772,21 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       });
       if (!mounted) return;
       if (json != null) model.load(json);
+      if (_opening) {
+        model.constructionTool = ConstructionTool.volume;
+        model.activePlaneId = model.startingTile;
+        _pinnedSurface = model.startingTile;
+        mapCamera.restorePose(
+          lookAt: Vector3(.5, 0, -.5),
+          distance: 2.5,
+          yaw: math.pi / 2,
+        );
+      } else {
+        model.constructionTool = null;
+        model.activePlaneId = null;
+        _pinnedSurface = null;
+      }
+      _refreshScene();
       if (json?['parcels'] != null) {
         devSettings.parcelSize = model.parcels.size;
       } else {
@@ -876,6 +937,23 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
 
   void _modelChanged() {
     if (_disposed) return;
+    _validateSurfaceContext();
+    if (!model.objects.containsKey(_currentRoom)) _currentRoom = null;
+    _scheduleRoomFrame();
+    final doors = {
+      for (final room in model.objects.values)
+        for (final o in room.openings)
+          if (o.kind == 'door' && o.isFlap) o.id!,
+    };
+    final newDoors = doors.difference(_openDoorIds);
+    _openDoorIds = doors;
+    if (newDoors.isNotEmpty) {
+      _swingingDoorIds = newDoors;
+      _doorSwing.duration = MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 350);
+      _doorSwing.forward(from: 0);
+    }
     _targetCacheKey = null;
     if (_roomFocus != null &&
         model.objects[_roomFocus]?.kind != CraftKind.room) {
@@ -1066,6 +1144,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   void _cameraChanged() {
     if (_disposed) return;
     _applyHighlight();
+    _selectedPaths = {};
     if (_placingConstruction) {
       worldPose = _Pose(camera);
       _previewConstruction();
@@ -1401,6 +1480,33 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       meshes.add(_geometryBenchmark.ground);
       meshes.addAll(_geometryBenchmark.meshes);
     }
+    if (_opening) meshes.removeWhere((m) => m.id != model.startingTile);
+    // Landscape is an invisible support plane; only its authoritative pips
+    // are presented. Keep its planes in the model for picking and ownership.
+    meshes.removeWhere(
+      (m) => m.id.startsWith('ground-') || m.id.startsWith('terrain-wall-'),
+    );
+    _replaceSharedWallMeshes(meshes);
+    for (final mesh in meshes) {
+      final room = model.objects.values
+          .where(
+            (o) =>
+                o.kind == CraftKind.room &&
+                mesh.id.startsWith('${o.id}-floor-'),
+          )
+          .firstOrNull;
+      if (room?.roomColor != null) {
+        mesh.material = MaterialModel(
+          color: Color.lerp(
+            Color(room!.roomColor!),
+            room.id == _currentRoom ? Colors.white : Colors.black,
+            room.id == _currentRoom ? .15 : .1,
+          )!,
+          doubleSided: true,
+          opacity: mesh.material.opacity,
+        );
+      }
+    }
     baseOpacity
       ..clear()
       ..addEntries(meshes.map((m) => MapEntry(m.id, m.material.opacity)));
@@ -1440,6 +1546,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     }
     _effectsChanged();
     _applyHighlight();
+    if (_doorSwing.isAnimating) _paintDoorSwing();
     _updateEntityHover();
   }
 
@@ -1473,7 +1580,13 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       var opacity = mesh.id.startsWith('friend_')
           ? 1.0
           : baseOpacity[mesh.id] ?? original.opacity;
-      if (_roomFocus != null && _roomReveal.value > 0) {
+      if (mesh.id.contains('-roof-')) opacity = 0;
+      if (_surfaceFocus.isNotEmpty && !_surfaceMeshVisible(mesh.id)) {
+        opacity *= 1 - _roomReveal.value;
+      }
+      if (_roomFocus != null &&
+          _roomReveal.value > 0 &&
+          _surfaceFocus.isEmpty) {
         var belongs = mesh.id.startsWith('sticker-preview-');
         final object = model.objects.values
             .where((o) => mesh.id == o.id || mesh.id.startsWith('${o.id}-'))
@@ -1489,18 +1602,15 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
             belongs = true;
           }
         }
+        if (_sharedMeshRooms[mesh.id]?.contains(_roomFocus) == true) {
+          belongs = true;
+        }
         var hidden = !belongs;
         final room = model.objects[_roomFocus];
         if (room != null && object?.id == room.id) {
           for (final panel in focusedPanels) {
             if (mesh.id.startsWith('${room.id}-${panel.key}-')) {
-              hidden =
-                  panel.key == 'roof' ||
-                  (panel.key.startsWith('wall-') &&
-                      panel.frame.normal.dot(
-                            camera.position - panel.frame.origin,
-                          ) >
-                          0);
+              hidden = panel.key == 'roof';
             }
           }
         }
@@ -1789,6 +1899,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   }
 
   void _down(PointerDownEvent e) {
+    if (_surfaceDown(e)) return;
     if (_focusPointerDown(e)) return;
     if (_disposed) return;
     if (devSettings.showGestureDebug) {
@@ -1806,6 +1917,8 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     controls.begin(e.kind, e.localPosition);
     pointers[e.pointer] = e.localPosition;
     if (pointers.length > 1) {
+      _roomPinch = 1;
+      _roomZoomConsumed = false;
       pencilDwell.cancel();
       model.cancelPencil();
       pencilDragging = false;
@@ -1924,6 +2037,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   }
 
   void _move(PointerMoveEvent e) {
+    if (_surfaceMove(e)) return;
     if (_focusPointerMove(e)) return;
     if (_disposed) return;
     if (devSettings.showGestureDebug) {
@@ -1971,7 +2085,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       return;
     }
     if (pointers.length >= 2) {
-      if (_drawingFocused) {
+      if (_drawingFocused || _currentRoom != null) {
         multiMoved.add(e.pointer);
         if (pointers.length != 2 || multiMoved.length < 2) return;
         multiMoved.clear();
@@ -1990,6 +2104,14 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
           consumed: planeSwipe.consumed,
         );
       }
+      if (_surfaceFocus.isEmpty && _currentRoom != null && !devToolsOpen) {
+        if (swipe != null) _swipeRoom(swipe);
+        _roomPinch *= ratio;
+        _stepRoomZoom(_roomPinch);
+        lastSpan = span;
+        previous = e.localPosition;
+        return;
+      }
       if (swipe != null && _drawingFocused) {
         _navigatePlane(swipe);
       } else if (!planeSwipe.consumed &&
@@ -2002,19 +2124,21 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       if (_cameraUnlocked || planeSwipe.zooming) lastSpan = span;
     } else if (!multi && _cameraUnlocked && moved) {
       if (controls.profile.worldDrag(
-            pointers: 1,
-            buttons: e.buttons,
-            origin: down ?? e.localPosition,
-            viewport: viewport,
-            zones: devSettings.worldGestureZones,
-          ) ==
-          WorldDrag.rotate) {
+                pointers: 1,
+                buttons: e.buttons,
+                origin: down ?? e.localPosition,
+                viewport: viewport,
+                zones: devSettings.worldGestureZones,
+              ) ==
+              WorldDrag.rotate &&
+          _surfaceFocus.isNotEmpty &&
+          _surfaceFocus.last.inspect) {
         mapCamera.restorePose(
           lookAt: mapCamera.lookAt,
           distance: mapCamera.distance,
           yaw: mapCamera.yaw - delta.dx * .008,
         );
-      } else {
+      } else if (_currentRoom == null || devToolsOpen) {
         mapCamera.pan(delta);
       }
     } else if (!multi && devToolsOpen && _drawingFocused) {
@@ -2161,6 +2285,7 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   }
 
   void _up(PointerUpEvent e) {
+    if (_surfaceUp(e)) return;
     if (_focusPointerUp(e)) return;
     if (_disposed) return;
     if (devSettings.showGestureDebug) {
@@ -2258,12 +2383,13 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
     setState(() {
       livePointer = null;
     });
-    if (_cameraUnlocked && !transition.isAnimating) {
+    if (_cameraUnlocked && !transition.isAnimating && _currentRoom == null) {
       mapCamera.endZoom();
     }
   }
 
   void _cancel(PointerCancelEvent e) {
+    _cancelSurfaceGesture();
     if (_focusPointerCancel(e)) return;
     if (_disposed) return;
     if (devSettings.showGestureDebug) gestureDebug.cancel();
@@ -2314,6 +2440,10 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   }
 
   void _trackpadStart(PointerPanZoomStartEvent event) {
+    _cancelSurfaceGesture();
+    if (_opening) return;
+    _roomZoomConsumed = false;
+    _roomPinch = 1;
     _backgroundTapTimer?.cancel();
     if (_drawingFocused) return;
     if (devSettings.showGestureDebug) {
@@ -2350,6 +2480,23 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       return;
     }
     controls.move(event.kind, event.localPosition);
+    if (_surfaceFocus.isNotEmpty) {
+      _moveIsolated(event.panDelta, scale: event.scale / trackpadScale);
+      trackpadScale = event.scale;
+      return;
+    }
+    if (_currentRoom != null && !devToolsOpen) {
+      final swipe = planeSwipe.updateTrackpad(
+        event.pan,
+        event.scale,
+        event.rotation,
+        PlaneSwipe.threshold(viewport),
+      );
+      if (swipe != null) _swipeRoom(swipe);
+      _stepRoomZoom(event.scale);
+      trackpadScale = event.scale;
+      return;
+    }
     if (_cameraUnlocked) {
       mapCamera.pan(event.panDelta);
       _navigateMulti(event.scale / trackpadScale);
@@ -2379,10 +2526,14 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   }
 
   void _trackpadEnd(PointerPanZoomEndEvent event) {
+    _zoomExitConsumed = false;
     if (devSettings.showGestureDebug) gestureDebug.end(event.pointer);
     trackpadActive = false;
     controls.end();
-    if (_cameraUnlocked && !transition.isAnimating) {
+    if (_cameraUnlocked &&
+        !transition.isAnimating &&
+        _surfaceFocus.isEmpty &&
+        _currentRoom == null) {
       mapCamera.endZoom();
     }
   }
@@ -2394,10 +2545,8 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       return;
     }
     if (model.activePlane == null) {
-      if (model.constructionTool == null && _roomFocus == null) {
-        final hit = _pick(point);
-        final room = model.objects[hit?.object];
-        if (room?.kind == CraftKind.room) _enterRoom(room!);
+      if (model.constructionTool == null) {
+        _chooseSurface(point, point, tap: true);
       }
       return;
     }
@@ -2478,6 +2627,8 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   }
 
   void _scroll(PointerSignalEvent e) {
+    if (_opening) return;
+    if (_surfaceScroll(e)) return;
     _backgroundTapTimer?.cancel();
     if (!_disposed && devSettings.showGestureDebug && e is PointerScrollEvent) {
       gestureDebug.scrollEvent(e.pointer, e.localPosition, e.scrollDelta);
@@ -2486,6 +2637,16 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
       return;
     }
     controls.hover(e.kind, e.localPosition);
+    if (_currentRoom != null && !devToolsOpen) {
+      _roomWheelTimer?.cancel();
+      _roomPinch *= math.exp(-e.scrollDelta.dy * .003);
+      _stepRoomZoom(_roomPinch);
+      _roomWheelTimer = Timer(const Duration(milliseconds: 350), () {
+        _roomZoomConsumed = false;
+        _roomPinch = 1;
+      });
+      return;
+    }
     if (_cameraUnlocked) {
       mapCamera.zoomByScroll(e.scrollDelta.dy);
     } else {
@@ -2530,12 +2691,14 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
           if (viewport != newSize) {
             viewport = newSize;
             mapCamera.setViewportSize(viewport);
+            _scheduleRoomFrame(force: true);
             if (model.activePlane != null) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted) _focusPlane();
               });
             }
           }
+          _scheduleRoomFrame();
           _scheduleSafeZoneMeasure();
           return SizedBox.expand(
             child: Stack(
@@ -2631,6 +2794,8 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                                 model: model,
                                 camera: camera,
                                 settings: devSettings.fog,
+                                darkness: devSettings.backgroundDarkness,
+                                horizonColor: devSettings.backgroundColors.last,
                                 cameraChanges: scene,
                                 animate: widget.animateFog,
                               ),
@@ -2826,7 +2991,11 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                     ),
                   ),
                 ),
-                if (!_drawingFocused && controls.showReticle)
+                if (!_drawingFocused &&
+                    !_surfaceDrawing &&
+                    !_selecting &&
+                    !_opening &&
+                    controls.showReticle)
                   Positioned.fill(
                     child: ViewCrosshair(
                       position: controls.worldAim(viewport),
@@ -2849,7 +3018,15 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                         key: _headerKey,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          _housingHud(),
+                          if (!_opening) _housingHud(),
+                          if (_opening)
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                onPressed: _toggleDevTools,
+                                child: const Text('devtools'),
+                              ),
+                            ),
                           if (model.error == null && saveError == null)
                             _bedroomStatus(),
                           if (model.error != null || saveError != null)
@@ -2913,11 +3090,14 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                         child: ConstructionToolbar(
                           key: const ValueKey('construction-toolbar'),
                           selected: model.constructionTool,
+                          available: _availableSurfaceTools,
+                          selectionControls: _selectionControls(),
                           paper: model.constructionPaper,
                           entityName:
                               model
                                   .objects[_createdEntityId]
                                   ?.constructionName ??
+                              _surfaceContextName ??
                               _aimedEntityName,
                           onPaper: (paper) {
                             model.constructionPaper = paper;
@@ -2935,6 +3115,11 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
                       ),
                     ),
                   ),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: CustomPaint(painter: _SurfaceGesturePainter(this)),
+                  ),
+                ),
                 if (devToolsOpen && _devToolsRect != null)
                   Positioned.fromRect(
                     key: const ValueKey('protoplane-devtools-dock'),
@@ -3084,9 +3269,15 @@ class _ProtoplaneConceptViewState extends State<ProtoplaneConceptView>
   @override
   void dispose() {
     _entityNameTimer?.cancel();
+    _roomWheelTimer?.cancel();
     _residentTimer?.cancel();
     _backgroundTapTimer?.cancel();
     _roomReveal.dispose();
+    _surfaceTransition.dispose();
+    _strokeFade.dispose();
+    _doorSwing.dispose();
+    _strokeFadeTimer?.cancel();
+    _zoomExitTimer?.cancel();
     harvestNoticeTimer?.cancel();
     harvestAtlas.dispose();
     landscapePaperTexture?.dispose();

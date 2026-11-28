@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'surface_fixture.dart';
 import 'package:flatmates/protoplane/controller.dart';
 import 'package:flatmates/protoplane/construction.dart';
 import 'package:flatmates/protoplane/models.dart';
 import 'package:flatmates/rendering/scene_view.dart';
 import 'package:flatmates/screens/protoplane_concept_view.dart';
 import 'package:flatmates/ui/game/view_crosshair.dart';
-import 'layered_terrain_test.dart' show centerId;
 
 void main() {
   for (final platform in [
@@ -29,12 +29,12 @@ void main() {
         tester.view.resetPhysicalSize();
         tester.view.resetDevicePixelRatio();
       });
-      final c = ProtoplaneController()..enableInPlaceDrawing();
+      final c = surfaceRoomWorld()..enableInPlaceDrawing();
       addTearDown(c.dispose);
-      final ground = centerId(c, PaperMaterial.paperWhite);
+      final ground = 'surface-${c.objects.values.single.id}-floor-in-0';
       c.enter(ground);
-      for (final x in [-1.0, 0.0]) {
-        final r = rectangle(1, 1, origin: Offset(x, 0));
+      for (final x in [.25, .5]) {
+        final r = rectangle(.25, .5, origin: Offset(x, .25));
         expect(c.commitDrawingPath([...r.outer, r.outer.first]), isTrue);
       }
       await tester.pumpWidget(
@@ -109,7 +109,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(scene.camera!.position, position);
         expect(
-          c.objects.values.single.region.bounds.contains(const Offset(.5, .5)),
+          c.objects.values.last.region.contains(const Offset(.5, .5)),
           isTrue,
         );
       } else {
@@ -123,7 +123,7 @@ void main() {
         expect(evaluation().target.point, before);
         await touch.up();
         await tester.pumpAndSettle();
-        expect(c.objects, hasLength(1));
+        expect(c.objects, hasLength(2));
       }
       expect(c.constructionTool, ConstructionTool.paper);
       expect(tester.takeException(), isNull);

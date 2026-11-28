@@ -13,7 +13,11 @@ class ConstructionToolbar extends StatelessWidget {
     this.stock,
     this.price,
     this.onBuy,
+    this.available = const {...ConstructionTool.values},
+    this.selectionControls = const [],
   });
+  final Set<ConstructionTool> available;
+  final List<Widget> selectionControls;
   final ConstructionTool? selected;
   final ValueChanged<ConstructionTool> onSelect;
   final ConstructionPaper paper;
@@ -70,20 +74,24 @@ class ConstructionToolbar extends StatelessWidget {
       Material(
         color: const Color(0xdd202020),
         borderRadius: BorderRadius.circular(18),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            for (final tool in ConstructionTool.values)
+            ...selectionControls,
+            for (final tool in ConstructionTool.values.where(
+              available.contains,
+            ))
               Padding(
                 padding: const EdgeInsets.all(6),
                 child: IconButton(
                   key: ValueKey('construction-${tool.name}'),
                   tooltip: switch (tool) {
                     ConstructionTool.pencil => 'Pencil',
-                    ConstructionTool.volume => 'Inflate',
+                    ConstructionTool.volume => 'Volume',
                     ConstructionTool.paper => 'Paper',
                     ConstructionTool.scissors => 'Scissors',
+                    ConstructionTool.fold => 'Fold',
                   },
                   isSelected: selected == tool,
                   style: IconButton.styleFrom(
@@ -99,6 +107,7 @@ class ConstructionToolbar extends StatelessWidget {
                     ConstructionTool.volume => Icons.view_in_ar,
                     ConstructionTool.paper => Icons.layers,
                     ConstructionTool.scissors => Icons.content_cut,
+                    ConstructionTool.fold => Icons.flip,
                   }),
                 ),
               ),

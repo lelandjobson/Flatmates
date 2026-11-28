@@ -3,11 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flatmates/screens/protoplane_concept_view.dart';
 
-import 'construction_fixture.dart';
+import 'surface_fixture.dart';
 
 void main() {
   testWidgets('trackpad pinch cannot move the pencil camera', (tester) async {
-    final model = constructionWorld();
+    final model = surfaceRoomWorld();
     addTearDown(model.dispose);
     await tester.pumpWidget(
       MaterialApp(

@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'dart:math' as math;
 import 'geometry.dart';
 import 'models.dart';
 
@@ -17,7 +18,19 @@ Region mapRegion(Region r, Offset Function(Offset) map) => Region(
 );
 
 /// Thin planar prisms shared by rendering, picking, and collision.
+final _panelCache = Expando<({CraftPlane source, List<RoomPanel> panels})>();
+final _surfaceCache =
+    Expando<({CraftPlane source, List<CraftPlane> surfaces})>();
+
 List<RoomPanel> roomPanels(CraftObject room, CraftPlane source) {
+  final cached = _panelCache[room];
+  if (cached != null && identical(cached.source, source)) return cached.panels;
+  final panels = List<RoomPanel>.unmodifiable(_buildRoomPanels(room, source));
+  _panelCache[room] = (source: source, panels: panels);
+  return panels;
+}
+
+List<RoomPanel> _buildRoomPanels(CraftObject room, CraftPlane source) {
   CraftPlane frame(String key, Region region, {double height = 0}) =>
       CraftPlane(
         id: 'surface-${room.id}-$key',
@@ -65,17 +78,75 @@ List<RoomPanel> roomPanels(CraftObject room, CraftPlane source) {
         grids: [lattice(key, region)],
       );
       var pieces = [region];
-      for (final opening in room.openings.where((o) => o.wall == key)) {
+      for (final opening in room.openings.where(
+        (o) => o.wall == key && o.kind != 'flap',
+      )) {
         pieces = pieces.expand((r) => r.subtract(opening.region)).toList();
       }
       result.add(RoomPanel(key, panel, pieces));
     }
   }
+  for (final opening in room.openings.where(
+    (o) => o.isFlap && o.kind == 'door',
+  )) {
+    final wall = result.firstWhere((p) => p.key == opening.wall);
+    result.add(
+      RoomPanel('leaf-${opening.id}', doorLeafFrame(wall.frame, opening), [
+        doorLeafRegion(opening),
+      ]),
+    );
+  }
   return result;
+}
+
+Region doorLeafRegion(RoomOpening opening) => rectangle(
+  opening.region.bounds.width - 2 * roomThickness,
+  opening.region.bounds.height - roomThickness,
+  origin:
+      opening.region.bounds.topLeft +
+      const Offset(roomThickness, roomThickness),
+);
+
+CraftPlane doorLeafFrame(
+  CraftPlane wall,
+  RoomOpening opening, [
+  double progress = 1,
+]) {
+  final h = opening.hinge!;
+  final left = (h - opening.region.bounds.left).abs() < geometryEpsilon;
+  final angle = progress * 1.5707963267948966;
+  final u =
+      wall.u * math.cos(angle) +
+      wall.normal * (opening.swingSide * (left ? 1 : -1) * math.sin(angle));
+  return CraftPlane(
+    id: 'door-${opening.id}',
+    // Center the sheet's thickness on a hinge just inside the cut. This
+    // gives the two oriented aliases of a shared wall the same clearance.
+    origin:
+        wall.point(Offset(h + (left ? 1 : -1) * roomThickness / 2, 0)) -
+        u * h -
+        u.cross(wall.v).normalized() * roomThickness / 2,
+    u: u,
+    v: wall.v,
+    region: opening.region,
+    grids: const [],
+  );
 }
 
 /// Physical front/back identity is independent of visibility and camera focus.
 List<CraftPlane> roomSurfaces(CraftObject room, CraftPlane source) {
+  final cached = _surfaceCache[room];
+  if (cached != null && identical(cached.source, source)) {
+    return cached.surfaces;
+  }
+  final surfaces = List<CraftPlane>.unmodifiable(
+    _buildRoomSurfaces(room, source),
+  );
+  _surfaceCache[room] = (source: source, surfaces: surfaces);
+  return surfaces;
+}
+
+List<CraftPlane> _buildRoomSurfaces(CraftObject room, CraftPlane source) {
   final result = <CraftPlane>[];
   final panels = roomPanels(room, source);
   for (final panel in panels) {

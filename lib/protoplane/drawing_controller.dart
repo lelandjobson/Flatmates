@@ -83,19 +83,8 @@ extension FocusDrawing on ProtoplaneController {
     );
   }
 
-  CraftGrid? get focusDrawingGrid {
-    final surface = drawingSurface;
-    if (surface == null) return null;
-    return _drawingGrids.putIfAbsent(
-      drawingImplement,
-      () => surface.grid(
-        drawingImplement,
-        spacing: constructionTool == ConstructionTool.pencil
-            ? drawingSpacingFor(activePlaneId!)
-            : null,
-      ),
-    );
-  }
+  CraftGrid? get focusDrawingGrid =>
+      activePlaneId == null ? null : surfaceGrid(activePlaneId!);
 
   Iterable<DrawingGraph> get surfaceGraphs {
     final id = drawingSurface?.id;

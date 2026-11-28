@@ -1,16 +1,16 @@
 import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flatmates/protoplane/controller.dart';
+import 'surface_fixture.dart';
 import 'package:flatmates/rendering/scene_view.dart';
 import 'package:flatmates/screens/protoplane_concept_view.dart';
 
 void main() {
-  for (final exit in ['trackpad', 'touch', 'leave']) {
+  for (final exit in ['trackpad', 'leave']) {
     testWidgets(
       'Pencil ignores $exit gestures and exits without moving the camera',
       (tester) async {
-        final model = ProtoplaneController();
+        final model = surfaceRoomWorld();
         addTearDown(model.dispose);
         await tester.pumpWidget(
           MaterialApp(

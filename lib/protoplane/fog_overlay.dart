@@ -115,12 +115,16 @@ class FogOverlay extends StatefulWidget {
     required this.cameraChanges,
     this.animate = true,
     this.useShader = true,
+    this.darkness = 0,
+    this.horizonColor,
   });
   final ProtoplaneController model;
   final Camera camera;
   final FogSettings settings;
   final Listenable cameraChanges;
   final bool animate, useShader;
+  final double darkness;
+  final Color? horizonColor;
   @override
   State<FogOverlay> createState() => _FogOverlayState();
 }
@@ -342,6 +346,19 @@ class _FogPainter extends CustomPainter {
         points.map((p) => -p.z).reduce(math.max),
       );
     }
+    final tint = state.widget.horizonColor;
+    final base = Color.lerp(
+      tint ?? s.base,
+      Colors.black,
+      state.widget.darkness,
+    )!;
+    final highlight = Color.lerp(
+      tint == null
+          ? s.highlight
+          : Color.lerp(tint, const Color(0xffb590d5), .2),
+      Colors.black,
+      state.widget.darkness,
+    )!;
     final shader = state.shader;
     if (shader != null && state.mask != null && state.noise != null) {
       FogDiagnostics.shaderPaints++;
@@ -360,12 +377,12 @@ class _FogPainter extends CustomPainter {
         field.bounds.top,
         field.bounds.width,
         field.bounds.height,
-        s.base.r,
-        s.base.g,
-        s.base.b,
-        s.highlight.r,
-        s.highlight.g,
-        s.highlight.b,
+        base.r,
+        base.g,
+        base.b,
+        highlight.r,
+        highlight.g,
+        highlight.b,
         s.opacity,
         s.margin,
         s.softness,
@@ -429,8 +446,8 @@ class _FogPainter extends CustomPainter {
         positions.add(screen);
         colors.add(
           Color.lerp(
-            s.base,
-            s.highlight,
+            base,
+            highlight,
             .5,
           )!.withValues(alpha: (b + (a - b) * state.reveal) * s.opacity),
         );

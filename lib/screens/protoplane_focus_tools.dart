@@ -1,42 +1,8 @@
 part of 'protoplane_concept_view.dart';
 
 extension _FocusTools on _ProtoplaneConceptViewState {
-  void _enterRoom(CraftObject room) {
-    _backgroundTapTimer?.cancel();
-    _backgroundTapPoint = null;
-    _beforeRoom = _Pose(camera);
-    _roomMapPose = (
-      lookAt: mapCamera.lookAt.clone(),
-      distance: mapCamera.distance,
-      yaw: mapCamera.yaw,
-    );
-    _roomFocus = room.id;
-    _roomReveal.duration = MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : const Duration(milliseconds: 350);
-    final center = model.objectPlane(room).point(room.region.bounds.center);
-    final distance =
-        (math.max(room.region.bounds.width, room.region.bounds.height) *
-                (viewport.aspectRatio > 1.6 ? 6 : 5))
-            .clamp(3.0, 12.0);
-    if (MediaQuery.disableAnimationsOf(context)) {
-      mapCamera.restorePose(
-        lookAt: center,
-        distance: distance,
-        yaw: mapCamera.yaw,
-      );
-    } else {
-      mapCamera.animateLookAt(center);
-      mapCamera.animateDistance(distance);
-    }
-    _roomReveal.forward(from: 0);
-    _constructionPreviewKey = null;
-    _refreshScene();
-    _updateFocusUi(() {});
-  }
-
   bool _handleRoomBackgroundTap(Offset point) {
-    if (_roomFocus == null ||
+    if ((_roomFocus == null && _surfaceFocus.isEmpty) ||
         _drawingFocused ||
         devToolsOpen ||
         _parcelShopping) {
@@ -90,6 +56,10 @@ extension _FocusTools on _ProtoplaneConceptViewState {
   }
 
   Future<void> _exitRoom() async {
+    if (_surfaceFocus.isNotEmpty) {
+      _popSurfaceFocus();
+      return;
+    }
     if (_roomFocus == null || _exitingRoom) return;
     _exitingRoom = true;
     _backgroundTapTimer?.cancel();
@@ -132,7 +102,7 @@ extension _FocusTools on _ProtoplaneConceptViewState {
     children: [
       DevToolsButton(active: devToolsOpen, onPressed: _toggleDevTools),
       _button('Back', Icons.arrow_back, () {
-        if (_roomFocus != null) {
+        if (_roomFocus != null || _surfaceFocus.isNotEmpty) {
           _exitRoom();
         } else if (model.activePlane != null) {
           _selectConstructionTool(ConstructionTool.pencil);
@@ -300,6 +270,12 @@ extension _FocusTools on _ProtoplaneConceptViewState {
     if (_focusTouches.length > 1) {
       _cancelFocusStroke();
       _focusHadMultiple = true;
+      _roomPinch = 1;
+      _roomZoomConsumed = false;
+      planeSwipe.start(_focusTouches.values);
+      multiMoved.clear();
+      lastSpan =
+          (_focusTouches.values.first - _focusTouches.values.last).distance;
       _updateFocusUi(() {});
       return true;
     }
@@ -324,11 +300,36 @@ extension _FocusTools on _ProtoplaneConceptViewState {
 
   bool _focusPointerMove(PointerMoveEvent e) {
     if (!_focusTouches.containsKey(e.pointer)) return false;
+    final prior = _focusTouches[e.pointer]!;
+    final oldSpan = _focusTouches.length > 1
+        ? (_focusTouches.values.first - _focusTouches.values.last).distance
+        : 0.0;
     _focusTouches[e.pointer] = e.localPosition;
     _focusLiveScreen = e.localPosition;
     _updateFocusUi(() {});
     controls.move(e.kind, e.localPosition);
     if (_focusTouches.length > 1) {
+      final span =
+          (_focusTouches.values.first - _focusTouches.values.last).distance;
+      final scale = oldSpan > 0 ? span / oldSpan : 1.0;
+      if (_surfaceFocus.isNotEmpty) {
+        _moveIsolated((e.localPosition - prior) / 2, scale: scale);
+      } else if (_currentRoom != null) {
+        multiMoved.add(e.pointer);
+        if (multiMoved.length < 2) return true;
+        multiMoved.clear();
+        final swipe = planeSwipe.update(
+          _focusTouches.values,
+          PlaneSwipe.threshold(viewport),
+        );
+        if (swipe != null) _swipeRoom(swipe);
+        if (lastSpan > 0) _roomPinch *= span / lastSpan;
+        lastSpan = span;
+        _stepRoomZoom(_roomPinch);
+      } else {
+        mapCamera.pan((e.localPosition - prior) / 2);
+        mapCamera.zoomByScale(scale);
+      }
       return true;
     }
     if (_focusHadMultiple || _focusGestureSurface != model.drawingSurface?.id) {
@@ -403,8 +404,24 @@ extension _FocusTools on _ProtoplaneConceptViewState {
     if (loading || loadFailed || devToolsOpen) return;
     final next = model.constructionTool == requested ? null : requested;
     final target = next == ConstructionTool.pencil && !_parcelShopping
-        ? _constructionTarget()
+        ? (_pinnedSurface != null && model.planes.containsKey(_pinnedSurface)
+              ? (
+                  planeId: _pinnedSurface!,
+                  surface: model.drawingSurfaceFor(_pinnedSurface!)!,
+                  point: Offset.zero,
+                )
+              : _constructionTarget())
         : null;
+    if (next != null && !_availableSurfaceTools.contains(next)) return;
+    _selecting = false;
+    if (next == null && _selection.isEmpty) _pinnedSurface = null;
+    if (next != null) {
+      _pinnedSurface ??= target?.planeId ?? _constructionTarget()?.planeId;
+    }
+    if (next == ConstructionTool.paper) {
+      model.constructionPaper = ConstructionPaper.cloth;
+    }
+    _cancelSurfaceGesture();
     _cancelFocusStroke();
     _focusTouches.clear();
     pointers.clear();
@@ -434,6 +451,7 @@ extension _FocusTools on _ProtoplaneConceptViewState {
       }
     } else {
       model.constructionTool = next;
+      if (_surfaceDrawing) model.activePlaneId = _pinnedSurface;
     }
     _previewConstruction();
     _refreshScene();
@@ -450,28 +468,21 @@ extension _FocusTools on _ProtoplaneConceptViewState {
   }
 
   ({String planeId, DrawingSurface surface, Offset point})?
-  _resolveConstructionTarget() {
+  _resolveConstructionTarget({Offset? aim}) {
     if (viewport.isEmpty) return null;
-    final aim = controls.worldAim(viewport);
+    aim ??= controls.worldAim(viewport);
     final ray = camera.unprojectRay(aim, viewport);
     if (ray == null) return null;
-    final panels = _focusedRoomPanels();
     CraftPlane? best;
     var distance = double.infinity;
     for (final plane in model.planes.values) {
+      if (!_surfaceAllowed(plane)) continue;
       final terrain = model.landscape.terrain.tiles.containsKey(plane.id);
       if (!terrain && !plane.id.startsWith('surface-')) continue;
       if (terrain && !model.ownsTerrainTile(plane.id)) continue;
       if (_roomFocus != null) {
         if (plane.roomId != _roomFocus) continue;
         if (plane.roomFace == 'roof') continue;
-        if (plane.roomFace?.startsWith('wall-') == true) {
-          final panel = panels.firstWhere((p) => p.key == plane.roomFace);
-          if (panel.frame.normal.dot(camera.position - panel.frame.origin) >
-              0) {
-            continue;
-          }
-        }
       }
       if (plane.normal.dot(camera.position - plane.origin) <= 0) continue;
       final world = Camera.intersectPlane(
@@ -541,7 +552,10 @@ extension _FocusTools on _ProtoplaneConceptViewState {
             !devToolsOpen
         ? _constructionTarget()
         : null;
-    if (target == null || tool == null) {
+    if (target == null ||
+        tool == null ||
+        !model.toolsFor(target.planeId).contains(tool) ||
+        (_pinnedSurface != null && target.planeId != _pinnedSurface)) {
       if (_constructionEvaluation != null) {
         _constructionEvaluation = null;
         _constructionPreviewKey = null;
@@ -551,7 +565,7 @@ extension _FocusTools on _ProtoplaneConceptViewState {
     }
     final face = model.drawingFaceAt(target.point, surface: target.surface);
     final key =
-        '$tool/${model.constructionPaper}/${target.planeId}/${face?.id}/${model.drawingRevision}/${model.nextId}';
+        '$tool/${model.constructionPaper}/${target.planeId}/${face?.id}/${model.drawingRevision}/${model.nextId}/${target.point}';
     if (key == _constructionPreviewKey) return;
     _constructionPreviewKey = key;
     _constructionEvaluation = model.evaluateConstruction(
@@ -580,6 +594,11 @@ extension _FocusTools on _ProtoplaneConceptViewState {
     final target = _constructionTarget(fresh: true);
     if (target == null) {
       model.report('Aim at a paper surface');
+      return;
+    }
+    if (!model.toolsFor(target.planeId).contains(model.constructionTool) ||
+        (_pinnedSurface != null && target.planeId != _pinnedSurface)) {
+      model.report('Select the working surface');
       return;
     }
     final evaluation = model.evaluateConstruction(
@@ -687,17 +706,6 @@ class _DrawingGraphPainter extends CustomPainter {
       if (roomFocus != null) {
         final p = model.planes[graph.surfaceId];
         if (p?.roomId != roomFocus || p?.roomFace == 'roof') continue;
-        final room = model.objects[roomFocus];
-        if (room != null && p?.roomFace?.startsWith('wall-') == true) {
-          final panel = roomPanels(
-            room,
-            model.objectPlane(room),
-          ).firstWhere((panel) => panel.key == p!.roomFace);
-          if (panel.frame.normal.dot(camera.position - panel.frame.origin) >
-              0) {
-            continue;
-          }
-        }
       }
       lineFrame = graph.frame;
       final color = switch (graph.implement) {

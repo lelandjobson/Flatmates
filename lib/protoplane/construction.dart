@@ -3,7 +3,7 @@ import 'drawing_graph.dart';
 import 'models.dart';
 import 'geometry.dart';
 
-enum ConstructionTool { pencil, volume, paper, scissors }
+enum ConstructionTool { pencil, volume, paper, scissors, fold }
 
 enum ConstructionPaper { building, cloth }
 
@@ -41,7 +41,9 @@ class ConstructionEvaluation {
     this.issue,
     this.replacementId,
     this.paper = ConstructionPaper.building,
+    this.stroke,
   });
+  final List<Offset>? stroke;
   final ConstructionTool tool;
   final ConstructionPaper paper;
   final String? replacementId;

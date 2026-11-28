@@ -1,4 +1,6 @@
 import 'drawing_graph.dart';
+import 'surface_policy.dart';
+import 'architecture.dart';
 import 'room_geometry.dart';
 import 'housing.dart';
 import 'construction.dart';
@@ -33,10 +35,15 @@ part 'linear_placement.dart';
 part 'landscape_drawing.dart';
 part 'drawing_controller.dart';
 part 'construction_controller.dart';
+part 'surface_construction_controller.dart';
 part 'housing_controller.dart';
 part 'sticker_controller.dart';
 
 class ProtoplaneController extends ChangeNotifier {
+  bool openingComplete = false;
+  bool _openingHistoryReleased = false;
+  List<ArchitecturalWall>? _architecturalWalls;
+  final Map<String, CraftGrid> _surfaceGrids = {};
   HousingState housing = HousingState();
   List<RoomReview>? _roomReviewsCache;
   List<CraftObject> _reviewObjects = const [];
@@ -95,6 +102,7 @@ class ProtoplaneController extends ChangeNotifier {
   /// Avoid round-tripping the entire terrain and rebuilding every tile lattice
   /// for each preview and again for its atomic commit.
   ProtoplaneController._constructionStage(ProtoplaneController source) {
+    openingComplete = source.openingComplete;
     landscape = source.landscape;
     paper = source.paper;
     nextId = source.nextId;
@@ -427,6 +435,8 @@ class ProtoplaneController extends ChangeNotifier {
   void _invalidateNavigation() {
     _navigationGraph = null;
     _roomReviewsCache = null;
+    _architecturalWalls = null;
+    _surfaceGrids.clear();
   }
 
   final surfaceFusion = CraftSurfaceFusion();
@@ -578,7 +588,7 @@ class ProtoplaneController extends ChangeNotifier {
   void _ground() {
     for (final tile in landscape.terrain.tiles.values) {
       planes[tile.id] = tile.plane(
-        count: protoplaneCells == null ? 5 : protoplaneCells! + 1,
+        count: protoplaneCells == null ? 2 : protoplaneCells! + 1,
       );
     }
     _applyProtoplaneConnections();
@@ -611,6 +621,8 @@ class ProtoplaneController extends ChangeNotifier {
     drafts.clear();
     bedrooms = [];
     housing = HousingState();
+    openingComplete = false;
+    _openingHistoryReleased = false;
     for (final color in materials) {
       balances[color] = color.starterUnits;
     }
@@ -1740,6 +1752,7 @@ class ProtoplaneController extends ChangeNotifier {
         drafts.remove(entry.key);
       }
     }
+    _deriveSharedSurfaces();
     bedrooms = evaluateBedrooms(objects, planes);
   }
 
@@ -1753,6 +1766,19 @@ class ProtoplaneController extends ChangeNotifier {
 
   void _record(String before, {bool committed = false}) {
     syncHousing();
+    if (committed &&
+        !_openingHistoryReleased &&
+        openingComplete &&
+        (jsonDecode(before)['world']['openingComplete'] == true)) {
+      _openingHistoryReleased = true;
+      // Once another action has been committed, undo may remove the room but
+      // must not replay the introductory restriction.
+      for (var i = 0; i < _undo.length; i++) {
+        final prior = jsonDecode(_undo[i]) as Map<String, dynamic>;
+        prior['world']['openingComplete'] = true;
+        _undo[i] = jsonEncode(prior);
+      }
+    }
     _undo.add(before);
     _redo.clear();
     error = null;
@@ -1818,7 +1844,12 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   Map<String, dynamic> toJson() => {
-    'version': 12,
+    'version': 13,
+    'openingComplete': openingComplete,
+    'walls': [
+      for (final wall in walls)
+        {'id': wall.id, 'rooms': wall.sides.map((s) => s.room).toList()},
+    ],
     'housing': housing.toJson(),
     'parcels': parcels.toJson(),
     'drawingGraphs': drawingGraphs.values.map((g) => g.toJson()).toList(),
@@ -1860,12 +1891,13 @@ class ProtoplaneController extends ChangeNotifier {
   }
 
   void _load(Map<String, dynamic> j) {
-    if (![3, 4, 5, 6, 7, 8, 9, 10, 11, 12].contains(j['version'])) {
+    if (![3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].contains(j['version'])) {
       throw const FormatException('Unsupported world version');
     }
     if (j['version'] >= 12 && j['housing'] is! Map) {
       throw const FormatException('Missing housing state');
     }
+    openingComplete = j['version'] >= 13 ? j['openingComplete'] == true : true;
     housing = HousingState.fromJson(j['version'] >= 12 ? j['housing'] : null);
     parcels = WorldParcels.fromJson(j['parcels']);
     _drawingSurfaceKey = null;

@@ -12,6 +12,7 @@ import 'package:flatmates/protoplane/controller.dart';
 import 'package:flatmates/protoplane/construction.dart';
 import 'package:flatmates/protoplane/models.dart';
 import 'package:flatmates/protoplane/geometry.dart';
+import 'package:flatmates/protoplane/room_geometry.dart';
 import 'package:flatmates/rendering/scene_view.dart';
 import 'package:flatmates/screens/protoplane_concept_view.dart';
 
@@ -68,7 +69,7 @@ class _ProfileState extends State<_Profile> {
     model.balances[PaperMaterial.paperGreen] = roomCount * 8;
     final origins = roomCount == 1
         ? [Offset.zero]
-        : const [Offset(-1, -1), Offset(1, -1), Offset(-1, 1), Offset(1, 1)];
+        : const [Offset(0, 0), Offset(1, 0), Offset(0, 1), Offset(1, 1)];
     for (final origin in origins) {
       final ground = model.landscape.terrain.tiles.values.firstWhere(
         (t) =>
@@ -77,21 +78,22 @@ class _ProfileState extends State<_Profile> {
             t.sheet.island == 'starter' &&
             t.sheet.material == PaperMaterial.paperWhite,
       );
-      final center = origin + const Offset(.5, .5);
-      draw(ground.id, rectangle(1, 1, origin: origin));
-      final mat = place(ConstructionTool.paper, ground.id, center);
-      final building = place(
-        ConstructionTool.volume,
-        'surface-${mat.id}',
-        center,
-      );
+      final boundary = rectangle(1, 1, origin: origin).outer;
+      final watch = Stopwatch()..start();
+      if (!model.applyVolumeStroke(ground.id, [...boundary, boundary.first])) {
+        throw StateError(model.error!);
+      }
+      constructionSamples.add(watch.elapsedMicroseconds / 1000);
+      final building = model.objects.values.last;
       if (origin == origins.first) room = building;
       final wall = 'surface-${building.id}-wall-0-0-out-0';
-      draw(wall, rectangle(.25, .5, origin: const Offset(.25, 0)));
-      place(ConstructionTool.scissors, wall, const Offset(.375, .25));
+      final cut = rectangle(.25, .5, origin: const Offset(.25, 0)).outer;
+      if (!model.cutSurfaceStroke(wall, [...cut, cut.first])) {
+        throw StateError(model.error ?? 'Cut failed');
+      }
       final floor = 'surface-${building.id}-floor-in-0';
-      draw(floor, rectangle(.25, .5, origin: origin + const Offset(.5, .25)));
-      final spot = origin + const Offset(.625, .5);
+      draw(floor, rectangle(.25, .5, origin: origin + const Offset(.25, .25)));
+      final spot = origin + const Offset(.375, .5);
       final cloth = place(
         ConstructionTool.paper,
         floor,
@@ -99,7 +101,7 @@ class _ProfileState extends State<_Profile> {
         ConstructionPaper.cloth,
       );
       place(
-        ConstructionTool.volume,
+        ConstructionTool.fold,
         'surface-${cloth.id}',
         spot,
         ConstructionPaper.cloth,
@@ -108,7 +110,15 @@ class _ProfileState extends State<_Profile> {
     model.leave();
     model.constructionTool = null;
     SchedulerBinding.instance.addTimingsCallback(timings);
-    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(run()));
+    if (const bool.fromEnvironment('PREVIEW')) return;
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => unawaited(
+        run().catchError((Object e, StackTrace st) {
+          File('/tmp/surface-profile-error.txt').writeAsStringSync('$e\n$st');
+          exit(1);
+        }),
+      ),
+    );
   }
 
   void timings(List<ui.FrameTiming> batch) {
@@ -137,6 +147,37 @@ class _ProfileState extends State<_Profile> {
     );
   }
 
+  Future<void> control(String key) async {
+    Element? found;
+    void visit(Element e) {
+      if (e.widget.key == ValueKey(key)) found = e;
+      e.visitChildren(visit);
+    }
+
+    (context as Element).visitChildren(visit);
+    if (found == null) throw StateError('Missing control $key');
+    final box = found!.findRenderObject()! as RenderBox;
+    tap(box.localToGlobal(box.size.center(Offset.zero)));
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+  }
+
+  void drag(Offset a, Offset b) {
+    GestureBinding.instance.handlePointerEvent(
+      PointerDownEvent(pointer: 1, position: a, kind: PointerDeviceKind.mouse),
+    );
+    GestureBinding.instance.handlePointerEvent(
+      PointerMoveEvent(
+        pointer: 1,
+        position: b,
+        delta: b - a,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+    GestureBinding.instance.handlePointerEvent(
+      PointerUpEvent(pointer: 1, position: b, kind: PointerDeviceKind.mouse),
+    );
+  }
+
   Future<void> run() async {
     await Future<void>.delayed(const Duration(seconds: 2));
     if (!mounted) return;
@@ -144,18 +185,54 @@ class _ProfileState extends State<_Profile> {
     final scene = view!.scene;
     final camera = scene.camera!;
     final size = (context.findRenderObject()! as RenderBox).size;
-    final roof = model.planes['surface-${room.id}-roof-out-0']!;
-    for (final next in ['world', 'navigation', 'paper', 'idle']) {
-      if (next == 'navigation') {
+    final roof = model.planes['surface-${room.id}-floor-in-0']!;
+    for (final next in [
+      'world',
+      'navigation',
+      'marquee',
+      'isolate',
+      'wall',
+      'door',
+      'idle',
+    ]) {
+      File('/tmp/surface-profile-phase.txt').writeAsStringSync(next);
+      if (next == 'marquee') await control('surface-select');
+      if (next == 'isolate') {
+        await control('selection-kind');
         tap(
-          camera.projectToScreen(roof.point(roof.region.bounds.center), size)!,
+          camera.projectToScreen(
+            roof.point(roof.region.bounds.topLeft + const Offset(.125, .125)),
+            size,
+          )!,
         );
-        await Future<void>.delayed(const Duration(seconds: 2));
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        await control('surface-focus');
       }
-      if (next == 'paper') {
-        model.constructionTool = ConstructionTool.paper;
-        model.constructionPaper = ConstructionPaper.cloth;
-        model.clearError();
+      if (next == 'wall') {
+        await control('surface-select');
+        await control('selection-kind');
+        final wall = model.planes['surface-${room.id}-wall-0-1-in-0']!;
+        tap(
+          camera.projectToScreen(wall.point(wall.region.bounds.center), size)!,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        await control('surface-focus');
+      }
+      if (next == 'door') {
+        final wall = model.planes['surface-${room.id}-wall-0-1-in-0']!;
+        final panel = roomPanels(
+          model.objects[room.id]!,
+          model.objectPlane(room),
+        ).firstWhere((p) => p.key == wall.roomFace);
+        final points = [
+          const Offset(.25, 0),
+          const Offset(0, 0),
+          const Offset(0, .75),
+          const Offset(.25, .75),
+        ].map((p) => wall.local(panel.frame.point(p))).toList();
+        if (!model.cutSurfaceStroke(wall.id, points)) {
+          throw StateError(model.error ?? 'Flap failed');
+        }
       }
       phase = 'warmup';
       await Future<void>.delayed(const Duration(seconds: 1));
@@ -166,12 +243,38 @@ class _ProfileState extends State<_Profile> {
       for (var i = 0; i < 180; i++) {
         if (next != 'idle') {
           final watch = Stopwatch()..start();
-          GestureBinding.instance.handlePointerEvent(
-            PointerScrollEvent(
-              position: size.center(Offset.zero),
-              scrollDelta: Offset(0, i.isEven ? 1 : -1),
-            ),
-          );
+          File('/tmp/surface-profile-phase.txt').writeAsStringSync(next);
+          if (next == 'marquee') {
+            drag(
+              size.center(Offset.zero) - const Offset(120, 120),
+              size.center(Offset.zero) + const Offset(120, 120),
+            );
+          } else if (next == 'door') {
+            if (i % 30 == 0) {
+              final wall = model.planes['surface-${room.id}-wall-0-1-in-0']!;
+              final panel = roomPanels(
+                model.objects[room.id]!,
+                model.objectPlane(room),
+              ).firstWhere((p) => p.key == wall.roomFace);
+              final e = model.evaluateConstruction(
+                ConstructionTool.fold,
+                wall.id,
+                wall.local(panel.frame.point(const Offset(.125, .5))),
+              );
+              if (!model.applyConstruction(e)) {
+                throw StateError(e.issue ?? model.error ?? 'Fold failed');
+              }
+            } else if (i % 30 == 29) {
+              model.undo();
+            }
+          } else {
+            GestureBinding.instance.handlePointerEvent(
+              PointerScrollEvent(
+                position: size.center(Offset.zero),
+                scrollDelta: Offset(0, i.isEven ? 1 : -1),
+              ),
+            );
+          }
           inputSamples[next]!.add(watch.elapsedMicroseconds / 1000);
         }
         await Future<void>.delayed(const Duration(milliseconds: 16));
@@ -199,9 +302,7 @@ class _ProfileState extends State<_Profile> {
       'paintMs': scene.paintStats?.paintMs ?? 0,
     };
     final encoded = const JsonEncoder.withIndent('  ').convert(report);
-    await File(
-      '/tmp/construction-profile-$roomCount.json',
-    ).writeAsString(encoded);
+    await File('/tmp/surface-profile-$roomCount.json').writeAsString(encoded);
     debugPrint(encoded);
     exit(0);
   }

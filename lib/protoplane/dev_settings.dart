@@ -30,15 +30,18 @@ class ProtoplaneSettings {
   double focusCropX = 2, focusCropZ = 2;
   double focusCropAbove = 1.25, focusCropBelow = .25;
   static const defaultBackgroundColors = [
-    Color(0xff263b70),
-    Color(0xff765184),
-    Color(0xffe9a072),
+    Color(0xff276a72),
+    Color(0xff404a7d),
+    Color(0xff78558f),
   ];
+  double backgroundDarkness = .78;
   List<Color> backgroundColors = List.of(defaultBackgroundColors);
   LinearGradient get backgroundGradient => LinearGradient(
     begin: Alignment.bottomCenter,
     end: Alignment.topCenter,
-    colors: backgroundColors,
+    colors: backgroundColors
+        .map((c) => Color.lerp(c, Colors.black, backgroundDarkness)!)
+        .toList(),
     stops: const [0, .5, 1],
   );
 
@@ -98,6 +101,7 @@ class ProtoplaneSettings {
     'bakedShadowIntensity': bakedShadowIntensity,
     'foldDensity': foldDensity,
     'foldDistribution': foldDistribution.name,
+    'backgroundDarkness': backgroundDarkness,
     'backgroundColors': backgroundColors
         .map((color) => color.toARGB32())
         .toList(),
@@ -274,6 +278,9 @@ class ProtoplaneSettings {
       throw const FormatException('Invalid cutting line color');
     }
     cutLineColor = Color(cutRgb);
+    backgroundDarkness = json.containsKey('backgroundDarkness')
+        ? number('backgroundDarkness', 0, 1)
+        : .78;
     final background = json['backgroundColors'];
     if (background != null &&
         (background is! List ||
@@ -286,6 +293,11 @@ class ProtoplaneSettings {
     backgroundColors = background == null
         ? List.of(defaultBackgroundColors)
         : (background as List).map((v) => Color(v as int)).toList();
+    if (backgroundColors[0].toARGB32() == 0xff263b70 &&
+        backgroundColors[1].toARGB32() == 0xff765184 &&
+        backgroundColors[2].toARGB32() == 0xffe9a072) {
+      backgroundColors = List.of(defaultBackgroundColors);
+    }
 
     final effectDuration = json['effectDurationMs'] ?? 400;
     final hapticSetting = json['haptics'] ?? true;
@@ -862,6 +874,13 @@ class _ProtoplaneDevToolsPanelState extends State<ProtoplaneDevToolsPanel> {
                             padding: const EdgeInsets.all(16),
                             children: [
                               const Text('Background'),
+                              slider(
+                                'Background darkness',
+                                settings.backgroundDarkness,
+                                0,
+                                1,
+                                (v) => settings.backgroundDarkness = v,
+                              ),
                               Container(
                                 height: 100,
                                 margin: const EdgeInsets.symmetric(

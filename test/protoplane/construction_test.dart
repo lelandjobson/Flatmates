@@ -7,6 +7,7 @@ import 'layered_terrain_test.dart' show centerId;
 
 void main() {
   ProtoplaneController world() => ProtoplaneController()
+    ..openingComplete = true
     ..enableInPlaceDrawing()
     ..balances[PaperMaterial.paperWhite] = 256;
   String ground(ProtoplaneController c) =>
@@ -159,7 +160,7 @@ void main() {
       final saved = jsonDecode(jsonEncode(c.toJson())) as Map<String, dynamic>;
       final loaded = world()..load(saved);
       addTearDown(loaded.dispose);
-      expect(saved['version'], 12);
+      expect(saved['version'], 13);
       expect(loaded.objects.length, 3);
       expect(loaded.objects[blanket.id]!.constructionName, 'large blanket');
       expect(loaded.planes[side]!.normal, c.planes[side]!.normal);

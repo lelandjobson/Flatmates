@@ -27,15 +27,15 @@ void main() {
     await tester.pumpAndSettle();
     final scene = tester.widget<SceneView>(find.byType(SceneView).first).scene;
     final camera = scene.camera!;
-    final roof = c.planes['surface-${room.id}-roof-out-0']!;
+    final roof = c.planes['surface-${room.id}-floor-in-0']!;
     await tester.tapAt(
       camera.projectToScreen(
-        roof.point(roof.region.bounds.center),
+        roof.point(roof.region.bounds.topLeft + const Offset(.125, .125)),
         const Size(800, 600),
       )!,
     );
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('exit-room')), findsOneWidget);
+    expect(find.byKey(const ValueKey('surface-focus')), findsOneWidget);
     for (final tool in ['navigation', 'paper']) {
       if (tool == 'paper') {
         await tester.tap(find.byKey(const ValueKey('construction-paper')));

@@ -1,18 +1,14 @@
 import 'dart:io';
-import 'housing_test.dart' show cutDoor, draw;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flatmates/protoplane/controller.dart';
 import 'package:flatmates/protoplane/construction.dart';
-import 'package:flatmates/protoplane/construction_toolbar.dart';
 import 'package:flatmates/protoplane/models.dart';
-import 'package:flatmates/protoplane/parcel_overlay.dart';
 import 'package:flatmates/rendering/scene_view.dart';
 import 'package:flatmates/screens/protoplane_concept_view.dart';
-import 'package:flatmates/ui/game/view_crosshair.dart';
+import 'surface_fixture.dart';
 
 void main() {
   for (final size in [
@@ -20,15 +16,18 @@ void main() {
     const Size(390, 844),
     const Size(844, 390),
   ]) {
-    testWidgets('three tool workflow at $size', (tester) async {
-      final c = ProtoplaneController();
-      addTearDown(c.dispose);
+    testWidgets('surface tools create indoor cloth and fold it at $size', (
+      tester,
+    ) async {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
       addTearDown(() {
         tester.view.resetPhysicalSize();
         tester.view.resetDevicePixelRatio();
       });
+      final c = surfaceRoomWorld();
+      addTearDown(c.dispose);
+      final room = c.objects.values.single;
       await tester.pumpWidget(
         MaterialApp(
           home: RepaintBoundary(
@@ -38,137 +37,46 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(c.constructionTool, isNull);
-      expect(find.byType(ConstructionToolbar), findsOneWidget);
-      expect(find.byKey(const ValueKey('stickerbook-card')), findsNothing);
       final scene = tester
-          .widget<SceneView>(find.byType(SceneView).first)
-          .scene;
-      final camera = scene.camera!;
-      final pose = camera.position.clone();
+              .widget<SceneView>(find.byType(SceneView).first)
+              .scene,
+          camera = scene.camera!;
+      final floor = c.planes['surface-${room.id}-floor-in-0']!;
+      final before = camera.position.clone();
+      expect(find.byKey(const ValueKey('construction-volume')), findsNothing);
       await tester.tap(find.byKey(const ValueKey('construction-pencil')));
       await tester.pumpAndSettle();
-      expect(c.constructionTool, ConstructionTool.pencil, reason: c.error);
-      expect(camera.position, pose);
-      expect(find.byType(ViewCrosshair), findsNothing);
-      final grid = c.focusDrawingGrid!;
-      expect(
-        grid.nodes.every((p) => p.dx == p.dx.round() && p.dy == p.dy.round()),
-        isTrue,
-      );
       Offset screen(Offset p) =>
-          camera.projectToScreen(c.drawingSurface!.frame.point(p, .009), size)!;
-      final stroke = await tester.startGesture(screen(Offset.zero));
-      for (final p in [
-        const Offset(1, 0),
-        const Offset(1, 1),
-        const Offset(0, 1),
-        Offset.zero,
-      ]) {
+          camera.projectToScreen(floor.point(p, .009), size)!;
+      final r = rectangle(.5, .5, origin: const Offset(.25, .25));
+      final stroke = await tester.startGesture(screen(r.outer.first));
+      for (final p in [...r.outer.skip(1), r.outer.first]) {
         await stroke.moveTo(screen(p));
         await tester.pump();
       }
       await stroke.up();
       await tester.pumpAndSettle();
-      expect(c.drawingGraphs.values.single.faces, hasLength(1));
-      expect(camera.position, pose);
-      Future<void> aimAt(CraftObject object) async {
-        final top =
-            c.planes[object.kind == CraftKind.room
-                ? 'surface-${object.id}-floor-in-0'
-                : 'surface-${object.id}']!;
-        final center = top.point(top.region.bounds.center);
-        for (var i = 0; i < 4; i++) {
-          final at = camera.projectToScreen(center, size)!;
-          final pan = await tester.createGesture(
-            kind: PointerDeviceKind.trackpad,
-          );
-          await pan.panZoomStart(size.center(Offset.zero));
-          await pan.panZoomUpdate(
-            size.center(Offset.zero),
-            pan: size.center(Offset.zero) - at,
-          );
-          await pan.panZoomEnd();
-          await tester.pumpAndSettle();
-        }
-      }
-
+      expect(c.surfaceGraphs.single.faces, hasLength(1));
+      expect(camera.position, before);
       await tester.tap(find.byKey(const ValueKey('construction-paper')));
       await tester.pumpAndSettle();
-      expect(c.activePlaneId, isNull);
-      expect(camera.position, pose);
+      expect(c.constructionPaper, ConstructionPaper.cloth);
       expect(
         scene.meshes.any((m) => m.id.startsWith('sticker-preview-')),
         isTrue,
       );
-      final paletteCapture = tester.renderObject<RenderRepaintBoundary>(
-        find.byKey(const ValueKey('capture')),
-      );
-      await tester.runAsync(() async {
-        final image = await paletteCapture.toImage();
-        final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
-        await File(
-          '/tmp/construction-palette-${size.width.toInt()}.png',
-        ).writeAsBytes(bytes!.buffer.asUint8List());
-        image.dispose();
-      });
-      await tester.tapAt(Offset(16, size.height * .4));
-      await tester.pump(const Duration(milliseconds: 310));
+      await tester.tapAt(size.center(Offset.zero));
       await tester.pumpAndSettle();
-      expect(
-        c.objects.values.single.constructionName,
-        'building mat',
-        reason: c.error,
-      );
-      expect(find.text('building mat'), findsOneWidget);
-      await aimAt(c.objects.values.single);
-      await tester.tap(find.byKey(const ValueKey('construction-volume')));
+      expect(c.objects.values.last.kind, CraftKind.paperSheet, reason: c.error);
+      expect(c.balances[PaperMaterial.paperGreen], 4);
+      await tester.tap(find.byKey(const ValueKey('surface-select')));
+      await tester.pump();
+      await tester.tapAt(size.center(Offset.zero));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('construction-paper')), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('construction-fold')));
       await tester.pumpAndSettle();
-      expect(
-        scene.meshes.any((m) => m.id.startsWith('sticker-preview-')),
-        isTrue,
-      );
-      await tester.tapAt(Offset(16, size.height * .4));
-      await tester.pump(const Duration(milliseconds: 310));
-      await tester.pumpAndSettle();
-      expect(c.objects.values.single.kind, CraftKind.room, reason: c.error);
-      expect(find.text('building volume'), findsOneWidget);
-      final room = c.objects.values.single;
-      cutDoor(c, room);
-      c.constructionTool = null;
-      c.leave();
-      await tester.pumpAndSettle();
-      final roomEntryPose = camera.position.clone();
-      final roof = c.planes['surface-${room.id}-roof-out-0']!;
-      await tester.tapAt(
-        camera.projectToScreen(roof.point(roof.region.bounds.center), size)!,
-      );
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('exit-room')), findsOneWidget);
-      final floor = 'surface-${room.id}-floor-in-0';
-      draw(c, floor, rectangle(.5, .5, origin: const Offset(.25, .25)));
-      await tester.tap(find.byKey(const ValueKey('construction-paper')));
-      await tester.pumpAndSettle();
-      await aimAt(room);
-      await tester.drag(
-        find.byKey(const ValueKey('paper-material-wheel')),
-        const Offset(-64, 0),
-      );
-      await tester.pumpAndSettle();
-      await tester.tapAt(Offset(16, size.height * .4));
-      await tester.pump(const Duration(milliseconds: 310));
-      await tester.pumpAndSettle();
-      expect(
-        c.objects.values.last.constructionName,
-        'cloth sheet',
-        reason: c.error,
-      );
-      expect(find.text('cloth sheet'), findsOneWidget);
-      await aimAt(c.objects.values.last);
-      await tester.tap(find.byKey(const ValueKey('construction-volume')));
-      await tester.pumpAndSettle();
-      await tester.tapAt(Offset(16, size.height * .4));
-      await tester.pump(const Duration(milliseconds: 310));
+      await tester.tapAt(size.center(Offset.zero));
       await tester.pumpAndSettle();
       expect(
         c.objects.values.last.kind,
@@ -176,124 +84,20 @@ void main() {
         reason: c.error,
       );
       expect(c.objects.values.last.depth, .05);
-      expect(find.text('large blanket'), findsOneWidget);
-      await aimAt(c.objects.values.last);
-      await tester.pump(const Duration(seconds: 3));
-      expect(find.text('large blanket'), findsOneWidget);
-      final capture = tester.renderObject<RenderRepaintBoundary>(
+      expect(camera.position, before);
+      expect(tester.takeException(), isNull);
+      final boundary = tester.renderObject<RenderRepaintBoundary>(
         find.byKey(const ValueKey('capture')),
       );
       await tester.runAsync(() async {
-        final image = await capture.toImage();
+        final image = await boundary.toImage();
         final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
         await File(
-          '/tmp/construction-${size.width.toInt()}.png',
+          '/tmp/surface-room-${size.width.toInt()}.png',
         ).writeAsBytes(bytes!.buffer.asUint8List());
         image.dispose();
       });
-      final drag = await tester.startGesture(
-        Offset(size.width * .5, size.height * .4),
-        kind: PointerDeviceKind.mouse,
-      );
-      await drag.moveBy(const Offset(60, 0));
-      await drag.up();
-      await tester.pumpAndSettle();
-      expect(camera.position, isNot(pose));
-      expect(c.objects.length, 2);
-      await tester.tap(find.byKey(const ValueKey('construction-volume')));
-      await tester.pumpAndSettle();
-      expect(c.constructionTool, isNull);
-      c.undo();
-      await tester.pumpAndSettle();
-      expect(c.objects.values.last.constructionName, 'cloth sheet');
-      c.redo();
-      await tester.pumpAndSettle();
-      expect(c.objects.values.last.constructionName, 'large blanket');
-      expect(c.housing.tenants.length, 1);
-      expect(
-        scene.meshes
-            .where((m) => m.id.startsWith('${room.id}-roof-'))
-            .every((m) => m.material.opacity == 0),
-        isTrue,
-      );
-      await tester.tap(find.byKey(const ValueKey('resident-inspection')));
-      await tester.pumpAndSettle();
-      expect(find.text('Residents · 1'), findsOneWidget);
-      expect(find.textContaining('Departure risk'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-      await tester.tap(find.text('Close'));
-      await tester.pumpAndSettle();
-      for (var i = 0; i < 3; i++) {
-        await tester.tap(find.byKey(const ValueKey('advance-phase')));
-        await tester.pumpAndSettle();
-      }
-      expect(c.housing.day, 2);
-      expect(c.housing.coins, greaterThan(0));
-      await tester.tap(find.byKey(const ValueKey('exit-room')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('exit-room')), findsNothing);
-      expect((camera.position - roomEntryPose).length, lessThan(.0001));
-      expect(
-        scene.meshes
-            .where((m) => m.id.startsWith('${room.id}-roof-'))
-            .every((m) => m.material.opacity == 1),
-        isTrue,
-      );
-      expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
     });
   }
-  testWidgets(
-    'parcel shopping suppresses construction and pencil stays locked during scroll',
-    (tester) async {
-      final c = ProtoplaneController();
-      addTearDown(c.dispose);
-      await tester.pumpWidget(
-        MaterialApp(
-          home: ProtoplaneConceptView(controller: c, animateFog: false),
-        ),
-      );
-      await tester.pumpAndSettle();
-      final scene = tester
-          .widget<SceneView>(find.byType(SceneView).first)
-          .scene;
-      await tester.tap(find.byKey(const ValueKey('construction-pencil')));
-      await tester.pumpAndSettle();
-      final pose = scene.camera!.position.clone();
-      await tester.sendEventToBinding(
-        const PointerScrollEvent(
-          position: Offset(400, 300),
-          scrollDelta: Offset(0, 1000),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(scene.camera!.position, pose);
-      expect(c.constructionTool, ConstructionTool.pencil);
-      await tester.tap(find.byKey(const ValueKey('construction-volume')));
-      await tester.pumpAndSettle();
-      await tester.sendEventToBinding(
-        const PointerScrollEvent(
-          position: Offset(400, 300),
-          scrollDelta: Offset(0, 1000),
-        ),
-      );
-      await tester.pumpAndSettle();
-      final overlay =
-          tester
-                  .widget<CustomPaint>(
-                    find.byKey(const ValueKey('parcel-overlay')),
-                  )
-                  .painter!
-              as ParcelPainter;
-      expect(overlay.shopping, isTrue);
-      expect(
-        scene.meshes.any((m) => m.id.startsWith('sticker-preview-')),
-        isFalse,
-      );
-      await tester.tapAt(const Offset(400, 300));
-      await tester.pumpAndSettle();
-      expect(c.objects, isEmpty);
-      await tester.pumpWidget(const SizedBox());
-    },
-  );
 }

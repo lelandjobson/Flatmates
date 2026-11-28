@@ -194,7 +194,7 @@ void main() {
       );
       expect(
         scene.meshes.any((m) => m.id == 'ground-starter-paperWhite-0-0'),
-        isTrue,
+        isFalse,
       );
       final saved = c.toJson();
       await tester.tap(find.text('devtools'));

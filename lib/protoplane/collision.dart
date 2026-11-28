@@ -9,19 +9,24 @@ import 'room_geometry.dart';
 /// Convex triangular prisms, tested with the separating-axis theorem. Curved
 /// outlines and holes use the same triangulation as the visible surface.
 bool solidsOverlap(CraftObject a, CraftPlane ap, CraftObject b, CraftPlane bp) {
-  final ac = _cells(a, ap), bc = _cells(b, bp);
-  if (!_boundsOverlap(
-    ac.expand((v) => v).toList(),
-    bc.expand((v) => v).toList(),
-  )) {
+  return CollisionSolid(a, ap).overlaps(CollisionSolid(b, bp));
+}
+
+/// Reuse immutable obstacle geometry while checking an animated swept solid.
+class CollisionSolid {
+  CollisionSolid(CraftObject object, CraftPlane plane)
+    : cells = _cells(object, plane);
+  final List<List<Vector3>> cells;
+  late final List<Vector3> vertices = cells.expand((v) => v).toList();
+  bool overlaps(CollisionSolid other) {
+    if (!_boundsOverlap(vertices, other.vertices)) return false;
+    for (final a in cells) {
+      for (final b in other.cells) {
+        if (_boundsOverlap(a, b) && _convexOverlap(a, b)) return true;
+      }
+    }
     return false;
   }
-  for (final av in ac) {
-    for (final bv in bc) {
-      if (_boundsOverlap(av, bv) && _convexOverlap(av, bv)) return true;
-    }
-  }
-  return false;
 }
 
 List<List<Vector3>> _cells(CraftObject o, CraftPlane plane) {

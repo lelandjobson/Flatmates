@@ -12,6 +12,7 @@ void main() {
       expect(settings.backgroundGradient.end, Alignment.topCenter);
       expect(settings.backgroundGradient.stops, [0, .5, 1]);
       settings.backgroundColors = [Colors.blue, Colors.purple, Colors.orange];
+      settings.backgroundDarkness = .6;
       settings.paperTextureStrength = .4;
       settings.paperTextureRepeat = 3;
       settings.paperTextureAppearance.contrast = 1.3;
@@ -21,12 +22,18 @@ void main() {
         restored.backgroundColors.map((c) => c.toARGB32()),
         settings.backgroundColors.map((c) => c.toARGB32()),
       );
+      expect(restored.backgroundDarkness, .6);
+      expect(
+        restored.backgroundGradient.colors.first.computeLuminance(),
+        lessThan(settings.backgroundColors.first.computeLuminance()),
+      );
       expect(restored.paperTextureStrength, .4);
       expect(restored.paperTextureRepeat, 3);
       expect(restored.paperTextureAppearance.contrast, 1.3);
       expect(restored.landscapeAppearance.contrast, .5);
       final legacy = settings.toJson()
         ..remove('backgroundColors')
+        ..remove('backgroundDarkness')
         ..remove('paperTextureAppearance')
         ..remove('paperTextureStrength')
         ..remove('paperTextureRepeat');
@@ -35,6 +42,7 @@ void main() {
         restored.backgroundColors,
         ProtoplaneSettings.defaultBackgroundColors,
       );
+      expect(restored.backgroundDarkness, .78);
       expect(restored.paperTextureStrength, .6);
       expect(restored.paperTextureRepeat, 2);
       expect(

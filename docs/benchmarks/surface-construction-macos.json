@@ -1,0 +1,170 @@
+{
+  "world": {
+    "frames": 191,
+    "inputCpuMs": {
+      "median": 0.447,
+      "p95": 0.7
+    },
+    "inkCpuMs": {
+      "median": 1.403,
+      "p95": 1.879
+    },
+    "buildMs": {
+      "median": 2.774,
+      "p95": 3.713
+    },
+    "rasterMs": {
+      "median": 1.28,
+      "p95": 1.826
+    },
+    "totalMs": {
+      "median": 4.315,
+      "p95": 5.582
+    }
+  },
+  "navigation": {
+    "frames": 240,
+    "inputCpuMs": {
+      "median": 0.437,
+      "p95": 0.675
+    },
+    "inkCpuMs": {
+      "median": 1.418,
+      "p95": 2.126
+    },
+    "buildMs": {
+      "median": 2.635,
+      "p95": 3.716
+    },
+    "rasterMs": {
+      "median": 1.265,
+      "p95": 1.808
+    },
+    "totalMs": {
+      "median": 4.099,
+      "p95": 5.586
+    }
+  },
+  "marquee": {
+    "frames": 284,
+    "inputCpuMs": {
+      "median": 0.489,
+      "p95": 0.698
+    },
+    "inkCpuMs": {
+      "median": 1.349,
+      "p95": 1.935
+    },
+    "buildMs": {
+      "median": 2.373,
+      "p95": 3.441
+    },
+    "rasterMs": {
+      "median": 1.199,
+      "p95": 1.679
+    },
+    "totalMs": {
+      "median": 3.769,
+      "p95": 5.191
+    }
+  },
+  "isolate": {
+    "frames": 331,
+    "inputCpuMs": {
+      "median": 0.256,
+      "p95": 0.323
+    },
+    "inkCpuMs": {
+      "median": 0.268,
+      "p95": 0.3
+    },
+    "buildMs": {
+      "median": 0.942,
+      "p95": 1.503
+    },
+    "rasterMs": {
+      "median": 0.58,
+      "p95": 1.546
+    },
+    "totalMs": {
+      "median": 1.656,
+      "p95": 3.101
+    }
+  },
+  "wall": {
+    "frames": 195,
+    "inputCpuMs": {
+      "median": 0.747,
+      "p95": 1.03
+    },
+    "inkCpuMs": {
+      "median": 0.209,
+      "p95": 0.391
+    },
+    "buildMs": {
+      "median": 2.313,
+      "p95": 3.159
+    },
+    "rasterMs": {
+      "median": 1.351,
+      "p95": 1.662
+    },
+    "totalMs": {
+      "median": 3.875,
+      "p95": 4.96
+    }
+  },
+  "door": {
+    "frames": 270,
+    "inputCpuMs": {
+      "median": 0.263,
+      "p95": 35.67
+    },
+    "inkCpuMs": {
+      "median": 0.173,
+      "p95": 0.524
+    },
+    "buildMs": {
+      "median": 0.402,
+      "p95": 0.851
+    },
+    "rasterMs": {
+      "median": 0.384,
+      "p95": 1.014
+    },
+    "totalMs": {
+      "median": 0.955,
+      "p95": 2.463
+    }
+  },
+  "idle": {
+    "frames": 36,
+    "inputCpuMs": {},
+    "inkCpuMs": {
+      "median": 0.325,
+      "p95": 0.398
+    },
+    "buildMs": {
+      "median": 1.182,
+      "p95": 1.53
+    },
+    "rasterMs": {
+      "median": 1.678,
+      "p95": 2.178
+    },
+    "totalMs": {
+      "median": 3.092,
+      "p95": 3.939
+    }
+  },
+  "constructionCpuMs": {
+    "median": 10.914,
+    "p95": 31.144
+  },
+  "scene": {
+    "rooms": 4,
+    "residents": 4,
+    "meshes": 28,
+    "paintMs": 0.193
+  }
+}

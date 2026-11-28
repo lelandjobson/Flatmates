@@ -139,7 +139,9 @@ class Region {
   bool overlaps(Region other) =>
       measure([this, other], (p) => contains(p) && other.contains(p)) >
       geometryEpsilon;
-  List<List<Offset>> get triangles {
+  late final List<List<Offset>> _triangles = _triangulate();
+  List<List<Offset>> get triangles => _triangles;
+  List<List<Offset>> _triangulate() {
     final result = <List<Offset>>[];
     for (final quad in slabs([this], contains)) {
       for (var i = 1; i < quad.length - 1; i++) {
@@ -147,7 +149,7 @@ class Region {
         if (polygonSignedArea(t).abs() > geometryEpsilon) result.add(t);
       }
     }
-    return result;
+    return List.unmodifiable(result.map((t) => List<Offset>.unmodifiable(t)));
   }
 
   /// Intersect against a union of surface fragments, retaining disconnected

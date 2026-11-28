@@ -6,7 +6,7 @@ extension Housing on ProtoplaneController {
       ? MaterialContext.indoor
       : MaterialContext.outdoor;
 
-  RoomReview reviewRoom(CraftObject room) {
+  RoomReview reviewRoom(CraftObject room, {Set<String>? entrances}) {
     final source = objectPlane(room);
     final floor = planes['surface-${room.id}-floor-in-0']!;
     final blankets = <(CraftObject, Region)>[];
@@ -53,6 +53,12 @@ extension Housing on ProtoplaneController {
       for (final door in room.openings.where(
         (o) => o.kind == 'door' && o.wall == panel.key,
       )) {
+        if (entrances != null &&
+            !entrances.contains(
+              door.id ?? '${door.wall}/${door.region.bounds}',
+            )) {
+          continue;
+        }
         final mouth = doorwayCenter(door.region);
         if (mouth == null) continue;
         final entry = floor.local(
@@ -60,7 +66,10 @@ extension Housing on ProtoplaneController {
         );
         final outside = panel.frame.point(mouth) + panel.frame.normal * .08;
         if (objects.values.any((o) {
-          if (o.id == room.id) return false;
+          if (o.id == room.id ||
+              (entrances != null && o.kind == CraftKind.room)) {
+            return false;
+          }
           final p = objectPlane(o), local = p.local(outside);
           final height = (outside - p.origin).dot(p.normal);
           return height > -.01 && height < o.depth && o.region.contains(local);
@@ -117,10 +126,68 @@ extension Housing on ProtoplaneController {
       return _roomReviewsCache!;
     }
     _reviewObjects = current;
-    return _roomReviewsCache = List.unmodifiable([
-      for (final r in current.where((o) => o.kind == CraftKind.room))
-        reviewRoom(r),
-    ]);
+    final rooms = current.where((o) => o.kind == CraftKind.room).toList();
+    final links = walls;
+    final entrances = <String, Set<String>>{
+      for (final r in rooms) r.id: <String>{},
+    };
+    final portals = <({String from, String to, String cut, Vector3 at})>[];
+    for (final room in rooms) {
+      final panels = roomPanels(room, objectPlane(room));
+      for (final door in room.openings.where((o) => o.kind == 'door')) {
+        final panel = panels.firstWhere((p) => p.key == door.wall);
+        final mouth = doorwayCenter(door.region);
+        if (mouth == null) continue;
+        final wall = links
+            .where(
+              (w) => w.sides.any(
+                (s) =>
+                    s.room == room.id &&
+                    s.panel.key == door.wall &&
+                    mouth.dx >= s.start - geometryEpsilon &&
+                    mouth.dx <= s.end + geometryEpsilon,
+              ),
+            )
+            .firstOrNull;
+        final key = door.id ?? '${door.wall}/${door.region.bounds}';
+        if (wall == null || !wall.shared) {
+          entrances[room.id]!.add(key);
+          continue;
+        }
+        final other = wall.sides.firstWhere((s) => s.room != room.id);
+        final world = panel.frame.point(mouth);
+        if (objects[other.room]!.openings.any(
+          (d) =>
+              d.wall == other.panel.key &&
+              d.kind == 'door' &&
+              d.region.contains(other.panel.frame.local(world)),
+        )) {
+          portals.add((
+            from: other.room,
+            to: room.id,
+            cut: key,
+            at: world + panel.frame.normal * .08,
+          ));
+        }
+      }
+    }
+    var reviews = <RoomReview>[];
+    for (var step = 0; step <= rooms.length; step++) {
+      reviews = [
+        for (final r in rooms) reviewRoom(r, entrances: entrances[r.id]),
+      ];
+      var changed = false;
+      for (final portal in portals) {
+        final source = reviews.firstWhere((r) => r.room.id == portal.from);
+        final at = source.floor.local(portal.at);
+        if (source.reachable.any((p) => (p - at).distance < .13) &&
+            entrances[portal.to]!.add(portal.cut)) {
+          changed = true;
+        }
+      }
+      if (!changed) break;
+    }
+    return _roomReviewsCache = List.unmodifiable(reviews);
   }
 
   void syncHousing({bool arrivals = true}) {
@@ -261,20 +328,46 @@ extension Housing on ProtoplaneController {
         seen.add(opening);
       }
       for (final expected in roomSurfaces(room, objectPlane(room))) {
-        final actual = planes[expected.id];
-        if (actual == null ||
-            actual.roomId != room.id ||
-            actual.interior != expected.interior ||
-            actual.roomFace != expected.roomFace ||
-            (actual.origin - expected.origin).length > geometryEpsilon ||
-            (actual.u - expected.u).length > geometryEpsilon ||
-            (actual.v - expected.v).length > geometryEpsilon ||
-            jsonEncode(actual.region.toJson()) !=
-                jsonEncode(expected.region.toJson())) {
+        final actuals = planes.values
+            .where(
+              (p) =>
+                  p.id == expected.id ||
+                  p.id.startsWith('${expected.id}-span-'),
+            )
+            .toList();
+        if (actuals.isEmpty ||
+            (actuals.fold<double>(0, (area, p) => area + p.region.area) -
+                        expected.region.area)
+                    .abs() >
+                geometryEpsilon) {
           throw const FormatException('Invalid room surface');
+        }
+        for (final actual in actuals) {
+          final shared =
+              !expected.interior &&
+              actual.interior &&
+              walls.any(
+                (w) =>
+                    w.shared &&
+                    w.sides.any(
+                      (s) =>
+                          s.room == room.id && s.panel.key == expected.roomFace,
+                    ) &&
+                    w.sides.any((s) => s.room == actual.roomId),
+              );
+          if ((actual.roomId != room.id && !shared) ||
+              (actual.interior != expected.interior && !shared) ||
+              actual.roomFace != expected.roomFace ||
+              (actual.origin - expected.origin).length > geometryEpsilon ||
+              (actual.u - expected.u).length > geometryEpsilon ||
+              (actual.v - expected.v).length > geometryEpsilon ||
+              !expected.region.containsRegion(actual.region)) {
+            throw const FormatException('Invalid room surface');
+          }
         }
       }
     }
+
     for (final tenant in housing.tenants.values) {
       final serial = int.tryParse(tenant.id.replaceFirst('tenant-', ''));
       if (!tenant.id.startsWith('tenant-') ||

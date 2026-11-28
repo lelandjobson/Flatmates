@@ -8,7 +8,7 @@ import 'package:flatmates/protoplane/controller.dart';
 /// Construction regressions start after resource collection, with enough paper
 /// for their multi-story fixtures. Harvest tests use fresh worlds directly.
 ProtoplaneController constructionWorld() {
-  final model = ProtoplaneController();
+  final model = ProtoplaneController()..openingComplete = true;
   final plane = model.planes['ground-starter-paperWhite-0-0']!;
   model.landscape.deplete(plane.id, plane.region);
   // A persisted construction lattice, retaining the original half-tile IDs.
